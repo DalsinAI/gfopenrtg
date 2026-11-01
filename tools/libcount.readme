@@ -24,7 +24,7 @@ the NDK's FD files and sorts them into a table.
 It was written to find which graphics, intuition and layers calls Workbench
 and programs really make on an RTG screen, for GFOpenRTG.
 
-Free software under the MIT licence, Copyright (c) 2026 AmigaChrome Team. Use
+Free software under the MIT licence, Copyright (c) 2026 AmiCradle Team. Use
 it, change it, fork it and ship it; keep the copyright notice and the licence
 with every copy.
 

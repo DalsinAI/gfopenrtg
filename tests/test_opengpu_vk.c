@@ -1,4 +1,4 @@
-/* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
+/* Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
  * GFOpenGPU's Vulkan back end (G2) against the C core: the golden scene must

@@ -1,4 +1,4 @@
-/* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
+/* Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
  * libopenal.a (stubs/openal/openal_stub.c) on a PC: the stub's own file,

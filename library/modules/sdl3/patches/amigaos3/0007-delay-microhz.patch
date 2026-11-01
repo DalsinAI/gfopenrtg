@@ -2,7 +2,7 @@ SDL3_68k's timer (Zlib): SDL_Delay waited in dos.library's 1/50 s ticks,
 so every sleep was a multiple of 20 ms. A sleep now waits on timer.device's
 UNIT_MICROHZ with a reply port and request for each task, made the first
 time it sleeps and freed when its thread ends, at SDL_Quit, or when the
-program ends. AmigaChrome Team, 2026.
+program ends. AmiCradle Team, 2026.
 
 --- a/src/timer/amigaos3/SDL_systimer.c
 +++ b/src/timer/amigaos3/SDL_systimer.c
@@ -27,7 +27,7 @@ program ends. AmigaChrome Team, 2026.
      return (Uint64)eclock_freq;
  }
  
-+/* AmigaOS 3.x (AmigaChrome Team, 2026): a sleep waits on timer.device's
++/* AmigaOS 3.x (AmiCradle Team, 2026): a sleep waits on timer.device's
 +   UNIT_MICROHZ, so SDL_Delay(1) is about a millisecond. dos.library's
 +   Delay() counts 1/50 s ticks: every sleep was a multiple of 20 ms, and a
 +   game holding its frame rate with SDL_Delay ran at 25 or 50 frames a

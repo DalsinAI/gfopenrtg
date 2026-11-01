@@ -1,4 +1,4 @@
-/* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
+/* Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
  * SDLTone: an SDL 2 program's sound, for OpenAL's lab (Design-OpenAL

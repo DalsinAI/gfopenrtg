@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
+# Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
 #
 # OpenAL.module, libopenal.a (the link stub), libopenal_static.a, the

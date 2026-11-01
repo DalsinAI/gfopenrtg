@@ -1,4 +1,4 @@
-/* Copyright (c) 2026 AmigaChrome Team. OpenGPU developer kit, MIT licence.
+/* Copyright (c) 2026 AmiCradle Team. OpenGPU developer kit, MIT licence.
  * SPDX-License-Identifier: MIT
  *
  * GLATriangle: OpenGL with GLA, GFOpenGPU's own GL interface, in an

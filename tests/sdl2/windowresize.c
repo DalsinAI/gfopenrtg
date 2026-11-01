@@ -1,4 +1,4 @@
-/* Native SDL logical/Intuition resize control. MIT, AmigaChrome Team 2026. */
+/* Native SDL logical/Intuition resize control. MIT, AmiCradle Team 2026. */
 #include <SDL.h>
 #include <proto/intuition.h>
 #include <proto/exec.h>

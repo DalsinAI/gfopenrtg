@@ -1,4 +1,4 @@
-/* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
+/* Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
  * Text's strip (library/text_strip.h) against 0.24's

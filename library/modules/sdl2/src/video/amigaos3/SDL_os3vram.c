@@ -1,7 +1,7 @@
 /*
   SDL 2 on AmigaOS 3.x: SDL's window surface and the opengpu renderer's
   textures in an GFOpenRTG board's video RAM (SDL_os3vram.h).
-  Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
+  Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
 
   A bitmap is asked for as Picasso96 programs ask for one on the card:
   AllocBitMap(w, h, depth, BMF_DISPLAYABLE | BMF_MINPLANES, the screen's

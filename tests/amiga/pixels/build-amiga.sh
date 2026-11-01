@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
+# Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
 # PixTest (pixtest.c), and PixConvTest (tests/test_pixconv.c: library/pixconv.h
 # against 0.24's per-pixel code, on the Amiga's own 68k, with BENCH timings),

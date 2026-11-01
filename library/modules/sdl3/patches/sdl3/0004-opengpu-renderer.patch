@@ -13,7 +13,7 @@ list before the software one, and has it take lines as lines.
 +
    Simple DirectMedia Layer
    Copyright (C) 1997-2026 Sam Lantinga <slouken@libsdl.org>
-+  Altered by the AmigaChrome Team, 2026: this is SDL's software renderer
++  Altered by the AmiCradle Team, 2026: this is SDL's software renderer
 +  (src/render/software/SDL_render_sw.c) with its drawing sent to GFOpenGPU
 +  where GFOpenGPU can do it. It is not the original software.
  

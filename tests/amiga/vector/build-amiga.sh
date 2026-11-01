@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
+# Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
 # For the Cradle's stove_build (STOVE= and OUT= set, target tests/amiga/vector),
 # or by hand with STOVE or CC as in tools/build.sh. The CPU core is built

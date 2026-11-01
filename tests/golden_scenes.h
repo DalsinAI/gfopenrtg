@@ -1,4 +1,4 @@
-/* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
+/* Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  * GFOpenGPU's golden scenes: the 2D ones (golden_scenes.c) and the 3D one
  * (golden_scene_3d.c, host only). */

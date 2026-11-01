@@ -1,7 +1,7 @@
 /*
   SDL 3 on AmigaOS 3.x: gfopengpu.library, shared by the opengpu renderer and
   the window framebuffer (SDL_os3gpu.h).
-  Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
+  Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
 
   A window is shown by GFOpenGPU, which copies the frame into the screen's
   bitmap (on the Cradle, the PC does it), through each visible part of the

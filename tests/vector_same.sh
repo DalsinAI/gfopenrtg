@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
+# Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
 # The core against itself at an earlier git ref, byte for byte (tests/vector_same.c).
 #   tests/vector_same.sh [REF [ROUNDS [SEED [MIX]]]]     (REF: origin/main by default; MIX as vector_same.c says)

@@ -1,7 +1,7 @@
 /*
   SDL 3 on AmigaOS 3.x: gfopengpu.library, shared by the opengpu renderer
   (src/render/opengpu) and the window framebuffer.
-  Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
+  Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
 
   SDL_OPENGPU=0 (SetEnv, or SDL_SetHint) keeps SDL off GFOpenGPU entirely:
   the software renderer, and windows shown by WritePixelArray.

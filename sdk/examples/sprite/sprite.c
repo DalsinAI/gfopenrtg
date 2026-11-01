@@ -1,4 +1,4 @@
-/* Copyright (c) 2026 AmigaChrome Team. OpenGPU developer kit, MIT licence.
+/* Copyright (c) 2026 AmiCradle Team. OpenGPU developer kit, MIT licence.
  * SPDX-License-Identifier: MIT
  *
  * Sprite: SDL 2's renderer on GFOpenGPU. Bouncing balls drawn from one

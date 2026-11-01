@@ -1,4 +1,4 @@
-/* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
+/* Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  * exec/libraries.h's struct Library, with what stubs/sdl3 reads, for its
  * host test (tests/sdl3/stub_nomodule.c). */

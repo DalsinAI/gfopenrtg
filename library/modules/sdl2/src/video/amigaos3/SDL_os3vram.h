@@ -1,7 +1,7 @@
 /*
   SDL 2 on AmigaOS 3.x: SDL's window surface and the opengpu renderer's
   textures in an GFOpenRTG board's video RAM, so GFOpenGPU's GPU draws in them.
-  Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
+  Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
 
   amigachrome's docs/design/Design-OpenGPU-2D-On-The-GPU.md 5.4 B (the
   user's decision, 17 October 2026). GFOpenRTG 0.19 puts a bitmap asked for

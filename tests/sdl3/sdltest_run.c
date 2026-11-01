@@ -1,4 +1,4 @@
-/* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
+/* Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
  *
  * Runs one of SDL 3's own test programs, unchanged, for a set time and keeps
  * what it logs, as tests/sdl2/sdltest_run.c does for SDL 2. The test is

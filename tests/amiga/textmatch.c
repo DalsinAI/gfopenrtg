@@ -16,7 +16,7 @@
  * Run it on a Workbench screen on an ACRTG board, from a Shell. Colour and right-to-left fonts are
  * left out: GFOpenRTG doesn't draw those as OS 3.2 does yet.
  *
- * Copyright (c) 2026 AmigaChrome Team. MIT (LICENSE). */
+ * Copyright (c) 2026 AmiCradle Team. MIT (LICENSE). */
 #include <exec/types.h>
 #include <exec/memory.h>
 #include <dos/dos.h>

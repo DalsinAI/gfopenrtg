@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
+# Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
 """baserel_check.py PREFIX MODULE.debug MODULE.map [--allow FILE]: a shared module (built
 -fbaserel32 -resident32, include/gfopengpu/module.h) must reach its data only

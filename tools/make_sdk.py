@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
+# Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
 """The GFOpenGPU developer kit: headers, link libraries, sdl2-config,
 pkg-config and CMake files, examples, notices and documents for building
@@ -45,7 +45,7 @@ SAT_VERSIONS = {"SDL2_image": "2.8.12", "SDL2_mixer": "2.8.2", "SDL2_ttf": "2.24
 # The CPU SDL2.module and the libraries are built for (library/modules/sdl2).
 CPU = "-m68040 -m68881"
 
-# The Team's headers in include/, by directory (all MIT, AmigaChrome Team).
+# The Team's headers in include/, by directory (all MIT, AmiCradle Team).
 OWN_INCLUDE = ("gfopengpu", "gfopenrtg", "proto", "inline", "clib", "libraries", "Warp3D", "mgl", "tgl")
 # GL's headers from Mesa: Mesa's gl.h (MIT) and Khronos's (MIT; the two
 # platform headers Apache 2.0). GLX, WGL and GLES 1 (which GLA doesn't
@@ -77,10 +77,11 @@ def die(msg: str) -> None:
 
 
 def licence_of(path: Path) -> str:
-    """MIT, Zlib or AmigaChrome Team (the Team's MIT) from a header's own notice; '' if unclear."""
+    """MIT, Zlib or AmiCradle Team (the Team's MIT) from a header's own notice; '' if unclear."""
     head = path.read_text(encoding="latin-1", errors="replace")[:6000]
-    if "AmigaChrome Team" in head and ("MIT" in head or "SPDX-License-Identifier: MIT" in head):
-        return "MIT (AmigaChrome Team)"
+    # a header from before 1 November 2026 may still carry the Team's old name, the AmigaChrome Team
+    if ("AmiCradle Team" in head or "AmigaChrome Team" in head) and ("MIT" in head or "SPDX-License-Identifier: MIT" in head):
+        return "MIT (AmiCradle Team)"
     if ZLIB_MARK.search(head):
         return "Zlib"
     if MIT_MARK.search(head):
@@ -124,7 +125,7 @@ def mesa_src(args) -> Path:
 
 SDL2_CONFIG = r'''#!/bin/sh
 # sdl2-config for SDL 2 on GFOpenGPU (AmigaOS 3.2): the GFOpenGPU developer kit.
-# Copyright (c) 2026 AmigaChrome Team. MIT licence (Licences/OpenGPU.txt).
+# Copyright (c) 2026 AmiCradle Team. MIT licence (Licences/OpenGPU.txt).
 # Prints the flags m68k-amigaos-gcc needs for SDL 2:
 #   m68k-amigaos-gcc game.c -o Game $(sdl2-config --cflags --libs)
 # A program that calls SDL_GL_ functions asks for GL too, and gets -lGL:
@@ -181,7 +182,7 @@ echo $out
 
 SDL_CONFIG = r'''#!/bin/sh
 # sdl-config for SDL 1.2 on GFOpenGPU (AmigaOS 3.2): the GFOpenGPU developer kit.
-# Copyright (c) 2026 AmigaChrome Team. MIT licence (Licences/OpenGPU.txt).
+# Copyright (c) 2026 AmiCradle Team. MIT licence (Licences/OpenGPU.txt).
 # SDL 1.2 here is sdl12-compat on GFOpenGPU's SDL 2 (SDL2.module): libSDL.a
 # turns SDL 1.2's calls into SDL 2's, so both draw through the same engine.
 #   m68k-amigaos-gcc game.c -o Game $(sdl-config --cflags --libs)
@@ -339,7 +340,7 @@ def make_kit(args) -> Path:
     # 1. The Team's headers: gfopengpu.library, GFOpenRTG, Warp3D, MiniGL.
     for d in OWN_INCLUDE:
         for f in sorted((ROOT / "include" / d).rglob("*.h")):
-            if licence_of(f) != "MIT (AmigaChrome Team)":
+            if licence_of(f) != "MIT (AmiCradle Team)":
                 die(f"{f}: not the Team's MIT notice")
             copy(f, inc / f.relative_to(ROOT / "include"))
     # The libraries' SFD files, for other compilers' stubs and pragmas.
@@ -360,7 +361,7 @@ def make_kit(args) -> Path:
         lic = licence_of(f)
         if f.name in SDL_NO_NOTICE:
             lic = "Zlib"
-        if lic not in ("Zlib", "MIT", "MIT (AmigaChrome Team)", "Apache-2.0"):
+        if lic not in ("Zlib", "MIT", "MIT (AmiCradle Team)", "Apache-2.0"):
             die(f"{f}: licence unclear")
         if lic == "Apache-2.0" or APACHE_MARK.search(f.read_text(encoding="latin-1")):
             apache.append("SDL2/" + f.name)
@@ -441,7 +442,7 @@ def make_kit(args) -> Path:
     L = kit / "Licences"
     L.mkdir()
     copy(ROOT / "LICENSE", L / "OpenGPU.txt")
-    notices.append(("GFOpenGPU, GFOpenRTG, Warp3D, MiniGL, TinyGL and GLA headers; libGL.a, libminigl.a, libmgl.a, libtinygl.a; libSDL2.a's SDL2_gl.o; sdl2-config, sdl-config, the pkg-config and CMake files; the examples", "MIT, AmigaChrome Team (OpenGPU.txt)"))
+    notices.append(("GFOpenGPU, GFOpenRTG, Warp3D, MiniGL, TinyGL and GLA headers; libGL.a, libminigl.a, libmgl.a, libtinygl.a; libSDL2.a's SDL2_gl.o; sdl2-config, sdl-config, the pkg-config and CMake files; the examples", "MIT, AmiCradle Team (OpenGPU.txt)"))
     if sdl12:
         copy(sdl12 / "LICENSE.txt", L / "sdl12-compat.txt")
         notices.append((f"sdl12-compat {SDL12_VERSION}: SDL/ headers, libSDL.a (altered by the Team for AmigaOS 3; with dr_mp3: public domain or MIT-0). libSDL.a also holds libSDL2.a's members, renamed SDL2X_; libSDL_gl.a", "Zlib (sdl12-compat.txt)"))

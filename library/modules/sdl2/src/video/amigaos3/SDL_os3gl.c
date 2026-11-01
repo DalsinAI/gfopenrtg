@@ -1,6 +1,6 @@
 /*
   SDL 2 on AmigaOS 3.x: SDL_GL_* on GFOpenGPU's GL module.
-  Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
+  Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
 
   Every GL call goes through the program's GL (struct SDL2GLBridge, from
   libSDL2.a's SDL2_gl.o and the program's libGL.a), so SDL's contexts and

@@ -1,5 +1,5 @@
 /* PatchScan: which functions of a library jump outside the ROM (someone's
- * patch), to see what an RTG system changes. Not shipped. MIT, AmigaChrome Team. */
+ * patch), to see what an RTG system changes. Not shipped. MIT, AmiCradle Team. */
 #include <exec/types.h>
 #include <exec/execbase.h>
 #include <proto/exec.h>

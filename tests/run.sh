@@ -58,6 +58,26 @@ cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanit
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
     -o "$OUT/test_vector" "$HERE/test_vector.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_build.c" -lm
 "$OUT/test_vector"
+# The GL module's OS 3.2 present (library/modules/gl/gla/os3/gla_present_os3.c) on a fake
+# OpenGPU: every frame reaches the screen whole and in order, and a screen's present neither
+# waits with the bitmap locked nor, with a back buffer, for the batch it has just sent
+# (opengpu.library 0.19: it waits as before). Pairs with openamigamesa #23.
+cc -std=gnu99 -O1 -g -Wall -Wextra -Werror -Wno-unused-parameter -fsanitize=address,undefined -fno-sanitize-recover=undefined \
+    -I"$HERE/gla_present-include" -I"$HERE/../include" -I"$HERE/../library/modules/gl" \
+    -o "$OUT/test_gla_present" "$HERE/test_gla_present.c" "$HERE/../library/modules/gl/gla/os3/gla_present_os3.c" -lpthread
+gla_present() {     # arguments, then counts that must be 0
+    a=$1; shift
+    r=$("$OUT/test_gla_present" $a) || { echo "$r"; echo "test_gla_present $a: a frame was wrong" >&2; exit 1; }
+    echo "$r"
+    for c in "$@"; do
+        case "$r" in *" $c=0 "*) ;; *) echo "test_gla_present $a: $c is not 0" >&2; exit 1 ;; esac
+    done
+}
+gla_present "1 23 screen" waits_locked waits_own            # a back buffer: nothing waits for its own frame
+gla_present "0 23 screen" waits_locked waits_own_in_present  # one buffer: waits after present, unlocked
+gla_present "1 23 window"                                   # WritePixelArray
+gla_present "1 19 screen"                                   # opengpu.library 0.19: as before
+gla_present "1 23 mixed" waits_locked waits_own             # virgl's frames between: kept in order
 # Stream v1.8 (OGPU_PATH_ALIASED) against its exact reference, and against cairo's
 # CAIRO_ANTIALIAS_NONE when cairo's headers are there (the browser's reference).
 ALIASED_CAIRO=""

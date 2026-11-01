@@ -66,6 +66,20 @@ typedef long (*gla_present_virgl_fn)(void *user, const struct gla_virgl_frame *f
 void gla_present_set_virgl(void (*present)(void *user, const struct gla_frame *frame), gla_present_virgl_fn virgl);
 gla_present_virgl_fn gla_present_virgl_of(const struct gla_present *p);
 
+/* A present hook that may return with its frame still being read (an
+ * OpenGPU batch not waited for: gla_present_os3.c) registers two more
+ * companions against its present function, as for virgl's:
+ *   running(user)  nonzero when the last present() left its frame being read;
+ *   settle(user)   wait until nothing present() started is still running.
+ * present() itself waits, before it returns, for the frame it was given the
+ * time before. So with a back buffer the core swaps the back and front
+ * textures after a frame left running: the next frame is drawn into the
+ * other one, which that wait has made free. Otherwise (one buffer, or a
+ * texture freed) it settles first. A hook with no companions is done with
+ * the pixels when present() returns, as before. */
+void gla_present_set_async(void (*present)(void *user, const struct gla_frame *frame),
+                           int (*running)(void *user), void (*settle)(void *user));
+
 /* What GLA did with its frames, since it started or was last reset. */
 struct gla_stats {
     unsigned long frames;           /* virgl frames finished (flush_frontbuffer) */

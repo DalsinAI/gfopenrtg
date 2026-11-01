@@ -1547,6 +1547,9 @@ static int o3_op_triangles(struct ogpu3d *t, const ogpu_u8 *a, long args) {
     vsize = (o3_u32)o3_vertex_size(layout);
     if (!vcount) return OGPU_OK;
     if (stride < vsize || vcount > 0x00FFFFFFu || stride > 0x10000u || prim > OGPU_LAY_FAN) return OGPU_ERR_UNSUPPORTED;
+    /* stride * (vcount - 1) + vsize passes 32 bits (stride 0x10000, vcount
+     * 0x10001 wraps to vsize): out of reach, not one vertex mapped */
+    if (vcount - 1 > (0xFFFFFFFFu - vsize) / stride) return OGPU_ERR_NOMAP;
     verts = c->map(c->user, vaddr, stride * (vcount - 1) + vsize);
     if (!verts) return OGPU_ERR_NOMAP;
     if (iaddr) {

@@ -852,8 +852,9 @@ int ogpu3d_rec_triangles(struct ogpu3d_rec *r, struct ogpu3d *t, const ogpu_u8 *
         o3r_u32 iaddr = o3r_rd32(a + 12), icount = o3r_rd32(a + 16), isize = o3r_rd32(a + 20);
         o3r_u32 layout = args >= 9 ? o3r_rd32(a + 32) : 0, vsize = (o3r_u32)o3r_vertex_size(layout);
         if (vcount && vcount <= 0x00FFFFFFu && stride >= vsize && stride <= 0x10000u) {
-            unsigned long len = (unsigned long)stride * (vcount - 1) + vsize;
-            o3r_reads(r, c->map(c->user, vaddr, (ogpu_u32)len), len);
+            /* in 64 bits; past 32 bits TRIANGLES refuses it, so nothing to map */
+            unsigned long long len = (unsigned long long)stride * (vcount - 1) + vsize;
+            if (len <= 0xFFFFFFFFu) o3r_reads(r, c->map(c->user, vaddr, (ogpu_u32)len), (unsigned long)len);
         }
         if (iaddr && icount && icount <= 0x00FFFFFFu && (isize == 1 || isize == 2 || isize == 4))
             o3r_reads(r, c->map(c->user, iaddr, (ogpu_u32)(icount * isize)), (unsigned long)icount * isize);

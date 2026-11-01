@@ -807,6 +807,23 @@ static void test_sdl_form(void) {
     }
 }
 
+/* A vertex span past 32 bits: stride 0x10000 and 0x10001 vertices wrap
+ * stride * (vcount - 1) + vsize to one vertex in 32 bits. Indices then
+ * reach 0x30 strides on, past the arena: refused, nothing read. */
+static void test_vertex_span_wrap(void) {
+    struct V v = { 10, 10, 0, 0, 0.5, 1, 0xFFFFFFFFUL, 0 };
+    clear_target(0);
+    setup();
+    r3d_defaults();
+    R[0] = 0;
+    ogpu_render3d(&B, R);
+    put_vertex(VB, &v);
+    arena[IB] = 0; arena[IB + 1] = 0x30; arena[IB + 2] = 0x31;
+    ogpu_triangles3d(&B, VB, 0x10001, 0x10000, IB, 3, 1, OGPU_TRI_NOTEX, 0, LAY_FULL);
+    run();
+    CHECK(C.last_error == OGPU_ERR_NOMAP, "vertex span past 32 bits: %d", C.last_error);
+}
+
 /* Random streams of 3D commands: the core must stay inside the memory it is given
  * (AddressSanitizer catches any slip) and never hang. */
 static void test_random_streams(void) {
@@ -983,6 +1000,7 @@ int main(int argc, char **argv) {
         test_primitives();
         test_sdl_form();
     }
+    test_vertex_span_wrap();
     test_random_streams();
     slow_spans = 1;
     g = golden_scene(0);

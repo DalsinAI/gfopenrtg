@@ -21,6 +21,15 @@ if command -v m68k-linux-gnu-gcc >/dev/null && command -v qemu-m68k >/dev/null; 
         -o "$OUT/test_pixconv-m68k" "$HERE/test_pixconv.c"
     qemu-m68k -cpu m68040 "$OUT/test_pixconv-m68k" 10000
 fi
+# ScrollRaster (library/scroll_plan.h, what screens.c runs) on a model of a layer's ClipRects, against what it must give.
+cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
+    -o "$OUT/test_scroll_plan" "$HERE/test_scroll_plan.c"
+"$OUT/test_scroll_plan"
+if command -v m68k-linux-gnu-gcc >/dev/null && command -v qemu-m68k >/dev/null; then   # and on a 68040, where long is 32 bits
+    m68k-linux-gnu-gcc -std=c99 -O2 -fno-delete-null-pointer-checks -m68040 -static -Wall -Wextra -Werror \
+        -o "$OUT/test_scroll_plan-m68k" "$HERE/test_scroll_plan.c"
+    qemu-m68k -cpu m68040 "$OUT/test_scroll_plan-m68k"
+fi
 OGPU="$HERE/../library/opengpu"
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
     -o "$OUT/test_opengpu" "$HERE/test_opengpu.c" "$HERE/golden_scenes.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_build.c"

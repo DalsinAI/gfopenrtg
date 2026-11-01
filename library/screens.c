@@ -2339,53 +2339,154 @@ static void clipblit_patch(REG(a0, struct RastPort *srp), REG(d0, WORD sx), REG(
     old_clipblit(srp, sx, sy, rp, x, y, w, h, m, g);
 }
 
-/* ScrollRaster: the box's contents move by -dx, -dy; what is uncovered gets
- * the B pen. Within each visible piece of the box. */
-struct scroll_ctx { LONG dx, dy; UBYTE pen; };
+/* ScrollRaster: the box's contents move by -dx, -dy as one, and what the move
+ * uncovers gets the B pen, as graphics.library's ScrollRaster does it.
+ * The move follows AROS's graphics.library (MoveRaster in
+ * rom/graphics/gfxfuncsupport.c and rom/graphics/scrollraster.c,
+ * aros-development-team/AROS bf196e7): every ClipRect's part of the box goes
+ * where its destination is, in any of the layer's ClipRects, on the screen or
+ * in a smart refresh layer's backing store, so the contents cross the edges
+ * of a window covering part of it; then the columns, then the rows the move
+ * uncovered are filled with the B pen through the layer's ClipRects. Where
+ * AROS and OS 3.2 part, OS 3.2 is followed, as tools/ortg_scroll_exact.c
+ * measured it against graphics.library 47.100 and layers.library 47.107 on a
+ * planar screen (lab t4-rtg-scroll-20261101, 1 Nov 2026):
+ * - the box's right and bottom are cut to the layer's size (the bitmap's with
+ *   no layer);
+ * - a distance as wide or as high as the box fills all of the box with the
+ *   B pen (AROS leaves it as it is);
+ * - in a simple refresh layer nothing is kept where it is hidden, and what
+ *   would come from there is left as it is, with no damage (AROS damages it);
+ *   but a box reaching outside the layer on any side puts all of the box
+ *   that is in the layer into its DamageList and sets LAYERREFRESH; damage
+ *   already there stays where it is (AROS moves it with the contents).
+ * Until 1 Nov 2026 each ClipRect scrolled on its own: the contents stopped at
+ * each one's edge and each one's own band was filled, which left B pen stripes
+ * across a Shell window partly covered by another (review NEW 3). */
+#include "scroll_plan.h"                 /* the rules and the move, plain C for the host tests */
 
-static void scroll_piece(void *c, struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1, LONG ox, LONG oy)
+struct scroll_ctx { struct RastPort *rp; UBYTE pen; };
+
+/* The B pen, a piece at a time: a raw pixel value, whatever the RastPort's
+ * mask (as before). */
+static void scroll_fill_piece(void *c, struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1, LONG ox, LONG oy)
 {
     struct scroll_ctx *s = c;
-    LONG w = x1 - x0 + 1, h = y1 - y0 + 1;
-    LONG mw = w - (s->dx < 0 ? -s->dx : s->dx), mh = h - (s->dy < 0 ? -s->dy : s->dy);
-    if (mw > 0 && mh > 0) {
-        LONG sx = x0 + (s->dx > 0 ? s->dx : 0), sy = y0 + (s->dy > 0 ? s->dy : 0);
-        LONG tx = x0 + (s->dx < 0 ? -s->dx : 0), ty = y0 + (s->dy < 0 ? -s->dy : 0);
-        blit(&bm->bm, sx, sy, &bm->bm, tx, ty, mw, mh, 0xC0, 0xFF, NULL, 0, 0, 0);
-    }
     ULONG v = ortg_pen_px(bm, s->pen);
-    {
-        /* What the move uncovered: whole rows, then the side band of the rest. */
-        LONG ry0 = y0, ry1 = y1, cy0 = y0, cy1 = y1, cx0 = 0, cx1 = -1;
-        int ok;
-        if (mw <= 0 || mh <= 0) { cy0 = 1; cy1 = 0; }                 /* all of it: one fill */
-        else {
-            if (s->dy > 0) { ry0 = y1 - s->dy + 1; cy1 = ry0 - 1; }
-            else if (s->dy < 0) { ry1 = y0 - s->dy - 1; cy0 = ry1 + 1; }
-            else { ry0 = 1; ry1 = 0; }
-            if (s->dx > 0) { cx0 = x1 - s->dx + 1; cx1 = x1; }
-            else if (s->dx < 0) { cx0 = x0; cx1 = x0 - s->dx - 1; }
-        }
-        ok = ortg_ogpu_fill(bm, x0, ry0, x1, ry1, v) && (cx1 < cx0 || ortg_ogpu_fill(bm, cx0, cy0, cx1, cy1, v));
-        if (ok) {
-            ortg_stat(ORTG_STAT_SCROLL, 1, (ry1 >= ry0 ? area(x0, ry0, x1, ry1) : 0) + (cx1 >= cx0 && cy1 >= cy0 ? area(cx0, cy0, cx1, cy1) : 0));
-            return;
-        }
-        ortg_stat(ORTG_STAT_SCROLL, 0, 0);
-        ortg_ogpu_settle();                         /* 0.21 */
+    if (ortg_ogpu_fill(bm, x0, y0, x1, y1, v)) { ortg_stat(ORTG_STAT_SCROLL, 1, area(x0, y0, x1, y1)); return; }
+    ortg_stat(ORTG_STAT_SCROLL, 0, area(x0, y0, x1, y1));
+    ortg_ogpu_settle();                             /* 0.21 */
+    for (LONG y = y0; y <= y1; y++)
+        for (LONG x = x0; x <= x1; x++) ortg_put(bm, x, y, v);
+}
+
+static void scroll_fill(void *c, const struct sp_box *r)
+{
+    struct scroll_ctx *s = c;
+    pieces(s->rp, r->x0, r->y0, r->x1, r->y1, scroll_fill_piece, s);
+}
+
+static void scroll_damage(void *c, const struct sp_box *r)
+{
+    struct Layer *l = ((struct scroll_ctx *)c)->rp->Layer;
+    struct Rectangle q;
+    q.MinX = r->x0; q.MinY = r->y0; q.MaxX = r->x1; q.MaxY = r->y1;
+    ObtainSemaphore(&l->Lock);
+    if (l->DamageList && OrRectRegion(l->DamageList, &q)) l->Flags |= LAYERREFRESH;
+    ReleaseSemaphore(&l->Lock);
+}
+
+static void scroll_blit(void *c, void *sbm, long sx, long sy, void *dbm, long dx, long dy, long w, long h)
+{
+    blit(sbm, sx, sy, dbm, dx, dy, w, h, 0xC0, 0xFF, NULL, 0, 0, 0);
+}
+
+/* A ClipRect's piece of the screen box b, when it has one with pixels: on
+ * the screen (cut to it), or in a smart refresh layer's backing store, whose
+ * x origin is aligned to 16 pixels as pieces() draws there. A simple
+ * refresh layer's hidden parts keep nothing. */
+static int scroll_where(struct Layer *l, struct ClipRect *cr, struct BitMap *scr, LONG sw, LONG sh,
+                        const struct sp_box *b, struct sp_piece *p)
+{
+    struct sp_box c;
+    c.x0 = cr->bounds.MinX; c.y0 = cr->bounds.MinY; c.x1 = cr->bounds.MaxX; c.y1 = cr->bounds.MaxY;
+    if (!cr->obscured) {
+        if (c.x0 < 0) c.x0 = 0;
+        if (c.y0 < 0) c.y0 = 0;
+        if (c.x1 >= sw) c.x1 = sw - 1;
+        if (c.y1 >= sh) c.y1 = sh - 1;
+        p->bm = scr; p->tx = 0; p->ty = 0;
+    } else {
+        if ((l->Flags & LAYERSIMPLE) || !cr->BitMap) return 0;
+        p->bm = cr->BitMap; p->tx = (cr->bounds.MinX & 15) - cr->bounds.MinX; p->ty = -cr->bounds.MinY;
     }
-    for (LONG y = y0; y <= y1; y++) {
-        int ybar = (s->dy > 0 && y > y1 - s->dy) || (s->dy < 0 && y < y0 - s->dy) || mh <= 0;
-        for (LONG x = x0; x <= x1; x++)
-            if (ybar || mw <= 0 || (s->dx > 0 && x > x1 - s->dx) || (s->dx < 0 && x < x0 - s->dx)) ortg_put(bm, x, y, v);
+    return sp_and(&c, b, &p->box);
+}
+
+#define SCROLL_ON_STACK 8           /* pieces before their room comes from AllocVec */
+
+/* The move (r in the RastPort's coordinates, cut by sp_scroll): with no layer
+ * one copy in the bitmap; in a layer, locked, across all its pieces. */
+static void scroll_move(void *c, const struct sp_box *r, long dx, long dy)
+{
+    struct RastPort *rp = ((struct scroll_ctx *)c)->rp;
+    struct Layer *l = rp->Layer;
+    struct ortg_bitmap *o = ortg_of(rp->BitMap);
+    struct sp_piece ps[SCROLL_ON_STACK], *p = ps, one;
+    UWORD os[2 * SCROLL_ON_STACK], *ord = os;
+    struct ClipRect *cr, *dc;
+    struct sp_box b;
+    APTR room = NULL;
+    LONG n = 0;
+    if (!l) {
+        LONG adx = dx < 0 ? -dx : dx, ady = dy < 0 ? -dy : dy;
+        blit(rp->BitMap, r->x0 + (dx > 0 ? dx : 0), r->y0 + (dy > 0 ? dy : 0), rp->BitMap, r->x0 + (dx < 0 ? -dx : 0), r->y0 + (dy < 0 ? -dy : 0),
+             r->x1 - r->x0 + 1 - adx, r->y1 - r->y0 + 1 - ady, 0xC0, 0xFF, NULL, 0, 0, 0);
+        return;
     }
+    b.x0 = r->x0 + l->bounds.MinX - l->Scroll_X; b.x1 = r->x1 + l->bounds.MinX - l->Scroll_X;
+    b.y0 = r->y0 + l->bounds.MinY - l->Scroll_Y; b.y1 = r->y1 + l->bounds.MinY - l->Scroll_Y;
+    ObtainSemaphore(&l->Lock);
+    for (cr = l->ClipRect; cr; cr = cr->Next)
+        if (scroll_where(l, cr, rp->BitMap, o->width, o->height, &b, &one)) n++;
+    if (n > SCROLL_ON_STACK && (n > 0x7FFF || !(room = AllocVec(n * (sizeof *p + 2 * sizeof *ord), MEMF_ANY)))) {
+        /* no memory for the order: each piece as the list comes, to the others then to itself */
+        for (cr = l->ClipRect; cr; cr = cr->Next) {
+            struct sp_box d, t;
+            if (!scroll_where(l, cr, rp->BitMap, o->width, o->height, &b, &ps[0])) continue;
+            d.x0 = ps[0].box.x0 - dx; d.y0 = ps[0].box.y0 - dy; d.x1 = ps[0].box.x1 - dx; d.y1 = ps[0].box.y1 - dy;
+            if (!sp_and(&d, &b, &d)) continue;
+            for (dc = l->ClipRect; dc; dc = dc->Next)
+                if (dc != cr && scroll_where(l, dc, rp->BitMap, o->width, o->height, &d, &ps[1]))
+                    blit(ps[0].bm, ps[1].box.x0 + dx + ps[0].tx, ps[1].box.y0 + dy + ps[0].ty, ps[1].bm, ps[1].box.x0 + ps[1].tx,
+                         ps[1].box.y0 + ps[1].ty, ps[1].box.x1 - ps[1].box.x0 + 1, ps[1].box.y1 - ps[1].box.y0 + 1, 0xC0, 0xFF, NULL, 0, 0, 0);
+            if (sp_and(&d, &ps[0].box, &t))
+                blit(ps[0].bm, t.x0 + dx + ps[0].tx, t.y0 + dy + ps[0].ty, ps[0].bm, t.x0 + ps[0].tx, t.y0 + ps[0].ty,
+                     t.x1 - t.x0 + 1, t.y1 - t.y0 + 1, 0xC0, 0xFF, NULL, 0, 0, 0);
+        }
+        ReleaseSemaphore(&l->Lock);
+        return;
+    }
+    if (room) { p = room; ord = (UWORD *)(p + n); }
+    n = 0;
+    for (cr = l->ClipRect; cr; cr = cr->Next)
+        if (scroll_where(l, cr, rp->BitMap, o->width, o->height, &b, &p[n])) n++;
+    sp_move(p, (int)n, &b, dx, dy, ord, ord + n, scroll_blit, NULL);
+    ReleaseSemaphore(&l->Lock);
+    if (room) FreeVec(room);
 }
 
 static void scroll_patch(REG(a1, struct RastPort *rp), REG(d0, WORD dx), REG(d1, WORD dy), REG(d2, WORD x0), REG(d3, WORD y0), REG(d4, WORD x1), REG(d5, WORD y1), REG(a6, struct GfxBase *g))
 {
-    if (ortg_is(rp->BitMap)) {
-        struct scroll_ctx s = { dx, dy, rp->BgPen };
-        pieces(rp, x0, y0, x1, y1, scroll_piece, &s);
+    struct ortg_bitmap *o = ortg_of(rp->BitMap);
+    if (o) {
+        struct Layer *l = rp->Layer;
+        struct scroll_ctx s;
+        struct sp_ops ops;                  /* filled here: the library keeps no data */
+        s.rp = rp; s.pen = rp->BgPen;
+        ops.damage = scroll_damage; ops.fill = scroll_fill; ops.move = scroll_move;
+        sp_scroll(dx, dy, x0, y0, x1, y1, l != NULL, l ? l->bounds.MaxX - l->bounds.MinX : (LONG)o->width - 1,
+                  l ? l->bounds.MaxY - l->bounds.MinY : (LONG)o->height - 1, l && (l->Flags & LAYERSIMPLE), &ops, &s);
         return;
     }
     old_scroll(rp, dx, dy, x0, y0, x1, y1, g);

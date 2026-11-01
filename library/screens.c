@@ -64,6 +64,7 @@
 #include "displaydb.h"
 #include "screens.h"
 #include "opengfx_bridge.h"
+#include "text_strip.h"
 
 #define REG(r, decl) register decl __asm(#r)
 
@@ -721,7 +722,8 @@ static void pens_of(struct RastPort *rp, struct pens *p)
 struct ink { ULONG a, b, x; UBYTE mode, mask; UBYTE bpp; };
 struct fill_ctx { struct pens p; UWORD *ptrn; int ptsz; int ptoff_y; };
 struct obatch;
-struct tmpl_ctx { struct pens p; const UBYTE *src; LONG src_x, mod; LONG at_x, at_y; struct obatch *ob; };
+/* staged: src is in the staging block already (Text's strip), held until the batch reading it is sent */
+struct tmpl_ctx { struct pens p; const UBYTE *src; LONG src_x, mod; LONG at_x, at_y; struct obatch *ob; int staged; };
 
 static void ink_of(const struct pens *p, const struct ortg_bitmap *o, struct ink *k)
 {
@@ -1307,8 +1309,9 @@ static int ogpu_template_piece(struct ortg_bitmap *bm,
         /* gathered into the call's batch: room in it first (a full one goes
          * now), then the rows, held with the batch they are in */
         if (t->ob) ob_room(t->ob, bm, 9);
-        s = stage_copy(src + (first >> 3), t->mod, (ULONG)bytes, (ULONG)h, t->ob ? &t->ob->held : &held);
-        if (s) { src = s; mod = bytes; first &= 7; }
+        if (t->staged) s = src + (first >> 3);         /* Text's strip, staged once for all its pieces */
+        else s = stage_copy(src + (first >> 3), t->mod, (ULONG)bytes, (ULONG)h, t->ob ? &t->ob->held : &held);
+        if (s) { src = s; mod = t->staged ? t->mod : bytes; first &= 7; }
         if (t->ob) {
             /* a source not copied stays where it is, and the batch is waited for */
             if (!s && !TypeOfMem((APTR)src)) return 0;
@@ -1767,7 +1770,7 @@ static void do_fill(struct RastPort *rp, LONG x0, LONG y0, LONG x1, LONG y1, con
         struct tmpl_ctx t;
         pens_of(rp, &t.p);
         t.p.mode &= ~JAM2;                              /* a mask draws only where it is set */
-        t.src = mask; t.src_x = 0; t.mod = (LONG)mask_bpr; t.at_x = x0; t.at_y = y0; t.ob = NULL;
+        t.src = mask; t.src_x = 0; t.mod = (LONG)mask_bpr; t.at_x = x0; t.at_y = y0; t.ob = NULL; t.staged = 0;
         pieces(rp, x0, y0, x1, y1, tmpl_piece, &t);
         return;
     }
@@ -1968,7 +1971,7 @@ static void blttemplate_patch(REG(a0, PLANEPTR src), REG(d0, WORD sx), REG(d1, L
     if (ortg_is(rp->BitMap)) {
         struct tmpl_ctx t;
         pens_of(rp, &t.p);
-        t.src = src; t.src_x = sx; t.mod = mod; t.at_x = x; t.at_y = y; t.ob = NULL;
+        t.src = src; t.src_x = sx; t.mod = mod; t.at_x = x; t.at_y = y; t.ob = NULL; t.staged = 0;
         pieces(rp, x, y, x + w - 1, y + h - 1, tmpl_piece, &t);
         return;
     }
@@ -2057,6 +2060,36 @@ static void text_underline(struct RastPort *rp, struct TextFont *f, const UBYTE 
     }
 }
 
+/* 1 Nov 2026: the characters from i on whose glyphs fit in STAGE_MAX bytes, as one template. 0.24 drew each
+ * glyph by itself (each smear and, in italic, each row too): a pass over the layer's ClipRects, room
+ * taken in the staging block under Forbid and a TEMPLATE for each, so 40 characters took 461 us where
+ * one 128x64 BltTemplate took 125 (measurements/20261008-opengpu-v1.0-completion-and-v1.2.txt). Now
+ * their glyphs are drawn into a strip in the staging block (text_strip.h), with the same pixels set (in
+ * COMPLEMENT, inverted as often), and the strip's box goes through pieces() once: one TEMPLATE for each
+ * piece. Returns the character after the last one drawn, with *pos moved on to it; i when the first
+ * alone is too big (the caller draws it as before); -1 when the staging block has no room for the strip
+ * (the caller draws the rest as before, without asking again). */
+static LONG text_strip(struct RastPort *rp, const struct ts_font *tf, const UBYTE *s, LONG i, LONG n, LONG x, LONG top,
+                       LONG *pos, const struct tmpl_ctx *t)
+{
+    LONG left, width, end, bpr, j = ts_run(tf, s, i, n, *pos, STAGE_MAX, &left, &width, &end);
+    ULONG held = 0;
+    struct tmpl_ctx st = *t;
+    UBYTE *strip;
+    if (j == i) return i;
+    if (width) {
+        bpr = (width + 7) >> 3;
+        if (!(strip = stage_room((ULONG)(bpr * tf->ysize), &held))) return -1;
+        ts_build(tf, s, i, j, *pos, left, bpr, strip, (t->p.mode & COMPLEMENT) != 0);
+        st.src = strip; st.src_x = 0; st.mod = bpr; st.at_x = x + left; st.at_y = top; st.staged = 1;
+        pieces(rp, x + left, top, x + left + width - 1, top + tf->ysize - 1, tmpl_piece, &st);
+        ob_flush(t->ob);                            /* the batch reading the strip is sent before it is let go */
+        stage_release(&held);
+    }
+    *pos = end;
+    return j;
+}
+
 static LONG text_patch(REG(a1, struct RastPort *rp), REG(a0, STRPTR s), REG(d0, WORD n), REG(a6, struct GfxBase *g))
 {
     struct TextFont *f = rp->Font;
@@ -2065,14 +2098,19 @@ static LONG text_patch(REG(a1, struct RastPort *rp), REG(a0, STRPTR s), REG(d0, 
         UWORD *loc = f->tf_CharLoc;
         WORD *space = f->tf_CharSpace, *kern = f->tf_CharKern;
         LONG x = rp->cp_x, top = rp->cp_y - f->tf_Baseline, pos = 0, lo = 0, hi = 0, x0, x1, i;
-        int any = 0;
+        int any = 0, strips;
         struct tmpl_ctx t;
         struct obatch ob;
+        struct ts_font tf;
         UBYTE style = rp->AlgoStyle;
         LONG smear = (style & FSF_BOLD) ? (LONG)f->tf_BoldSmear : 0;
         int italic = (style & FSF_ITALIC) != 0;
         pens_of(rp, &t.p);
         ob_init(&ob);
+        /* 1 Nov 2026: the layer locked once for the whole call, as OS Text locks it (LockLayerRom): the
+         * passes below (the JAM2 box, each strip, the underline) take it again, which costs no wait, and
+         * the gathered batch goes before it is let go, so it can't meet a moved window */
+        if (rp->Layer) ObtainSemaphore(&rp->Layer->Lock);
         /* the text's box, as TextExtent gives it */
         for (i = 0; i < (LONG)n; i++) {
             UBYTE c = (UBYTE)s[i];
@@ -2099,12 +2137,20 @@ static LONG text_patch(REG(a1, struct RastPort *rp), REG(a0, STRPTR s), REG(d0, 
             pieces(rp, x + x0, top, x + x1, top + f->tf_YSize - 1, fill_piece, &bg);
         }
         t.p.mode &= ~JAM2;
-        t.src = font_data(f); t.mod = f->tf_Modulo; t.ob = ortg_S->opengpu && !ogpu_off ? &ob : NULL;
+        t.src = font_data(f); t.mod = f->tf_Modulo; t.ob = ortg_S->opengpu && !ogpu_off ? &ob : NULL; t.staged = 0;
+        tf.data = t.src; tf.mod = t.mod; tf.loc = loc; tf.space = space; tf.kern = kern;
+        tf.xsize = f->tf_XSize; tf.ysize = f->tf_YSize; tf.baseline = f->tf_Baseline; tf.lo = f->tf_LoChar; tf.hi = f->tf_HiChar;
+        tf.spacing = rp->TxSpacing; tf.smear = smear; tf.italic = italic;
+        strips = t.ob != NULL;
         pos = 0;
         for (i = 0; i < (LONG)n; i++) {
             UBYTE c = (UBYTE)s[i];
             int k = (c >= f->tf_LoChar && c <= f->tf_HiChar) ? c - f->tf_LoChar : f->tf_HiChar - f->tf_LoChar + 1;
-            LONG gx = x + pos + (kern ? kern[k] : 0), w = loc[2 * k + 1], b;
+            LONG gx = x + pos + (kern ? kern[k] : 0), w = loc[2 * k + 1], b, j;
+            if (strips && (j = text_strip(rp, &tf, (const UBYTE *)s, i, n, x, top, &pos, &t)) != i) {
+                if (j > i) { i = j - 1; continue; }     /* drawn up to j */
+                strips = 0;                             /* no room: the rest one glyph at a time, as before */
+            }
             if (w > 0) {
                 t.src_x = loc[2 * k]; t.at_y = top;
                 for (b = 0;; b = smear) {               /* the image, then bold's smear */
@@ -2130,6 +2176,7 @@ static LONG text_patch(REG(a1, struct RastPort *rp), REG(a0, STRPTR s), REG(d0, 
             u.p = t.p; u.ptrn = NULL; u.ptsz = 1;
             text_underline(rp, f, (const UBYTE *)s, n, x, x0, x1, smear, italic, t.src, &u);
         }
+        if (rp->Layer) ReleaseSemaphore(&rp->Layer->Lock);
         rp->cp_x = (WORD)(x + pos);
     }
     return 0;

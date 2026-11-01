@@ -16,6 +16,10 @@ OGPU="$HERE/../library/opengpu"
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
     -o "$OUT/test_opengpu" "$HERE/test_opengpu.c" "$HERE/golden_scenes.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_build.c"
 "$OUT/test_opengpu" "$HERE/golden/opengpu-g1.txt" "$HERE/golden/opengpu-v11.txt" "$HERE/golden/opengpu-v12.txt"
+# Text's strip (library/text_strip.h): the same pixels as 0.24's glyph-at-a-time Text.
+cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined -I"$HERE/host-include" \
+    -o "$OUT/test_text_strip" "$HERE/test_text_strip.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_build.c"
+"$OUT/test_text_strip"
 # COMPOSITE_PD (v1.4, pixman.library's composites) against its per-pixel reference.
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
     -o "$OUT/test_composite_pd" "$HERE/test_composite_pd.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_build.c"
@@ -88,6 +92,9 @@ if command -v m68k-linux-gnu-gcc >/dev/null && command -v qemu-m68k >/dev/null; 
     m68k-linux-gnu-gcc -std=c99 -O2 -fno-delete-null-pointer-checks -m68040 -static -Wall -Wextra -Werror \
         -o "$OUT/test_opengpu-m68k" "$HERE/test_opengpu.c" "$HERE/golden_scenes.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_build.c"
     qemu-m68k -cpu m68040 "$OUT/test_opengpu-m68k" "$HERE/golden/opengpu-g1.txt" "$HERE/golden/opengpu-v11.txt" "$HERE/golden/opengpu-v12.txt"
+    m68k-linux-gnu-gcc -std=c99 -O2 -fno-delete-null-pointer-checks -m68040 -static -Wall -Wextra -Werror -I"$HERE/host-include" \
+        -o "$OUT/test_text_strip-m68k" "$HERE/test_text_strip.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_build.c"
+    qemu-m68k -cpu m68040 "$OUT/test_text_strip-m68k"
 else
     echo "no m68k-linux-gnu-gcc or qemu-m68k; the big-endian run is skipped"
 fi

@@ -8,10 +8,15 @@
  * with and without a mask (cookie), minterms, plane masks, and overlapping
  * copies within one bitmap, compared pixel for pixel and plane for plane
  * with the old loop.
- *   test_pixconv [BLITS]     (default 60000 random blits) */
+ *   test_pixconv [BLITS] [BENCH]     (default 60000 random blits)
+ * BENCH also times 0.24's code and pixconv.h's side by side, on bitmaps in
+ * memory: the nearest pens of a 640 x 480 32-bit screen (ReadPixelArray8),
+ * 100 masked 40 x 32 icons on the CPU, and a 320 x 256 x 8 planar picture
+ * to 32-bit. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "../library/pixconv.h"
 
 static unsigned long long seed = 12345;
@@ -134,7 +139,7 @@ static void test_nearest_and_memo(void)
         ULONG px = rnd() % 3 ? rnd() : pal[rnd() % 16][rnd() % 256];
         t = rnd() % PC_MEMO_TABLES;
         if (bpp == 2) px &= 0xFFFF;
-        CHECK(pc_nearest(pal[t], bpp, px) == old_px_pen(pal[t], bpp, px), "nearest %08x bpp %d", px, bpp);
+        CHECK(pc_nearest(pal[t], bpp, px) == old_px_pen(pal[t], bpp, px), "nearest %08lx bpp %d", (unsigned long)px, bpp);
     }
     /* the memo: random pixels, few enough to repeat, through palette changes */
     for (int i = 0; i < 200000; i++) {
@@ -148,7 +153,7 @@ static void test_nearest_and_memo(void)
         }
         if (i == 100000) memo.gen = PC_MEMO_GENS - 1;    /* round the generations */
         if (bpp == 2) px &= 0xFFFF;
-        CHECK(pc_memo_pen(&memo, pal[t], bpp, (UBYTE)t, px) == old_px_pen(pal[t], bpp, px), "memo %08x bpp %d table %d at %d", px, bpp, t, i);
+        CHECK(pc_memo_pen(&memo, pal[t], bpp, (UBYTE)t, px) == old_px_pen(pal[t], bpp, px), "memo %08lx bpp %d table %d at %d", (unsigned long)px, bpp, t, i);
     }
     /* a table beyond the key's room goes uncached */
     CHECK(pc_memo_pen(&memo, pal[3], 4, 200, 0x123456) == old_px_pen(pal[3], 4, 0x123456), "memo table 200");
@@ -168,14 +173,14 @@ static void test_runs(void)
             int k = pc_runs(row, x, n, &at, runs, max);
             for (int r = 0; r < k; r++) {
                 /* every bit from pos to the run's start clear, the run set, its end clear or the row's end */
-                for (; pos < runs[2 * r]; pos++) CHECK(!((row[(x + pos) >> 3] >> (7 - ((x + pos) & 7))) & 1), "runs: bit %d set outside", pos);
+                for (; pos < runs[2 * r]; pos++) CHECK(!((row[(x + pos) >> 3] >> (7 - ((x + pos) & 7))) & 1), "runs: bit %ld set outside", (long)pos);
                 CHECK(runs[2 * r] < runs[2 * r + 1], "runs: empty run");
-                for (; pos < runs[2 * r + 1]; pos++) CHECK((row[(x + pos) >> 3] >> (7 - ((x + pos) & 7))) & 1, "runs: bit %d clear inside", pos);
-                CHECK(pos == n || !((row[(x + pos) >> 3] >> (7 - ((x + pos) & 7))) & 1), "runs: run ends early at %d", pos);
+                for (; pos < runs[2 * r + 1]; pos++) CHECK((row[(x + pos) >> 3] >> (7 - ((x + pos) & 7))) & 1, "runs: bit %ld clear inside", (long)pos);
+                CHECK(pos == n || !((row[(x + pos) >> 3] >> (7 - ((x + pos) & 7))) & 1), "runs: run ends early at %ld", (long)pos);
             }
-            if (k < max) { CHECK(at == n, "runs: stopped at %d of %d", at, n); break; }
+            if (k < max) { CHECK(at == n, "runs: stopped at %ld of %ld", (long)at, (long)n); break; }
         }
-        for (; pos < n; pos++) CHECK(!((row[(x + pos) >> 3] >> (7 - ((x + pos) & 7))) & 1), "runs: bit %d missed", pos);
+        for (; pos < n; pos++) CHECK(!((row[(x + pos) >> 3] >> (7 - ((x + pos) & 7))) & 1), "runs: bit %ld missed", (long)pos);
     }
 }
 
@@ -317,12 +322,101 @@ static void test_blits(long count)
     printf("test_pixconv: %ld blits the same as the per-pixel loop\n", n);
 }
 
+/* ---- BENCH: 0.24's code against pixconv.h's, timed ---- */
+
+static ULONG bpal[256];
+static struct pc_memo bmemo;
+static UBYTE bench_nearest(const struct pc_surf *s, ULONG px) { (void)s; return pc_nearest(bpal, 4, px); }
+static double since(clock_t c) { return (double)(clock() - c) * 1000.0 / CLOCKS_PER_SEC; }
+
+static void bench(void)
+{
+    static UBYTE planes[8][40 * 256], icon_mask[6 * 32];
+    static ULONG icon[40 * 32];
+    ULONG *scr = malloc(640 * 480 * 4);
+    UBYTE *arr = malloc(640 * 480), *arr2 = malloc(640 * 480);
+    struct pc_surf P, S, I;
+    clock_t c;
+    double t_old, t_new;
+    int k;
+    if (!scr || !arr || !arr2) { printf("bench: no memory\n"); return; }
+    memset(&P, 0, sizeof P); memset(&S, 0, sizeof S); memset(&I, 0, sizeof I);
+    for (int i = 0; i < 256; i++) bpal[i] = i % 5 == 0 ? (ULONG)i * 0x010101 : (ULONG)(i * 2654435761UL) & 0xFFFFFF;
+    for (int y = 0; y < 480; y++)                   /* gradients, blocks, noise: PixTest's screen */
+        for (int x = 0; x < 640; x++)
+            scr[y * 640 + x] = y < 160 ? (ULONG)(x * 0x10203 + y * 0x30201) & 0xFFFFFF
+                             : y < 320 ? (ULONG)(((x / 16) * 2654435761UL) ^ (y / 8) * 40503UL) & 0xFFFFFF : rnd() & 0xFFFFFF;
+    c = clock();
+    for (int i = 0; i < 640 * 480; i++) arr[i] = old_px_pen(bpal, 4, scr[i]);
+    t_old = since(c);
+    c = clock();
+    for (int y = 0; y < 480; y++) {                 /* array_read_piece's loop */
+        ULONG last = 0; UBYTE pen = 0; int have = 0;
+        for (int x = 0; x < 640; x++) {
+            ULONG v = scr[y * 640 + x];
+            if (!have || v != last) { last = v; pen = pc_memo_pen(&bmemo, bpal, 4, 1, v); have = 1; }
+            arr2[y * 640 + x] = pen;
+        }
+    }
+    t_new = since(c);
+    printf("bench: nearest pens of 640x480 32-bit: 0.24 %.0f ms, now %.0f ms (%s)\n", t_old, t_new, memcmp(arr, arr2, 640 * 480) ? "DIFFERENT" : "the same");
+    if (memcmp(arr, arr2, 640 * 480)) fails++;
+    c = clock();
+    for (int y = 0; y < 480; y++) {
+        ULONG last = 0; UBYTE pen = 0; int have = 0;
+        for (int x = 0; x < 640; x++) {
+            ULONG v = scr[y * 640 + x];
+            if (!have || v != last) { last = v; pen = pc_memo_pen(&bmemo, bpal, 4, 1, v); have = 1; }
+            arr2[y * 640 + x] = pen;
+        }
+    }
+    printf("bench: the same again (the memo warm): %.0f ms\n", since(c));
+
+    S.bpp = 4; S.mem = (UBYTE *)scr; S.stride = 640 * 4; S.pal = bpal; S.px_pen = bench_nearest;
+    for (int i = 0; i < 40 * 32; i++) icon[i] = rnd() & 0xFFFFFF;
+    for (int y = 0; y < 32; y++)
+        for (int x = 0; x < 40; x++) {
+            int dx = x - 20, dy = y - 16;
+            if (dx * dx + dy * dy < 225 || (y >= 10 && y < 24 && x >= 4 && x < 36)) icon_mask[y * 6 + x / 8] |= 0x80 >> (x & 7);
+        }
+    I.bpp = 4; I.mem = (UBYTE *)icon; I.stride = 160; I.pal = bpal; I.px_pen = bench_nearest;
+    c = clock();
+    for (k = 0; k < 1000; k++) old_blit(&I, 0, 0, &S, (k % 10) * 41, (k / 10 % 10) * 29, 40, 32, 0xE0, 0xFF, icon_mask, 0, 0, 6, 0);
+    t_old = since(c) / 10;
+    c = clock();
+    for (k = 0; k < 1000; k++) pc_blit(&I, 0, 0, &S, (k % 10) * 41, (k / 10 % 10) * 29, 40, 32, 0xE0, 0xFF, icon_mask, 0, 0, 6, 0);
+    t_new = since(c) / 10;
+    printf("bench: 100 masked 40x32 icons, 32-bit, CPU: 0.24 %.1f ms, now %.1f ms\n", t_old, t_new);
+
+    P.bpp = 0; P.bpr = 40; P.depth = 8;
+    for (int p = 0; p < 8; p++) { P.planes[p] = planes[p]; for (int i = 0; i < 40 * 256; i++) planes[p][i] = (UBYTE)rnd(); }
+    c = clock();
+    for (k = 0; k < 10; k++) old_blit(&P, 0, 0, &S, 7, 5, 320, 256, 0xC0, 0xFF, NULL, 0, 0, 0, 0);
+    t_old = since(c) / 10;
+    memcpy(arr, scr, 640 * 480);                    /* a sample of what it drew */
+    c = clock();
+    for (k = 0; k < 10; k++) pc_blit(&P, 0, 0, &S, 7, 5, 320, 256, 0xC0, 0xFF, NULL, 0, 0, 0, 0);
+    t_new = since(c) / 10;
+    printf("bench: planar 320x256x8 to 32-bit: 0.24 %.1f ms, now %.1f ms (%s)\n", t_old, t_new, memcmp(arr, scr, 640 * 480) ? "DIFFERENT" : "the same");
+    if (memcmp(arr, scr, 640 * 480)) fails++;
+    c = clock();
+    old_blit(&S, 7, 5, &P, 0, 0, 320, 256, 0xC0, 0xFF, NULL, 0, 0, 0, 0);
+    t_old = since(c);
+    S.px_pen = bench_nearest;
+    c = clock();
+    pc_blit(&S, 7, 5, &P, 0, 0, 320, 256, 0xC0, 0xFF, NULL, 0, 0, 0, 0);
+    t_new = since(c);
+    printf("bench: 32-bit to planar 320x256x8: 0.24 %.1f ms, now %.1f ms (no memo in either)\n", t_old, t_new);
+    free(scr); free(arr); free(arr2);
+}
+
 int main(int argc, char **argv)
 {
     test_nearest_and_memo();
     test_runs();
     test_mask_rects();
     test_blits(argc > 1 ? atol(argv[1]) : 60000);
+    if (argc > 2 && !strcmp(argv[2], "BENCH")) bench();
     if (fails) { printf("test_pixconv: %d FAILED\n", fails); return 1; }
     printf("test_pixconv: the nearest pens, the memo, the runs, the mask rectangles and the blits are as before\n");
     return 0;

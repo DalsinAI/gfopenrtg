@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
+# Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
 # OGPUVecBench (tools/ogpu_vecbench.c), with the os32-gcc16 stove: the core at
 # each git ref given, built as the library builds it and linked side by side,

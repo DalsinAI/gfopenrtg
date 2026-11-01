@@ -26,7 +26,7 @@ Status: this archive is the design and LibCount, the measuring tool of phase 0
 AmiCradle (an Amiga on x86 and ARM64 cores) runs the first several-monitor
 setup today.
 
-Free software under the MIT licence, Copyright (c) 2026 AmigaChrome Team. Use
+Free software under the MIT licence, Copyright (c) 2026 AmiCradle Team. Use
 it, change it, fork it and ship it; keep the copyright notice and the licence
 with every copy. If you build on it, please say it is based on GFOpenRTG by
 the AmiCradle Team.

@@ -26,7 +26,7 @@ it, change it, fork it and ship it, commercially too (Team, 4 October 2026:
 
 GFOpenRTG was created by the AmiCradle Team, for AmiCradle.
 The licence's one condition carries that credit: the copyright notice
-("Copyright (c) 2026 AmigaChrome Team") and the licence text must stay with
+("Copyright (c) 2026 AmiCradle Team") and the licence text must stay with
 every copy and every fork. We also ask, as a courtesy rather than a
 condition, that a fork or a port say in its documentation or About window
 that it is based on GFOpenRTG by the AmiCradle Team.
@@ -197,4 +197,4 @@ only what is in memory) and does what the monitor driver does.
 
 ## Contributors
 
-GFOpenRTG is created and maintained by [SacredTrees](https://github.com/SacredTrees) with The AmigaChrome Team, copyright AmigaChrome Team. Everyone whose work it includes is credited in [`CONTRIBUTORS.md`](CONTRIBUTORS.md).
+GFOpenRTG is created and maintained by [SacredTrees](https://github.com/SacredTrees) with The AmiCradle Team, copyright AmiCradle Team. Everyone whose work it includes is credited in [`CONTRIBUTORS.md`](CONTRIBUTORS.md).

@@ -1,4 +1,4 @@
-/* System/custom cursor alternation, including cleanup. MIT, AmigaChrome Team. */
+/* System/custom cursor alternation, including cleanup. MIT, AmiCradle Team. */
 #include <SDL3/SDL.h>
 #include <stdio.h>
 

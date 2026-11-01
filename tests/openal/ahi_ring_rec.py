@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
+# Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
 """Records an AmiCradle instance's sound ring into a WAV file, for the
 OpenAL lab (allab.c, allab_compare.py). The runtime writes each board's

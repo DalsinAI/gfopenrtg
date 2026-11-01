@@ -1,4 +1,4 @@
-/* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
+/* Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  * gfopengpu.library's calls for the opengpu renderer's host harness: answered
  * by GFOpenGPU's own core (tests/sdl3/render_host/host.c), as the CPU back end

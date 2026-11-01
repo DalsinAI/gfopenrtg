@@ -57,4 +57,4 @@ This is `-ltinygl -lGL -lm` with the kit's flags. `sdk/examples/tinygl/tglspin.c
 
 ## Licence
 
-MIT, Copyright (c) 2026 AmigaChrome Team: the Team wrote all of it. It follows TinyGL's published interface (names and arguments); no TinyGL code or header text is copied.
+MIT, Copyright (c) 2026 AmiCradle Team: the Team wrote all of it. It follows TinyGL's published interface (names and arguments); no TinyGL code or header text is copied.

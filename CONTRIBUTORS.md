@@ -15,7 +15,7 @@ We are The AmiCradle Team, who build AmiCradle alongside SacredTrees:
 ## Copyright holder
 
 Original GFOpenRTG code, GFOpenGPU, tools, measurements and documentation are
-Copyright (c) 2026 AmigaChrome Team, released under the MIT licence (`LICENSE`).
+Copyright (c) 2026 AmiCradle Team, released under the MIT licence (`LICENSE`).
 
 Everything in this repository is our own work.
 

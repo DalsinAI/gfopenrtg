@@ -65,6 +65,15 @@
  * kerning moves the pen, bold doesn't, CharSpace counts whenever the font
  * has it, JAM2 clears the whole box and italic is slanted (screens.c,
  * text_patch).
+ *
+ * 0.25 (1 Nov 2026, the Team's review fixes): Text draws a run of glyphs
+ * into one strip and sends one TEMPLATE per ClipRect piece, and a refused
+ * batch is drawn on the CPU (text_strip.h); the nearest pen is kept per
+ * colour, blits go a row at a time and masked blits between RTG bitmaps go
+ * to OpenGPU (pixconv.h); Draw and PolyDraw follow graphics.library's
+ * FRST_DOT, linpatcnt, JAM2 and INVERSVID and lock once a line
+ * (ortg_line.h); ScrollRaster moves the whole box across a layer's
+ * ClipRects as OS 3.2 does (scroll_plan.h).
  */
 #include <exec/types.h>
 #include "ortg_state.h"
@@ -84,7 +93,7 @@
 
 #define REG(r, decl) register decl __asm(#r)   /* bebbo gcc: an argument in a register */
 #define LIB_VERSION 0
-#define LIB_REVISION 24
+#define LIB_REVISION 25
 
 /* The ACRTG board (amigachrome's common/protocol/acrtg.h): Zorro III,
  * AmigaChrome Team (0xDA15; 2011 before 1 October 2026), product 9 (16 MiB), product 15 (64 MiB, 0.14) or product 16
@@ -137,9 +146,9 @@ struct OpenRTGBase {
 int start(void) { return -1; }
 
 static const char lib_name[] = "openrtg.library";
-static const char lib_id[] = "openrtg.library 0.24 (24.10.2026) OpenRTG, AmigaChrome Team\r\n";
+static const char lib_id[] = "openrtg.library 0.25 (1.11.2026) OpenRTG, AmigaChrome Team\r\n";
 /* For C:Version, which looks for "$VER:" in the file. */
-static const char lib_ver[] __attribute__((used)) = "\0$VER: openrtg.library 0.24 (24.10.2026) OpenRTG, AmigaChrome Team";
+static const char lib_ver[] __attribute__((used)) = "\0$VER: openrtg.library 0.25 (1.11.2026) OpenRTG, AmigaChrome Team";
 
 static struct Library *lib_init(REG(d0, struct OpenRTGBase *base), REG(a0, BPTR seglist), REG(a6, struct ExecBase *sys));
 static struct Library *lib_open(REG(a6, struct OpenRTGBase *base));

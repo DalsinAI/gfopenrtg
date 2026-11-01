@@ -2,9 +2,10 @@
  * SPDX-License-Identifier: MIT
  *
  * Pixel conversions for screens.c (1 November 2026): a pixel's nearest pen
- * and what keeps its answers. Plain C with no Amiga calls, so the host
- * tests (tests/test_pixconv.c) run them against the per-pixel code they
- * replace: they must give exactly what it gave.
+ * and what keeps its answers, and the CPU's blits between planar and chunky
+ * bitmaps a row at a time. Plain C with no Amiga calls, so the host tests
+ * (tests/test_pixconv.c) run them against the per-pixel code they replace:
+ * they must draw exactly what it drew.
  */
 #ifndef ORTG_PIXCONV_H
 #define ORTG_PIXCONV_H
@@ -111,6 +112,238 @@ static inline void pc_memo_forget(volatile struct pc_memo *m)
     if (!gen)                                       /* round again: no entry may carry an old 0 */
         for (int i = 0; i < PC_MEMO; i++) m->e[i].key = (ULONG)~0UL;
     m->gen = gen;
+}
+
+/* ---- planes, a row at a time ----------------------------------------------------------- */
+
+/* 8 bits of a row of bits from bit x, the first in bit 7, of which n (1-8)
+ * are wanted: the rest are 0. Only the bytes the wanted bits are in are read. */
+static inline UBYTE pc_bits8(const UBYTE *row, LONG x, LONG n)
+{
+    const UBYTE *q = row + (x >> 3);
+    int sh = (int)(x & 7);
+    UBYTE v = (UBYTE)(q[0] << sh);
+    if (sh && n > 8 - sh) v |= (UBYTE)(q[1] >> (8 - sh));
+    if (n < 8) v &= (UBYTE)(0xFF << (8 - n));
+    return v;
+}
+
+/* A nibble's 4 bits as 4 bytes of 0 or 1, the nibble's top bit in the first
+ * byte in memory: 8 pixels of a plane become 2 longword ORs. */
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#define PC_NIB(n) (((n) >> 3 & 1UL) | ((n) >> 2 & 1UL) << 8 | ((n) >> 1 & 1UL) << 16 | ((n) & 1UL) << 24)
+#else
+#define PC_NIB(n) (((n) >> 3 & 1UL) << 24 | ((n) >> 2 & 1UL) << 16 | ((n) >> 1 & 1UL) << 8 | ((n) & 1UL))
+#endif
+static const ULONG pc_nib[16] = {
+    PC_NIB(0), PC_NIB(1), PC_NIB(2), PC_NIB(3), PC_NIB(4), PC_NIB(5), PC_NIB(6), PC_NIB(7),
+    PC_NIB(8), PC_NIB(9), PC_NIB(10), PC_NIB(11), PC_NIB(12), PC_NIB(13), PC_NIB(14), PC_NIB(15)
+};
+
+/* The pixels of a blit are done PC_CH at a time (a multiple of 8). */
+#define PC_CH 32
+
+/* n (1 to PC_CH) pens of a planar row from pixel x, into pens (as bytes),
+ * as graphics reads them: plane p for p below depth and 8; a NULL plane is
+ * all 0, a plane of -1 all 1. off: the row's offset in each plane. */
+static inline void pc_planar_pens(ULONG *pens, UBYTE *const *planes, int depth, LONG off, LONG x, LONG n)
+{
+    LONG groups = (n + 7) >> 3;
+    for (LONG g = 0; g < 2 * groups; g++) pens[g] = 0;
+    for (int p = 0; p < depth && p < 8; p++) {
+        const UBYTE *pl = planes[p];
+        if (!pl) continue;
+        if (pl == (const UBYTE *)-1) {
+            for (LONG g = 0; g < 2 * groups; g++) pens[g] |= pc_nib[15] << p;
+            continue;
+        }
+        pl += off;
+        for (LONG g = 0; g < groups; g++) {
+            UBYTE b = pc_bits8(pl, x + 8 * g, n - 8 * g < 8 ? n - 8 * g : 8);
+            pens[2 * g] |= pc_nib[b >> 4] << p;
+            pens[2 * g + 1] |= pc_nib[b & 15] << p;
+        }
+    }
+}
+
+/* Bit `bit` of n values into a plane's row from pixel x, where on (when
+ * not NULL) is not 0: each byte read and written once. */
+static inline void pc_plane_put(UBYTE *row, LONG x, LONG n, const UBYTE *vals, const UBYTE *on, UBYTE bit)
+{
+    LONG k = 0;
+    while (k < n) {
+        UBYTE *q = row + (x >> 3);
+        UBYTE b = (UBYTE)(0x80 >> (x & 7)), wm = 0, v = 0;
+        do {
+            if (!on || on[k]) { wm |= b; if (vals[k] & bit) v |= b; }
+            k++; x++; b >>= 1;
+        } while (k < n && b);
+        if (wm) *q = (UBYTE)((*q & ~wm) | (v & wm));
+    }
+}
+
+/* ---- blits on the CPU: a row at a time ---------------------------------------------------- */
+
+/* A bitmap as pc_blit sees it: chunky (bpp 1, 2 or 4) or planar (bpp 0). */
+struct pc_surf {
+    UBYTE bpp;
+    UBYTE *mem;                 /* chunky: the pixels, stride bytes a row */
+    ULONG stride;
+    const ULONG *pal;           /* chunky 16 and 32-bit: its pens' colours (as a target) */
+    UBYTE (*px_pen)(const struct pc_surf *s, ULONG px);   /* chunky 16 and 32-bit: a pixel's nearest pen (as a source) */
+    const void *owner;          /* for px_pen */
+    UBYTE *planes[8];           /* planar */
+    LONG bpr;
+    int depth;
+};
+
+static inline ULONG pc_pen_px(const struct pc_surf *d, ULONG pen)
+{
+    return d->bpp == 1 ? (pen & 255) : pc_encode(d->bpp, d->pal[pen & 255]);
+}
+
+/* BltBitMap's minterm, bit by bit: B the source, C the destination. */
+static inline ULONG pc_minterm(UBYTE m, ULONG s, ULONG d)
+{
+    ULONG r = 0;
+    if (m & 0x80) r |= s & d;
+    if (m & 0x40) r |= s & ~d;
+    if (m & 0x20) r |= ~s & d;
+    if (m & 0x10) r |= ~s & ~d;
+    return r;
+}
+
+static inline ULONG pc_get(const UBYTE *row, UBYTE bpp, LONG x)
+{
+    if (bpp == 1) return row[x];
+    if (bpp == 2) return ((const UWORD *)row)[x];
+    return ((const ULONG *)row)[x];
+}
+static inline void pc_put(UBYTE *row, UBYTE bpp, LONG x, ULONG v)
+{
+    if (bpp == 1) row[x] = (UBYTE)v;
+    else if (bpp == 2) ((UWORD *)row)[x] = (UWORD)v;
+    else ((ULONG *)row)[x] = v;
+}
+
+/* The last pixel a blit found the pen of. */
+struct pc_last { ULONG px; UBYTE pen, have; };
+
+static inline UBYTE pc_pen_of(const struct pc_surf *s, ULONG px, struct pc_last *l)
+{
+    if (!l->have || l->px != px) { l->px = px; l->pen = s->px_pen(s, px); l->have = 1; }
+    return l->pen;
+}
+
+/* n source pixels from x, y as the destination's: a pen becomes its colour
+ * on 16 and 32-bit, a colour its nearest pen on 8-bit and planar, a colour
+ * of the other depth is encoded again. */
+static inline void pc_fetch(const struct pc_surf *S, const struct pc_surf *D, LONG x, LONG y, LONG n, ULONG *sv, struct pc_last *l)
+{
+    const UBYTE *row;
+    LONG k;
+    if (!S->bpp) {
+        ULONG pl[PC_CH / 4];
+        const UBYTE *pn = (const UBYTE *)pl;
+        pc_planar_pens(pl, S->planes, S->depth, y * S->bpr, x, n);
+        if (D->bpp > 1) for (k = 0; k < n; k++) sv[k] = pc_pen_px(D, pn[k]);
+        else for (k = 0; k < n; k++) sv[k] = pn[k];
+        return;
+    }
+    row = S->mem + y * S->stride;
+    if (S->bpp == 1) {
+        const UBYTE *p = row + x;
+        if (D->bpp > 1) for (k = 0; k < n; k++) sv[k] = pc_pen_px(D, p[k]);
+        else for (k = 0; k < n; k++) sv[k] = p[k];
+        return;
+    }
+    for (k = 0; k < n; k++) {
+        ULONG v = pc_get(row, S->bpp, x + k);
+        if (D->bpp <= 1) v = pc_pen_of(S, v, l);
+        else if (D->bpp != S->bpp) v = pc_encode(D->bpp, pc_decode(S->bpp, v));
+        sv[k] = v;
+    }
+}
+
+/* A rectangle from S to D (one of them chunky), as OpenRTG's per-pixel
+ * loop drew it: through cookie (a plane of bits, cmod bytes a row, the
+ * rectangle's first at bit cx of row cy) the source is copied where a bit
+ * is set, whatever the minterm; else the minterm; on 8-bit and planar
+ * targets the mask picks the bits (planes) written, on 16 and 32-bit a mask
+ * of 0 writes nothing. A minterm that ignores the source works on pens on
+ * 16 and 32-bit: a clear is pen 0, a set pen 255. same: S and D are one
+ * bitmap, so the rows and pixels go in the order that reads each source
+ * pixel before it is written. Each run of PC_CH pixels is read whole before
+ * any of it is written, which that order makes the same. */
+static inline void pc_blit(const struct pc_surf *S, LONG sx, LONG sy, const struct pc_surf *D, LONG dx, LONG dy, LONG w, LONG h,
+                    UBYTE m, UBYTE mask, const UBYTE *cookie, LONG cx, LONG cy, LONG cmod, int same)
+{
+    ULONG sv[PC_CH], dpl[PC_CH / 4], onl[PC_CH / 4];
+    UBYTE rv[PC_CH];
+    const UBYTE *on = (const UBYTE *)onl, *dp = (const UBYTE *)dpl;
+    struct pc_last last = { 0, 0, 0 };
+    int down = !(same && sy < dy), right = !(same && sy == dy && sx < dx);
+    int ign = ((m >> 7) & 1) == ((m >> 5) & 1) && ((m >> 6) & 1) == ((m >> 4) & 1);
+    int cpy = !cookie && (m & 0xF0) == 0xC0 && D->bpp && (D->bpp == 1 ? mask == 0xFF : mask != 0);
+    int nosrc = !cookie && D->bpp > 1 && ign;       /* the source isn't read */
+    ULONG ones = D->bpp == 2 ? 0xFFFF : 0xFFFFFF, clear = 0, set = 0;
+    LONG chunks = (w + PC_CH - 1) / PC_CH;
+    if (D->bpp > 1) { clear = pc_pen_px(D, 0); set = pc_pen_px(D, 255); }
+    for (LONG j = 0; j < h; j++) {
+        LONG yy = down ? j : h - 1 - j;
+        for (LONG c = 0; c < chunks; c++) {
+            LONG i0 = (right ? c : chunks - 1 - c) * PC_CH, n = w - i0 < PC_CH ? w - i0 : PC_CH, k;
+            if (cookie) {
+                const UBYTE *cr = cookie + (cy + yy) * cmod;
+                UBYTE any = 0;
+                for (LONG g = 0; g < n; g += 8) {
+                    UBYTE b = pc_bits8(cr, cx + i0 + g, n - g < 8 ? n - g : 8);
+                    any |= b;
+                    onl[g / 4] = pc_nib[b >> 4];
+                    onl[g / 4 + 1] = pc_nib[b & 15];
+                }
+                if (!any) continue;
+            }
+            if (!nosrc) pc_fetch(S, D, sx + i0, sy + yy, n, sv, &last);
+            if (D->bpp) {
+                UBYTE *row = D->mem + (dy + yy) * D->stride;
+                LONG x = dx + i0;
+                if (cpy) {
+                    if (D->bpp == 1) { UBYTE *q = row + x; for (k = 0; k < n; k++) q[k] = (UBYTE)sv[k]; }
+                    else if (D->bpp == 2) { UWORD *q = (UWORD *)row + x; for (k = 0; k < n; k++) q[k] = (UWORD)sv[k]; }
+                    else { ULONG *q = (ULONG *)row + x; for (k = 0; k < n; k++) q[k] = sv[k]; }
+                    continue;
+                }
+                for (k = 0; k < n; k++) {
+                    ULONG d, r;
+                    if (cookie && !on[k]) continue;
+                    d = pc_get(row, D->bpp, x + k);
+                    if (cookie) r = sv[k];
+                    else if (D->bpp != 1 && ign) {
+                        switch (m & 0xF0) {
+                        case 0x00: r = clear; break;
+                        case 0xF0: r = set; break;
+                        case 0x50: r = d ^ ones; break;
+                        default: r = d; break;
+                        }
+                    } else r = pc_minterm(m, sv[k], d);
+                    if (D->bpp == 1) r = (d & ~(ULONG)mask) | (r & mask);
+                    else if (!mask) r = d;
+                    else if (D->bpp == 2) r &= 0xFFFF;
+                    pc_put(row, D->bpp, x + k, r);
+                }
+            } else {
+                LONG off = (dy + yy) * D->bpr;
+                if (!cookie) pc_planar_pens(dpl, D->planes, D->depth, off, dx + i0, n);
+                for (k = 0; k < n; k++) rv[k] = (UBYTE)(cookie ? sv[k] : pc_minterm(m, sv[k], dp[k]));
+                for (int p = 0; p < D->depth && p < 8; p++) {
+                    UBYTE *pl = D->planes[p];
+                    if (!(mask & (1 << p)) || !pl || pl == (UBYTE *)-1) continue;
+                    pc_plane_put(pl + off, dx + i0, n, rv, cookie ? on : (const UBYTE *)0, (UBYTE)(1 << p));
+                }
+            }
+        }
+    }
 }
 
 #endif

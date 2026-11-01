@@ -19,7 +19,7 @@ cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanit
 if command -v m68k-linux-gnu-gcc >/dev/null && command -v qemu-m68k >/dev/null; then   # and big-endian, as on the Amiga
     m68k-linux-gnu-gcc -std=c99 -O2 -fno-delete-null-pointer-checks -m68040 -static -Wall -Wextra -Werror -I"$HERE/host-include" \
         -o "$OUT/test_pixconv-m68k" "$HERE/test_pixconv.c"
-    qemu-m68k -cpu m68040 "$OUT/test_pixconv-m68k"
+    qemu-m68k -cpu m68040 "$OUT/test_pixconv-m68k" 10000
 fi
 OGPU="$HERE/../library/opengpu"
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \

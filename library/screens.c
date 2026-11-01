@@ -1594,39 +1594,23 @@ static void tmpl_piece(void *c, struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x
 
 /* ---- pixels of a planar bitmap, and the minterm ------------------------------------ */
 
-static UBYTE planar_pen(struct BitMap *bm, LONG x, LONG y)
-{
-    UBYTE v = 0;
-    ULONG off = y * bm->BytesPerRow + (x >> 3);
-    UBYTE bit = 0x80 >> (x & 7);
-    for (int p = 0; p < bm->Depth && p < 8; p++) {
-        PLANEPTR pl = bm->Planes[p];
-        if (pl == (PLANEPTR)-1) v |= 1 << p;
-        else if (pl && (pl[off] & bit)) v |= 1 << p;
-    }
-    return v;
-}
+/* 0.25: the CPU's blits go a row at a time (pixconv.h's pc_blit, which
+ * draws what the per-pixel loop before it drew: tests/test_pixconv.c),
+ * planes read and written a byte at a time; it sees a bitmap as this. */
+static UBYTE surf_px_pen(const struct pc_surf *s, ULONG px) { return ortg_px_pen((const struct ortg_bitmap *)s->owner, px); }
 
-static void planar_set(struct BitMap *bm, LONG x, LONG y, UBYTE v, UBYTE mask)
+static void surf_of(struct pc_surf *s, struct BitMap *bm, const struct ortg_bitmap *o)
 {
-    ULONG off = y * bm->BytesPerRow + (x >> 3);
-    UBYTE bit = 0x80 >> (x & 7);
-    for (int p = 0; p < bm->Depth && p < 8; p++) {
-        PLANEPTR pl = bm->Planes[p];
-        if (!(mask & (1 << p)) || !pl || pl == (PLANEPTR)-1) continue;
-        if (v & (1 << p)) pl[off] |= bit; else pl[off] &= ~bit;
+    s->owner = o;
+    s->px_pen = surf_px_pen;
+    if (o) {
+        s->bpp = o->bpp; s->mem = o->mem; s->stride = o->stride; s->pal = ortg_pen_rgb[o->pal_index];
+        s->bpr = 0; s->depth = 0;
+    } else {
+        s->bpp = 0; s->mem = NULL; s->stride = 0; s->pal = NULL;
+        s->bpr = bm->BytesPerRow; s->depth = bm->Depth;
+        for (int p = 0; p < 8; p++) s->planes[p] = bm->Planes[p];
     }
-}
-
-/* BltBitMap's minterm, bit by bit: B the source, C the destination. */
-static inline ULONG minterm(UBYTE m, ULONG s, ULONG d)
-{
-    ULONG r = 0;
-    if (m & 0x80) r |= s & d;
-    if (m & 0x40) r |= s & ~d;
-    if (m & 0x20) r |= ~s & d;
-    if (m & 0x10) r |= ~s & ~d;
-    return r;
 }
 
 /* A rectangle from any bitmap to an OpenRTG one, or from an OpenRTG one to
@@ -1661,7 +1645,7 @@ static void blit(struct BitMap *src, LONG sx, LONG sy, struct BitMap *dst, LONG 
 {
     struct ortg_bitmap *os = ortg_of(src), *od = ortg_of(dst);
     int same = os && os == od;
-    int down = !(same && sy < dy), right = !(same && sy == dy && sx < dx);
+    int down = !(same && sy < dy);
     if (os && od && os->bpp == od->bpp && !cookie && (m & 0xF0) == 0xC0 && (od->bpp == 1 ? mask == 0xFF : mask != 0)) {
         /* v1.0's COPY is the preferred path for the common RTG move/copy.
          * It is synchronous at the graphics.library boundary: future queued
@@ -1704,45 +1688,13 @@ static void blit(struct BitMap *src, LONG sx, LONG sy, struct BitMap *dst, LONG 
     else if (os)
         ortg_stat(ORTG_STAT_BLIT_PLANAR, 0, (ULONG)w * (ULONG)h);
     ortg_ogpu_settle();                             /* 0.21: the CPU reads and writes the pixels */
-    for (LONG j = 0; j < h; j++) {
-        LONG yy = down ? j : h - 1 - j;
-        for (LONG i = 0; i < w; i++) {
-            LONG xx = right ? i : w - 1 - i;
-            ULONG s, d, r;
-            if (cookie) {
-                LONG bit = cookie_x + xx;
-                if (!((cookie[(cookie_y + yy) * cookie_mod + (bit >> 3)] >> (7 - (bit & 7))) & 1)) continue;
-            }
-            s = os ? ortg_get(os, sx + xx, sy + yy) : planar_pen(src, sx + xx, sy + yy);
-            if (od) {
-                /* the source as the destination's pixel: a pen becomes its
-                 * colour on 16 and 32-bit, a colour its nearest pen on 8-bit */
-                if (!os || os->bpp == 1) { if (od->bpp != 1) s = ortg_pen_px(od, s); }
-                else if (od->bpp == 1) s = ortg_px_pen(os, s);
-                else if (os->bpp != od->bpp) s = ortg_encode(od, ortg_decode(os, s));
-                d = ortg_get(od, dx + xx, dy + yy);
-                if (cookie) r = s;
-                else if (od->bpp != 1 && ((m >> 7) & 1) == ((m >> 5) & 1) && ((m >> 6) & 1) == ((m >> 4) & 1)) {
-                    /* a minterm that ignores the source works on pens: a clear
-                     * is pen 0 (layers clears a window that way), a set pen 255 */
-                    switch (m & 0xF0) {
-                    case 0x00: r = ortg_pen_px(od, 0); break;
-                    case 0xF0: r = ortg_pen_px(od, 255); break;
-                    case 0x50: r = d ^ (od->bpp == 2 ? 0xFFFF : 0xFFFFFF); break;
-                    default: r = d; break;
-                    }
-                } else r = minterm(m, s, d);
-                if (od->bpp == 1) r = (d & ~(ULONG)mask) | (r & mask);
-                else if (!mask) r = d;
-                else if (od->bpp == 2) r &= 0xFFFF;
-                ortg_put(od, dx + xx, dy + yy, r);
-            } else {
-                if (os && os->bpp != 1) s = ortg_px_pen(os, s);
-                d = planar_pen(dst, dx + xx, dy + yy);
-                r = cookie ? s : minterm(m, s, d);
-                planar_set(dst, dx + xx, dy + yy, (UBYTE)r, mask);
-            }
-        }
+    {
+        /* 0.25: a row at a time, once settled (it was a pixel at a time, a planar
+         * pixel's 8 planes each read or written alone: review of 1 November 2026) */
+        struct pc_surf S, D;
+        surf_of(&S, src, os);
+        surf_of(&D, dst, od);
+        pc_blit(&S, sx, sy, &D, dx, dy, w, h, m, mask, cookie, cookie_x, cookie_y, cookie_mod, same);
     }
 }
 

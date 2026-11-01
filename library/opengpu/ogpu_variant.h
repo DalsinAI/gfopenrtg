@@ -6,7 +6,8 @@
  * An older driver takes a v1.2 command's opcode but not v1.7's variants of
  * it (SDL 3's blend modes, PIXELART, clamping one way, P010 and the new YUV
  * spaces), nor COMPOSITE_PD with v1.6's blend modes: those need a driver
- * that also answers PALETTE (v1.7) or PATH_FILL (v1.6). Nor does it take
+ * that also answers PALETTE (v1.7) or PATH_FILL (v1.6), nor v1.8's aliased
+ * paths, which run on the CPU core (OGPU_NEEDS_CPU). Nor does it take
  * v1.7's surface formats (INDEX8 as a slot, RGBA32, ABGR32): the library
  * keeps the formats a driver answers for SURFACE in. And TRIANGLES reads
  * more formats in v1.7 (targets and slot textures) than an older driver
@@ -26,6 +27,13 @@ static unsigned long ogpu_arg_word(const unsigned char *s, unsigned long at, uns
     if ((unsigned long)k + 1 >= len) return 0;
     return (unsigned long)p[0] << 24 | (unsigned long)p[1] << 16 | (unsigned long)p[2] << 8 | p[3];
 }
+
+/* v1.8: no driver answers this (opengpu.library keeps drv_ok[] of it 0),
+ * so a command that needs it runs on the library's CPU core: a path with
+ * OGPU_PATH_ALIASED, which a v1.6 or v1.7 driver would draw anti-aliased.
+ * A driver that takes v1.8 will need a way to say so (an opcode to answer,
+ * or its stream minor): none exists yet. */
+#define OGPU_NEEDS_CPU 0x00FF
 
 /* The opcode a driver must also take for the command's variant, or 0. */
 static unsigned ogpu_variant_needs(const unsigned char *s, unsigned long at, unsigned op, unsigned len)
@@ -53,6 +61,8 @@ static unsigned ogpu_variant_needs(const unsigned char *s, unsigned long at, uns
                || (f & OGPU_TRI_BLEND_MASK) >= OGPU_TRI_BLEND_PREMUL ? OGPU_OP_PALETTE : 0;
     case OGPU_OP_COMPOSITE_PD:
         return (ogpu_arg_word(s, at, len, 0) & 255) >= OGPU_BLEND_MULTIPLY ? OGPU_OP_PATH_FILL : 0;
+    case OGPU_OP_PATH_FILL: case OGPU_OP_PATH_STROKE:
+        return ogpu_arg_word(s, at, len, 0) & OGPU_PATH_ALIASED ? OGPU_NEEDS_CPU : 0;
     }
     return 0;
 }

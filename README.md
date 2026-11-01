@@ -184,6 +184,12 @@ only what is in memory) and does what the monitor driver does.
   P010 video and the BT.709 full-range and BT.2020 colour spaces, and
   `SDL_RenderGeometry` straight onto 32-bit OpenRTG screens. A driver gets
   only the batches it draws right; the rest run on the 68k.
+- **opengpu.library 0.23 draws paths without anti-aliasing** (stream v1.8,
+  `OGPU_PATH_ALIASED`): each pixel in or out by its centre, as cairo's
+  `CAIRO_ANTIALIAS_NONE`, for a browser's crisp shapes and its rectangle
+  clips under a transform, so WebCore needs no cairo for them. They run on
+  the library's CPU core whatever the driver, until a driver says it takes
+  v1.8.
 
 ## Contributors
 

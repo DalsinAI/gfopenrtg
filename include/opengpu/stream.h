@@ -40,6 +40,13 @@
  * spaces. A back end that answers PALETTE in OGPU_Query takes all of v1.7;
  * one that doesn't refuses each of these as UNSUPPORTED, or, for an opcode
  * it doesn't know, BADOP.
+ * v1.8 (1 November 2026) adds OGPU_PATH_ALIASED: PATH_FILL and PATH_STROKE
+ * without anti-aliasing, each pixel in or out by its centre (cairo's
+ * CAIRO_ANTIALIAS_NONE: SVG's shape-rendering crispEdges, WebCore's
+ * setShouldAntialias(false) and its rectangle clips under a transform). No
+ * opcode is new, so OGPU_Query can't tell it: opengpu.library 0.23 and
+ * later take it on every back end (they run the paths on its CPU core); a
+ * back end of v1.6 or v1.7 ignores the bit and draws the path anti-aliased.
  *
  * A stream is 32-bit words, big-endian (the Amiga's order) wherever it is
  * read. Each command starts with a header word: the opcode in the top 16
@@ -61,7 +68,7 @@
 #define OPENGPU_STREAM_H
 
 #define OGPU_STREAM_VERSION 1
-#define OGPU_STREAM_MINOR   7
+#define OGPU_STREAM_MINOR   8
 
 #define OGPU_HDR(op, words)     (((unsigned long)(op) << 16) | ((unsigned long)(words) & 0xFFFFUL))
 #define OGPU_HDR_OP(w)          ((unsigned)((w) >> 16))
@@ -311,6 +318,10 @@
 #define OGPU_PATH_REPEAT        0x0800  /* the slot tiles */
 #define OGPU_PATH_MASK          0x1000  /* the mask slot's alpha multiplies the coverage */
 #define OGPU_PATH_PATTERN       0x2000  /* the paint word is a pattern's address */
+#define OGPU_PATH_ALIASED       0x4000  /* v1.8: coverage 255 where the pixel's centre is inside
+                                           the path (or the stroke's outline), else 0: no
+                                           anti-aliasing. A centre on an edge is inside when the
+                                           edge is left of it (x + 1/2 > the crossing) */
 /* PATH_STROKE's style word: a cap in bits 0-3, a join in bits 4-7. */
 #define OGPU_CAP_BUTT           0
 #define OGPU_CAP_ROUND          1

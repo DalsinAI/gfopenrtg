@@ -377,11 +377,20 @@ The `glA...` forms (`glASwapBuffers()` and the rest) pass the program's
   is in (coverage 255) when its centre is inside the path or the stroke's
   outline, out (0) otherwise, as cairo's `CAIRO_ANTIALIAS_NONE` draws (SVG
   `shape-rendering: crispEdges`, a browser's rectangle clips under a
-  transform). No opcode is new, so `OGPU_Query` can't say: check that
-  opengpu.library's `lib_Version` is above 0 or its `lib_Revision` is 23 or
-  more before setting it. An older library draws the path anti-aliased.
-  0.23 draws such a path on its CPU core whatever the driver, as no driver
-  says it takes v1.8 yet.
+  transform). No opcode is new; ask for the flag itself (below). An older
+  library draws the path anti-aliased.
+- **Asking for a flag (opengpu.library 0.24).**
+  `OGPU_Query(OGPU_QUERY_FLAG(op, bit), format)` answers whether a back end
+  carries out one flag (bit number `bit`) of command `op`'s first word:
+  `OGPU_QUERY_FLAG(OGPU_OP_PATH_FILL, OGPU_PATH_ALIASED_BIT)` for paths
+  without anti-aliasing. `OGPU_FULL` means it does; `OGPU_NONE` means it
+  doesn't, or doesn't know the form: libraries before 0.24 (0.23 takes
+  `OGPU_PATH_ALIASED` but answers `OGPU_NONE` here) and drivers that
+  predate it answer `OGPU_NONE`, as for an operation they don't know, so a
+  program that asks never sets a flag something would ignore. Drivers:
+  answer the form in `supports()` for each flag you carry out;
+  opengpu.library 0.24 runs the commands with a flag a driver doesn't take
+  on its CPU core.
 - **SFD files** (`sfd/`) for opengpu.library, openrtg.library and
   Warp3D.library, for other compilers' stubs and pragmas.
 

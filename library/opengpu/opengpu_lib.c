@@ -65,6 +65,11 @@
  * yet (OGPU_NEEDS_CPU, ogpu_variant.h), so an older driver never draws such
  * a path anti-aliased. A program asks for 0.23 (lib_Revision) before it sets
  * the bit: no opcode is new, so OGPU_Query can't say.
+ * 0.24: OGPU_QUERY_FLAG (stream.h): OGPU_Query answers whether a back end
+ * takes one flag of a command (v1.8's OGPU_PATH_ALIASED first). The CPU
+ * core takes every flag stream.h defines; a driver says so in its
+ * supports(), and the batches with a flag it doesn't take run here. A
+ * library before 0.24, and a driver that predates the form, answer NONE.
  * Built bare by library/build.sh.
  */
 #include <exec/types.h>
@@ -94,7 +99,7 @@
 
 #define REG(r, decl) register decl __asm(#r)   /* bebbo gcc: an argument in a register */
 #define LIB_VERSION 0
-#define LIB_REVISION 23
+#define LIB_REVISION 24
 #define RESULTS 16                              /* the last batches' results, by fence */
 #define MAX_DRIVERS 8                           /* files looked at in LIBS:OpenGPU/ */
 #define ON_CPU 0                                /* dfence[] for a batch the CPU ran */
@@ -143,9 +148,9 @@ int start(void) { return -1; }
 const ULONG ogpu_ogfx_at = offsetof(struct OpenGPUBase, ogfx);
 
 static const char lib_name[] = "opengpu.library";
-static const char lib_id[] = "opengpu.library 0.23 (1.11.2026) OpenGPU, AmigaChrome Team\r\n";
+static const char lib_id[] = "opengpu.library 0.24 (1.11.2026) OpenGPU, AmigaChrome Team\r\n";
 /* For C:Version, which looks for "$VER:" in the file. */
-static const char lib_ver[] __attribute__((used)) = "\0$VER: opengpu.library 0.23 (1.11.2026) OpenGPU, AmigaChrome Team";
+static const char lib_ver[] __attribute__((used)) = "\0$VER: opengpu.library 0.24 (1.11.2026) OpenGPU, AmigaChrome Team";
 static const char cpu_name[] = "CPU";
 static const char dos_name[] = "dos.library";
 static const char drv_dir[] = "LIBS:OpenGPU";
@@ -410,7 +415,13 @@ static int driver_try(struct OpenGPUBase *base, const char *name, int rom)
                 if (OGPU_ANSWER(d->supports(op, f, 0)) != OGPU_NONE) base->drv_ok[op] = 1;
         }
         base->drv_ok[OGPU_OP_NOP] = 1;
-        base->drv_ok[OGPU_NEEDS_CPU] = 0;          /* 0.23: v1.8's aliased paths run here */
+        /* 0.24: v1.8's aliased paths go to the driver only if it says it takes
+         * the flag (OGPU_QUERY_FLAG); one that predates the form answers NONE */
+        base->drv_ok[OGPU_NEEDS_PATH_ALIASED] = 0;
+        for (f = 1; f < OGPU_FMT_COUNT && !base->drv_ok[OGPU_NEEDS_PATH_ALIASED]; f++)
+            if (OGPU_ANSWER(d->supports((int)OGPU_QUERY_FLAG(OGPU_OP_PATH_FILL, OGPU_PATH_ALIASED_BIT), f, 0)) != OGPU_NONE
+                && OGPU_ANSWER(d->supports((int)OGPU_QUERY_FLAG(OGPU_OP_PATH_STROKE, OGPU_PATH_ALIASED_BIT), f, 0)) != OGPU_NONE)
+                base->drv_ok[OGPU_NEEDS_PATH_ALIASED] = 1;
         /* 0.19: a format is the driver's if it takes SURFACE in it (the 3D
          * state commands answer for any format, so they can't say). */
         base->drv_fmt[0] = 0;

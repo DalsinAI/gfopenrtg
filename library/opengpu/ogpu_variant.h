@@ -7,7 +7,7 @@
  * it (SDL 3's blend modes, PIXELART, clamping one way, P010 and the new YUV
  * spaces), nor COMPOSITE_PD with v1.6's blend modes: those need a driver
  * that also answers PALETTE (v1.7) or PATH_FILL (v1.6), nor v1.8's aliased
- * paths, which run on the CPU core (OGPU_NEEDS_CPU). Nor does it take
+ * paths unless it answers OGPU_QUERY_FLAG for them (OGPU_NEEDS_PATH_ALIASED). Nor does it take
  * v1.7's surface formats (INDEX8 as a slot, RGBA32, ABGR32): the library
  * keeps the formats a driver answers for SURFACE in. And TRIANGLES reads
  * more formats in v1.7 (targets and slot textures) than an older driver
@@ -28,12 +28,15 @@ static unsigned long ogpu_arg_word(const unsigned char *s, unsigned long at, uns
     return (unsigned long)p[0] << 24 | (unsigned long)p[1] << 16 | (unsigned long)p[2] << 8 | p[3];
 }
 
-/* v1.8: no driver answers this (opengpu.library keeps drv_ok[] of it 0),
- * so a command that needs it runs on the library's CPU core: a path with
- * OGPU_PATH_ALIASED, which a v1.6 or v1.7 driver would draw anti-aliased.
- * A driver that takes v1.8 will need a way to say so (an opcode to answer,
- * or its stream minor): none exists yet. */
-#define OGPU_NEEDS_CPU 0x00FF
+/* v1.8: a flag a driver must take, as a pseudo-opcode of the ok[] table:
+ * opengpu.library 0.24 sets ok[OGPU_NEEDS_PATH_ALIASED] when the driver
+ * answers OGPU_QUERY_FLAG(OGPU_OP_PATH_FILL, OGPU_PATH_ALIASED_BIT) (stream.h);
+ * a driver that predates the form answers OGPU_NONE, so its batches with an
+ * aliased path run on the CPU core, which a v1.6 or v1.7 driver would draw
+ * anti-aliased. (0.23 called it OGPU_NEEDS_CPU and set it for no driver.)
+ * 0xF0-0xFE are kept for such flags; no opcode is above 0x8F. */
+#define OGPU_NEEDS_PATH_ALIASED 0x00FE
+#define OGPU_NEEDS_CPU          OGPU_NEEDS_PATH_ALIASED
 
 /* The opcode a driver must also take for the command's variant, or 0. */
 static unsigned ogpu_variant_needs(const unsigned char *s, unsigned long at, unsigned op, unsigned len)
@@ -62,7 +65,7 @@ static unsigned ogpu_variant_needs(const unsigned char *s, unsigned long at, uns
     case OGPU_OP_COMPOSITE_PD:
         return (ogpu_arg_word(s, at, len, 0) & 255) >= OGPU_BLEND_MULTIPLY ? OGPU_OP_PATH_FILL : 0;
     case OGPU_OP_PATH_FILL: case OGPU_OP_PATH_STROKE:
-        return ogpu_arg_word(s, at, len, 0) & OGPU_PATH_ALIASED ? OGPU_NEEDS_CPU : 0;
+        return ogpu_arg_word(s, at, len, 0) & OGPU_PATH_ALIASED ? OGPU_NEEDS_PATH_ALIASED : 0;
     }
     return 0;
 }

@@ -190,6 +190,10 @@ only what is in memory) and does what the monitor driver does.
   clips under a transform, so WebCore needs no cairo for them. They run on
   the library's CPU core whatever the driver, until a driver says it takes
   v1.8.
+- **opengpu.library 0.24 says which flags a back end takes**
+  (`OGPU_QUERY_FLAG` through `OGPU_Query`): a driver answers for the flags
+  it carries out, such as `OGPU_PATH_ALIASED`, and gets the batches that use
+  them; older libraries and drivers answer no, safely.
 
 ## Contributors
 

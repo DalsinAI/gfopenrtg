@@ -26,9 +26,10 @@ static unsigned long crc32_of(const ogpu_u8 *p, unsigned long n, unsigned long c
  * then CRC'd (the second run, the same core again, is only compared) */
 void old_ogpu_core_init(struct ogpu_core *c) { ogpu_core_init(c); }
 long old_ogpu_core_run(struct ogpu_core *c, const ogpu_u8 *stream, long words) {
+    unsigned long in = crc32_of(stream, (unsigned long)words * 4, crc32_of(cur, CMP_END, 0xFFFFFFFFUL)) ^ 0xFFFFFFFFUL, v;
     long r = ogpu_core_run(c, stream, words);
-    unsigned long v = crc32_of(cur, CMP_END, 0xFFFFFFFFUL) ^ 0xFFFFFFFFUL;
-    printf("%lu %08lx %d\n", crc_rounds++, v, (int)c->last_error);
+    v = crc32_of(cur, CMP_END, 0xFFFFFFFFUL) ^ 0xFFFFFFFFUL;
+    printf("%lu in %08lx out %08lx %d\n", crc_rounds++, in, v, (int)c->last_error);
     crc_all = crc32_of((const ogpu_u8 *)&v, sizeof v, crc_all);
     return r;
 }

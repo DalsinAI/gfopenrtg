@@ -12,6 +12,15 @@ cc -std=c99 -O2 -Wall -Wextra -Werror -o "$OUT/test_modes" "$HERE/test_modes.c" 
 # With no size asked for, the mode table is exactly 0.16's (0.17: the Native modes come only with one).
 cc -std=c99 -O2 -Wall -Wextra -Werror -o "$OUT/modes_golden" "$HERE/modes_golden.c" "$HERE/../library/modes.c"
 "$OUT/modes_golden" "$HERE/golden/modes-table.txt"
+# screens.c's pixel conversions (library/pixconv.h) against the per-pixel code they replace.
+cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined -I"$HERE/host-include" \
+    -o "$OUT/test_pixconv" "$HERE/test_pixconv.c"
+"$OUT/test_pixconv"
+if command -v m68k-linux-gnu-gcc >/dev/null && command -v qemu-m68k >/dev/null; then   # and big-endian, as on the Amiga
+    m68k-linux-gnu-gcc -std=c99 -O2 -fno-delete-null-pointer-checks -m68040 -static -Wall -Wextra -Werror -I"$HERE/host-include" \
+        -o "$OUT/test_pixconv-m68k" "$HERE/test_pixconv.c"
+    qemu-m68k -cpu m68040 "$OUT/test_pixconv-m68k" 10000
+fi
 OGPU="$HERE/../library/opengpu"
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
     -o "$OUT/test_opengpu" "$HERE/test_opengpu.c" "$HERE/golden_scenes.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_build.c"

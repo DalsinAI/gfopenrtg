@@ -63,6 +63,7 @@
 #include "modes.h"
 #include "displaydb.h"
 #include "screens.h"
+#include "pixconv.h"
 #include "opengfx_bridge.h"
 
 #define REG(r, decl) register decl __asm(#r)
@@ -222,6 +223,7 @@ struct scr_g {
      * belong to one screen each, and its friends. */
     ULONG pen_rgb[ORTG_PEN_TABLES][256];
     struct ortg_bitmap *pen_owner[ORTG_PEN_TABLES];
+    struct pc_memo px_memo;     /* 0.25: ortg_px_pen's answers (pixconv.h), forgotten when a table changes */
     struct Library *OpenGfxBase;
     int ogfx_handoff;
     int ogfx_all;               /* OpenGfx 1.4: it patches every drawing call, and OpenRTG provides all of them */
@@ -426,8 +428,10 @@ static void own_pens(struct ortg_bitmap *o)
 {
     for (int t = ORTG_MAX_MONITORS + 1; t < ORTG_PEN_TABLES; t++)
         if (!pen_owner[t]) {
+            pc_memo_forget(&SC->px_memo);           /* 0.25: table t's pens change */
             for (int i = 0; i < 256; i++) ortg_pen_rgb[t][i] = ortg_pen_rgb[o->pal_index][i];
             pen_owner[t] = o; o->pal_index = (UBYTE)t;
+            pc_memo_forget(&SC->px_memo);
             return;
         }
 }
@@ -742,20 +746,16 @@ static inline void plot(struct ortg_bitmap *o, LONG x, LONG y, const struct ink 
     ortg_put(o, x, y, (d & ~k->mask) | ((on ? k->a : k->b) & k->mask));
 }
 
-/* The pen nearest a pixel's colour. */
+/* The pen nearest a pixel's colour. 0.25: a search of up to 256 colours,
+ * so each answer is kept (pixconv.h's memo, by pixel and pen table) until
+ * a pen table changes: ReadPixelArray8 of a 640 x 480 32-bit screen made
+ * 307,200 searches, tens of millions of steps on the 68k (review of
+ * 1 November 2026). The same pens as before (tests/test_pixconv.c). */
+typedef char ortg_pen_tables_fit_the_memo[ORTG_PEN_TABLES <= PC_MEMO_TABLES ? 1 : -1];
 UBYTE ortg_px_pen(const struct ortg_bitmap *o, ULONG px)
 {
-    const ULONG *pal = ortg_pen_rgb[o->pal_index];
-    ULONG rgb, best = 0, dist = ~0UL;
     if (o->bpp == 1) return (UBYTE)px;
-    rgb = ortg_decode(o, px);
-    for (ULONG i = 0; i < 256; i++) {
-        ULONG c = o->bpp == 2 ? ortg_decode(o, ortg_encode(o, pal[i])) : pal[i];
-        LONG dr = (LONG)((c >> 16) & 255) - (LONG)((rgb >> 16) & 255), dg = (LONG)((c >> 8) & 255) - (LONG)((rgb >> 8) & 255), db = (LONG)(c & 255) - (LONG)(rgb & 255);
-        ULONG d2 = (ULONG)(dr * dr + dg * dg + db * db);
-        if (d2 < dist) { dist = d2; best = i; if (!d2) break; }
-    }
-    return (UBYTE)best;
+    return pc_memo_pen(&SC->px_memo, ortg_pen_rgb[o->pal_index], o->bpp, o->pal_index, px);
 }
 
 /* ---- OpenGPU: the drawing that goes through its stream ---------------------------------
@@ -1352,6 +1352,54 @@ static int ogpu_copy_rect(struct ortg_bitmap *src, LONG sx, LONG sy,
     return ogpu_submit_async(&b);      /* 0.21: both OpenRTG bitmaps; left running */
 }
 
+/* 0.25: a copy through a mask (BltMaskBitMapRastPort's cookie, cmod bytes a
+ * row, the rectangle's first at bit cx of row cy) from one OpenRTG bitmap to
+ * another of its format, as the CPU code draws it: the source where a bit
+ * is set. A COPY for each run of set bits, a run of rows alike in one (an
+ * icon's body is one COPY), MB_WORDS a batch, left running as a plain
+ * copy's is. 0 when a batch is refused; the CPU then draws it all, the same
+ * over what went. */
+#define MB_WORDS (14 + 16 * 5)          /* two SURFACEs and a TARGET, then 16 COPYs */
+struct mb_ctx {
+    struct OGPUBatch b;
+    UBYTE stream[MB_WORDS * 4];
+    int copies;
+    const struct ortg_bitmap *os, *od;
+    LONG sx, sy, dx, dy;
+};
+
+static void mb_begin(struct mb_ctx *m)
+{
+    ogpu_batch_init(&m->b, m->stream, MB_WORDS);
+    ogpu_target_bitmap(&m->b, 0, m->os);
+    ogpu_target_bitmap(&m->b, 1, m->od);
+    ogpu_target(&m->b, 1);
+    m->copies = 0;
+}
+
+static int mb_copy(void *c, LONG x, LONG y, LONG w, LONG h)
+{
+    struct mb_ctx *m = c;
+    if (m->b.words + 5 > m->b.cap) {                /* full: it goes, and a new one starts */
+        if (!ogpu_submit_async(&m->b)) return 0;
+        mb_begin(m);
+    }
+    ogpu_copy(&m->b, 0, m->sx + x, m->sy + y, m->dx + x, m->dy + y, w, h);
+    m->copies++;
+    return !m->b.overflow;
+}
+
+static __attribute__((noinline)) int ogpu_masked_copy(const struct ortg_bitmap *os, LONG sx, LONG sy, const struct ortg_bitmap *od,
+                                                      LONG dx, LONG dy, LONG w, LONG h, const UBYTE *cookie, LONG cx, LONG cy, LONG cmod)
+{
+    struct mb_ctx m;
+    if (w <= 0 || h <= 0 || !ogpu_can(OGPU_OP_COPY, od)) return 0;
+    m.os = os; m.od = od; m.sx = sx; m.sy = sy; m.dx = dx; m.dy = dy;
+    mb_begin(&m);
+    if (!pc_mask_rects(cookie, cx, cy, cmod, w, h, mb_copy, &m)) return 0;
+    return !m.copies || ogpu_submit_async(&m.b);
+}
+
 /* ---- clipping: an operation on every visible piece of a RastPort's box -------------- */
 
 /* fn gets the target bitmap, the box in it (inclusive), and dx, dy: the bitmap
@@ -1594,39 +1642,23 @@ static void tmpl_piece(void *c, struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x
 
 /* ---- pixels of a planar bitmap, and the minterm ------------------------------------ */
 
-static UBYTE planar_pen(struct BitMap *bm, LONG x, LONG y)
-{
-    UBYTE v = 0;
-    ULONG off = y * bm->BytesPerRow + (x >> 3);
-    UBYTE bit = 0x80 >> (x & 7);
-    for (int p = 0; p < bm->Depth && p < 8; p++) {
-        PLANEPTR pl = bm->Planes[p];
-        if (pl == (PLANEPTR)-1) v |= 1 << p;
-        else if (pl && (pl[off] & bit)) v |= 1 << p;
-    }
-    return v;
-}
+/* 0.25: the CPU's blits go a row at a time (pixconv.h's pc_blit, which
+ * draws what the per-pixel loop before it drew: tests/test_pixconv.c),
+ * planes read and written a byte at a time; it sees a bitmap as this. */
+static UBYTE surf_px_pen(const struct pc_surf *s, ULONG px) { return ortg_px_pen((const struct ortg_bitmap *)s->owner, px); }
 
-static void planar_set(struct BitMap *bm, LONG x, LONG y, UBYTE v, UBYTE mask)
+static void surf_of(struct pc_surf *s, struct BitMap *bm, const struct ortg_bitmap *o)
 {
-    ULONG off = y * bm->BytesPerRow + (x >> 3);
-    UBYTE bit = 0x80 >> (x & 7);
-    for (int p = 0; p < bm->Depth && p < 8; p++) {
-        PLANEPTR pl = bm->Planes[p];
-        if (!(mask & (1 << p)) || !pl || pl == (PLANEPTR)-1) continue;
-        if (v & (1 << p)) pl[off] |= bit; else pl[off] &= ~bit;
+    s->owner = o;
+    s->px_pen = surf_px_pen;
+    if (o) {
+        s->bpp = o->bpp; s->mem = o->mem; s->stride = o->stride; s->pal = ortg_pen_rgb[o->pal_index];
+        s->bpr = 0; s->depth = 0;
+    } else {
+        s->bpp = 0; s->mem = NULL; s->stride = 0; s->pal = NULL;
+        s->bpr = bm->BytesPerRow; s->depth = bm->Depth;
+        for (int p = 0; p < 8; p++) s->planes[p] = bm->Planes[p];
     }
-}
-
-/* BltBitMap's minterm, bit by bit: B the source, C the destination. */
-static inline ULONG minterm(UBYTE m, ULONG s, ULONG d)
-{
-    ULONG r = 0;
-    if (m & 0x80) r |= s & d;
-    if (m & 0x40) r |= s & ~d;
-    if (m & 0x20) r |= ~s & d;
-    if (m & 0x10) r |= ~s & ~d;
-    return r;
 }
 
 /* A rectangle from any bitmap to an OpenRTG one, or from an OpenRTG one to
@@ -1661,7 +1693,7 @@ static void blit(struct BitMap *src, LONG sx, LONG sy, struct BitMap *dst, LONG 
 {
     struct ortg_bitmap *os = ortg_of(src), *od = ortg_of(dst);
     int same = os && os == od;
-    int down = !(same && sy < dy), right = !(same && sy == dy && sx < dx);
+    int down = !(same && sy < dy);
     if (os && od && os->bpp == od->bpp && !cookie && (m & 0xF0) == 0xC0 && (od->bpp == 1 ? mask == 0xFF : mask != 0)) {
         /* v1.0's COPY is the preferred path for the common RTG move/copy.
          * It is synchronous at the graphics.library boundary: future queued
@@ -1698,51 +1730,26 @@ static void blit(struct BitMap *src, LONG sx, LONG sy, struct BitMap *dst, LONG 
                               : ogpu_pixels_from(od, dx, dy, dx + w - 1, dy + h - 1, sp, os->stride, ogpu_format_of(os), NULL, 1);
         ortg_stat(ORTG_STAT_BLIT_CONVERT, ok, (ULONG)w * (ULONG)h);
         if (ok) return;
+    } else if (od && os && !same && cookie && os->bpp == od->bpp && (od->bpp == 1 ? mask == 0xFF : mask != 0)) {
+        /* 0.25: through a mask between OpenRTG bitmaps of one format (icons,
+         * BOBs): the source where a bit is set, whatever the minterm, as the
+         * CPU code below draws it; with no wait for what OpenGPU still draws */
+        int ok = ogpu_masked_copy(os, sx, sy, od, dx, dy, w, h, cookie, cookie_x, cookie_y, cookie_mod);
+        ortg_stat(ORTG_STAT_BLIT_MASKED, ok, (ULONG)w * (ULONG)h);
+        if (ok) return;
     } else if (od)
         ortg_stat(cookie ? ORTG_STAT_BLIT_MASKED : !os ? ORTG_STAT_BLIT_PLANAR : os->bpp != od->bpp ? ORTG_STAT_BLIT_CONVERT : ORTG_STAT_BLIT,
                   0, (ULONG)w * (ULONG)h);
     else if (os)
         ortg_stat(ORTG_STAT_BLIT_PLANAR, 0, (ULONG)w * (ULONG)h);
     ortg_ogpu_settle();                             /* 0.21: the CPU reads and writes the pixels */
-    for (LONG j = 0; j < h; j++) {
-        LONG yy = down ? j : h - 1 - j;
-        for (LONG i = 0; i < w; i++) {
-            LONG xx = right ? i : w - 1 - i;
-            ULONG s, d, r;
-            if (cookie) {
-                LONG bit = cookie_x + xx;
-                if (!((cookie[(cookie_y + yy) * cookie_mod + (bit >> 3)] >> (7 - (bit & 7))) & 1)) continue;
-            }
-            s = os ? ortg_get(os, sx + xx, sy + yy) : planar_pen(src, sx + xx, sy + yy);
-            if (od) {
-                /* the source as the destination's pixel: a pen becomes its
-                 * colour on 16 and 32-bit, a colour its nearest pen on 8-bit */
-                if (!os || os->bpp == 1) { if (od->bpp != 1) s = ortg_pen_px(od, s); }
-                else if (od->bpp == 1) s = ortg_px_pen(os, s);
-                else if (os->bpp != od->bpp) s = ortg_encode(od, ortg_decode(os, s));
-                d = ortg_get(od, dx + xx, dy + yy);
-                if (cookie) r = s;
-                else if (od->bpp != 1 && ((m >> 7) & 1) == ((m >> 5) & 1) && ((m >> 6) & 1) == ((m >> 4) & 1)) {
-                    /* a minterm that ignores the source works on pens: a clear
-                     * is pen 0 (layers clears a window that way), a set pen 255 */
-                    switch (m & 0xF0) {
-                    case 0x00: r = ortg_pen_px(od, 0); break;
-                    case 0xF0: r = ortg_pen_px(od, 255); break;
-                    case 0x50: r = d ^ (od->bpp == 2 ? 0xFFFF : 0xFFFFFF); break;
-                    default: r = d; break;
-                    }
-                } else r = minterm(m, s, d);
-                if (od->bpp == 1) r = (d & ~(ULONG)mask) | (r & mask);
-                else if (!mask) r = d;
-                else if (od->bpp == 2) r &= 0xFFFF;
-                ortg_put(od, dx + xx, dy + yy, r);
-            } else {
-                if (os && os->bpp != 1) s = ortg_px_pen(os, s);
-                d = planar_pen(dst, dx + xx, dy + yy);
-                r = cookie ? s : minterm(m, s, d);
-                planar_set(dst, dx + xx, dy + yy, (UBYTE)r, mask);
-            }
-        }
+    {
+        /* 0.25: a row at a time, once settled (it was a pixel at a time, a planar
+         * pixel's 8 planes each read or written alone: review of 1 November 2026) */
+        struct pc_surf S, D;
+        surf_of(&S, src, os);
+        surf_of(&D, dst, od);
+        pc_blit(&S, sx, sy, &D, dx, dy, w, h, m, mask, cookie, cookie_x, cookie_y, cookie_mod, same);
     }
 }
 
@@ -2356,7 +2363,18 @@ static void array_read_piece(void *c, struct ortg_bitmap *bm, LONG x0, LONG y0, 
     for (LONG y = y0; y <= y1; y++) {
         UBYTE *d = a->a + (y - dy - a->at_y) * a->bpr + (x0 - dx - a->at_x);
         if (bm->bpp == 1) { UBYTE *s = bm->mem + y * bm->stride + x0; for (LONG x = x0; x <= x1; x++) *d++ = *s++; }
-        else for (LONG x = x0; x <= x1; x++) *d++ = ortg_px_pen(bm, ortg_get(bm, x, y));
+        else {
+            /* 0.25: a run of one colour asks for its pen once; the rest come from the memo */
+            const UBYTE *row = bm->mem + y * bm->stride;
+            ULONG last = 0, v;
+            UBYTE pen = 0;
+            int have = 0;
+            for (LONG x = x0; x <= x1; x++) {
+                v = bm->bpp == 2 ? ((const UWORD *)row)[x] : ((const ULONG *)row)[x];
+                if (!have || v != last) { last = v; pen = ortg_px_pen(bm, v); have = 1; }
+                *d++ = pen;
+            }
+        }
     }
 }
 
@@ -2504,12 +2522,14 @@ static void pens_from(int index, struct ViewPort *vp)
 {
     ULONG rgb[3 * 16], n = vp->ColorMap ? vp->ColorMap->Count : 0;
     if (n > 256) n = 256;
+    pc_memo_forget(&SC->px_memo);                   /* 0.25: before and after, as a search may run meanwhile */
     for (ULONG first = 0; first < n; first += 16) {
         ULONG k = n - first > 16 ? 16 : n - first;
         GetRGB32(vp->ColorMap, first, k, rgb);
         for (ULONG i = 0; i < k; i++)
             ortg_pen_rgb[index][first + i] = (rgb[3 * i] >> 24) << 16 | (rgb[3 * i + 1] >> 24) << 8 | (rgb[3 * i + 2] >> 24);
     }
+    pc_memo_forget(&SC->px_memo);
 }
 
 static void palette_to_board(int n, struct ViewPort *vp, ULONG first, ULONG count)

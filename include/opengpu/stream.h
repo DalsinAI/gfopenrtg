@@ -44,9 +44,11 @@
  * without anti-aliasing, each pixel in or out by its centre (cairo's
  * CAIRO_ANTIALIAS_NONE: SVG's shape-rendering crispEdges, WebCore's
  * setShouldAntialias(false) and its rectangle clips under a transform). No
- * opcode is new, so OGPU_Query can't tell it: opengpu.library 0.23 and
- * later take it on every back end (they run the paths on its CPU core); a
- * back end of v1.6 or v1.7 ignores the bit and draws the path anti-aliased.
+ * opcode is new: ask OGPU_Query(OGPU_QUERY_FLAG(OGPU_OP_PATH_FILL,
+ * OGPU_PATH_ALIASED_BIT), format) (opengpu.library 0.24; 0.23 takes the bit
+ * but answers OGPU_NONE to the form). A back end of v1.6 or v1.7 ignores the
+ * bit and draws the path anti-aliased; 0.23 and later send such a path to a
+ * driver only when it answers the form.
  *
  * A stream is 32-bit words, big-endian (the Amiga's order) wherever it is
  * read. Each command starts with a header word: the opcode in the top 16
@@ -68,7 +70,7 @@
 #define OPENGPU_STREAM_H
 
 #define OGPU_STREAM_VERSION 1
-#define OGPU_STREAM_MINOR   8
+#define OGPU_STREAM_MINOR   8      /* v1.8: OGPU_PATH_ALIASED; from opengpu.library 0.24, OGPU_QUERY_FLAG */
 
 #define OGPU_HDR(op, words)     (((unsigned long)(op) << 16) | ((unsigned long)(words) & 0xFFFFUL))
 #define OGPU_HDR_OP(w)          ((unsigned)((w) >> 16))
@@ -473,6 +475,23 @@
 #define OGPU_ERR_UNSUPPORTED    -5  /* a format pair the command can't do */
 #define OGPU_ERR_DEVICE         -6  /* the GPU failed: the batch may be partly drawn (later ones run on the CPU) */
 #define OGPU_ERR_EXPIRED        -7  /* OGPU_Wait: the fence is done, but too old for its result to be kept */
+
+/* v1.8 (opengpu.library 0.24): whether a back end takes one flag of a
+ * command's first word, asked through OGPU_Query as an operation: bit is the
+ * flag's bit number (OGPU_PATH_ALIASED is bit 14), op the command. The answer
+ * is OGPU_FULL (with OGPU_ONGPU_BIT as for the command) when the back end
+ * carries the flag out as stream.h says, OGPU_NONE when it doesn't or doesn't
+ * know the form: a library before 0.24 and any driver that predates it answer
+ * OGPU_NONE, as they do for an operation they don't know, so a program that
+ * asks this way never sets a flag something would ignore. A driver that takes
+ * a flag answers the form in its supports(); opengpu.library sends commands
+ * with a flag a driver doesn't take to its CPU core instead. */
+#define OGPU_QUERY_FLAG_MARK    0x01000000UL
+#define OGPU_QUERY_FLAG(op, bit) (OGPU_QUERY_FLAG_MARK | ((unsigned long)((bit) & 31) << 16) | ((unsigned long)(op) & 0xFFFFUL))
+#define OGPU_QUERY_IS_FLAG(q)   (((q) & 0xFF000000UL) == OGPU_QUERY_FLAG_MARK)
+#define OGPU_QUERY_FLAG_OP(q)   ((unsigned)((q) & 0xFFFFUL))
+#define OGPU_QUERY_FLAG_BIT(q)  ((int)(((q) >> 16) & 31))
+#define OGPU_PATH_ALIASED_BIT   14
 
 /* What a back end can do, per operation and target format (OGPU_Query). */
 #define OGPU_NONE               0

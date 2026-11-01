@@ -3278,8 +3278,20 @@ long ogpu_core_run(struct ogpu_core *c, const ogpu_u8 *stream, long words) {
     return done;
 }
 
+/* v1.8 (0.24): the flags this core carries out in each command's first word,
+ * for OGPU_QUERY_FLAG (bits 8-15: PATH_FILL's and PATH_STROKE's). */
+static int core_flag(unsigned op, int bit) {
+    if (op == OGPU_OP_PATH_FILL || op == OGPU_OP_PATH_STROKE)
+        return bit >= 8 && bit <= OGPU_PATH_ALIASED_BIT;    /* EVENODD .. ALIASED */
+    return 0;
+}
+
 int ogpu_core_supports(int op, int format) {
     int colour = is_colour(format);
+    if (OGPU_QUERY_IS_FLAG((unsigned long)op)) {
+        unsigned fop = OGPU_QUERY_FLAG_OP((unsigned long)op);
+        return core_flag(fop, OGPU_QUERY_FLAG_BIT((unsigned long)op)) ? ogpu_core_supports((int)fop, format) : OGPU_NONE;
+    }
 #ifdef OGPU_WITH_3D
     if (op >= 0x0030 && op <= 0x003F) return ogpu3d_supports(op, format);
 #endif

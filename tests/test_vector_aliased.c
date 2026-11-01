@@ -403,6 +403,39 @@ int main(void) {
         check(!ogpu_batch_takes(sbuf, (unsigned long)B.words, ok, fmt), "no driver takes an aliased path: the CPU core draws it");
     }
 
+    /* 0.24's OGPU_QUERY_FLAG: the core answers for the flags it carries out */
+    check(ogpu_core_supports((int)OGPU_QUERY_FLAG(OGPU_OP_PATH_FILL, OGPU_PATH_ALIASED_BIT), OGPU_FMT_ARGB32) == OGPU_FULL,
+          "the CPU core says it takes OGPU_PATH_ALIASED in PATH_FILL");
+    check(ogpu_core_supports((int)OGPU_QUERY_FLAG(OGPU_OP_PATH_STROKE, OGPU_PATH_ALIASED_BIT), OGPU_FMT_A8) == OGPU_FULL,
+          "and in PATH_STROKE, into an A8 mask too");
+    check(ogpu_core_supports((int)OGPU_QUERY_FLAG(OGPU_OP_PATH_FILL, 8), OGPU_FMT_ARGB32) == OGPU_FULL
+          && ogpu_core_supports((int)OGPU_QUERY_FLAG(OGPU_OP_PATH_FILL, 13), OGPU_FMT_RGB565) == OGPU_FULL,
+          "v1.6's path flags (even-odd .. pattern) too");
+    check(ogpu_core_supports((int)OGPU_QUERY_FLAG(OGPU_OP_PATH_FILL, 15), OGPU_FMT_ARGB32) == OGPU_NONE
+          && ogpu_core_supports((int)OGPU_QUERY_FLAG(OGPU_OP_PATH_FILL, 3), OGPU_FMT_ARGB32) == OGPU_NONE,
+          "a bit stream.h doesn't define is not taken");
+    check(ogpu_core_supports((int)OGPU_QUERY_FLAG(OGPU_OP_PATH_FILL, OGPU_PATH_ALIASED_BIT), OGPU_FMT_CLUT8) == OGPU_NONE,
+          "nor a flag of a command the format can't take");
+    check(ogpu_core_supports((int)OGPU_QUERY_FLAG(OGPU_OP_FILL, OGPU_PATH_ALIASED_BIT), OGPU_FMT_ARGB32) == OGPU_NONE,
+          "nor a flag of a command that has none");
+    check(OGPU_QUERY_FLAG(OGPU_OP_PATH_FILL, OGPU_PATH_ALIASED_BIT) > 0xFFFFUL,
+          "the form is no opcode (an old back end answers it as one it doesn't know: OGPU_NONE)");
+    /* a driver that answers the form takes aliased paths; one that predates it doesn't */
+    {
+        unsigned char ok[256], fmt[OGPU_FMT_COUNT];
+        memset(ok, 1, sizeof ok);
+        memset(fmt, 1, sizeof fmt);
+        path_start(); pt(0, 0, 1); pt(2560, 0, 0); pt(0, 2560, 0);
+        ogpu_batch_init(&B, sbuf, (long)sizeof sbuf / 4);
+        ogpu_surface(&B, 0, TGT, BPR, W, H, OGPU_FMT_ARGB32);
+        ogpu_target(&B, 0);
+        ogpu_path_stroke(&B, OGPU_PD_OVER | OGPU_PATH_ALIASED, 0xFF000000UL, 0, 0, 0, 0, 0, PATH, (unsigned long)P.words, ID,
+                         WORK, WORKB, 2L << 16, 0, 4L << 16, 0, 0, 0);
+        check(ogpu_batch_takes(sbuf, (unsigned long)B.words, ok, fmt), "a driver that answers the flag takes an aliased stroke");
+        ok[OGPU_NEEDS_PATH_ALIASED] = 0;
+        check(!ogpu_batch_takes(sbuf, (unsigned long)B.words, ok, fmt), "one that doesn't: the CPU core draws it");
+    }
+
     printf("test_vector_aliased: %d checks, %d failures\n", checks, failures);
     return failures != 0;
 }

@@ -503,6 +503,7 @@ struct split_job {
 
 static void split_release(struct split_job *j)
 {
+    EXEC(j->base);
     if (j->df != ON_CPU && j->base->drv) j->base->drv->wait(j->df);
     j->df = ON_CPU;
     while (j->held) {
@@ -516,6 +517,7 @@ static long split_run(void *user, unsigned long start, unsigned long end, int dr
 {
     struct split_job *j = (struct split_job *)user;
     struct OpenGPUBase *base = j->base;
+    EXEC(base);
     ULONG words = j->nstate + (ULONG)(end - start), at;
     UBYTE *block = driver && base->drv ? AllocVec(4 + words * 4, MEMF_ANY) : NULL;
     UBYTE *run = block ? block + 4 : j->scratch;    /* no memory for a copy: this run here */
@@ -557,6 +559,7 @@ static long split_run(void *user, unsigned long start, unsigned long end, int dr
  * there was no memory to start (nothing was run: the caller runs it whole). */
 static LONG split_submit(struct OpenGPUBase *base, const UBYTE *s, ULONG words, unsigned long *df, LONG *result)
 {
+    EXEC(base);
     struct split_job j;
     j.base = base;
     j.s = s;

@@ -1,5 +1,5 @@
 /*
-  SDL 2 on AmigaOS 3.x: SDL_GL_* on OpenGPU's GL module.
+  SDL 2 on AmigaOS 3.x: SDL_GL_* on GFOpenGPU's GL module.
   Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 
   Every GL call goes through the program's GL (struct SDL2GLBridge, from
@@ -14,7 +14,7 @@
     context is first made current on it and resized on SDL_GL_SwapWindow
     when the window's size has changed. Its frames are drawn into the
     window's RastPort (GimmeZeroZero, so at 0,0) by GL.module's present
-    (OpenGPU, or WritePixelArray), which keeps the window's layers.
+    (GFOpenGPU, or WritePixelArray), which keeps the window's layers.
   - The display (virgl on the PC's graphics chip, or softpipe) is opened by
     SDL_GL_LoadLibrary, which SDL_CreateWindow calls for an
     SDL_WINDOW_OPENGL window, and closed by SDL_GL_UnloadLibrary.
@@ -99,7 +99,7 @@ int OS3_GL_LoadLibrary(_THIS, const char *path)
         _this->gl_data = NULL;
         return SDL_SetError("OpenGL: GL.module couldn't start (memory?)");
     }
-    SDL_strlcpy(_this->gl_config.driver_path, "LIBS:OpenGPU/GL.module", sizeof(_this->gl_config.driver_path));
+    SDL_strlcpy(_this->gl_config.driver_path, "LIBS:GFOpenGPU/GL.module", sizeof(_this->gl_config.driver_path));
     return 0;
 }
 

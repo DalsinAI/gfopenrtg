@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 # For the Cradle's stove_build (STOVE= and OUT= set, target tests/amiga/vector),
 # or by hand with STOVE or CC as in tools/build.sh. The CPU core is built
-# with opengpu.library's own flags (-O2 -mnobitfield -fomit-frame-pointer):
+# with gfopengpu.library's own flags (-O2 -mnobitfield -fomit-frame-pointer):
 #   OpenGPUVectorModel  tests/test_vector.c (stream v1.6) on the 68k
 #   OpenGPUAliasedModel tests/test_vector_aliased.c (stream v1.8) on the 68k
 #   OpenGPUGradProbe    grad_probe.c: one linear gradient, its pixels printed
@@ -12,7 +12,7 @@
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../../.." && pwd)
-STOVE=${STOVE:-$HOME/AmigaChrome/stoves/os32}
+STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32}
 OUT=${OUT:-$ROOT/build-amiga}
 CC=${CC:-$STOVE/prefix/bin/m68k-amigaos-gcc}
 mkdir -p "$OUT/c"

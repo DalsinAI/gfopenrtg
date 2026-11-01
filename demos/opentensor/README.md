@@ -2,8 +2,8 @@
 
 OpenTensor is a native AmigaOS 3.x demo and integration benchmark for the Open stack:
 
-- Mesa 26.2.4 through GLA and OpenGPU;
-- OpenRTG/CyberGraphX display modes;
+- Mesa 26.2.4 through GLA and GFOpenGPU;
+- GFOpenRTG/CyberGraphX display modes;
 - AHI through `ahi.device`;
 - AC090 68040 + FPU as the reference CPU.
 
@@ -28,7 +28,7 @@ The 164-second loop is split into eleven scenes.
 8. **Form** — soft luminous tensors converge, a Boing form condenses out of the light, and `AND IT WAS GIVEN FORM` appears.
 9. **Window Breakout** — the universe moves into a real Intuition window, gliding across an Amiga-style desktop while Mesa keeps rendering.
 10. **Beyond First Light** — five orbiting Boing forms surround the tensor core and the full Open stack is named.
-11. **The Stack Is Open** — Mesa, OpenRTG, OpenGPU, AHI and AC090 resolve to one final point before the loop begins again.
+11. **The Stack Is Open** — Mesa, GFOpenRTG, GFOpenGPU, AHI and AC090 resolve to one final point before the loop begins again.
 
 The original soundtrack is generated as 16-bit stereo PCM and streamed to
 `ahi.device` using linked double buffers. Version 0.3.0 replaces the harsh
@@ -63,7 +63,7 @@ The higher-detail meshes and lighting have a performance cost. See
 ## Build
 
 ```sh
-STOVE=~/AmigaChrome/stoves/os32-gcc16 \
+STOVE=~/AmiCradle/stoves/os32-gcc16 \
     sh demos/opentensor/build.sh
 ```
 
@@ -80,7 +80,7 @@ Stack 1000000
 OpenTensor
 ```
 
-The default is `960x540x32`, VirGL when available, a private OpenRTG screen and AHI audio. If that mode is unavailable the demo falls back to `640x360x32`.
+The default is `960x540x32`, VirGL when available, a private GFOpenRTG screen and AHI audio. If that mode is unavailable the demo falls back to `640x360x32`.
 
 Useful starts:
 
@@ -118,7 +118,7 @@ F4             restart current scene
 
 ## Presentation paths
 
-A private screen sets `gla_os3_target.bitmap`, selecting GLA's screen-owned OpenGPU presentation path. `WINDOW`, and the built-in Window Breakout scene, set the target to an Intuition RastPort and deliberately use the layered-window compatibility path. The demo therefore provides a repeatable visual and performance regression test for the direct VirGL-to-window work.
+A private screen sets `gla_os3_target.bitmap`, selecting GLA's screen-owned GFOpenGPU presentation path. `WINDOW`, and the built-in Window Breakout scene, set the target to an Intuition RastPort and deliberately use the layered-window compatibility path. The demo therefore provides a repeatable visual and performance regression test for the direct VirGL-to-window work.
 
 ## First-light baseline
 

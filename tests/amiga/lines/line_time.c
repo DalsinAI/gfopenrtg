@@ -1,8 +1,8 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * OpenRTGLineTime: what openrtg.library 0.25's batched lines save on a 68k,
- * measured without the library (a ROM's openrtg.library can't be swapped
+ * OpenRTGLineTime: what gfopenrtg.library 0.25's batched lines save on a 68k,
+ * measured without the library (a ROM's gfopenrtg.library can't be swapped
  * in a lab). It does the work screens.c does for the lines the CPU draws,
  * both ways, against a real layer (a smart refresh window on the Workbench
  * screen, partly covered by a second), into memory of its own:
@@ -13,7 +13,7 @@
  *     before its first pixel, and the pixels of each piece (lines_piece).
  * Both walk library/ortg_line.h, so they must leave the same pixels; it
  * checks that, then prints the milliseconds for 1000 slanted lines.
- *   OpenRTGLineTime [NOWAIT]   NOWAIT leaves the OpenGPU wait out of both. */
+ *   OpenRTGLineTime [NOWAIT]   NOWAIT leaves the GFOpenGPU wait out of both. */
 #include <exec/types.h>
 #include <exec/memory.h>
 #include <devices/timer.h>
@@ -26,8 +26,8 @@
 #include <proto/graphics.h>
 #include <proto/intuition.h>
 #include <proto/timer.h>
-#include <proto/opengpu.h>
-#include <opengpu/opengpu.h>
+#include <proto/gfopengpu.h>
+#include <gfopengpu/gfopengpu.h>
 #include <stdio.h>
 #include <string.h>
 #include "../../../library/ortg_line.h"
@@ -162,7 +162,7 @@ int main(int argc, char **argv)
     before = AllocVec(W * H, MEMF_ANY);
     after = AllocVec(W * H, MEMF_ANY);
     if (!win || !cover || !mem || !before || !after) { printf("OpenRTGLineTime: no windows or memory\n"); return 20; }
-    printf("OpenRTGLineTime: a %dx%d smart refresh window, partly covered; OpenGPU wait each settle: %s\n", W, H,
+    printf("OpenRTGLineTime: a %dx%d smart refresh window, partly covered; GFOpenGPU wait each settle: %s\n", W, H,
            wait_gpu ? "yes (OGPU_Wait(OGPU_FENCE_ALL))" : "no");
     for (k = 0; k < 3; k++) {
         ULONG tb, ta, wb_, wa;

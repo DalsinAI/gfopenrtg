@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: MIT
  *
  * library/pixconv.h against the per-pixel code it replaces in screens.c
- * (openrtg.library 0.24): the nearest pen and its memo, through palette
+ * (gfopenrtg.library 0.24): the nearest pen and its memo, through palette
  * changes; the planes read and written a row at a time; the runs of a
  * mask and its rectangles; and whole blits, every pair of planar, 8, 16 and 32-bit bitmaps,
  * with and without a mask (cookie), minterms, plane masks, and overlapping
@@ -302,7 +302,7 @@ static void test_blits(long count)
         UBYTE m = rnd() % 3 ? minterms[rnd() % sizeof minterms] : (UBYTE)(rnd() & 0xF0);
         UBYTE mask = rnd() % 3 == 0 ? 0xFF : rnd() % 4 == 0 ? 0 : (UBYTE)rnd();
         int kind = rnd() % 4, ck = rnd() % 2;
-        if (!sf && !df) continue;               /* graphics' own, never OpenRTG's */
+        if (!sf && !df) continue;               /* graphics' own, never GFOpenRTG's */
         if (!sf && w + sx > 14 * 8) continue;
         if (!df && w + dx > 14 * 8) continue;
         if (ck && w + cx > 8 * 8) continue;

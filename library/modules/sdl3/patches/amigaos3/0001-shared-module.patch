@@ -1,6 +1,6 @@
 SDL3_68k's AmigaOS 3.x threads (Zlib): a thread SDL3.module starts begins
 with the A4 of the program's copy of SDL (src/SDL_os3callout.h).
-AmigaChrome Team, 2026.
+AmiCradle Team, 2026.
 
 diff --git a/src/thread/amigaos3/SDL_systhread.c b/src/thread/amigaos3/SDL_systhread.c
 index 33d4132..1a3df53 100644

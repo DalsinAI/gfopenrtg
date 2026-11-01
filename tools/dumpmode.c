@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  * DumpMode: the display database's records for the modes whose name has
- * NAME in it, in hex, to compare OpenRTG's with Picasso96's. Not shipped.
+ * NAME in it, in hex, to compare GFOpenRTG's with Picasso96's. Not shipped.
  *   DumpMode NAME */
 #include <exec/types.h>
 #include <graphics/displayinfo.h>

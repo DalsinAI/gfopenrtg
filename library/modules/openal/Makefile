@@ -6,7 +6,7 @@
 # (SDK_INC) and calls this Makefile. Everything here is the Team's.
 #
 #   module   OpenAL.module: OpenAL 1.1 with Voices on ACAHI's Host mix and
-#            Mix on any AHI (LIBS:OpenGPU/).
+#            Mix on any AHI (LIBS:GFOpenGPU/).
 #            Built -fbaserel32 (SHARED=1, the default): its code is loaded
 #            once for every program, and each program gets its own copy of
 #            OpenAL's state. SHARED=0: a copy for each program.
@@ -23,7 +23,7 @@ HERE    := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 ROOT    := $(abspath $(HERE)/../../..)
 OUT     ?= $(ROOT)/build
 WORK    ?= $(OUT)/openal-work
-STOVE   ?= $(HOME)/AmigaChrome/stoves/os32-gcc16/prefix
+STOVE   ?= $(HOME)/AmiCradle/stoves/os32-gcc16/prefix
 CC      := $(STOVE)/bin/m68k-amigaos-gcc
 AR      := $(STOVE)/bin/m68k-amigaos-ar
 RANLIB  := $(STOVE)/bin/m68k-amigaos-ranlib
@@ -57,7 +57,7 @@ HEADERS = $(wildcard $(HERE)include/AL/*.h) $(SRCDIR)/al_internal.h $(SRCDIR)/al
 
 CORE_OBJS   = $(addprefix $(CORE_DIR)/,$(addsuffix .o,$(CORE) $(AMIGA)))
 STATIC_OBJS = $(addprefix $(STATIC_DIR)/,$(addsuffix .o,$(CORE) $(AMIGA)))
-INLINE      = $(SDK_INC)/inline/opengpu.h
+INLINE      = $(SDK_INC)/inline/gfopengpu.h
 
 .PHONY: all module stub static tests
 all: module stub static tests
@@ -66,7 +66,7 @@ module: $(OUT)/OpenAL.module
 stub: $(OUT)/libopenal.a
 static: $(OUT)/libopenal_static.a
 
-$(INLINE): $(OGPU_SRC)/opengpu_lib.sfd
+$(INLINE): $(OGPU_SRC)/gfopengpu_lib.sfd
 	@mkdir -p $(dir $@)
 	$(SFDC) --quiet --mode=macros --output=$@ $<
 

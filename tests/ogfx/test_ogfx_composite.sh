@@ -1,5 +1,5 @@
 #!/bin/sh
-# OpenGfx premultiplied ARGB compositing reference, built for m68k and run
+# GFOpenGfx premultiplied ARGB compositing reference, built for m68k and run
 # under qemu-m68k against an independent pixel-at-a-time reference.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)

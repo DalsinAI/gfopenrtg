@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: MIT
  *
  * OpenRTGScrollExact: does ScrollRaster in a window partly covered by
- * another give on an OpenRTG screen what graphics.library gives on a
+ * another give on an GFOpenRTG screen what graphics.library gives on a
  * planar one? A Shell window with another window over its middle is the
  * case: its ClipRects are a band above, the pieces left and right of the
  * cover, the hidden piece and a band below, and the contents must move
@@ -16,16 +16,16 @@
  * store). Each case runs in a smart and in a simple refresh window, on a
  * planar 8-colour screen with the ROM's ScrollRaster (the reference); on the
  * same screen through library/scroll_plan.h, the rules and the move
- * openrtg.library's ScrollRaster runs, here with graphics.library's
+ * gfopenrtg.library's ScrollRaster runs, here with graphics.library's
  * BltBitMap, RectFill and regions on the window's real ClipRects; and on an
- * 8-bit OpenRTG screen with ORTG_DRAW_CPU_ONLY and with OpenGPU (the
- * openrtg.library that is in the system). Every result must equal the ROM's
+ * 8-bit GFOpenRTG screen with ORTG_DRAW_CPU_ONLY and with GFOpenGPU (the
+ * gfopenrtg.library that is in the system). Every result must equal the ROM's
  * pixel for pixel, damage for damage. Each is also checked against the model
  * (make_model: the rules as measured on OS 3.2), so a change in the ROM's
  * rules shows.
  *
  * OpenRTGScrollExact SHELL shows the Shell case to the eye instead: on an
- * 8-bit OpenRTG screen of its own, a smart refresh window with
+ * 8-bit GFOpenRTG screen of its own, a smart refresh window with
  * console.device in it and a window over its middle, 120 lines written; it
  * waits 20 seconds, closes the cover, and waits 20 more (for screenshots).
  *   OpenRTGScrollExact      Returns 0 when every result equals the ROM's,
@@ -46,7 +46,7 @@
 #include <proto/intuition.h>
 #include <proto/dos.h>
 #include <proto/cybergraphics.h>
-#include <proto/openrtg.h>
+#include <proto/gfopenrtg.h>
 #include <stdio.h>
 #include <string.h>
 #include "../library/scroll_plan.h"
@@ -81,7 +81,7 @@ static const struct scase cases[] = {
 };
 #define CASES (int)(sizeof cases / sizeof cases[0])
 #define KINDS 2                 /* smart, simple */
-#define RUNS 4                  /* planar (the ROM), planar through scroll_plan.h, OpenRTG CPU, OpenRTG OpenGPU */
+#define RUNS 4                  /* planar (the ROM), planar through scroll_plan.h, GFOpenRTG CPU, GFOpenRTG GFOpenGPU */
 
 /* For each run, kind and case: the pixels where they show with the cover
  * open, the damage, LAYERREFRESH, and the pixels after the cover went. */
@@ -113,11 +113,11 @@ static void read_damage(struct Layer *l, UBYTE to[IH][IW])
                 if (x >= 0 && y >= 0 && x < IW && y < IH) to[y][x] = 1;
 }
 
-/* ScrollRaster through library/scroll_plan.h, the code openrtg.library's
+/* ScrollRaster through library/scroll_plan.h, the code gfopenrtg.library's
  * ScrollRaster runs, with graphics.library's own BltBitMap, RectFill and
  * regions on a planar window's real ClipRects: the same rules and the same
- * move as openrtg.library's, checked against the ROM here even where
- * openrtg.library is the ROM's own copy and can't be replaced. */
+ * move as gfopenrtg.library's, checked against the ROM here even where
+ * gfopenrtg.library is the ROM's own copy and can't be replaced. */
 static struct RastPort *plan_rp;
 static LONG plan_sw, plan_sh;
 
@@ -301,7 +301,7 @@ static int shell(void)
     struct IOStdReq *io = NULL;
     int rc = 20;
     char line[96];
-    if (!s) { printf("OpenRTGScrollExact: no 8-bit OpenRTG screen\n"); return 20; }
+    if (!s) { printf("OpenRTGScrollExact: no 8-bit GFOpenRTG screen\n"); return 20; }
     ScreenToFront(s);
     w = OpenWindowTags(NULL, WA_CustomScreen, (ULONG)s, WA_Left, 20, WA_Top, 20, WA_Width, 560, WA_Height, 300,
                        WA_Title, (ULONG)"Scroll test (smart refresh)", WA_DragBar, TRUE, WA_SmartRefresh, TRUE, WA_Activate, FALSE, TAG_DONE);
@@ -335,10 +335,10 @@ static int shell(void)
 
 int main(int argc, char **argv)
 {
-    static const char *const runs[RUNS] = { "planar", "plan", "CPU", "OpenGPU" };
+    static const char *const runs[RUNS] = { "planar", "plan", "CPU", "GFOpenGPU" };
     static const char *const kinds[KINDS] = { "smart", "simple" };
     int run, kind, n, rc = 0;
-    if (!(OpenRTGBase = OpenLibrary((CONST_STRPTR)OPENRTG_NAME, 0))) { printf("OpenRTGScrollExact: needs openrtg.library\n"); return 20; }
+    if (!(OpenRTGBase = OpenLibrary((CONST_STRPTR)OPENRTG_NAME, 0))) { printf("OpenRTGScrollExact: needs gfopenrtg.library\n"); return 20; }
     if (!(CyberGfxBase = OpenLibrary((CONST_STRPTR)"cybergraphics.library", 40))) {
         printf("OpenRTGScrollExact: needs cybergraphics.library\n");
         CloseLibrary(OpenRTGBase);
@@ -350,7 +350,7 @@ int main(int argc, char **argv)
         for (LONG x = 0; x < IW; x++) pattern[y][x] = (UBYTE)(1 + ((x * 7 + y * 13 + (x / 5) * 3 + (y / 3)) * 2654435761UL >> 20) % 5);
     for (run = 0; run < RUNS; run++) {
         struct Screen *s = run >= 2 ? open_rtg() : open_planar();
-        if (!s) { printf("OpenRTGScrollExact: no %s screen\n", run >= 2 ? "8-bit OpenRTG" : "planar"); rc = 20; continue; }
+        if (!s) { printf("OpenRTGScrollExact: no %s screen\n", run >= 2 ? "8-bit GFOpenRTG" : "planar"); rc = 20; continue; }
         ORTG_DrawStats(NULL, 0, ORTG_DRAW_RESET | (run == 2 ? ORTG_DRAW_CPU_ONLY : ORTG_DRAW_OPENGPU));
         for (kind = 0; kind < KINDS; kind++)
             for (n = 0; n < CASES; n++)
@@ -358,7 +358,7 @@ int main(int argc, char **argv)
         if (run == 3) {
             ULONG c[4 * 21];
             ORTG_DrawStats(c, 21, 0);
-            printf("OpenGPU run: ScrollRaster moves %lu pieces by OpenGPU, %lu by the CPU; fills %lu by OpenGPU, %lu by the CPU\n",
+            printf("GFOpenGPU run: ScrollRaster moves %lu pieces by GFOpenGPU, %lu by the CPU; fills %lu by GFOpenGPU, %lu by the CPU\n",
                    (unsigned long)c[4 * ORTG_STAT_COPY], (unsigned long)c[4 * ORTG_STAT_COPY + 1],
                    (unsigned long)c[4 * ORTG_STAT_SCROLL], (unsigned long)c[4 * ORTG_STAT_SCROLL + 1]);
         }
@@ -405,7 +405,7 @@ int main(int argc, char **argv)
                 printf("\n");
             }
         }
-    printf("OpenRTGScrollExact: %d of %d results (scroll_plan.h, OpenRTG CPU and OpenGPU) the same as the ROM's; %d results (of every run) unlike the model\n",
+    printf("OpenRTGScrollExact: %d of %d results (scroll_plan.h, GFOpenRTG CPU and GFOpenGPU) the same as the ROM's; %d results (of every run) unlike the model\n",
            checks - fails, checks, model_diffs);
     if (fails && rc < 10) rc = 10;
 out:

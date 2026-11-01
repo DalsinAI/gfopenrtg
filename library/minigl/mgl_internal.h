@@ -4,8 +4,8 @@
  * minigl.library's insides. The library is OpenGL 1.1's fixed-function
  * front end: it keeps GL's state, transforms, lights, fogs and clips the
  * vertices, and sends the triangles to the one library's 3D ops (OGPU
- * stream v1.2, include/opengpu/stream3d.h): to opengpu.library, whose back
- * end draws them (the PC on AmigaChrome), or to the same 3D core linked in
+ * stream v1.2, include/gfopengpu/stream3d.h): to gfopengpu.library, whose back
+ * end draws them (the PC on AmiCradle), or to the same 3D core linked in
  * here, on the 68k. Both draw the same pixels.
  *
  * The parts:
@@ -36,7 +36,7 @@
 
 #include "../opengpu/ogpu_core.h"
 #include "../opengpu/ogpu_3d.h"
-#include "../../include/opengpu/build3d.h"
+#include "../../include/gfopengpu/build3d.h"
 #include "mgl_slots.h"
 
 #define MGL_LIB_VERSION   29
@@ -360,7 +360,7 @@ struct GLcontext_t {
 #define CL_TEX1     16
 
 /* Routes. */
-#define ROUTE_GPU 0                 /* opengpu.library */
+#define ROUTE_GPU 0                 /* gfopengpu.library */
 #define ROUTE_CPU 1                 /* the 3D core on this 68k */
 
 /* ---- the library (mgl_lib.c) ------------------------------------------------------------ */
@@ -376,7 +376,7 @@ struct mgl_prefs {                  /* chosen before mglCreateContext */
     int guard, close_desktop, alpha_fallback, no_mip;
     int route;                      /* ENV:MiniGL/Driver: -1 auto, ROUTE_ */
     int flip;                       /* ENV:MiniGL/Flip: screens change buffers instead of blitting */
-    int gpu_3d, gpu_host;           /* opengpu.library draws 3D (and not on this 68k) */
+    int gpu_3d, gpu_host;           /* gfopengpu.library draws 3D (and not on this 68k) */
 };
 extern struct mgl_prefs mgl_prefs;
 

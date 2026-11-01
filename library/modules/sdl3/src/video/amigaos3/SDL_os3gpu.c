@@ -1,12 +1,12 @@
 /*
-  SDL 3 on AmigaOS 3.x: opengpu.library, shared by the opengpu renderer and
+  SDL 3 on AmigaOS 3.x: gfopengpu.library, shared by the opengpu renderer and
   the window framebuffer (SDL_os3gpu.h).
   Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 
-  A window is shown by OpenGPU, which copies the frame into the screen's
+  A window is shown by GFOpenGPU, which copies the frame into the screen's
   bitmap (on the Cradle, the PC does it), through each visible part of the
-  window's layer and inside its borders. A screen OpenGPU has no format for,
-  a planar one, or no opengpu.library: WritePixelArray, as SDL3_68k does.
+  window's layer and inside its borders. A screen GFOpenGPU has no format for,
+  a planar one, or no gfopengpu.library: WritePixelArray, as SDL3_68k does.
 
   SDL_OS3_GPU_NO_PRESENT leaves the window's part out (it is the Amiga's
   alone): tests/sdl3/rendercompare_host.sh builds the rest on a PC.
@@ -126,7 +126,7 @@ int SDL_OS3_GPU_FormatOfPixfmt(unsigned long pixfmt)
 #define OS3_GPU_PROP  "SDL.amigaos3.opengpu"
 #define OS3_GPU_WORDS 2048
 
-/* A window's OpenGPU state, made on its first frame and freed with the
+/* A window's GFOpenGPU state, made on its first frame and freed with the
    window's properties. */
 typedef struct OS3_GPUWindow
 {

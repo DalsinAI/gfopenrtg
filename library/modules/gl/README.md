@@ -1,14 +1,14 @@
-# OpenGPU's GL module
+# GFOpenGPU's GL module
 
-Mesa's OpenGL and GLES inside OpenGPU (DESIGN.md section 5, "One library"):
+Mesa's OpenGL and GLES inside GFOpenGPU (DESIGN.md section 5, "One library"):
 the GLA core, which runs Mesa's GL state tracker on one of two Gallium
 drivers:
 
-- **virgl, on the PC's graphics chip.** On AmigaChrome, opengpu.library
+- **virgl, on the PC's graphics chip.** On AmiCradle, gfopengpu.library
   carries OGPU_OP_VIRGL to the ACRTG board's ring, and the runtime hands it
   to virglrenderer (`host/virgl/acvirgl.c`). The GLA core's winsys
   (`gla/gla_virgl.c`) turns virgl's calls into ACVirgl request blocks
-  (`include/opengpu/virgl.h`). It gives GL 4.3 and GLES 3.1.
+  (`include/gfopengpu/virgl.h`). It gives GL 4.3 and GLES 3.1.
 - **softpipe, on the 68k.** Used on every other Amiga, and wherever
   `OGPU_Query(OGPU_OP_VIRGL)` doesn't answer "full". It gives GL 3.3 and
   GLES 3.1.
@@ -42,14 +42,14 @@ deals with byte order in these places:
 - **The Team's changes:** the patches in `mesa/patches/`.
   - 0001-0006 are the AmigaOS port. It was openamigamesa's until
     8 October 2026; it moved here with the one-library design, and
-    openamigamesa keeps OpenDemos.
+    openamigamesa keeps GFOpenDemos.
   - 0007-0010 are for virgl.
 
 ## GL.module and libGL.a
 
 On AmigaOS 3.2 programs don't carry Mesa. They link `libGL.a` (`stubs/gl`),
-and their first GL call loads `LIBS:OpenGPU/GL.module` through
-opengpu.library's `OGPU_ModuleOpen` (`include/opengpu/module.h`):
+and their first GL call loads `LIBS:GFOpenGPU/GL.module` through
+gfopengpu.library's `OGPU_ModuleOpen` (`include/gfopengpu/module.h`):
 
 - **GL.module** (`module/`) is Mesa, the GLA core and its OS 3 parts, linked
   as a module on `library/modules/common`. Its table hands out every call by
@@ -62,7 +62,7 @@ opengpu.library's `OGPU_ModuleOpen` (`include/opengpu/module.h`):
   doesn't have returns 0.
 - **Shared** (residency step 2, DESIGN.md section 5): Mesa is built
   `-fbaserel32` (the cross file) and GL.module linked `-resident32`, so
-  opengpu.library loads its code once for every program and each program's
+  gfopengpu.library loads its code once for every program and each program's
   open gets its own copy of Mesa's data (about 200 KB with the BSS). An
   entry of libGL.a sets A4 to the program's copy: it copies its arguments
   (their size comes from Mesa's glapi XML, the GLA calls' from their
@@ -81,12 +81,12 @@ opengpu.library's `OGPU_ModuleOpen` (`include/opengpu/module.h`):
   the stove's libpthread would start a thread without the program's A4.
 - **Programs.** One on libGL.a is an ordinary program: `LFLAGS` in
   `gla-link.env` has no `-fbaserel32`. One with Mesa inside (test_gla,
-  OpenDemos.static) is `-fbaserel32` like Mesa and links with `MESA_LFLAGS`
+  GFOpenDemos.static) is `-fbaserel32` like Mesa and links with `MESA_LFLAGS`
   (`-resident32`) and `PROGOBJS` (`mesa/amigaos/initcpp.c`). A plain
   `-fbaserel32` program, started by the stove's nlbcrt0, never returns to
   the Shell when it ends, even `int main(void) { return 0; }`; `-resident32`
   ones (nlrcrt0) end as they should. From #40 until this was found,
-  `LFLAGS` carried `-fbaserel32`, so OpenDemos hung as it exited.
+  `LFLAGS` carried `-fbaserel32`, so GFOpenDemos hung as it exited.
 - GL needs a big stack, and libGL.a gives it one. When the task that first
   calls GL has a stack under 256 KB (a Shell's default is 4 KB), each of its
   calls into GL runs on a 1 MB GL stack of libGL.a's own, through exec's
@@ -115,18 +115,18 @@ ACVIRGL_LIB=/path/libvirglrenderer.so.1 sh tests/run.sh
 
 `GL_WORK` chooses the work directory, which defaults to `build/` here (about
 1 GB). A program for OS 3.2 compiles with Mesa's `include/` and
-`OUT_DIR/include` and links `-L OUT_DIR -lGL`; OpenDemos (openamigamesa)
+`OUT_DIR/include` and links `-L OUT_DIR -lGL`; GFOpenDemos (openamigamesa)
 does.
 
 ## Measured, 8 October 2026
 
-On a scratch copy of the AmigaChrome Showcase instance (AC090 68040, ACRTG,
+On a scratch copy of the AmiCradle Showcase instance (AC090 68040, ACRTG,
 virglrenderer 1.3.0 on the PC's graphics chip):
 
 - **test_gla:** softpipe gives its stored pictures. virgl gives GL 4.3, the
   same pictures as virgl on the x86 host (c3c62778, 34e0c2fd, 1a30012c),
   and 100% of softpipe's within the allowance.
-- **OpenDemos at 320x240** (openamigamesa), linked with libGL.a (100 KB
+- **GFOpenDemos at 320x240** (openamigamesa), linked with libGL.a (100 KB
   rather than 20 MB), GL from GL.module, softpipe → virgl:
   - Boing: 4.0 → 357 fps
   - Chrome Gears: 1.5 → 427 fps
@@ -145,7 +145,7 @@ Softpipe's rates above (4.0, 1.5 and 0.3 fps) were below the 5.8, 2.6 and
 Showcase instance, at 320x240. Each figure is the steady rate after the
 first 10 seconds (start-up, display lists and shaders are left out) over
 30 to 70 seconds. GL.module was built with each set of flags, and the
-6 October build of Mesa was relinked into a static OpenDemos.
+6 October build of Mesa was relinked into a static GFOpenDemos.
 
 | Build | Runtime of 8 Oct | JIT of amigachrome #293 |
 | --- | --- | --- |
@@ -179,7 +179,7 @@ On a scratch copy of the Showcase instance (AC090 68040, ACRTG, virgl):
 - **ModuleCheck:** the first open of GL.module takes 19,236 KB and about
   860 ms; a second and third open, with the first still open, take 345 KB
   and 1 ms each. Closing them all gives every byte back.
-- **Three OpenDemos Gears at once**, memory in use over idle: on softpipe
+- **Three GFOpenDemos Gears at once**, memory in use over idle: on softpipe
   29.5, 39.6 and 49.8 MB for one, two and three (a copy each, before: 30.1,
   50.8 and 71.4 MB); on virgl 25.2, 30.9 and 36.6 MB. All of it comes back
   when they end.

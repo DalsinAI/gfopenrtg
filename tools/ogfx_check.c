@@ -1,20 +1,20 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * OpenGfxCheck: does OpenGfx, inside opengpu.library, draw exactly what
+ * OpenGfxCheck: does GFOpenGfx, inside gfopengpu.library, draw exactly what
  * graphics.library draws, and how much faster?
  *
  * It draws the same random calls three ways on standard (planar) bitmaps:
- *   - graphics.library's own code (OpenGfx switched off for the call);
- *   - opengpu.library's OGFX_ LVOs, OpenGfx on;
- *   - through graphics.library with OpenGfx on, so through the patches'
+ *   - graphics.library's own code (GFOpenGfx switched off for the call);
+ *   - gfopengpu.library's OGFX_ LVOs, GFOpenGfx on;
+ *   - through graphics.library with GFOpenGfx on, so through the patches'
  *     entries, when the patches are in;
  * and compares the bitmaps byte for byte after every call, with each call's
  * result. RectFill (JAM1, JAM2, COMPLEMENT, area patterns, plane masks),
  * BltBitMap (every minterm, plane masks, overlapping copies within one
  * bitmap and copies between two), ScrollRaster, BltTemplate and the four
- * text calls, on 1 to 8 planes. From opengpu.library 0.10, the calls
- * OpenGfx's core (openamigagfx library/core) draws: Draw, PolyDraw,
+ * text calls, on 1 to 8 planes. From gfopengpu.library 0.10, the calls
+ * GFOpenGfx's core (openamigagfx library/core) draws: Draw, PolyDraw,
  * WritePixel, ReadPixel, SetRast, BltPattern, WritePixelArray8,
  * ReadPixelArray8 and WriteChunkyPixels, every DrawMode; these have no
  * LVO, so they go through the patches (graphics.library's pixels are
@@ -25,23 +25,23 @@
  * other one) and ScrollRaster too, and the window is a smart refresh one,
  * where the core takes those two. From 0.14 area fills (one or two
  * polygons and maybe an ellipse, some with an outline), DrawEllipse and
- * EraseRect too. On AmigaChrome (OGFX_STATUS_AMIGACHROME)
- * OpenGfx's leaves take Chip RAM, so the leaves are what is checked; on a
+ * EraseRect too. On AmiCradle (OGFX_STATUS_AMICRADLE)
+ * GFOpenGfx's leaves take Chip RAM, so the leaves are what is checked; on a
  * real Amiga they leave Chip RAM to the blitter.
  *
  *   OpenGfxCheck [INSTALL] [ON|OFF] [QUICK] [NOCHECK] [VERBOSE]
- * INSTALL puts the patches in first; ON or OFF switches OpenGfx's own
- * drawing and leaves it so. Without NOCHECK the check runs (OpenGfx's
+ * INSTALL puts the patches in first; ON or OFF switches GFOpenGfx's own
+ * drawing and leaves it so. Without NOCHECK the check runs (GFOpenGfx's
  * switch is put back afterwards); without QUICK it also times full-screen
- * fills, copies and scrolls with OpenGfx on and off. VERBOSE names each
+ * fills, copies and scrolls with GFOpenGfx on and off. VERBOSE names each
  * call before it is made.
- * With opengpu.library 0.7 the check also tries the look hook (gfx.h): a
+ * With gfopengpu.library 0.7 the check also tries the look hook (gfx.h): a
  * look registered for the check's own RastPort is asked first on RectFill
  * and Text, by the LVOs and through the patches, sees 16-bit arguments, ends
  * the call when it draws, and stops being asked once taken out. It is
- * skipped while another look (OpenLook) is in.
+ * skipped while another look (GFOpenLook) is in.
  * Returns 0 when everything matches, 10 when something doesn't, 20 when
- * opengpu.library has no OpenGfx. */
+ * gfopengpu.library has no GFOpenGfx. */
 #include <exec/types.h>
 #include <exec/memory.h>
 #include <devices/timer.h>
@@ -56,7 +56,7 @@
 #include <proto/graphics.h>
 #include <proto/layers.h>
 #include <proto/timer.h>
-#include <proto/opengpu.h>
+#include <proto/gfopengpu.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -73,8 +73,8 @@ static ULONG rng = 2463534242UL;
 static ULONG rnd(void) { rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5; return rng; }
 static LONG rnd_in(LONG lo, LONG hi) { return lo + (LONG)(rnd() % (ULONG)(hi - lo + 1)); }
 
-/* graphics.library; OpenGfx's LVOs; through the patches; OpenGfx's LVOs on
- * bitmaps in Fast RAM, which only OpenGfx's leaves draw (the blitter can't
+/* graphics.library; GFOpenGfx's LVOs; through the patches; GFOpenGfx's LVOs on
+ * bitmaps in Fast RAM, which only GFOpenGfx's leaves draw (the blitter can't
  * reach them), against graphics.library's pixels in Chip RAM */
 enum { REF, LVO, PAT, FAST, WAYS };
 static const char *const way_name[WAYS] = { "graphics.library", "OGFX LVO", "patched", "OGFX LVO, Fast RAM" };
@@ -232,7 +232,7 @@ static void one_bltbitmap(void)
     if (patched) r2 = BltBitMap(ways[PAT].bm[s], sx, sy, ways[PAT].bm[d], dx, dy, w, h, minterm, mask, NULL);
     else r2 = r0;
     if (have_fast) {
-        /* Fast RAM is OpenGfx's own: it answers as graphics.library's own
+        /* Fast RAM is GFOpenGfx's own: it answers as graphics.library's own
          * BltBitMap does, with the planes drawn (those in the mask). Under
          * Picasso96, graphics.library's answer above is Picasso96's: every
          * plane the two bitmaps share. Either is taken. */
@@ -283,7 +283,7 @@ static void one_template(void)
 
 static void one_text(void)
 {
-    static const char words[] = "OpenGfx inside opengpu.library: one library for all the drawing";
+    static const char words[] = "GFOpenGfx inside gfopengpu.library: one library for all the drawing";
     LONG n = rnd_in(1, 18), at = rnd_in(0, (LONG)sizeof words - 1 - n), x = rnd_in(2, W - 8 * n - 6 > 2 ? W - 8 * n - 6 : 2), y = rnd_in(8, H - 2);
     struct TextExtent te[WAYS], ce;
     ULONG fit[WAYS], len[WAYS], drawn[WAYS];
@@ -727,7 +727,7 @@ static void bench(void)
         m = (now_ms() - t0) / n; if (m < t[s][2]) t[s][2] = m;
     }
     printf("timing, 640 x 480 x 8 planes in %s RAM, ms a call, fastest of five (%s):\n",
-           (TypeOfMem(a->Planes[0]) & MEMF_CHIP) ? "Chip" : "Fast", patched ? "through graphics.library" : "through OpenGfx's LVOs");
+           (TypeOfMem(a->Planes[0]) & MEMF_CHIP) ? "Chip" : "Fast", patched ? "through graphics.library" : "through GFOpenGfx's LVOs");
     printf("  RectFill      off %7.3f  on %7.3f  (%.1fx)\n", t[0][0], t[1][0], t[1][0] > 0 ? t[0][0] / t[1][0] : 0.0);
     printf("  BltBitMap     off %7.3f  on %7.3f  (%.1fx)\n", t[0][1], t[1][1], t[1][1] > 0 ? t[0][1] / t[1][1] : 0.0);
     printf("  ScrollRaster  off %7.3f  on %7.3f  (%.1fx)\n", t[0][2], t[1][2], t[1][2] > 0 ? t[0][2] / t[1][2] : 0.0);
@@ -791,7 +791,7 @@ static int look_check(void)
     int f = 0, way;
     LONG r;
     if (OGFX_Status() & OGFX_STATUS_LOOK) {
-        printf("look: skipped (another look is in: OpenLook)\n");
+        printf("look: skipped (another look is in: GFOpenLook)\n");
         return 0;
     }
     if (!(bm = AllocBitMap(64, 16, 1, BMF_CLEAR, NULL))) { printf("look: no memory\n"); return 1; }
@@ -860,11 +860,11 @@ int main(int argc, char **argv)
         else { printf("OpenGfxCheck [INSTALL] [ON|OFF] [QUICK] [NOCHECK] [VERBOSE]\n"); return 5; }
     }
     if (!(OpenGPUBase = OpenLibrary((CONST_STRPTR)OPENGPU_NAME, 0))) {
-        printf("OpenGfxCheck: opengpu.library is not installed\n");
+        printf("OpenGfxCheck: gfopengpu.library is not installed\n");
         return 20;
     }
     if (OpenGPUBase->lib_Version == 0 && OpenGPUBase->lib_Revision < OPENGPU_OGFX_REVISION) {
-        printf("OpenGfxCheck: opengpu.library %d.%d has no OpenGfx (0.%d or later has)\n",
+        printf("OpenGfxCheck: gfopengpu.library %d.%d has no GFOpenGfx (0.%d or later has)\n",
                OpenGPUBase->lib_Version, OpenGPUBase->lib_Revision, OPENGPU_OGFX_REVISION);
         CloseLibrary(OpenGPUBase);
         return 20;
@@ -872,13 +872,13 @@ int main(int argc, char **argv)
     LayersBase = OpenLibrary((CONST_STRPTR)"layers.library", 39);
     v = OGFX_Version();
     if (install && !OGFX_InstallPatches()) { printf("OpenGfxCheck: the patches would not go in\n"); rc = 10; }
-    if (set >= 0) printf("OpenGfx's own drawing: %s (was %s)\n", set ? "on" : "off", OGFX_SetEnabled(set) ? "on" : "off");
+    if (set >= 0) printf("GFOpenGfx's own drawing: %s (was %s)\n", set ? "on" : "off", OGFX_SetEnabled(set) ? "on" : "off");
     st = OGFX_Status();
     patched = (st & OGFX_STATUS_PATCHED) != 0;
-    printf("opengpu.library %d.%d, OpenGfx %lu.%lu: patches %s, own drawing %s, provider %s%s\n",
+    printf("gfopengpu.library %d.%d, GFOpenGfx %lu.%lu: patches %s, own drawing %s, provider %s%s\n",
            OpenGPUBase->lib_Version, OpenGPUBase->lib_Revision, (unsigned long)(v >> 16), (unsigned long)(v & 0xFFFF),
            patched ? "in" : "not in", st & OGFX_STATUS_ENABLED ? "on" : "off", st & OGFX_STATUS_PROVIDER ? "registered" : "none",
-           st & OGFX_STATUS_AMIGACHROME ? ", AmigaChrome (the leaves take Chip RAM)" : "");
+           st & OGFX_STATUS_AMICRADLE ? ", AmiCradle (the leaves take Chip RAM)" : "");
     if ((v >> 16) != OGFX_INTERFACE_VERSION) { printf("  OGFX_Version is WRONG\n"); rc = 10; }
 
     if (!nocheck && !(tmpl = AllocVec(4 * 16, MEMF_CHIP))) { printf("OpenGfxCheck: no Chip RAM\n"); nocheck = 1; rc = 20; }

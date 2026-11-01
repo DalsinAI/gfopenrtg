@@ -3,9 +3,9 @@
 #ifndef _PROTO_OPENGPU_H
 #define _PROTO_OPENGPU_H
 #include <exec/types.h>
-#include <opengpu/opengpu.h>
-#include <opengpu/module.h>
-#include <opengpu/gfx.h>
+#include <gfopengpu/gfopengpu.h>
+#include <gfopengpu/module.h>
+#include <gfopengpu/gfx.h>
 extern struct Library *OpenGPUBase;
-#include <inline/opengpu.h>
+#include <inline/gfopengpu.h>
 #endif

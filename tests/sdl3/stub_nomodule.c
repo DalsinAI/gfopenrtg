@@ -3,7 +3,7 @@
  *
  * libSDL3.a (stubs/sdl3/SDL3_stub.c) with no SDL3.module, on the host: the
  * stub's own file, built against SDL 3's headers, with exec, dos and
- * opengpu.library answered here (tests/sdl3/host).
+ * gfopengpu.library answered here (tests/sdl3/host).
  *
  * The first SDL call says the module isn't installed, once, and ends the
  * program with exit(20). The SDL calls that come while the program ends
@@ -11,8 +11,8 @@
  * must then do nothing: no second load of the module, no second message and
  * no second exit(), which on an Amiga ran libnix's exit list again from
  * inside itself, for ever when the call came from a destructor. Both ways
- * of loading are checked: opengpu.library's OGPU_ModuleOpen, and the stub's
- * own LoadSeg when there is no opengpu.library 0.5.
+ * of loading are checked: gfopengpu.library's OGPU_ModuleOpen, and the stub's
+ * own LoadSeg when there is no gfopengpu.library 0.5.
  *   tests/run.sh with SDL3_SRC=<SDL 3.4.14's tree> (its include/ and src/)
  * Exit 0 when every check passes. */
 #include <setjmp.h>
@@ -22,7 +22,7 @@
 
 #include <exec/types.h>
 
-/* No A4 on the host (include/opengpu/module.h has these for the 68k). */
+/* No A4 on the host (include/gfopengpu/module.h has these for the 68k). */
 #define OGPU_A4(a4) (void)(a4)
 static APTR ogpu_a4_get(void)
 {
@@ -43,7 +43,7 @@ static void test_exit(int code)
 #include "SDL3_stub.c"
 #undef exit
 
-/* exec, dos and opengpu.library, as the test sets them. */
+/* exec, dos and gfopengpu.library, as the test sets them. */
 struct ExecBase *SysBase;
 struct Library *DOSBase;
 static struct Library opengpu = { 0, 17 };
@@ -53,7 +53,7 @@ static char out[1024];
 struct Library *OpenLibrary(CONST_STRPTR name, ULONG version)
 {
     (void)version;
-    if (strcmp(name, "opengpu.library") || !have_opengpu)
+    if (strcmp(name, "gfopengpu.library") || !have_opengpu)
         return NULL;
     opens++;
     return &opengpu;
@@ -121,7 +121,7 @@ static int failed;
     } while (0)
 
 static const char message[] =
-    "SDL 3: this program needs LIBS:OpenGPU/SDL3.module (OpenGPU), which isn't installed.\n";
+    "SDL 3: this program needs LIBS:GFOpenGPU/SDL3.module (GFOpenGPU), which isn't installed.\n";
 
 static void run(const char *how, int with_opengpu)
 {
@@ -159,14 +159,14 @@ static void run(const char *how, int with_opengpu)
     CHECK(exits == 1, "exit() once");
     CHECK(!strcmp(out, message), "the message once");
     CHECK(module_opens + loadsegs == 1, "one try at loading the module");
-    CHECK(opens == closes, "opengpu.library closed as often as opened");
+    CHECK(opens == closes, "gfopengpu.library closed as often as opened");
     if (!failed)
         printf("ok %s\n", how);
 }
 
 int main(void)
 {
-    run("opengpu.library 0.17 (OGPU_ModuleOpen)", 1);
-    run("no opengpu.library (LoadSeg)", 0);
+    run("gfopengpu.library 0.17 (OGPU_ModuleOpen)", 1);
+    run("no gfopengpu.library (LoadSeg)", 0);
     return failed;
 }

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
-# TinyGL on OpenGPU, with the os32 stove (bebbo's m68k-amigaos-gcc):
+# TinyGL on GFOpenGPU, with the os32 stove (bebbo's m68k-amigaos-gcc):
 #   tinygl.library  the stand-in programs open (bare: no startup code or C library)
 #   libtinygl.a     TinyGL's context calls and a few GLU calls, on GLA (libGL.a)
 #   library/tinygl/build.sh [OUT_DIR]     (default build/)
@@ -10,7 +10,7 @@
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
-STOVE=${STOVE:-$HOME/AmigaChrome/stoves/os32}
+STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32}
 CC=${CC:-$STOVE/prefix/bin/m68k-amigaos-gcc}
 AR=${AR:-$STOVE/prefix/bin/m68k-amigaos-ar}
 OUT=${1:-$ROOT/build}

@@ -10,13 +10,13 @@ struct gla_present;
 
 struct gla_os3_target {
     struct RastPort *rp;        /* drawn through WritePixelArray (layers respected) */
-    struct BitMap   *bitmap;    /* set only for a screen GL owns: drawn by OpenGPU directly */
+    struct BitMap   *bitmap;    /* set only for a screen GL owns: drawn by GFOpenGPU directly */
     int left, top;              /* the GL area's corner in rp (or bitmap) */
 };
 
 /* Point p at t; t must outlive the GL buffer that uses p. */
 void gla_os3_present_init(struct gla_present *p, struct gla_os3_target *t);
-/* Close what presenting opened (openrtg.library, for virgl's frames). */
+/* Close what presenting opened (gfopenrtg.library, for virgl's frames). */
 void gla_os3_present_close(void);
 
 #endif

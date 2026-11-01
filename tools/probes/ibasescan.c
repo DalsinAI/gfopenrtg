@@ -1,6 +1,6 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * IBaseScan: IntuitionBase's private part, in hex, with the words that look
- * like mouse limits marked, to compare Picasso96's screens with OpenRTG's.
+ * like mouse limits marked, to compare Picasso96's screens with GFOpenRTG's.
  * Not shipped.   IBaseScan [WORDS w1 w2 ...] */
 #include <exec/types.h>
 #include <intuition/intuitionbase.h>

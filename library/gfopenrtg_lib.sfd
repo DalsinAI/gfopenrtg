@@ -1,12 +1,12 @@
-==id $Id: openrtg_lib.sfd 0.11 (8.10.2026) $
-* "openrtg.library"
+==id $Id: gfopenrtg_lib.sfd 0.11 (8.10.2026) $
+* "gfopenrtg.library"
 ==base _OpenRTGBase
 ==basetype struct Library *
-==libname openrtg.library
+==libname gfopenrtg.library
 ==bias 30
 ==public
 ==include <exec/types.h>
-==include <openrtg/openrtg.h>
+==include <gfopenrtg/gfopenrtg.h>
 ULONG ORTG_MonitorCount()()
 ULONG ORTG_NextMode(ULONG monitor, ULONG previous)(d0,d1)
 BOOL ORTG_GetMode(ULONG modeID, struct OpenRTGMode *mode)(d0,a0)

@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * OpenAL 1.1's AL API for programs on AmigaOS 3.2 (OpenGPU's OpenAL.module,
+ * OpenAL 1.1's AL API for programs on AmigaOS 3.2 (GFOpenGPU's OpenAL.module,
  * library/modules/openal). Written by the Team from the OpenAL 1.1
  * Specification and Reference (June 2005): the types of its table 2.1, the
  * tokens and the calls. The names and values of the tokens are the

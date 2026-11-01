@@ -3,14 +3,14 @@
  *
  * Pixel arrays (0.4): rectangles of pixels in memory written to a RastPort,
  * read from one, fills and inverts in a colour rather than a pen. These are
- * what cybergraphics.library and Picasso96API.library pass on to OpenRTG
+ * what cybergraphics.library and Picasso96API.library pass on to GFOpenRTG
  * (DESIGN.md section 1); Workbench needs them for its backdrop, since
  * picture.datatype draws through CyberGraphX when it finds it and pokes
  * planes when it doesn't.
  *
- * On an OpenRTG bitmap they work on the chunky pixels through the layer's
+ * On an GFOpenRTG bitmap they work on the chunky pixels through the layer's
  * clip rectangles (screens.c's pieces); on any other bitmap through
- * graphics (WriteChunkyPixels, ReadPixel). OpenRTG's screens are 8-bit, so
+ * graphics (WriteChunkyPixels, ReadPixel). GFOpenRTG's screens are 8-bit, so
  * a colour becomes the nearest pen of the RastPort's palette, from a cache
  * of 32x32x32 colours kept until the palette changes.
  */
@@ -27,7 +27,7 @@
 #include <proto/graphics.h>
 #include "../include/oa_protos_end.h"
 
-#include <opengpu/stream.h>
+#include <gfopengpu/stream.h>
 
 #include "screens.h"
 #include "pixels.h"
@@ -183,9 +183,9 @@ struct pix_ctx {
 };
 
 /* Which of n source pixels the target pixel r of d (another size) shows: the
- * one under the target pixel's centre, as OpenGPU's COMPOSITE takes it
+ * one under the target pixel's centre, as GFOpenGPU's COMPOSITE takes it
  * (ogpu_core.c: a 16.16 step of n / d once, then r * step + step / 2), so a
- * scaled write gives the same pixels on the CPU and through OpenGPU (0.16;
+ * scaled write gives the same pixels on the CPU and through GFOpenGPU (0.16;
  * before, r * n / d). */
 static LONG scaled(LONG r, LONG n, LONG d)
 {
@@ -197,12 +197,12 @@ static LONG scaled(LONG r, LONG n, LONG d)
 static LONG src_x(const struct pix_ctx *c, LONG rx) { return c->px->x + (c->dw == c->px->width ? rx : scaled(rx, c->px->width, c->dw)); }
 static LONG src_y(const struct pix_ctx *c, LONG ry) { return c->px->y + (c->dh == c->px->height ? ry : scaled(ry, c->px->height, c->dh)); }
 
-/* The OpenGPU format a source format is, where PIXELS draws exactly what
+/* The GFOpenGPU format a source format is, where PIXELS draws exactly what
  * write_piece does (0: it doesn't): 1:1 only; pens raw on 8-bit; the
  * bitmap's own pixels; pens and colour tables as INDEX8 on 16 and 32-bit
  * (*table: the pens' colours or the caller's, 0x00RRGGBB, so alpha 0 as
  * ortg_encode gives); ARGB colours on 16-bit (RGB565 keeps the top bits, as
- * ortg_encode does). 32-bit OpenRTG pixels carry alpha 0, and PIXELS into
+ * ortg_encode does). 32-bit GFOpenRTG pixels carry alpha 0, and PIXELS into
  * ARGB32 would keep an ARGB source's alpha, so there ARGB colours, and
  * tables with alpha, go to the bitmap seen as XRGB32 (*xrgb 1), which
  * drops it; a back end without XRGB32 leaves them on the CPU. */
@@ -235,7 +235,7 @@ static int ogpu_source(const struct pix_ctx *c, const struct ortg_bitmap *bm, co
     return 0;
 }
 
-/* The OpenGPU format of a source drawn at another size, where COMPOSITE
+/* The GFOpenGPU format of a source drawn at another size, where COMPOSITE
  * gives write_piece's pixels (0: it doesn't): ARGB and 0RGB colours, opaque,
  * on 16 and 32-bit (ortg_ogpu_scale keeps a 32-bit pixel's top byte 0); a 16-bit
  * bitmap's own pixels (RAW) on 16-bit, which RGB565 carries through
@@ -267,7 +267,7 @@ static void write_piece(void *v, struct ortg_bitmap *bm, LONG x0, LONG y0, LONG 
             return;
         }
     } else if ((of = scaled_source(c, bm)) != 0) {
-        /* another size: OpenGPU's COMPOSITE from the source rectangle (0.16) */
+        /* another size: GFOpenGPU's COMPOSITE from the source rectangle (0.16) */
         const UBYTE *src = (const UBYTE *)c->px->data + c->px->y * c->px->modulo + c->px->x * (of == OGPU_FMT_RGB565 ? 2 : 4);
         if (ortg_ogpu_scale(bm, x0, y0, x1, y1, src, (ULONG)c->px->modulo, c->px->width, c->px->height, of,
                             c->at_x + dx, c->at_y + dy, c->dw, c->dh)) {
@@ -276,7 +276,7 @@ static void write_piece(void *v, struct ortg_bitmap *bm, LONG x0, LONG y0, LONG 
         }
     }
     ortg_stat(ORTG_STAT_PIXELS, 0, (ULONG)(x1 - x0 + 1) * (ULONG)(y1 - y0 + 1));
-    ortg_ogpu_settle();             /* 0.21: the CPU on the bitmap: what OpenGPU has running first */
+    ortg_ogpu_settle();             /* 0.21: the CPU on the bitmap: what GFOpenGPU has running first */
     if (bm->bpp == 4 && (fmt == ORTG_PIX_ARGB || fmt == ORTG_PIX_0RGB)
         && c->dw == c->px->width && c->dh == c->px->height) {
         /* ARGB colours 1:1 onto a 32-bit bitmap, the case a GL or SDL frame
@@ -400,7 +400,7 @@ static void invert_piece(void *v, struct ortg_bitmap *bm, LONG x0, LONG y0, LONG
 
 /* Every pixel call takes its RastPort's layer lock first and the palette lock second, and
  * lets go in the opposite order. Intuition, graphics and programs take a layer's lock and then
- * call in here (OpenLook paints the screen bar's layer that way), so waiting for a layer while
+ * call in here (GFOpenLook paints the screen bar's layer that way), so waiting for a layer while
  * holding the palette lock closes a cycle. It did on 10 Oct 2026: an SDL window's present held the
  * palette lock and waited for its layer, which Intuition's window drag held; the drag waited for
  * the screen bar's layer, held by a task that waited for the palette lock. The whole machine stopped. */
@@ -501,12 +501,12 @@ LONG ortg_invert_pixels(struct RastPort *rp, LONG x, LONG y, LONG w, LONG h)
 
 /* ---- alpha (0.11) ----------------------------------------------------------------------- */
 
-/* x * y / 255, rounded: OpenGPU's own (ogpu_core.c), so both paths give the same bytes. */
+/* x * y / 255, rounded: GFOpenGPU's own (ogpu_core.c), so both paths give the same bytes. */
 static ULONG m255(ULONG x, ULONG y) { ULONG t = x * y + 128; return (t + (t >> 8)) >> 8; }
 
 struct alpha_ctx { const struct OpenRTGPixels *px; LONG at_x, at_y; ULONG alpha; UBYTE mask; };
 
-/* ARGB over the bitmap by its alpha times the global alpha: OpenGPU's
+/* ARGB over the bitmap by its alpha times the global alpha: GFOpenGPU's
  * COMPOSITE (SRCALPHA, OVER) on 16 and 32-bit, or the same sums here. An
  * 8-bit bitmap has no blending: a pixel at least half opaque is drawn as
  * its nearest pen, as before 0.11. */

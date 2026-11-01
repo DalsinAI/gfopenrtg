@@ -2,13 +2,13 @@
  * SPDX-License-Identifier: MIT
  *
  * OpenGPUGradProbe: one linear gradient (three stops, the identity matrix)
- * filled by PATH_FILL on the CPU core, built as opengpu.library builds it.
+ * filled by PATH_FILL on the CPU core, built as gfopengpu.library builds it.
  * Prints the pixels across row 40; they must step from 2040C0 through
  * green to yellow. Under qemu-m68k with gcc 13 at -O1/-O2 every pixel came
  * out as the first stop (the inverse matrix had a 0 for 65536). */
 #include <stdio.h>
 #include "../../../library/opengpu/ogpu_core.h"
-#include "../../../include/opengpu/build.h"
+#include "../../../include/gfopengpu/build.h"
 
 static ogpu_u8 A[0x80000];
 static ogpu_u8 *map(void *u, ogpu_u32 a, ogpu_u32 l) { (void)u; if (a > sizeof A || l > sizeof A - a) return 0; return A + a; }

@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../library/opengpu/ogpu_core.h"
-#include "../include/opengpu/build.h"
+#include "../include/gfopengpu/build.h"
 
 #define ARENA (1L << 20)
 static ogpu_u8 arena[ARENA], expect[ARENA];

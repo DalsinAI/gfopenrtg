@@ -9,7 +9,7 @@
 set -eu
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$HERE/../../.." && pwd)
-STOVE=${STOVE:-$HOME/AmigaChrome/stoves/os32-gcc16}
+STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32-gcc16}
 OUT=${OUT:-$ROOT/build-amiga}
 # build.sh and the Makefile take the stove's prefix directory
 if [ -x "$STOVE/prefix/bin/m68k-amigaos-gcc" ]; then PREFIX=$STOVE/prefix; else PREFIX=$STOVE; fi

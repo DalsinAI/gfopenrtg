@@ -15,12 +15,12 @@
  *           read as ogpu_template_piece reads a staged strip; the rest one
  *           glyph at a time, as before, when the first is too big alone or
  *           there is no room.
- * The TEMPLATEs are carried out by OpenGPU's core (ogpu_core.c), in CLUT8,
+ * The TEMPLATEs are carried out by GFOpenGPU's core (ogpu_core.c), in CLUT8,
  * RGB565 and ARGB32, and again by the CPU's tmpl_piece loop (with an 8-bit
- * pen mask, which keeps a piece off OpenGPU), and the two bitmaps compared
+ * pen mask, which keeps a piece off GFOpenGPU), and the two bitmaps compared
  * byte for byte. On three more ways the strip's batches are refused by the
  * back end: ob_flush reads their TEMPLATEs back (ts_templates) and draws
- * them on the CPU, which must give 0.24's pixels from OpenGPU's core. The fonts are made up: monospace, proportional with
+ * them on the CPU, which must give 0.24's pixels from GFOpenGPU's core. The fonts are made up: monospace, proportional with
  * CharSpace and CharKern (negative kerning, so images overlap), a 23-pixel
  * one with a smear of 2, a smear of 0 (bold draws the image twice in one
  * place), no underline row, a baseline of 0; widths of 0; characters the
@@ -37,7 +37,7 @@
 #include <exec/types.h>
 #include "../library/text_strip.h"
 #include "../library/opengpu/ogpu_core.h"
-#include "../include/opengpu/build.h"
+#include "../include/gfopengpu/build.h"
 
 /* graphics/rastport.h and graphics/text.h */
 #define JAM1 0
@@ -134,7 +134,7 @@ static void fill_piece(void *c, LONG x0, LONG y0, LONG x1, LONG y1) {
     for (y = y0; y <= y1; y++) for (x = x0; x <= x1; x++) plot(x, y, (const struct ink *)c, 1);
 }
 
-/* ---- the batch: TEMPLATEs through OpenGPU's core ----------------------------------- */
+/* ---- the batch: TEMPLATEs through GFOpenGPU's core ----------------------------------- */
 
 static unsigned char sbuf[1 << 16];
 static struct OGPUBatch B;
@@ -449,7 +449,7 @@ static void test_bits(void) {
 /* ---- the cases ---------------------------------------------------------------------- */
 
 static const char *const fixed[] = {
-    "drawn after the writes", "PokePull frame 00001", "Ram Disk", "Workbench AmigaChrome 3.2",
+    "drawn after the writes", "PokePull frame 00001", "Ram Disk", "Workbench AmiCradle 3.2",
     "iiiWWW|j_gy,Qq", "11111111", "\x7f\xff\x80 A", "The quick brown fox jumps over the lazy", "W"
 };
 #define NFIXED (int)(sizeof fixed / sizeof fixed[0])
@@ -457,7 +457,7 @@ static const int styles[] = { 0, FSF_BOLD, FSF_ITALIC, FSF_UNDERLINED, FSF_BOLD 
 static const int modes[] = { JAM1, JAM2, COMPLEMENT, JAM1 | INVERSVID, JAM2 | INVERSVID, COMPLEMENT | JAM2 };
 static const char *const fmt_names[] = { "", "CLUT8", "RGB565", "ARGB32" };
 
-/* the ways the pieces are drawn: OpenGPU's core in each format, the CPU's loop; and the strip
+/* the ways the pieces are drawn: GFOpenGPU's core in each format, the CPU's loop; and the strip
  * way's batches refused by the back end, drawn by ob_flush on the CPU, against 0.24 on the core */
 struct way { int fmt, cpu, mask, refuse; };
 static const struct way ways[] = { { OGPU_FMT_CLUT8, 0, 0xFF, 0 }, { OGPU_FMT_RGB565, 0, 0xFF, 0 }, { OGPU_FMT_ARGB32, 0, 0xFF, 0 },
@@ -471,7 +471,7 @@ static void set_way(const struct way *w) {
     bpp = fmt == OGPU_FMT_CLUT8 ? 1 : fmt == OGPU_FMT_RGB565 ? 2 : 4;
     bpr = W * bpp + 4;
     for (i = 0; i < bpr * H; i++) background[i] = (ogpu_u8)rnd();
-    if (bpp == 4) for (i = 0; i < bpr * H; i += 4) background[i] = 0;      /* the top byte 0, as OpenRTG keeps it */
+    if (bpp == 4) for (i = 0; i < bpr * H; i += 4) background[i] = 0;      /* the top byte 0, as GFOpenRTG keeps it */
 }
 
 static int one(const struct way *w, struct text *t, LONG max, int rooms) {
@@ -527,7 +527,7 @@ int main(void) {
                             one(&ways[wi], &t, 4096, -1);
                         }
     }
-    printf("text strip: TEMPLATEs for the fixed strings on OpenGPU's ways: %ld glyph by glyph, %ld by strips\n", templates[0], templates[1]);
+    printf("text strip: TEMPLATEs for the fixed strings on GFOpenGPU's ways: %ld glyph by glyph, %ld by strips\n", templates[0], templates[1]);
     /* at random: strings of any characters, long ones, small strips, room running out */
     for (round = 0; round < 6000; round++) {
         struct text t;

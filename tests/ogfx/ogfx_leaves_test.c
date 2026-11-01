@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-/* OpenGfx's leaves (library/ogfx/ogfx_leaves.c) against a reference
+/* GFOpenGfx's leaves (library/ogfx/ogfx_leaves.c) against a reference
  * that works a pixel at a time: random rectangles on random bitmaps,
  * planar (1 to 8 planes, masks, the 0 and -1 planes, set and invert) and
  * chunky (1 to 4 bytes a pixel, store and XOR), copies within one bitmap in

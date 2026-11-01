@@ -7,8 +7,8 @@
 #   - test_al_api, test_al_3d, test_al_stream and test_al_voices (with
 #     ACAHI's board, tests/openal/acahi, big-endian as on the Amiga), the PC
 #     tests built by the stove (library/modules/openal/Makefile, tests);
-#   - alinfo.m through libopenal.a and OpenAL.module (in LIBS:OpenGPU/;
-#     with no opengpu.library the stub LoadSegs it itself): the module's
+#   - alinfo.m through libopenal.a and OpenAL.module (in LIBS:GFOpenGPU/;
+#     with no gfopengpu.library the stub LoadSegs it itself): the module's
 #     first code, its A4 data, libnix's start in it, the jump table, its
 #     calls and its close. vamos has no ahi.device, so no device opens;
 #   - nomodule.m and alinfo.m with no module.
@@ -26,8 +26,8 @@ VAMOS=${VAMOS:-vamos}
 OUT=$(CDPATH= cd -- "$OUT" && pwd)
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
-mkdir -p "$W/libs/OpenGPU" "$W/none/OpenGPU"
-cp "$OUT/OpenAL.module" "$W/libs/OpenGPU/"
+mkdir -p "$W/libs/GFOpenGPU" "$W/none/GFOpenGPU"
+cp "$OUT/OpenAL.module" "$W/libs/GFOpenGPU/"
 cp "$OUT"/tests/openal/* "$W/"
 cd "$W"
 run() {
@@ -40,7 +40,7 @@ for t in test_al_api test_al_3d test_al_stream test_al_voices; do
 done
 run -a LIBS:Work:libs alinfo.m
 run -a LIBS:Work:none nomodule.m > out.txt
-grep -q "^OpenAL: this program's sound needs LIBS:OpenGPU/OpenAL.module" out.txt
+grep -q "^OpenAL: this program's sound needs LIBS:GFOpenGPU/OpenAL.module" out.txt
 grep -q "^nomodule: no sound device" out.txt
 set +e
 run -a LIBS:Work:none alinfo.m > /dev/null

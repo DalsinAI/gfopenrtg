@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: MIT
  *
  * SDL2_image.module: SDL2_image 2.8.12 (Zlib) as a shared, resident module
- * in LIBS:OpenGPU/ (stubs/sdl2/sat_module.h). Its pictures are decoded by
+ * in LIBS:GFOpenGPU/ (stubs/sdl2/sat_module.h). Its pictures are decoded by
  * the ladder in ogpu_image.c: the x86 or ARM64 cores (media.decode/1) for
  * the heavy formats, SDL2_image's own decoders on this CPU, then the
  * Amiga's datatypes. */

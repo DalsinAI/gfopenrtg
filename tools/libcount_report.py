@@ -15,7 +15,7 @@ import argparse
 import re
 from pathlib import Path
 
-DEFAULT_FD = Path.home() / "AmigaChrome" / "stoves" / "os32" / "ndk" / "FD"
+DEFAULT_FD = Path.home() / "AmiCradle" / "stoves" / "os32" / "ndk" / "FD"
 
 
 def fd_names(path: Path) -> dict[int, str]:

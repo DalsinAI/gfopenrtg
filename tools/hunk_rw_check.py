@@ -2,7 +2,7 @@
 # Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
 """hunk_rw_check.py FILE...: fails when an AmigaOS LoadSeg file has a data or
-BSS hunk with anything in it. opengpu.library may run from ROM, where code
+BSS hunk with anything in it. gfopengpu.library may run from ROM, where code
 can't write to itself, so it keeps nothing writable outside its base
 (DESIGN.md section 5, "Residency")."""
 import struct

@@ -6,7 +6,7 @@
 
 #include <exec/types.h>
 #include <graphics/rastport.h>
-#include "../include/openrtg/openrtg.h"
+#include "../include/gfopenrtg/gfopenrtg.h"
 
 LONG ortg_write_pixels(struct RastPort *rp, LONG x, LONG y, const struct OpenRTGPixels *px);
 LONG ortg_read_pixels(struct RastPort *rp, LONG x, LONG y, struct OpenRTGPixels *px);

@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * OpenGPU core tests (G1): each command against a plain per-pixel
+ * GFOpenGPU core tests (G1): each command against a plain per-pixel
  * reference, the errors, random streams that must never reach outside the
  * memory they were given, and a golden scene whose checksum every back end
  * (68k, Cradle, PiStorm) must reproduce: tests/golden/opengpu-g1.txt, and
@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../library/opengpu/ogpu_core.h"
-#include "../include/opengpu/build.h"
+#include "../include/gfopengpu/build.h"
 #include "golden_scenes.h"
 
 /* Amiga addresses in these tests are offsets into one arena. */
@@ -731,10 +731,10 @@ static void test_xrgb32(void) {
           && ogpu_core_supports(OGPU_OP_COMPOSITE, OGPU_FMT_XRGB32) == OGPU_FULL, "XRGB32 supported");
 }
 
-/* The 32-bit alpha byte's contract (DESIGN.md, "A 32-bit pixel's alpha byte"): OpenRTG's
+/* The 32-bit alpha byte's contract (DESIGN.md, "A 32-bit pixel's alpha byte"): GFOpenRTG's
  * WritePixelArray(RECTFMT_RAW) on a 32-bit bitmap is PIXELS from ARGB32 into the bitmap as
  * ARGB32, and ReadPixelArray(RECTFMT_RAW) a COPY into memory as ARGB32: both keep every
- * byte. Then the keyed compose OpenLayers 47.107 builds from such a surface
+ * byte. Then the keyed compose GFOpenLayers 47.107 builds from such a surface
  * (LAYERLOOK_KEYED): a COMPOSITE of it as XRGB32 at the layer's opacity onto the screen
  * (XRGB32), then of it as ARGB32 with SRCALPHA at 255. */
 static void test_raw_alpha(void) {

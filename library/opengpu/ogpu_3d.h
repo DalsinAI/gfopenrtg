@@ -1,8 +1,8 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * OpenGPU's 3D core: the CPU rasteriser behind stream v1.2's 3D ops
- * (include/opengpu/stream3d.h). It draws SDL 2's geometry and Warp3D's
+ * GFOpenGPU's 3D core: the CPU rasteriser behind stream v1.2's 3D ops
+ * (include/gfopengpu/stream3d.h). It draws SDL 2's geometry and Warp3D's
  * triangles alike: every primitive, texture format, environment, blend,
  * fog, Z, stencil and alpha mode Warp3D has, the Team's replacement for a
  * software Warp3D.
@@ -22,7 +22,7 @@
 #define OGPU_3D_H
 
 #include "ogpu_core.h"
-#include "../../include/opengpu/stream3d.h"
+#include "../../include/gfopengpu/stream3d.h"
 
 #define OGPU3D_FOGTAB 1024              /* fog factors for w = 0 .. 1 */
 /* A slot texture's filter (min, mag) for SDL's PIXELART (v1.7). Warp3D's

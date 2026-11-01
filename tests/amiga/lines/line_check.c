@@ -1,17 +1,17 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * OpenRTGLineCheck: do Draw and PolyDraw on an OpenRTG screen draw what
+ * OpenRTGLineCheck: do Draw and PolyDraw on an GFOpenRTG screen draw what
  * graphics.library draws on a planar bitmap, and how fast?
  *
- * On an 8-bit OpenRTG screen of its own it draws the same random calls
+ * On an 8-bit GFOpenRTG screen of its own it draws the same random calls
  * (Move, Draw, PolyDraw, every DrawMode, LinePtrn through SetDrPt or set
  * straight, linpatcnt, the write mask) three ways: into a planar bitmap
- * (graphics.library, or OpenGfx's core, which matches it byte for byte),
- * into a smart refresh window partly covered by another (OpenRTG, in clip
- * pieces and the backing store) and into an OpenRTG bitmap with no layer;
+ * (graphics.library, or GFOpenGfx's core, which matches it byte for byte),
+ * into a smart refresh window partly covered by another (GFOpenRTG, in clip
+ * pieces and the backing store) and into an GFOpenRTG bitmap with no layer;
  * it compares every pixel (ReadPixel), and cp, linpatcnt and Flags after
- * every call. Once through OpenGPU where OpenRTG uses it, once with
+ * every call. Once through GFOpenGPU where GFOpenRTG uses it, once with
  * ORTG_DRAW_CPU_ONLY.
  * TIME draws 1000 slanted lines (solid JAM1, COMPLEMENT, a pattern) and
  * 1000 PolyDraw boxes in the window, and prints the milliseconds.
@@ -21,7 +21,7 @@
  * for SECS seconds (default 60) for a screenshot.
  *   OpenRTGLineCheck [CHECK] [TIME] [SHOW] [SECS=n] [ROUNDS=n]   (none: CHECK and TIME)
  * Returns 0 when everything matches, 10 when something doesn't, 20 when it
- * can't run. openrtg.library 0.11 or later. */
+ * can't run. gfopenrtg.library 0.11 or later. */
 #include <exec/types.h>
 #include <exec/memory.h>
 #include <devices/timer.h>
@@ -34,7 +34,7 @@
 #include <proto/graphics.h>
 #include <proto/intuition.h>
 #include <proto/timer.h>
-#include <proto/openrtg.h>
+#include <proto/gfopenrtg.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -264,7 +264,7 @@ static void show(struct RastPort *srp, struct RastPort *ref, int secs)
     SetDrMd(&z, JAM1); SetDrPt(&z, 0xFFFF); SetWriteMask(&z, 0xFF);
     SetRast(srp, 0);
     SetAPen(&z, 1); SetBPen(&z, 0); SetDrMd(&z, JAM2);
-    label(&z, 10, 20, "OpenRTG");
+    label(&z, 10, 20, "GFOpenRTG");
     label(&z, 400, 20, "planar (graphics.library)");
     scene(&r);
     scene(ref);
@@ -309,17 +309,17 @@ int main(int argc, char **argv)
     }
     if (!do_check && !do_time && !do_show) do_check = do_time = 1;
     if (!(OpenRTGBase = OpenLibrary((CONST_STRPTR)OPENRTG_NAME, 0)) || (OpenRTGBase->lib_Version == 0 && OpenRTGBase->lib_Revision < 11)) {
-        printf("OpenRTGLineCheck: needs openrtg.library 0.11\n");
+        printf("OpenRTGLineCheck: needs gfopenrtg.library 0.11\n");
         return 20;
     }
-    printf("OpenRTGLineCheck: openrtg.library %d.%d\n", OpenRTGBase->lib_Version, OpenRTGBase->lib_Revision);
+    printf("OpenRTGLineCheck: gfopenrtg.library %d.%d\n", OpenRTGBase->lib_Version, OpenRTGBase->lib_Revision);
     if (OpenDevice((CONST_STRPTR)TIMERNAME, UNIT_ECLOCK, &treq.tr_node, 0)) { printf("OpenRTGLineCheck: no timer.device\n"); return 20; }
     TimerBase = treq.tr_node.io_Device;
     id = ORTG_BestMode(1, 800, 600, 8);
     s = OpenScreenTags(NULL, SA_DisplayID, id, SA_Depth, 8, SA_Width, 800, SA_Height, 600, SA_Title, (ULONG)"OpenRTGLineCheck", SA_ShowTitle, FALSE,
                        SA_Pens, (ULONG)"\xff\xff", SA_Quiet, TRUE, TAG_DONE);
     if (!s || !ORTG_BitMapInfo(s->RastPort.BitMap, &bi) || bi.depth != 8) {
-        printf("OpenRTGLineCheck: no 8-bit OpenRTG screen (mode %08lx)\n", (unsigned long)id);
+        printf("OpenRTGLineCheck: no 8-bit GFOpenRTG screen (mode %08lx)\n", (unsigned long)id);
         if (s) CloseScreen(s);
         return 20;
     }
@@ -338,7 +338,7 @@ int main(int argc, char **argv)
     ref_bm = AllocBitMap(W, H, 8, BMF_CLEAR, NULL);
     rtg_bm = AllocBitMap(W, H, 8, BMF_CLEAR, s->RastPort.BitMap);
     if (!win || !cover || !ref_bm || !rtg_bm || ORTG_BitMapInfo(ref_bm, &bi) || !ORTG_BitMapInfo(rtg_bm, &bi)) {
-        printf("OpenRTGLineCheck: no windows or bitmaps (the planar one must be planar, the other OpenRTG's)\n");
+        printf("OpenRTGLineCheck: no windows or bitmaps (the planar one must be planar, the other GFOpenRTG's)\n");
         return 20;
     }
     InitRastPort(&ref_rp); ref_rp.BitMap = ref_bm;
@@ -346,7 +346,7 @@ int main(int argc, char **argv)
     rps[REF] = &ref_rp; rps[WIN] = win->RPort; rps[BMP] = &bmp_rp;
     if (do_check) {
         ORTG_DrawStats(NULL, 0, ORTG_DRAW_OPENGPU);
-        check(rounds, "OpenGPU");
+        check(rounds, "GFOpenGPU");
         ORTG_DrawStats(NULL, 0, ORTG_DRAW_CPU_ONLY);
         check(rounds, "CPU only");
         ORTG_DrawStats(NULL, 0, ORTG_DRAW_OPENGPU);
@@ -356,7 +356,7 @@ int main(int argc, char **argv)
         struct Window *big = OpenWindowTags(NULL, WA_CustomScreen, (ULONG)s, WA_Left, 200, WA_Top, 300, WA_Width, 360, WA_Height, 220,
                                             WA_Borderless, TRUE, WA_SmartRefresh, TRUE, WA_Activate, FALSE, TAG_DONE);
         if (big) {
-            printf("TIME window 360x220, 8-bit, OpenGPU on:\n");
+            printf("TIME window 360x220, 8-bit, GFOpenGPU on:\n");
             ORTG_DrawStats(NULL, 0, ORTG_DRAW_OPENGPU);
             timing(big->RPort, 360, 220);
             printf("TIME the same, ORTG_DRAW_CPU_ONLY:\n");

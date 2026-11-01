@@ -3,7 +3,7 @@
 #ifndef _PROTO_OPENRTG_H
 #define _PROTO_OPENRTG_H
 #include <exec/types.h>
-#include <openrtg/openrtg.h>
+#include <gfopenrtg/gfopenrtg.h>
 extern struct Library *OpenRTGBase;
-#include <inline/openrtg.h>
+#include <inline/gfopenrtg.h>
 #endif

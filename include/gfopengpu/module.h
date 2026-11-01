@@ -1,9 +1,9 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * OpenGPU's modules (DESIGN.md section 5, "One library"): the big parts
- * (GL.module, which is Mesa, and SDL2.module) are files in LIBS:OpenGPU/
- * that opengpu.library loads for a program when it first needs them.
+ * GFOpenGPU's modules (DESIGN.md section 5, "One library"): the big parts
+ * (GL.module, which is Mesa, and SDL2.module) are files in LIBS:GFOpenGPU/
+ * that gfopengpu.library loads for a program when it first needs them.
  *
  *   APTR handle = OGPU_ModuleOpen("GL", GL_MODULE_VERSION, &table);
  *   ... the program calls through table, with A4 set (below) ...
@@ -14,7 +14,7 @@
  * does it on the first call.
  *
  * Opening:
- *   - name is a module's name ("GL" is LIBS:OpenGPU/GL.module), or a path
+ *   - name is a module's name ("GL" is LIBS:GFOpenGPU/GL.module), or a path
  *     when it holds ':' or '/' (a test's PROGDIR:Test.module).
  *   - The caller must be a DOS process: a module comes from disk.
  *   - On failure the handle and *table are NULL, and IoErr() says why:
@@ -23,7 +23,7 @@
  *     version, or the caller is older than the module's A4 calls: a
  *     version below OGPU_MODULE_A4_VERSION; or it couldn't start), or
  *     ERROR_NO_FREE_STORE.
- *   - opengpu.library 0.5 has these calls; on 0.4 and older a stub loads
+ *   - gfopengpu.library 0.5 has these calls; on 0.4 and older a stub loads
  *     the module itself, the same way (LoadSeg, then the entry below).
  *
  * The module's ABI:
@@ -44,14 +44,14 @@
  *   - libnix's getenv doesn't work in a module; modules read variables with
  *     dos.library's GetVar (library/modules/common gives a getenv that
  *     does).
- *   - It calls opengpu.library through args->OpenGPUBase, which stays open
+ *   - It calls gfopengpu.library through args->OpenGPUBase, which stays open
  *     while the module is (the caller holds it).
  *
  * Residency (DESIGN.md section 5, "Residency"). A module is one of two
  * kinds, told apart by its first code:
  *   - Shared: built -fbaserel32 -resident32, so its code reaches every
  *     global through A4. Its first code is a BRA.W over a header (struct
- *     OGPUModuleHeader, OGPU_MODULE_SHARED_MAGIC). opengpu.library loads the
+ *     OGPUModuleHeader, OGPU_MODULE_SHARED_MAGIC). gfopengpu.library loads the
  *     file once, the first time a program opens it, and from 0.9 keeps it
  *     loaded after the last program closes it, until the system resets or
  *     memory runs short (the library's expunge unloads the shared modules
@@ -63,7 +63,7 @@
  *   - For each program: built without -fbaserel32; each open is a LoadSeg
  *     of its own, the first code jumps to the entry, and the close unloads
  *     it.
- *   A stub that loads a shared module itself (an opengpu.library older than
+ *   A stub that loads a shared module itself (an gfopengpu.library older than
  *   0.5) calls its first code as before; the module then sets A4 on the
  *   data LoadSeg gave it, which is that program's alone.
  *
@@ -82,10 +82,10 @@
 
 #include <exec/types.h>
 
-#define OGPU_MODULE_DIR "LIBS:OpenGPU/"
+#define OGPU_MODULE_DIR "LIBS:GFOpenGPU/"
 #define OGPU_MODULE_EXT ".module"
 
-/* opengpu.library's revision from which OGPU_ModuleOpen is there (version 0). */
+/* gfopengpu.library's revision from which OGPU_ModuleOpen is there (version 0). */
 #define OGPU_MODULE_LIB_REVISION 5
 
 /* The first version of each module's table with struct OGPUModuleTable's
@@ -98,7 +98,7 @@ struct Library;
 struct OGPUModuleArgs {
     struct ExecBase *SysBase;
     struct Library *DOSBase;
-    struct Library *OpenGPUBase;    /* opengpu.library, or NULL from a stub on an older one */
+    struct Library *OpenGPUBase;    /* gfopengpu.library, or NULL from a stub on an older one */
     ULONG version;                  /* the module version the caller was built for */
 };
 

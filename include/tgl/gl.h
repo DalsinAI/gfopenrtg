@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * TinyGL on OpenGPU: the header a TinyGL program includes (directly, or
+ * TinyGL on GFOpenGPU: the header a TinyGL program includes (directly, or
  * through <proto/tinygl.h>). Link -ltinygl -lGL (pkg-config tinygl).
  *
  * GL's calls (glBegin, glVertex3f and the rest) are Mesa's own, from

@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * OpenRTG's MiniGL header: OpenGL 1.1's types and names with OpenGL's own
+ * GFOpenRTG's MiniGL header: OpenGL 1.1's types and names with OpenGL's own
  * numbers, MiniGL's additions (MGL_*), GLU's names, and the calls
  * (mgl/minigl_calls.h). Written by the Team from the OpenGL 1.1
  * specification and MiniGL's published interface; programs compiled against

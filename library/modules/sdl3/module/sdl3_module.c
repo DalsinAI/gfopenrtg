@@ -2,12 +2,12 @@
  * SPDX-License-Identifier: MIT
  *
  * SDL3.module: SDL 3 (with the Amiga back ends) as a module that
- * opengpu.library, or the link stub, loads for a program, built the same way
+ * gfopengpu.library, or the link stub, loads for a program, built the same way
  * as SDL2.module (library/modules/sdl2/module/sdl2_module.c). It is linked
  * on library/modules/common: module_start.S's first code, and module_rt.c,
  * which sets libnix up the way its startup code would for a program.
  *
- * The module is built -fbaserel32, so opengpu.library loads its code once
+ * The module is built -fbaserel32, so gfopengpu.library loads its code once
  * for every program and gives each program its own copy of SDL's globals;
  * the stub sets A4 on every call (stubs/sdl3). SDL's calls back into the
  * program run with the program's A4, and its threads start with the

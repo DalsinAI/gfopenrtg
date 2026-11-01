@@ -1,10 +1,10 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
- * openrtg.library's public interface (version 0.1, phase 2's first part). */
+ * gfopenrtg.library's public interface (version 0.1, phase 2's first part). */
 #ifndef OPENRTG_OPENRTG_H
 #define OPENRTG_OPENRTG_H
 
-#define OPENRTG_NAME    "openrtg.library"
+#define OPENRTG_NAME    "gfopenrtg.library"
 #define OPENRTG_VERSION 0
 
 /* One mode of a monitor (ORTG_GetMode). */
@@ -14,13 +14,13 @@ struct OpenRTGMode {
     unsigned char  depth;          /* 8, 16 or 32 */
     unsigned char  format;         /* 0: 8-bit CLUT, 1: 16-bit, 2: 32-bit ARGB */
     unsigned char  standard;       /* 1: in the Standard list */
-    char           name[32];       /* "OpenRTG.1: 1920x1080 32-bit" */
+    char           name[32];       /* "GFOpenRTG.1: 1920x1080 32-bit" */
     unsigned char  native;         /* 0.17: 1 for a Native mode (the struct's last byte, padding before) */
 };
 
 /* The Native modes (0.17, the native screen mode): on an ACRTG board of protocol v5 or later, the
  * host's window can ask for the size of the Amiga's screen. While it does, each RTG monitor lists three
- * more modes, last: "OpenRTG.n: Native 8-bit", "16-bit" and "32-bit", at that size. Their ModeIDs never
+ * more modes, last: "GFOpenRTG.n: Native 8-bit", "16-bit" and "32-bit", at that size. Their ModeIDs never
  * change (the place 0x22 of the mode table): 0x6n221000, 0x6n221100 and 0x6n221200. A screen opened on
  * one gets the size of that moment and keeps it until it is opened again. BestModeIDA never picks one:
  * a program gets a Native mode only by naming it. */
@@ -46,7 +46,7 @@ struct OpenRTGPixels {
     unsigned long        format;            /* ORTG_PIX_ */
     const unsigned long *ctable;            /* ORTG_PIX_INDEX: 256 colours, 0x00RRGGBB */
     long                 width, height;     /* the rectangle */
-    long                 dest_width, dest_height;   /* written at this size (0: the same); 0.16: through OpenGPU
+    long                 dest_width, dest_height;   /* written at this size (0: the same); 0.16: through GFOpenGPU
                                                        for ARGB, 0RGB, and RAW on 16-bit */
 };
 
@@ -66,7 +66,7 @@ struct OpenRTGPixels {
 #define ORTG_PIX_0BGR     117UL
 #define ORTG_PIX_INDEX    0x100UL /* 1 byte, looked up in ctable */
 
-/* What an OpenRTG bitmap is, for ORTG_BitMapInfo (0.4). */
+/* What an GFOpenRTG bitmap is, for ORTG_BitMapInfo (0.4). */
 struct OpenRTGBitMapInfo {
     void          *memory;          /* pixel 0,0 */
     unsigned long  bytes_per_row;
@@ -91,8 +91,8 @@ struct OpenRTGBitMapInfo {
 #define ORTG_BMA_CARD     0x804F5201UL
 
 /* ORTG_WrittenSpans (0.23; decision D7(b), acrtg-v9): what the CPU itself
- * wrote into an OpenRTG bitmap in video RAM by address since the last
- * call, a row's piece at a time; never what OpenGPU or the board drew.
+ * wrote into an GFOpenRTG bitmap in video RAM by address since the last
+ * call, a row's piece at a time; never what GFOpenGPU or the board drew.
  * - The first call for a bitmap asks the board to watch it, and answers 0.
  *   A board watches one bitmap: a call for another moves the watch when
  *   it is free (its bitmap freed) or when the other is the one a monitor
@@ -127,16 +127,16 @@ struct OpenRTGVirglFrame {
 };
 #define ORTG_VIRGL_FLIP_Y       1
 
-/* ORTG_DrawStats (0.11): how OpenRTG drew on its bitmaps, by kind of
+/* ORTG_DrawStats (0.11): how GFOpenRTG drew on its bitmaps, by kind of
  * drawing, since it started or was last reset. Each kind has four counts:
- * pieces OpenGPU drew, pieces the CPU drew, and the pixels of each. A piece
+ * pieces GFOpenGPU drew, pieces the CPU drew, and the pixels of each. A piece
  * is one visible rectangle of one call (a call through a window partly
- * covered draws several). OpenGPU draws a piece when its command does
- * exactly what OpenRTG's CPU code does; everything else stays on the CPU. */
+ * covered draws several). GFOpenGPU draws a piece when its command does
+ * exactly what GFOpenRTG's CPU code does; everything else stays on the CPU. */
 /* ORTG_DrawStats' flags. */
 #define ORTG_DRAW_RESET         1   /* the counts back to 0 */
 #define ORTG_DRAW_CPU_ONLY      2   /* from now on, draw everything with the CPU code (to compare) */
-#define ORTG_DRAW_OPENGPU       4   /* ... and through OpenGPU again, where it is exact (the default) */
+#define ORTG_DRAW_OPENGPU       4   /* ... and through GFOpenGPU again, where it is exact (the default) */
 #define ORTG_STAT_FILL          0   /* RectFill, Text's background, underlines */
 #define ORTG_STAT_INVERT        1   /* COMPLEMENT fills */
 #define ORTG_STAT_PATTERN       2   /* area patterns */
@@ -155,10 +155,10 @@ struct OpenRTGVirglFrame {
 #define ORTG_STAT_PIXELS_INVERT 15  /* ORTG_InvertPixels */
 #define ORTG_STAT_ALPHA         16  /* ORTG_WritePixelsAlpha */
 #define ORTG_STAT_BLIT_PLANAR   17  /* blits from or to a planar bitmap */
-#define ORTG_STAT_BLIT_CONVERT  18  /* copies between OpenRTG bitmaps of two formats */
+#define ORTG_STAT_BLIT_CONVERT  18  /* copies between GFOpenRTG bitmaps of two formats */
 #define ORTG_STAT_BLIT_MASKED   19  /* blits through a mask (BltMaskBitMapRastPort) */
 #define ORTG_STAT_VIRGL         20  /* ORTG_PresentVirgl: GL frames the host wrote straight in (0.15) */
-/* 0.21: OpenGPU's batches, not pieces: those left running (where the GPU
+/* 0.21: GFOpenGPU's batches, not pieces: those left running (where the GPU
  * count is), those waited for, the bytes of sources copied to be left
  * running; the fourth count stays 0 */
 #define ORTG_STAT_WAIT          21

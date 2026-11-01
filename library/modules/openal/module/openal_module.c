@@ -2,12 +2,12 @@
  * SPDX-License-Identifier: MIT
  *
  * OpenAL.module: OpenAL 1.1 (library/modules/openal/src) as a module that
- * opengpu.library, or the link stub, loads for a program, built the same way
+ * gfopengpu.library, or the link stub, loads for a program, built the same way
  * as SDL3.module (library/modules/sdl3/module/sdl3_module.c). It is linked
  * on library/modules/common: module_start.S's first code, and module_rt.c,
  * which sets libnix up the way its startup code would for a program.
  *
- * The module is built -fbaserel32, so opengpu.library loads its code once
+ * The module is built -fbaserel32, so gfopengpu.library loads its code once
  * for every program and gives each program its own copy of OpenAL's state
  * (its devices, contexts, sources and buffers); the stub sets A4 on every
  * call (stubs/openal). Mix's output process starts with the A4 of the

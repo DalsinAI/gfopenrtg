@@ -13,7 +13,7 @@
 set -eu
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 TOP=$(CDPATH= cd -- "$HERE/.." && pwd)
-REPO=$(CDPATH= cd -- "$TOP/../../.." && pwd)          # openamigartg: include/opengpu, host/virgl
+REPO=$(CDPATH= cd -- "$TOP/../../.." && pwd)          # openamigartg: include/gfopengpu, host/virgl
 WORK=${1:-${GL_WORK:-$TOP/build}}
 J=$(sed -n 's/.*"\([a-z0-9]*\)": "\(.*\)".*/\1=\2/p' "$HERE/UPSTREAM.json")
 VERSION=$(echo "$J" | sed -n 's/^version=//p')
@@ -126,11 +126,11 @@ PY
 )
 fi
 # Two kinds of program on AmigaOS (8 October 2026). One that links Mesa itself
-# (test_gla, OpenDemos.static) is -fbaserel32 like Mesa, and is linked
+# (test_gla, GFOpenDemos.static) is -fbaserel32 like Mesa, and is linked
 # -resident32 (MESA_LFLAGS): the stove's plain -fbaserel32 program start
 # (nlbcrt0) hangs as the program ends, even for "int main(void) { return 0; }",
 # where -resident32's (nlrcrt0) ends as it should. One that uses GL through
-# libGL.a (OpenDemos) is an ordinary program (LFLAGS, without -fbaserel32):
+# libGL.a (GFOpenDemos) is an ordinary program (LFLAGS, without -fbaserel32):
 # GL.module's A4 is libGL.a's business.
 MESA_LFLAGS=$LFLAGS
 case " $LFLAGS " in *" -fbaserel32 "*)
@@ -148,7 +148,7 @@ HOSTV=
 case $NAME in host) cc -O2 -c "$REPO/host/virgl/acvirgl.c" -o acvirgl.o && HOSTV="acvirgl.o -DGLA_TEST_VIRGL" ;; esac
 case $NAME in *amigaos*)
     eval "$CC $FLAGS -O2 -c $TOP/mesa/amigaos/posix_shim.c -o posix_shim.o"
-    # virgl's transport: OGPU_OP_VIRGL batches through opengpu.library
+    # virgl's transport: OGPU_OP_VIRGL batches through gfopengpu.library
     eval "$CC $FLAGS -I$REPO/include -O2 -c $TOP/gla/os3/gla_virgl_os3.c -o gla_virgl_os3.o"
     eval "$CC $FLAGS -O2 -c $REPO/library/opengpu/ogpu_build.c -o ogpu_build.o"
     SHIM="posix_shim.o gla_virgl_os3.o ogpu_build.o" SYSLIBS="-lstdc++ -lm -lpthread"   # libnix has no libdl
@@ -161,7 +161,7 @@ WEAK="-Wl,-u,pthread_mutexattr_init -Wl,-u,pthread_mutexattr_settype -Wl,-u,pthr
 $CC $MESA_LFLAGS -std=c99 -O2 -Wall -Wextra -Werror -I"$SRC/include" -I"$REPO" ${CROSS:+-static $WEAK} -o test_gla \
     "$TOP/tests/test_gla.c" gla_core.o gla_virgl.o $HOSTV $SHIM $PROGOBJS $FIXOBJS -Wl,--start-group $LIBS $OPT -Wl,--end-group \
     $SYSLIBS ${CROSS:+-latomic}
-# What programs built on this (OpenDemos) need to link against it, as shell
+# What programs built on this (GFOpenDemos) need to link against it, as shell
 # assignments: LFLAGS for a program on libGL.a; MESA_LFLAGS, FLAGS and
 # PROGOBJS (libnix's constructor runner, amigaos/initcpp.c) for one that links
 # Mesa itself.

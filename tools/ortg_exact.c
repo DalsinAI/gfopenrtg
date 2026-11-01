@@ -1,13 +1,13 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * OpenRTGExact: does OpenRTG draw the same pixels through OpenGPU as with
+ * OpenRTGExact: does GFOpenRTG draw the same pixels through GFOpenGPU as with
  * its CPU code? Each test draws the same calls twice, once with
- * ORTG_DRAW_CPU_ONLY and once through OpenGPU, into two windows of the same
+ * ORTG_DRAW_CPU_ONLY and once through GFOpenGPU, into two windows of the same
  * size on the Workbench screen, each partly covered by a small window so
  * the drawing is clipped in pieces, and compares the windows' pixels. Then
  * the same into two bitmaps of the screen's format, with no layers.
- * openrtg.library 0.11 or later, on an OpenRTG Workbench screen.
+ * gfopenrtg.library 0.11 or later, on an GFOpenRTG Workbench screen.
  *   OpenRTGExact            Returns 0 when every test matches, 10 when one doesn't. */
 #include <exec/types.h>
 #include <exec/memory.h>
@@ -21,7 +21,7 @@
 #include <proto/intuition.h>
 #include <proto/layers.h>
 #include <proto/cybergraphics.h>
-#include <proto/openrtg.h>
+#include <proto/gfopenrtg.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -53,7 +53,7 @@ static void draw(int test, struct RastPort *rp, int x, int y)
     case 1: SetDrMd(rp, COMPLEMENT); RectFill(rp, x + 5, y + 5, x + 180, y + 120); break;
     case 2: SetAPen(rp, 2); SetBPen(rp, 3); SetAfPt(rp, pat, 2); RectFill(rp, x + 3, y + 7, x + 190, y + 140); break;
     case 3: SetDrMd(rp, JAM1); SetAfPt(rp, pat, 2); SetAPen(rp, 2); RectFill(rp, x + 1, y + 1, x + 101, y + 77); break;
-    case 4: SetAPen(rp, 2); SetDrMd(rp, JAM1); Move(rp, x + 3, y + 20); Text(rp, (STRPTR)"Hello, OpenGPU 0123", 19);
+    case 4: SetAPen(rp, 2); SetDrMd(rp, JAM1); Move(rp, x + 3, y + 20); Text(rp, (STRPTR)"Hello, GFOpenGPU 0123", 19);
             SetDrMd(rp, JAM2); SetBPen(rp, 3); Move(rp, x + 3, y + 40); Text(rp, (STRPTR)"JAM2 text, Workbench", 20);
             SetDrMd(rp, JAM2 | INVERSVID); Move(rp, x + 3, y + 60); Text(rp, (STRPTR)"inverse", 7);
             SetDrMd(rp, COMPLEMENT); Move(rp, x + 3, y + 80); Text(rp, (STRPTR)"complement", 10); break;
@@ -123,12 +123,12 @@ int main(void)
     UBYTE *ga, *gb;
     int t, bpp, i;
     if (!(OpenRTGBase = OpenLibrary((CONST_STRPTR)OPENRTG_NAME, 0)) || (OpenRTGBase->lib_Version == 0 && OpenRTGBase->lib_Revision < 11)) {
-        printf("OpenRTGExact: needs openrtg.library 0.11\n");
+        printf("OpenRTGExact: needs gfopenrtg.library 0.11\n");
         return 20;
     }
     CyberGfxBase = OpenLibrary((CONST_STRPTR)"cybergraphics.library", 40);
     wb = LockPubScreen(NULL);
-    if (!wb || !ORTG_BitMapInfo(wb->RastPort.BitMap, &bi)) { printf("OpenRTGExact: the Workbench screen isn't OpenRTG's\n"); return 20; }
+    if (!wb || !ORTG_BitMapInfo(wb->RastPort.BitMap, &bi)) { printf("OpenRTGExact: the Workbench screen isn't GFOpenRTG's\n"); return 20; }
     bpp = bi.depth / 8;
     for (i = 0; i < (int)sizeof tmpl; i++) tmpl[i] = (UBYTE)(i * 73 ^ (i >> 2));
     for (i = 0; i < 64 * 64; i++) {
@@ -181,14 +181,14 @@ int main(void)
                 }
                 check(t, "bitmap", ga, gb, 200 * 150 * bpp);
             }
-        } else printf("OpenRTGExact: no OpenRTG bitmaps of the screen's format; that part is skipped\n");
+        } else printf("OpenRTGExact: no GFOpenRTG bitmaps of the screen's format; that part is skipped\n");
         if (ba) FreeBitMap(ba);
         if (bb) FreeBitMap(bb);
     }
     CloseWindow(cover); CloseWindow(wa); CloseWindow(wbw);
     UnlockPubScreen(NULL, wb);
     FreeVec(ga); FreeVec(gb);
-    printf("OpenRTGExact: %d of %d the same%s\n", tests - fails, tests, fails ? "" : ": OpenGPU draws exactly what the CPU code draws");
+    printf("OpenRTGExact: %d of %d the same%s\n", tests - fails, tests, fails ? "" : ": GFOpenGPU draws exactly what the CPU code draws");
     CloseLibrary(OpenRTGBase);
     if (CyberGfxBase) CloseLibrary(CyberGfxBase);
     return fails ? 10 : 0;

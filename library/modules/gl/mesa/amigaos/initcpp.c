@@ -3,7 +3,7 @@
  *
  * libnix's constructor runner (__initcpp, __exitcpp), done again for
  * programs built -fbaserel32 that link Mesa itself (test_gla,
- * OpenDemos.static: build.sh's PROGOBJS). The stove's libb32 one reaches
+ * GFOpenDemos.static: build.sh's PROGOBJS). The stove's libb32 one reaches
  * the end of its list through A4, but the linker puts the list with the
  * code, so in a -fbaserel32 program it starts from a wrong place: it runs
  * no constructor, or jumps into the code. Here the list is const, reached

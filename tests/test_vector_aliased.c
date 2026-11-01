@@ -21,7 +21,7 @@
 #include <string.h>
 #include <math.h>
 #include "../library/opengpu/ogpu_core.h"
-#include "../include/opengpu/build.h"
+#include "../include/gfopengpu/build.h"
 #include "../library/opengpu/ogpu_variant.h"
 #ifdef WITH_CAIRO
 #include <cairo.h>
@@ -383,7 +383,7 @@ int main(void) {
         check(part > 0, "the same path without OGPU_PATH_ALIASED is anti-aliased");
     }
 
-    /* opengpu.library 0.23's variant check: aliased paths stay off drivers */
+    /* gfopengpu.library 0.23's variant check: aliased paths stay off drivers */
     {
         unsigned char ok[256], fmt[OGPU_FMT_COUNT];
         memset(ok, 1, sizeof ok);

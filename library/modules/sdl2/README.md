@@ -1,12 +1,12 @@
-# SDL 2 in OpenGPU: SDL2.module
+# SDL 2 in GFOpenGPU: SDL2.module
 
 SDL 2 for AmigaOS 3.2, as part of the one library. SDL2.module, its
 satellites and libSDL2.a are built hard float (`-m68040 -m68881`): they need
 a 68040 or 68060 with its FPU, not an LC040 or EC040 (no FPU). Programs open only
-opengpu.library and link `-lSDL2` as on any other system. Their SDL calls
-go to `LIBS:OpenGPU/SDL2.module`: SDL 2.32.10 with Amiga back ends that
-draw through OpenGPU, play through AHI and read the Amiga's input. When
-OpenGPU can't do something, SDL's own software code does it, so every
+gfopengpu.library and link `-lSDL2` as on any other system. Their SDL calls
+go to `LIBS:GFOpenGPU/SDL2.module`: SDL 2.32.10 with Amiga back ends that
+draw through GFOpenGPU, play through AHI and read the Amiga's input. When
+GFOpenGPU can't do something, SDL's own software code does it, so every
 program runs.
 
 ## What is built
@@ -16,11 +16,11 @@ the GCC 16 stove:
 
 | File | What it is |
 | --- | --- |
-| `SDL2.module` | SDL 2 and its back ends. Goes in `LIBS:OpenGPU/`. |
+| `SDL2.module` | SDL 2 and its back ends. Goes in `LIBS:GFOpenGPU/`. |
 | `libSDL2.a` | The link library programs use (`stubs/sdl2`). |
 | `include/SDL2/` | SDL's headers, and the satellites', for programs. |
 | `libSDL2_static.a` | All of SDL inside the program, with no module. |
-| `SDL2_image.module`, `SDL2_mixer.module` | SDL2_image and SDL2_mixer, shared and resident like SDL2.module. Go in `LIBS:OpenGPU/`. |
+| `SDL2_image.module`, `SDL2_mixer.module` | SDL2_image and SDL2_mixer, shared and resident like SDL2.module. Go in `LIBS:GFOpenGPU/`. |
 | `libSDL2_image.a`, `libSDL2_mixer.a` | Their link stubs (`stubs/sdl2/sat_stub.h`). |
 | `libSDL2_image_static.a`, `libSDL2_mixer_static.a` | The same two inside the program, for `libSDL2_static.a`. |
 | `libSDL2_ttf.a`, `libSDL2_net.a` | SDL2_ttf and SDL2_net, link libraries. |
@@ -34,7 +34,7 @@ Build a program the usual way:
 
     m68k-amigaos-gcc -m68040 -m68881 -noixemul -Ibuild/include/SDL2 game.c -Lbuild -lSDL2 -lm -lamiga
 
-or, with the OpenGPU developer kit (`tools/make_sdk.py`, `sdk/README`):
+or, with the GFOpenGPU developer kit (`tools/make_sdk.py`, `sdk/README`):
 
     m68k-amigaos-gcc game.c -o Game $(sdl2-config --cflags --libs)
 
@@ -47,10 +47,10 @@ or, with the OpenGPU developer kit (`tools/make_sdk.py`, `sdk/README`):
   SDL's `SDL_dynapi_procs.h`, so a program built today runs on any later
   module.
 - The module is shared (residency step 2, DESIGN.md section 5): it is built
-  `-fbaserel32`, so opengpu.library loads its code once for every program
+  `-fbaserel32`, so gfopengpu.library loads its code once for every program
   and each program's open gets its own copy of SDL's globals. Every stub
   function sets A4 to the program's copy for the call and puts the
-  program's A4 back (`OGPU_A4`, `include/opengpu/module.h`).
+  program's A4 back (`OGPU_A4`, `include/gfopengpu/module.h`).
 - SDL's calls into the program (the audio callback, timers, a thread's
   function, event filters and watchers) run with the program's A4, and the
   threads SDL starts begin with the A4 of the program that started them
@@ -60,9 +60,9 @@ or, with the OpenGPU developer kit (`tools/make_sdk.py`, `sdk/README`):
   built `-fbaserel` itself; it marks them `__saveds`, as Amiga callbacks
   always need.
 - `make SHARED=0` builds a copy for each program instead (step 1).
-- The module's interface is `include/opengpu/module.h`'s (`stubs/sdl2/sdl2_module.h`
+- The module's interface is `include/gfopengpu/module.h`'s (`stubs/sdl2/sdl2_module.h`
   adds SDL's table): the first code takes SysBase, DOSBase, OpenGPUBase and
-  a version, and returns a table. On opengpu.library 0.5 and later the stub
+  a version, and returns a table. On gfopengpu.library 0.5 and later the stub
   loads it with `OGPU_ModuleOpen`; on older ones it LoadSegs it itself.
 - The module has no program startup. `library/modules/common`
   (`module_start.S`, `module_rt.c`) runs libnix's init list (memory,
@@ -80,50 +80,50 @@ or, with the OpenGPU developer kit (`tools/make_sdk.py`, `sdk/README`):
 
 | SDL part | Back end |
 | --- | --- |
-| Video | Intuition windows and screens. RTG through the CyberGraphX API (OpenRTG's cybergraphics.library); AGA through c2p. A window on an RTG screen is shown by OpenGPU, which copies the frame into video RAM through each visible part of the window's layer; WritePixelArray does it when part of the window is covered. On a 32-bit OpenRTG screen the window's surface is itself in video RAM (see *In video RAM*). |
+| Video | Intuition windows and screens. RTG through the CyberGraphX API (GFOpenRTG's cybergraphics.library); AGA through c2p. A window on an RTG screen is shown by GFOpenGPU, which copies the frame into video RAM through each visible part of the window's layer; WritePixelArray does it when part of the window is covered. On a 32-bit GFOpenRTG screen the window's surface is itself in video RAM (see *In video RAM*). |
 | Renderer | `opengpu` first, then `software`. See below. |
 | Audio | AHI first (8 or 16-bit, mono or stereo, double buffered with `ahir_Link`, opened in SDL's audio thread), then Paula's audio.device. |
 | Threads, timers | Exec processes and semaphores. `SDL_Delay`, timed semaphore and condition waits use timer.device's UNIT_MICROHZ, so `SDL_Delay(1)` is a millisecond, not dos.library's 20 ms tick. |
-| Input | Keyboard and mouse from Intuition; relative mouse mode with IDCMP_DELTAMOVE; Ctrl-C quits. Joysticks and game controllers through OpenInput (openinput.library), or through lowlevel.library where OpenInput isn't installed: see below. |
-| Clipboard | clipboard.device unit 0, IFF FTXT, converted between UTF-8 and Latin-1. On AmigaChrome, ACClip carries it to the PC. |
+| Input | Keyboard and mouse from Intuition; relative mouse mode with IDCMP_DELTAMOVE; Ctrl-C quits. Joysticks and game controllers through GFOpenInput (gfopeninput.library), or through lowlevel.library where GFOpenInput isn't installed: see below. |
+| Clipboard | clipboard.device unit 0, IFF FTXT, converted between UTF-8 and Latin-1. On AmiCradle, ACClip carries it to the PC. |
 | OpenGL | GL.module, through the program's own libGL.a (below). |
 | Haptic | SDL's dummy driver: `SDL_Init(SDL_INIT_HAPTIC)` succeeds with no devices, as games that ask for it expect. |
 | Environment | `SDL_getenv` reads the Shell's local and global variables (SetEnv, ENV:) as well as the program's own. |
-| Screen saver | While SDL holds the screen saver off (`SDL_DisableScreenSaver`, SDL's default while a program runs), OpenBlanker is told every 5 seconds: a CTRL_E to the task of its `OpenBlanker` port, which OpenBlanker 1.2 counts as a key or the mouse (`patches/amigaos3/0009`). `SDL_VIDEO_ALLOW_SCREENSAVER=1` lets the show come. |
+| Screen saver | While SDL holds the screen saver off (`SDL_DisableScreenSaver`, SDL's default while a program runs), GFOpenBlanker is told every 5 seconds: a CTRL_E to the task of its `GFOpenBlanker` port, which GFOpenBlanker 1.2 counts as a key or the mouse (`patches/amigaos3/0009`). `SDL_VIDEO_ALLOW_SCREENSAVER=1` lets the show come. |
 
 Settings, with `SetEnv` or `SDL_SetHint`:
 
 - `SDL_RENDER_DRIVER=software` picks the software renderer.
-- `SDL_OPENGPU=0` keeps SDL off OpenGPU altogether.
+- `SDL_OPENGPU=0` keeps SDL off GFOpenGPU altogether.
 - `SDL_OPENGPU_STATS=1` logs, when a renderer closes, how many commands
-  OpenGPU drew and how many the CPU drew, and how many textures were made
+  GFOpenGPU drew and how many the CPU drew, and how many textures were made
   in video RAM and how many in Fast RAM.
 - `SDL_OPENGPU_VRAM=0` keeps the window surface and the textures in Fast
-  RAM on an OpenRTG screen too.
+  RAM on an GFOpenRTG screen too.
 - `SDL_AUDIODRIVER=paula` picks Paula.
 - `SDL_OPENGPU_GL=cpu` draws SDL's GL with softpipe even where the PC's
   graphics chip is there.
 - `SDL_JOYSTICK_OPENINPUT=0` reads joysticks through lowlevel.library even
-  where OpenInput is installed.
-- `SDL_JOYSTICK_OPENINPUT_EXCLUSIVE=0` opens OpenInput's pads shared: a pad
+  where GFOpenInput is installed.
+- `SDL_JOYSTICK_OPENINPUT_EXCLUSIVE=0` opens GFOpenInput's pads shared: a pad
   that also drives an Amiga port keeps driving it while the program runs.
 
-### Joysticks and game controllers on OpenInput
+### Joysticks and game controllers on GFOpenInput
 
 `src/joystick/amigaos3/SDL_sysjoystick.c` has two back ends, chosen when
 SDL's joystick subsystem starts.
 
-**OpenInput** (openinput.library 1.2 or later; `openamigainput`,
-Design-OpenInput.md). Version 1.1 is OpenInput's skeleton, which lists
+**GFOpenInput** (gfopeninput.library 1.2 or later; `openamigainput`,
+Design-OpenInput.md). Version 1.1 is GFOpenInput's skeleton, which lists
 nothing, so SDL treats it as missing.
 
-- Every controller OpenInput lists is an SDL joystick, with its name, GUID,
+- Every controller GFOpenInput lists is an SDL joystick, with its name, GUID,
   vendor, product and player number from the library.
-- Hot-plug: OpenInput's notification gives `SDL_JOYDEVICEADDED` and
+- Hot-plug: GFOpenInput's notification gives `SDL_JOYDEVICEADDED` and
   `REMOVED`, and for game controllers `SDL_CONTROLLERDEVICEADDED` and
   `REMOVED`. Its messages go to a port that needs no signal, which SDL
   looks at each time it pumps events.
-- A pad's SDL joystick is OpenInput's standard layout, which is SDL's
+- A pad's SDL joystick is GFOpenInput's standard layout, which is SDL's
   GameController layout: buttons 0 to 20 are `SDL_GameControllerButton`'s
   (A, B, X, Y, Back, Guide, Start, the stick clicks, the shoulders, the
   d-pad, Misc, four paddles, the touchpad), axes 0 to 5 are
@@ -144,18 +144,18 @@ nothing, so SDL treats it as missing.
   axis and hat as the device reports them), with no game controller
   mapping of their own.
 
-**lowlevel.library**, when openinput.library isn't installed, is the
+**lowlevel.library**, when gfopeninput.library isn't installed, is the
 skeleton, or `SDL_JOYSTICK_OPENINPUT=0` asks for it: as before, the stick
 or CD32 pad in each game port, with 2 digital axes, 1 hat and 7 buttons,
 and no game controller mapping. Port 2 is joystick 0, and port 1 joystick
 1 when lowlevel sees a stick there.
 
-**Mappings: how SDL's and OpenInput's work together.**
+**Mappings: how SDL's and GFOpenInput's work together.**
 
-- OpenInput maps every pad into the standard layout before SDL sees it,
+- GFOpenInput maps every pad into the standard layout before SDL sees it,
   from its built-in lines (Xbox, PlayStation, Switch, 8BitDo, CD32-style
-  pads), `ENVARC:OpenInput/mappings.txt` and OpenPrefs' Gamepads page; on
-  AmigaChrome the x86 or ARM64 cores do it. That is the place to map a pad
+  pads), `ENVARC:GFOpenInput/mappings.txt` and GFOpenPrefs' Gamepads page; on
+  AmiCradle the x86 or ARM64 cores do it. That is the place to map a pad
   for every program.
 - A program can still bring its own: `SDL_GameControllerAddMapping`,
   `SDL_GameControllerAddMappingsFromFile`, or the user's
@@ -163,25 +163,25 @@ and no game controller mapping. Port 2 is joystick 0, and port 1 joystick
   SDL has such a line for a pad's GUID when the pad is opened, the driver
   opens that pad in its raw layout, and SDL applies the line to the raw
   buttons, axes and hats, as on any other system. The raw numbers are the
-  ones OpenInput's own lines use, so a line made in OpenPrefs works the
+  ones GFOpenInput's own lines use, so a line made in GFOpenPrefs works the
   same in an SDL program, and the other way round. A line only changes
-  that program; nothing goes back into OpenInput.
+  that program; nothing goes back into GFOpenInput.
 - Add lines before opening the pad, as games do at start: a pad already
   open keeps the layout it was opened with.
 - Lines in a file are loaded only when their `platform:` field matches
   SDL: SDL 2 here says `AmigaOS 3` (`SDL_GetPlatform`, patch
   `patches/sdl2/0007`). Lines without a `platform:` field are taken by
   `SDL_GameControllerAddMapping` itself, as SDL always does.
-- `SDL_GameControllerMapping` on a pad SDL maps through OpenInput gives the
-  standard layout's line (`a:b0,b:b1,...`), not OpenInput's line for the
+- `SDL_GameControllerMapping` on a pad SDL maps through GFOpenInput gives the
+  standard layout's line (`a:b0,b:b1,...`), not GFOpenInput's line for the
   pad.
 
-`include/openinput/` holds a copy of OpenInput's frozen headers
+`include/openinput/` holds a copy of GFOpenInput's frozen headers
 (`include/libraries/openinput.h` and `include/inline/openinput.h` from
 `openamigainput` at efc932c); the header only grows, so a newer library
 still answers this driver. The driver opens the library itself, with a
 base of its own name (`SDL_OS3_OpenInputBase`), so a program that uses
-openinput.library too has no clash.
+gfopeninput.library too has no clash.
 
 **Programs built with GCC 6.** Six SDL calls return a struct:
 `SDL_JoystickGetDeviceGUID`, `SDL_JoystickGetGUID`,
@@ -196,13 +196,13 @@ address as an argument (`stubs/sdl2/SDL2_structret.c`). GCC 6 programs
 built before this need rebuilding to get right GUIDs.
 
 `tests/sdl2/padcheck` lists the joysticks and watches them (hot-plug,
-every controller button and axis, rumble), with no window; with OpenInput's
+every controller button and axis, rumble), with no window; with GFOpenInput's
 test pad (vendor 0xDA15) every check runs.
 
 ### SDL_GL on GL.module
 
 SDL2.module 3 (8 October 2026) gives `SDL_WINDOW_OPENGL`,
-`SDL_GL_CreateContext`, `SDL_GL_SwapWindow` and the rest on OpenGPU's GL
+`SDL_GL_CreateContext`, `SDL_GL_SwapWindow` and the rest on GFOpenGPU's GL
 module (`src/video/amigaos3/SDL_os3gl.c`, `patches/amigaos3/0006`):
 
 - A program has one copy of GL, the one its `libGL.a` opens, so SDL uses
@@ -228,52 +228,52 @@ virgl and 52.6 fps on softpipe; GLA's own triangle at 680 and 39.6.
 
 ### The opengpu renderer
 
-Textures and the target are surfaces in memory, described to OpenGPU as
-slots. Each `RunCommandQueue` becomes one OpenGPU batch:
+Textures and the target are surfaces in memory, described to GFOpenGPU as
+slots. Each `RunCommandQueue` becomes one GFOpenGPU batch:
 
-| SDL | OpenGPU |
+| SDL | GFOpenGPU |
 | --- | --- |
 | Clear, opaque fills | FILL |
 | Fills in any SDL blend mode | FILL_BLEND (stream v1.2) |
 | Points and lines | POINTS_BLEND, LINES_BLEND (v1.2) |
 | Copies, scaled or not, with alpha | COMPOSITE in SDL's blend mode; COPY for a plain 1:1 copy |
 | Copies with colour modulation, rotation, flips or renderer scale | COMPOSITE_AFFINE (v1.2), one command each |
-| `SDL_RenderGeometry` | TRIANGLES, when `include/opengpu/build3d.h` is there |
+| `SDL_RenderGeometry` | TRIANGLES, when `include/gfopengpu/build3d.h` is there |
 | YUV and NV12 textures | YUV (v1.2) into the texture's own XRGB surface |
 
 The renderer asks `OGPU_Query` for each operation on the target's format.
 A library without stream v1.2, or a back end without an operation, sends
 that command to SDL's software code, which draws into the same surface
 after the batch so far has finished. Custom blend modes always take that
-path. SDL chooses the software renderer by itself when opengpu.library
-isn't there or the window's format isn't one OpenGPU draws.
+path. SDL chooses the software renderer by itself when gfopengpu.library
+isn't there or the window's format isn't one GFOpenGPU draws.
 
 `tests/sdl2/rendercompare` draws the same scenes with both renderers and
 compares them.
 
 ### In video RAM
 
-On a 32-bit OpenRTG screen, SDL's window surface and the opengpu renderer's
+On a 32-bit GFOpenRTG screen, SDL's window surface and the opengpu renderer's
 ARGB8888 and RGB888 textures (YUV textures' XRGB surfaces among them) are in
-the video RAM of the board that shows the screen, so OpenGPU's GPU back end
+the video RAM of the board that shows the screen, so GFOpenGPU's GPU back end
 draws in them (amigachrome's `docs/design/Design-OpenGPU-2D-On-The-GPU.md`
 5.4 B; `src/video/amigaos3/SDL_os3vram.c`).
 
 - Each is a bitmap asked for as
   `AllocBitMap(w, h, depth, BMF_DISPLAYABLE | BMF_MINPLANES, the screen's bitmap)`.
-  openrtg.library 0.19 puts such a friend in its board's video RAM while
+  gfopenrtg.library 0.19 puts such a friend in its board's video RAM while
   displayable friends take no more than their share of it.
-- OpenRTG may still give it in Fast RAM (past that share, or with the board
+- GFOpenRTG may still give it in Fast RAM (past that share, or with the board
   full). SDL keeps a bitmap only when `ORTG_BitMapInfo` says it is on the
   screen's board; otherwise it frees it and makes its surface in Fast RAM,
   as before. The pixels and the pitch are `LockBitMapTags`'.
-- A program keeps at most 32 bitmaps in video RAM: OpenRTG has 128 blocks
+- A program keeps at most 32 bitmaps in video RAM: GFOpenRTG has 128 blocks
   of video RAM for every board together. Its other textures are in Fast RAM.
 - Fast RAM, as before, for anything else: a window larger than its surface
   (it is scaled), other texture formats, an AGA, 8-bit or 16-bit screen, a
-  screen that isn't OpenRTG's, no opengpu.library, `SDL_OPENGPU=0` or
+  screen that isn't GFOpenRTG's, no gfopengpu.library, `SDL_OPENGPU=0` or
   `SDL_OPENGPU_VRAM=0`.
-- The window is shown from video RAM by OpenGPU through each visible part
+- The window is shown from video RAM by GFOpenGPU through each visible part
   of its layer, or by `BltBitMapRastPort` when part of it is covered.
 - Each bitmap is freed with its texture, or with its window's surface (a
   resize, the window closing).
@@ -304,7 +304,7 @@ In short:
   `media.decode/1` first (`satellites/module/ogpu_mixer.c`, four music
   interfaces before SDL2_mixer's own), two seconds ahead of what plays, and
   mixes into SDL's audio device. `SDL_MIXER_DECODER` `cpu` keeps to its own.
-- `satellites/module/sat_service.c` is openservice.device for both: any
+- `satellites/module/sat_service.c` is gfopenservice.device for both: any
   task may start, wait for and close a request (SDL2_mixer waits in SDL's
   audio thread).
 - `tests/sdl2/satladder.c` (with `make-satmedia.sh`'s pictures and sounds)
@@ -327,7 +327,7 @@ In short:
 Nothing third-party is committed. `build.sh`:
 
 1. checks SDL 2.32.10's tarball against its sha256 in `UPSTREAM.json`
-   (from `TARBALLS`, default `~/AmigaChrome-dev/upstream-tarballs`, or
+   (from `TARBALLS`, default `~/AmiCradle-dev/upstream-tarballs`, or
    downloaded once);
 2. fetches libSDL2-amigaos3 (Zlib) at its pinned commit for the Amiga
    back ends it started (video, AGA c2p, Paula, threads, timer, filesystem);
@@ -335,11 +335,11 @@ Nothing third-party is committed. `build.sh`:
    `patches/sdl2` (the platform in SDL's lists, three fixes, the
    environment, the opengpu renderer as a change to that copy, null
    checks where SDL used a display or surface it had not got, the
-   platform name and a mapping question for OpenInput, and the struct
+   platform name and a mapping question for GFOpenInput, and the struct
    returns for GCC 6 programs) and
    `patches/amigaos3` (the Team's changes to libSDL2-amigaos3's back ends);
-4. adds `src/` (the Team's own files: AHI, the joystick on OpenInput or
-   lowlevel.library, the clipboard, OpenGPU's helpers, the surfaces in
+4. adds `src/` (the Team's own files: AHI, the joystick on GFOpenInput or
+   lowlevel.library, the clipboard, GFOpenGPU's helpers, the surfaces in
    video RAM) and
    `include/SDL_config_amigaos.h`;
 5. builds the satellites from their pinned tarballs (`satellites/`), with
@@ -372,7 +372,7 @@ sake. Any other warning is new and wants looking at.
 ## Measured
 
 `measurements/20261008-sdl2-opengpu.txt`: SDL's testsprite2 and
-testrendercopyex on the CPU and on OpenGPU, with `tests/sdl2/bench`.
+testrendercopyex on the CPU and on GFOpenGPU, with `tests/sdl2/bench`.
 
 Residency step 2 (8 October 2026, `measurements/20261008-residency-step2.txt`):
 a first open of SDL2.module takes 1,057 KB and a further one 171 KB; a call
@@ -382,6 +382,6 @@ the AC090); testsprite2 runs at 504 to 539 fps, as before (525 to 553).
 ## Next
 
 - `SDL_GL_*` in `libSDL2_static.a`.
-- Remove the stub's own LoadSeg once every install has opengpu.library 0.5.
+- Remove the stub's own LoadSeg once every install has gfopengpu.library 0.5.
 - The GCC 16 stove's FPCR clash (`fpcr_check.py`): three satellite files are
   built at -O0 until the stove is fixed, and the build checks everything.

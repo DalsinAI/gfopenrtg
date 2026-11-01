@@ -9,7 +9,7 @@ The output is a complete icon set for the OpenTensor drawer:
   OpenTensor/Launch-ActII.info     Act II IconX launcher
 
 The artwork is original and generated deterministically with Pillow. The
-binary .info files are written by the AmigaChrome GlowIcon writer so they
+binary .info files are written by the AmiCradle GlowIcon writer so they
 retain classic four-colour fallbacks as well as normal and selected images.
 """
 from __future__ import annotations
@@ -354,7 +354,7 @@ def main() -> int:
     save_glowicon(
         writer, args.out / "OpenTensor" / "OpenTensor.info", writer.WBTOOL,
         app_normal, app_selected, stack=1_000_000,
-        tool_types=["MESA=VIRGL", "AUDIO=AHI", "DISPLAY=OPENRTG"],
+        tool_types=["MESA=VIRGL", "AUDIO=AHI", "DISPLAY=GFOPENRTG"],
     )
     save_glowicon(
         writer, args.out / "OpenTensor" / "Launch.info", writer.WBPROJECT,

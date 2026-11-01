@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 # For the Cradle's stove_build (STOVE= and OUT= set, target tests/amiga/lines),
 # or by hand with STOVE or CC as in tools/build.sh:
-#   OpenRTGLineCheck  (line_check.c) Draw and PolyDraw through openrtg.library
+#   OpenRTGLineCheck  (line_check.c) Draw and PolyDraw through gfopenrtg.library
 #                     against a planar bitmap, and their times
 #   OpenRTGLineModel  (tests/test_lines.c) the host test on the 68k: 0.25's
 #                     line code against graphics.library's and 0.24's
@@ -12,7 +12,7 @@
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../../.." && pwd)
-STOVE=${STOVE:-$HOME/AmigaChrome/stoves/os32}
+STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32}
 OUT=${OUT:-$ROOT/build-amiga}
 CC=${CC:-$STOVE/prefix/bin/m68k-amigaos-gcc}
 mkdir -p "$OUT/c"

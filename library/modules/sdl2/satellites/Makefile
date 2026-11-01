@@ -6,7 +6,7 @@
 #
 # SDL2_image and SDL2_mixer are shared, resident modules beside SDL2.module
 # (stubs/sdl2/sat_module.h): SDL2_image.module and SDL2_mixer.module for
-# LIBS:OpenGPU/, with libSDL2_image.a and libSDL2_mixer.a their link stubs
+# LIBS:GFOpenGPU/, with libSDL2_image.a and libSDL2_mixer.a their link stubs
 # (programs link -lSDL2_image -lSDL2). The same code, in the program, is
 # libSDL2_image_static.a and libSDL2_mixer_static.a, for programs on
 # libSDL2_static.a (or that want no module). Both decode through the
@@ -24,7 +24,7 @@
 #   SDL2_ttf    FreeType (built in, without HarfBuzz)
 #   SDL2_net    bsdsocket.library, through libnix's socket calls (-lsocket)
 
-STOVE   ?= $(HOME)/AmigaChrome/stoves/os32-gcc16/prefix
+STOVE   ?= $(HOME)/AmiCradle/stoves/os32-gcc16/prefix
 CC      := $(STOVE)/bin/m68k-amigaos-gcc
 AR      := $(STOVE)/bin/m68k-amigaos-ar
 RANLIB  := $(STOVE)/bin/m68k-amigaos-ranlib
@@ -58,7 +58,7 @@ CFLAGS = -std=gnu11 $(OPT) $(CPU) -fno-delete-null-pointer-checks -fno-tree-loop
 # The Team's files: warnings on; the ladders' includes.
 OWN_CFLAGS = $(filter-out -w,$(CFLAGS)) -Wall -Wno-unused-parameter -Wno-pointer-sign \
          -I$(COMMON) -I$(MODDIR) -I$(HERE)include -I$(ROOT)/include
-# In a module: every global through A4 (include/opengpu/module.h).
+# In a module: every global through A4 (include/gfopengpu/module.h).
 MODFLAGS = -fbaserel32 -DOGPU_SAT_MODULE -I$(COMMON) -I$(MODDIR) -I$(HERE)include -I$(ROOT)/include
 IMG_LADDER = -DOGPU_IMAGE_LADDER -I$(MODDIR) -I$(HERE)include
 MIX_LADDER = -DOGPU_MIXER_SERVICE -I$(MODDIR) -I$(HERE)include

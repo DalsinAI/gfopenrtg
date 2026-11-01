@@ -1,7 +1,7 @@
 // Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 // SPDX-License-Identifier: MIT
 //
-// OpenGPU's compute shader (G2, DESIGN.md section 5): the drawing commands of
+// GFOpenGPU's compute shader (G2, DESIGN.md section 5): the drawing commands of
 // OGPU stream v1.1, and v1.2's FILL_BLEND, COMPOSITE's blend modes,
 // COMPOSITE_AFFINE and YUV, as library/opengpu/ogpu_core.c does them, on the
 // host's GPU. ogpu_vk.c decodes the stream, clips each command as the core

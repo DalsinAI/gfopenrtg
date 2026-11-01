@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * OpenRTGWPAExact: does WritePixelArray(RECTFMT_ARGB) onto a 32-bit OpenRTG
+ * OpenRTGWPAExact: does WritePixelArray(RECTFMT_ARGB) onto a 32-bit GFOpenRTG
  * bitmap write exactly the source's colours with alpha 0? It is the path
  * every GL or SDL frame in a window takes (the row copy of 0.14, #68).
  * The source has non-zero alpha bytes everywhere, its rows start at odd
@@ -10,8 +10,8 @@
  * of them into the window's backing store) and into a bitmap with no layers,
  * then reads the bitmap's longwords back with LockBitMapTagList: every pixel
  * drawn must be 00RRGGBB, and every other pixel as it was. Each case runs
- * with ORTG_DRAW_CPU_ONLY and then with OpenGPU on.
- * openrtg.library 0.11 or later. It opens a 32-bit screen of its own, or
+ * with ORTG_DRAW_CPU_ONLY and then with GFOpenGPU on.
+ * gfopenrtg.library 0.11 or later. It opens a 32-bit screen of its own, or
  * uses the Workbench screen when it can't and that is 32-bit.
  *   OpenRTGWPAExact         Returns 0 when every case is exact, 10 when one isn't. */
 #include <exec/types.h>
@@ -24,7 +24,7 @@
 #include <proto/graphics.h>
 #include <proto/intuition.h>
 #include <proto/cybergraphics.h>
-#include <proto/openrtg.h>
+#include <proto/gfopenrtg.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -165,14 +165,14 @@ static int in_bitmap(int n, const char *mode, struct Screen *scr)
 
 int main(void)
 {
-    static const char *const modes[] = { "CPU", "OpenGPU" };
+    static const char *const modes[] = { "CPU", "GFOpenGPU" };
     static const ULONG flags[] = { ORTG_DRAW_CPU_ONLY, ORTG_DRAW_OPENGPU };
     struct Screen *scr = NULL, *wb = NULL;
     struct OpenRTGBitMapInfo bi;
     ULONG id, i;
     int m, n, rc = 0;
     if (!(OpenRTGBase = OpenLibrary((CONST_STRPTR)OPENRTG_NAME, 0)) || (OpenRTGBase->lib_Version == 0 && OpenRTGBase->lib_Revision < 11)) {
-        printf("OpenRTGWPAExact: needs openrtg.library 0.11\n");
+        printf("OpenRTGWPAExact: needs gfopenrtg.library 0.11\n");
         return 20;
     }
     if (!(CyberGfxBase = OpenLibrary((CONST_STRPTR)"cybergraphics.library", 40))) {
@@ -197,7 +197,7 @@ int main(void)
     if (!scr) {
         wb = LockPubScreen(NULL);
         if (!wb || !ORTG_BitMapInfo(wb->RastPort.BitMap, &bi) || bi.depth != 32) {
-            printf("OpenRTGWPAExact: no 32-bit OpenRTG screen of its own, and the Workbench screen isn't one\n");
+            printf("OpenRTGWPAExact: no 32-bit GFOpenRTG screen of its own, and the Workbench screen isn't one\n");
             rc = 20;
             goto out;
         }
@@ -208,7 +208,7 @@ int main(void)
         ORTG_DrawStats(NULL, 0, flags[m]);
         for (n = 0; n < CASES; n++) {
             if (!in_window(n, modes[m], scr ? scr : wb)) { printf("case %d %-8s window: no windows, or no 32-bit bitmap to read\n", n, modes[m]); rc = 20; }
-            if (!in_bitmap(n, modes[m], scr ? scr : wb)) { printf("case %d %-8s bitmap: no 32-bit OpenRTG bitmap\n", n, modes[m]); rc = 20; }
+            if (!in_bitmap(n, modes[m], scr ? scr : wb)) { printf("case %d %-8s bitmap: no 32-bit GFOpenRTG bitmap\n", n, modes[m]); rc = 20; }
         }
     }
     ORTG_DrawStats(NULL, 0, ORTG_DRAW_OPENGPU);

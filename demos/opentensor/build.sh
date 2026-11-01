@@ -4,10 +4,10 @@ set -eu
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$HERE/../.." && pwd)
 OUT=${1:-"$ROOT/build/opentensor"}
-STOVE=${STOVE:-"$HOME/AmigaChrome/stoves/os32-gcc16"}
+STOVE=${STOVE:-"$HOME/AmiCradle/stoves/os32-gcc16"}
 P="$STOVE/prefix"
 SYS="$P/m68k-amigaos"
-OLD_STOVE=${OLD_STOVE:-"$HOME/AmigaChrome/stoves/os32"}
+OLD_STOVE=${OLD_STOVE:-"$HOME/AmiCradle/stoves/os32"}
 OLD_SYS="$OLD_STOVE/prefix/m68k-amigaos"
 CC="$P/bin/m68k-amigaos-gcc"
 PYTHON=${PYTHON:-python3}
@@ -21,8 +21,8 @@ ICON_WRITER=${AMIGAICON_WRITER:-}
 if [ -z "$ICON_WRITER" ]; then
     for candidate in \
         "$ROOT/../amigachrome-guest/tools/icons/amigaicon.py" \
-        "$HOME/AmigaChromeGuest/tools/icons/amigaicon.py" \
-        "$HOME/AmigaChrome/tools/icons/amigaicon.py"
+        "$HOME/AmiCradleGuest/tools/icons/amigaicon.py" \
+        "$HOME/AmiCradle/tools/icons/amigaicon.py"
     do
         if [ -f "$candidate" ]; then
             ICON_WRITER=$candidate
@@ -31,7 +31,7 @@ if [ -z "$ICON_WRITER" ]; then
     done
 fi
 [ -n "$ICON_WRITER" ] && [ -f "$ICON_WRITER" ] || {
-    echo "OpenTensor: set AMIGAICON_WRITER to AmigaChrome guest tools/icons/amigaicon.py" >&2
+    echo "OpenTensor: set AMIGAICON_WRITER to AmiCradle guest tools/icons/amigaicon.py" >&2
     exit 6
 }
 "$PYTHON" -c 'import PIL' >/dev/null 2>&1 || {
@@ -53,7 +53,7 @@ cat \
 test -s "$SOURCE"
 grep -F 'OpenTensor: Beyond First Light' "$SOURCE" >/dev/null
 grep -F 'THE NUMBER BECAME THE TIMECODE' "$SOURCE" >/dev/null
-grep -F 'MESA / AHI / OPENRTG' "$SOURCE" >/dev/null
+grep -F 'MESA / AHI / GFOPENRTG' "$SOURCE" >/dev/null
 
 EXTRA_INC="$OUT/sdk-compat"
 mkdir -p "$EXTRA_INC"
@@ -117,7 +117,7 @@ cat > "$OUT/package/OpenTensor/README.txt" <<'TXT'
 OpenTensor: Beyond First Light
 ==============================
 
-A 164-second AmigaOS 3.x demo using Mesa/GLA/OpenGPU, OpenRTG and ahi.device.
+A 164-second AmigaOS 3.x demo using Mesa/GLA/GFOpenGPU, GFOpenRTG and ahi.device.
 
 Workbench:
 
@@ -151,7 +151,7 @@ Options:
 
 Act II begins at START 64. The Window Breakout scene starts at START 114 and
 moves a live Mesa scene through a real Intuition window. The default private
-OpenRTG screen uses GLA's screen-owned OpenGPU present path; the breakout and
+GFOpenRTG screen uses GLA's screen-owned GFOpenGPU present path; the breakout and
 WINDOW modes deliberately exercise the layered-window compatibility path.
 TXT
 
@@ -159,7 +159,7 @@ cat > "$OUT/package/OpenTensor/BUILD-INFO.txt" <<EOF2
 OpenTensor Beyond First Light $VERSION
 Target: AmigaOS 3.x / AC090 / 68040 + FPU
 Compiler: $("$CC" --version | head -1)
-Graphics: Mesa / GLA / OpenGPU / OpenRTG
+Graphics: Mesa / GLA / GFOpenGPU / GFOpenRTG
 Audio: ahi.device, original 128 BPM score, 44.1 kHz signed 16-bit stereo
 Buffering: two linked 8192-frame buffers
 Look: yielding field, optical starlight, dimensional storm, ethereal Form

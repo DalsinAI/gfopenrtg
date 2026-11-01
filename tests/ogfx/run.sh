@@ -1,13 +1,13 @@
 #!/bin/sh
 # Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
-# OpenGfx's tests, brought from amigachrome-guest (tests/m68k) with OpenGfx:
+# GFOpenGfx's tests, brought from amigachrome-guest (tests/m68k) with GFOpenGfx:
 #  1. the leaves and the compositing reference on the host, 32-bit (addresses
 #     are longs, as on the Amiga), at -O0 and -O2, under UBSan;
 #  2. the same under qemu-m68k with a Linux m68k GCC, when there is one
 #     (test_ogfx_leaves.sh, test_ogfx_composite.sh);
 #  3. with the os32 stove: the leaves' tags and that they call nothing, as
-#     library/build.sh builds them, and that OpenGfx in opengpu.library keeps
+#     library/build.sh builds them, and that GFOpenGfx in gfopengpu.library keeps
 #     no writable data (it may run from ROM);
 #  4. a patch entry (ogfx_tramp.h), disassembled.
 # OpenGfxCheck (tools/ogfx_check.c) checks the rest on an Amiga.
@@ -38,7 +38,7 @@ sh "$HERE/test_ogfx_leaves.sh" || fail=1
 sh "$HERE/test_ogfx_composite.sh" || fail=1
 
 # 3. the os32 stove
-STOVE=${STOVE:-$HOME/AmigaChrome/stoves/os32}
+STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32}
 CC68K=${CC68K:-$STOVE/prefix/bin/m68k-amigaos-gcc}
 if [ -x "$CC68K" ]; then
     P=${CC68K%gcc}
@@ -65,12 +65,12 @@ if [ -x "$CC68K" ]; then
         case $bytes in "600a41434d460001${2}4ef9"|"600a41434d460001${2}4efa") ;;
             *) echo "FAIL os32: $1's tag is $bytes"; fail=1 ;; esac
     done
-    # No writable data: everything OpenGfx keeps is in opengpu.library's base.
+    # No writable data: everything GFOpenGfx keeps is in gfopengpu.library's base.
     for o in "$OUT/ogfx_leaves.o" "$OUT/ogfx_lib.o" "$OUT/ogfx_gfx_core.o" "$OUT/ogfx_gfx_rp.o"; do
         rw=$("${P}objdump" -h "$o" | awk '$2 ~ /^\.(data|bss)/ && $3 != "00000000" { print $2 " " $3 }')
         [ -z "$rw" ] || { echo "FAIL os32: $(basename "$o") has writable data: $rw"; fail=1; }
     done
-    echo "os32: the leaves' four tags, no calls out, no writable data in OpenGfx"
+    echo "os32: the leaves' four tags, no calls out, no writable data in GFOpenGfx"
     # graphics.library is reached at negative offsets only: a JSR or LEA at a
     # positive offset from A6 is GCC 6.5's lost sign (ogfx_lib.c, original()).
     pos=$("${P}objdump" -d "$OUT/ogfx_lib.o" | grep -E '(jsr|lea) a6@\([0-9]' || true)
@@ -85,5 +85,5 @@ if [ -x "$CC68K" ]; then
 else
     echo "no m68k compiler; the os32 checks are skipped"
 fi
-[ $fail = 0 ] && echo "OpenGfx: all tests passed"
+[ $fail = 0 ] && echo "GFOpenGfx: all tests passed"
 exit $fail

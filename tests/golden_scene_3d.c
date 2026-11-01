@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * OpenGPU's 3D golden scene (golden/opengpu-3d.txt): a textured, fogged,
+ * GFOpenGPU's 3D golden scene (golden/opengpu-3d.txt): a textured, fogged,
  * Z-buffered floor and walls in perspective under a see-through Gouraud
  * triangle, in ARGB32 and then RGB565. Built once for the 3D core's test
  * (test_3d.c), the Vulkan back end's (test_opengpu_vk.c) and the Cradle's
@@ -11,7 +11,7 @@
 #include <math.h>
 #include <string.h>
 #include "golden_scenes.h"
-#include "../include/opengpu/build3d.h"
+#include "../include/gfopengpu/build3d.h"
 
 #define GW OGPU_GOLDEN_3D_W
 #define GH OGPU_GOLDEN_3D_H

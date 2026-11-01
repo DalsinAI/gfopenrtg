@@ -370,7 +370,7 @@ static void ot_scene_beyond(struct Demo *d, float t)
     if (t > 6.0f) {
         ot_overlay_begin(d);
         ot_draw_text(d->width * 0.08f, d->height * 0.78f, d->width / 760.0f,
-                     "MESA   OPENRTG   OPENGPU   AHI   AC090",
+                     "MESA   GFOPENRTG   GFOPENGPU   AHI   AC090",
                      0.66f, 0.78f, 0.96f, ot_smooth((t - 6.0f) / 2.0f));
         ot_overlay_end();
     }
@@ -379,7 +379,7 @@ static void ot_scene_beyond(struct Demo *d, float t)
 static void ot_scene_stack(struct Demo *d, float t)
 {
     static const char *lines[] = {
-        "MESA", "OPENRTG", "OPENGPU", "AHI", "AC090", "THE STACK IS OPEN"
+        "MESA", "GFOPENRTG", "GFOPENGPU", "AHI", "AC090", "THE STACK IS OPEN"
     };
     int i;
     float fade = 1.0f;

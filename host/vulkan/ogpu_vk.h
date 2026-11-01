@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * OpenGPU's Vulkan back end (G2, DESIGN.md section 5): an OGPU stream v1
+ * GFOpenGPU's Vulkan back end (G2, DESIGN.md section 5): an OGPU stream v1
  * carried out on the host's GPU, pixel for pixel as library/opengpu's C core
  * carries it out. The Cradle's runtime runs it behind ACRTG.gpu: the board's
  * video RAM is this back end's Vulkan buffer, so the runtime, the C core and
@@ -65,7 +65,7 @@ struct ogpu_vk_config {
      * multiple of 64 KiB. card_at 0: none, or the environment's
      * OGPU_VK_CARD_AT (bytes). card_end 0: the end of video RAM, or the
      * environment's OGPU_VK_CARD_END. What follows card_end is host memory
-     * again: the ACRTG board's drivers keep OpenGPU's ring in the top 256 KiB
+     * again: the ACRTG board's drivers keep GFOpenGPU's ring in the top 256 KiB
      * of video RAM, and the core reads every word of it. Without sparse
      * binding or the memory, there is no card part: ogpu_vk_card_at says
      * what was made. */

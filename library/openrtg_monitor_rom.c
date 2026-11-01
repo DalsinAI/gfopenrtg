@@ -1,9 +1,9 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * openrtg.monitor: the monitor driver's job (tools/openrtg_monitor.c,
- * DEVS:Monitors/OpenRTG) done by a ROM module, so a ROM that holds OpenRTG
- * (`library/build.sh module`) gives RTG with nothing of OpenRTG's on the
+ * gfopenrtg.monitor: the monitor driver's job (tools/openrtg_monitor.c,
+ * DEVS:Monitors/GFOpenRTG) done by a ROM module, so a ROM that holds GFOpenRTG
+ * (`library/build.sh module`) gives RTG with nothing of GFOpenRTG's on the
  * disk.
  *
  * Its RomTag is RTF_COLDSTART at priority -38. exec's InitCode runs the
@@ -13,8 +13,8 @@
  *     in expansion's list;
  *   - after graphics (65) and intuition (10), the last of what it uses, and
  *     syscheck (-35);
- *   - before amigachrome-guest's openrtg.boot (-40), which loads its own
- *     copy of openrtg.library into RAM unless one is in memory: with this
+ *   - before amigachrome-guest's gfopenrtg.boot (-40), which loads its own
+ *     copy of gfopenrtg.library into RAM unless one is in memory: with this
  *     module in the same ROM it finds this one's and steps aside;
  *   - before bootmenu (-50), the first module that may open a screen, strap
  *     (-60) and dos, whose boot opens the Workbench screen with its first
@@ -23,16 +23,16 @@
  * Its init:
  *   - steps aside, keeping nothing, when Picasso96 (rtg.library) is in
  *     memory or no ACRTG board is fitted;
- *   - makes openrtg.library from its RomTag (before dos, exec's OpenLibrary
+ *   - makes gfopenrtg.library from its RomTag (before dos, exec's OpenLibrary
  *     finds only what is in memory, and ramlib, which would look for a
  *     resident, is not running yet), unless it is in memory already;
- *   - puts OpenRTG's modes in the display database (ORTG_DisplayDatabase),
+ *   - puts GFOpenRTG's modes in the display database (ORTG_DisplayDatabase),
  *     switches its screens on (ORTG_Screens) and makes cybergraphics.library
  *     the same way, which stays open, as with the monitor driver.
  *
- * opengpu.library is on the disk, so OpenRTG draws with the CPU until a
+ * gfopengpu.library is on the disk, so GFOpenRTG draws with the CPU until a
  * process asks for its screens again (screens.c, late_opengpu): IPrefs'
- * Workbench screen, or DEVS:Monitors/OpenRTG, which sees OpenRTG on
+ * Workbench screen, or DEVS:Monitors/GFOpenRTG, which sees GFOpenRTG on
  * (ORTG_Screens(0) answers 1) and registers nothing a second time.
  *
  * No data or BSS: it runs from the ROM.
@@ -45,12 +45,12 @@
 #include <proto/exec.h>
 #include <proto/expansion.h>
 
-#include "../include/openrtg/openrtg.h"
+#include "../include/gfopenrtg/gfopenrtg.h"
 
 #define REG(r, decl) register decl __asm(#r)
 
-#define AMIGACHROME_MFR          0xDA15                  /* openrtg_lib.c's ACRTG board: AmigaChrome Team, or 2011 before 1 October 2026 */
-#define AMIGACHROME_MFR_OLD      2011
+#define AMICRADLE_MFR          0xDA15                  /* openrtg_lib.c's ACRTG board: AmiCradle Team, or 2011 before 1 October 2026 */
+#define AMICRADLE_MFR_OLD      2011
 #define ACRTG_PRODUCT   9                       /* 16 MiB */
 #define ACRTG_PRODUCT_64 15                     /* 64 MiB */
 #define ACRTG_PRODUCT_256 16                    /* 256 MiB */
@@ -61,8 +61,8 @@
  * file: build.sh keeps source order (-fno-toplevel-reorder). */
 int start(void) { return -1; }
 
-static const char orm_name[] = "openrtg.monitor";
-static const char orm_id[] = "openrtg.monitor 0.18 (15.10.2026) OpenRTG, AmigaChrome Team\r\n";
+static const char orm_name[] = "gfopenrtg.monitor";
+static const char orm_id[] = "gfopenrtg.monitor 0.18 (15.10.2026) GFOpenRTG, AmiCradle Team\r\n";
 
 static APTR orm_init(REG(d0, ULONG zero), REG(a0, BPTR seglist), REG(a6, struct ExecBase *SysBase));
 
@@ -71,7 +71,7 @@ const struct Resident orm_romtag = {
     RTF_COLDSTART, 0, NT_UNKNOWN, ORM_PRI, (char *)orm_name, (char *)orm_id, (APTR)orm_init,
 };
 
-/* openrtg.library's calls (openrtg_lib.sfd), with its registers */
+/* gfopenrtg.library's calls (gfopenrtg_lib.sfd), with its registers */
 static ULONG ortg_count(struct Library *b)
 {
     register struct Library *a6 __asm("a6") = b;
@@ -108,10 +108,10 @@ static int acrtg_fitted(struct ExecBase *SysBase)
     struct Library *ExpansionBase = OpenLibrary((CONST_STRPTR)"expansion.library", 37);
     int yes;
     if (!ExpansionBase) return 0;
-    yes = FindConfigDev(NULL, AMIGACHROME_MFR, ACRTG_PRODUCT) || FindConfigDev(NULL, AMIGACHROME_MFR, ACRTG_PRODUCT_64) ||
-          FindConfigDev(NULL, AMIGACHROME_MFR, ACRTG_PRODUCT_256) ||
-          FindConfigDev(NULL, AMIGACHROME_MFR_OLD, ACRTG_PRODUCT) || FindConfigDev(NULL, AMIGACHROME_MFR_OLD, ACRTG_PRODUCT_64) ||
-          FindConfigDev(NULL, AMIGACHROME_MFR_OLD, ACRTG_PRODUCT_256);
+    yes = FindConfigDev(NULL, AMICRADLE_MFR, ACRTG_PRODUCT) || FindConfigDev(NULL, AMICRADLE_MFR, ACRTG_PRODUCT_64) ||
+          FindConfigDev(NULL, AMICRADLE_MFR, ACRTG_PRODUCT_256) ||
+          FindConfigDev(NULL, AMICRADLE_MFR_OLD, ACRTG_PRODUCT) || FindConfigDev(NULL, AMICRADLE_MFR_OLD, ACRTG_PRODUCT_64) ||
+          FindConfigDev(NULL, AMICRADLE_MFR_OLD, ACRTG_PRODUCT_256);
     CloseLibrary(ExpansionBase);
     return yes;
 }
@@ -131,6 +131,6 @@ static APTR orm_init(REG(d0, ULONG zero), REG(a0, BPTR seglist), REG(a6, struct 
         return NULL;
     }
     if (!ortg_on(ortg, -66) || !ortg_on(ortg, -72)) return NULL;     /* stays open: its patches are in */
-    rom_library(SysBase, "cybergraphics.library");                                            /* stays open, as with C:OpenRTG */
+    rom_library(SysBase, "cybergraphics.library");                                            /* stays open, as with C:GFOpenRTG */
     return NULL;
 }

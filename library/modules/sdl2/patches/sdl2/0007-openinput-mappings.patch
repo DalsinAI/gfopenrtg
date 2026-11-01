@@ -1,4 +1,4 @@
-OpenInput: SDL's platform is "AmigaOS 3", so mapping files with platform:AmigaOS 3 lines load; and the joystick driver can ask whether a program or the user gave SDL its own mapping for a GUID (src/joystick/amigaos3).
+GFOpenInput: SDL's platform is "AmigaOS 3", so mapping files with platform:AmigaOS 3 lines load; and the joystick driver can ask whether a program or the user gave SDL its own mapping for a GUID (src/joystick/amigaos3).
 
 --- a/src/SDL.c
 +++ b/src/SDL.c
@@ -17,7 +17,7 @@ OpenInput: SDL's platform is "AmigaOS 3", so mapping files with platform:AmigaOS
  }
  
  /*
-+ * AmigaOS 3.x (src/joystick/amigaos3, OpenInput): whether the program or
++ * AmigaOS 3.x (src/joystick/amigaos3, GFOpenInput): whether the program or
 + * the user gave SDL a mapping of its own for this GUID (an API or user
 + * priority line), rather than one SDL made from the driver.
 + */

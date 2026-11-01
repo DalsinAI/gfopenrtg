@@ -2,12 +2,12 @@
  * OpenTensor: Beyond First Light
  *
  * An AmigaOS 3.x demo for the Open stack:
- *   - Mesa / GLA / OpenGPU for 3D
- *   - OpenRTG / CyberGraphX for the display
+ *   - Mesa / GLA / GFOpenGPU for 3D
+ *   - GFOpenRTG / CyberGraphX for the display
  *   - ahi.device for generated 16-bit stereo sound
  *
  * The default is a private RTG screen, so GLA can use the screen-owned
- * OpenGPU presentation path. WINDOW deliberately selects the layered-window
+ * GFOpenGPU presentation path. WINDOW deliberately selects the layered-window
  * compatibility path and is useful for measuring presentation changes.
  *
  * Copyright (c) 2026 Dalsin Limited.

@@ -18,7 +18,7 @@
 #include <stdbool.h>
 #include <math.h>
 #include "../host/vulkan/ogpu3d_rec.h"
-#include "../include/opengpu/build3d.h"
+#include "../include/gfopengpu/build3d.h"
 #include "golden_scenes.h"
 #include "scenes3d.h"
 

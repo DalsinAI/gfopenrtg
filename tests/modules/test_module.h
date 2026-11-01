@@ -1,11 +1,11 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  * Test.module's table (tests/modules/test_module.c). Calls through it run
- * with A4 = head.a4 (include/opengpu/module.h's OGPU_A4). */
+ * with A4 = head.a4 (include/gfopengpu/module.h's OGPU_A4). */
 #ifndef TEST_MODULE_H
 #define TEST_MODULE_H
 
-#include <opengpu/module.h>
+#include <gfopengpu/module.h>
 
 #define TEST_MODULE_VERSION 2
 

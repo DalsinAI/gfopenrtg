@@ -1,6 +1,6 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
- * Inline calls for bebbo's m68k-amigaos-gcc, from library/openrtg_lib.sfd. */
+ * Inline calls for bebbo's m68k-amigaos-gcc, from library/gfopenrtg_lib.sfd. */
 #ifndef _INLINE_OPENRTG_H
 #define _INLINE_OPENRTG_H
 #ifndef __INLINE_MACROS_H

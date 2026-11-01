@@ -2,11 +2,11 @@
  * SPDX-License-Identifier: MIT
  *
  * tinygl.library 53 for AmigaOS 3: a stand-in. TinyGL programs open
- * tinygl.library before they start GL; on OpenGPU their calls are in
+ * tinygl.library before they start GL; on GFOpenGPU their calls are in
  * libtinygl.a and libGL.a (linked into the program), and GL itself is
- * OpenGPU's GL.module. This library has no calls of its own: it is there so
- * the program's OpenLibrary works, and it opens only where opengpu.library
- * is installed, so a program on a system without OpenGPU stops at its own
+ * GFOpenGPU's GL.module. This library has no calls of its own: it is there so
+ * the program's OpenLibrary works, and it opens only where gfopengpu.library
+ * is installed, so a program on a system without GFOpenGPU stops at its own
  * "can't open tinygl.library" message rather than later.
  *
  * Built bare by library/tinygl/build.sh: no startup code, no C library. */
@@ -35,8 +35,8 @@ struct TGLBase {
 int start(void) { return -1; }
 
 static const char lib_name[] = "tinygl.library";
-static const char lib_id[] = "tinygl.library 53.1 (8.10.2026) TinyGL on OpenGPU, AmigaChrome Team\r\n";
-static const char lib_ver[] __attribute__((used)) = "\0$VER: tinygl.library 53.1 (8.10.2026) TinyGL on OpenGPU, AmigaChrome Team";
+static const char lib_id[] = "tinygl.library 53.1 (8.10.2026) TinyGL on GFOpenGPU, AmiCradle Team\r\n";
+static const char lib_ver[] __attribute__((used)) = "\0$VER: tinygl.library 53.1 (8.10.2026) TinyGL on GFOpenGPU, AmiCradle Team";
 
 static struct Library *lib_init(REG(d0, struct TGLBase *base), REG(a0, BPTR seglist), REG(a6, struct ExecBase *sys));
 static struct Library *lib_open(REG(a6, struct TGLBase *base));
@@ -70,7 +70,7 @@ static struct Library *lib_open(REG(a6, struct TGLBase *base))
     struct Library *ogpu;
     base->lib.lib_OpenCnt++;
     base->lib.lib_Flags &= ~LIBF_DELEXP;
-    ogpu = OpenLibrary((CONST_STRPTR) "opengpu.library", 0);
+    ogpu = OpenLibrary((CONST_STRPTR) "gfopengpu.library", 0);
     if (!ogpu) {
         base->lib.lib_OpenCnt--;
         return 0;

@@ -339,7 +339,7 @@ static inline void pc_fetch(const struct pc_surf *S, const struct pc_surf *D, LO
     }
 }
 
-/* A rectangle from S to D (one of them chunky), as OpenRTG's per-pixel
+/* A rectangle from S to D (one of them chunky), as GFOpenRTG's per-pixel
  * loop drew it: through cookie (a plane of bits, cmod bytes a row, the
  * rectangle's first at bit cx of row cy) the source is copied where a bit
  * is set, whatever the minterm; else the minterm; on 8-bit and planar

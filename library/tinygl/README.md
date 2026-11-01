@@ -1,6 +1,6 @@
-# TinyGL on OpenGPU
+# TinyGL on GFOpenGPU
 
-TinyGL programs build for AmigaOS 3.2 and run on OpenGPU's GL module: Mesa on the GPU through virgl on AmigaChrome, else Mesa's softpipe on the 68k. There is no second GL here. TinyGL's calls become the GL module's calls.
+TinyGL programs build for AmigaOS 3.2 and run on GFOpenGPU's GL module: Mesa on the GPU through virgl on AmiCradle, else Mesa's softpipe on the 68k. There is no second GL here. TinyGL's calls become the GL module's calls.
 
 libtinygl.a is built hard float (`-m68040 -m68881`), as the GL module is. Programs using it need a 68040 or 68060 with its FPU; an LC040 or EC040 (no FPU) can't run them.
 
@@ -26,7 +26,7 @@ Bellard's rasteriser is not carried. The one library has a rasteriser already (`
 | `include/proto/tinygl.h`, `include/tgl/gl.h`, `tgl/gla.h`, `tgl/types.h`, `include/clib/tinygl_protos.h` | The headers a TinyGL program includes. GL's own calls and types come from Mesa's `<GL/gl.h>`. |
 | `include/tgl/glu.h` | `gluPerspective`, `gluLookAt`, `gluOrtho2D`, `gluBuild2DMipmaps` and `gluErrorString`. |
 | `tinygl.c`, which builds `libtinygl.a` | The context calls and those GLU calls. It is linked into the program before `libGL.a`. |
-| `tinygl_lib.c`, which builds `tinygl.library` 53 | A stand-in with no calls of its own, so that a program's `OpenLibrary("tinygl.library", ...)` works. It opens only where `opengpu.library` is installed. |
+| `tinygl_lib.c`, which builds `tinygl.library` 53 | A stand-in with no calls of its own, so that a program's `OpenLibrary("tinygl.library", ...)` works. It opens only where `gfopengpu.library` is installed. |
 
 Build: `library/tinygl/build.sh [OUT_DIR]` (also run by `library/build.sh`). A program:
 
@@ -42,8 +42,8 @@ This is `-ltinygl -lGL -lm` with the kit's flags. `sdk/examples/tinygl/tglspin.c
 - **Showing a frame.** `GLASwapBuffers` makes its context current again if needed, picks up a window's new inner size, and shows the frame.
 - **The route.** `ENV:TinyGL/Driver` picks it, as `ENV:MiniGL/Driver` does for MiniGL:
   - `CPU`: softpipe;
-  - `OpenGPU`: the GPU, or fail;
-  - `Auto` (the default): the GPU where OpenGPU's back end has virgl.
+  - `GFOpenGPU`: the GPU, or fail;
+  - `Auto` (the default): the GPU where GFOpenGPU's back end has virgl.
 - **The tags.** `GLAInitializeContext` takes `TGL_CONTEXT_SCREEN`, `TGL_CONTEXT_WINDOW`, `TGL_CONTEXT_BITMAP` and `TGL_CONTEXT_STENCIL`. Where more than one target is given, the screen is taken first, then the window, then the bitmap.
 
 ## Not yet
@@ -53,7 +53,7 @@ This is `-ltinygl -lGL -lm` with the kit's flags. `sdk/examples/tinygl/tglspin.c
 - **TinyGL's GLUT** (`glutInit`, `glutCreateWindow`, `glutMainLoop` and the rest).
 - **`GLASetAttr`'s attributes** and TinyGL's context-version calls.
 - **Auto-opening.** A program defines `TinyGLBase` and `__tglContext` itself, and calls `OpenLibrary` and `GLInit`.
-- **Installing.** OpenUp's GL part must install `tinygl.library` into `LIBS:`.
+- **Installing.** GFOpenUp's GL part must install `tinygl.library` into `LIBS:`.
 
 ## Licence
 

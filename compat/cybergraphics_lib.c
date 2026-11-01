@@ -1,15 +1,15 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * cybergraphics.library 43.1: the CyberGraphX API over openrtg.library
+ * cybergraphics.library 43.1: the CyberGraphX API over gfopenrtg.library
  * (DESIGN.md sections 1 and 10, phase 4), so programs written for
- * CyberGraphX draw on OpenRTG's screens, and picture.datatype draws
+ * CyberGraphX draw on GFOpenRTG's screens, and picture.datatype draws
  * Workbench's backdrop through it rather than poking planes. It lives in
- * LIBS:OpenRTG/ and C:OpenRTG opens it there, which puts it in the library
- * list under its own name while OpenRTG is the RTG system.
+ * LIBS:GFOpenRTG/ and C:GFOpenRTG opens it there, which puts it in the library
+ * list under its own name while GFOpenRTG is the RTG system.
  *
  * The calls take CyberGraphX's registers (cybergraphics_lib.fd), the pixel
- * work is openrtg.library's (ORTG_WritePixels and the rest), and the
+ * work is gfopenrtg.library's (ORTG_WritePixels and the rest), and the
  * numbers (attributes, tags, formats) are the CyberGraphX interface's.
  * Built bare by library/build.sh.
  *
@@ -64,7 +64,7 @@ register struct CGXBase *cgx_S __asm__("a4");
 #include <proto/utility.h>
 #include "../include/oa_protos_end.h"
 
-#include "../include/openrtg/openrtg.h"
+#include "../include/gfopenrtg/gfopenrtg.h"
 
 #define REG(r, decl) register decl __asm(#r)   /* bebbo gcc: an argument in a register */
 #define NO_ID ((ULONG)INVALID_ID)
@@ -125,7 +125,7 @@ struct CDrawMsg {
 };
 
 
-/* openrtg.library's calls (openrtg_lib.sfd), with its registers */
+/* gfopenrtg.library's calls (gfopenrtg_lib.sfd), with its registers */
 static inline BOOL ortg_get_mode(ULONG id, struct OpenRTGMode *m)
 {
     register ULONG d0 __asm("d0") = id;
@@ -196,7 +196,7 @@ static inline BOOL ortg_info(struct BitMap *bm, struct OpenRTGBitMapInfo *info)
     return (BOOL)d0;
 }
 
-/* ORTG_WritePixelsAlpha, openrtg.library 0.11 on */
+/* ORTG_WritePixelsAlpha, gfopenrtg.library 0.11 on */
 static inline LONG ortg_alpha(struct RastPort *rp, LONG x, LONG y, struct OpenRTGPixels *px, ULONG alpha)
 {
     register struct RastPort *a1 __asm("a1") = rp;
@@ -209,7 +209,7 @@ static inline LONG ortg_alpha(struct RastPort *rp, LONG x, LONG y, struct OpenRT
     return d0;
 }
 
-/* ---- tracing to the serial port, while OpenRTG is being brought up ---- */
+/* ---- tracing to the serial port, while GFOpenRTG is being brought up ---- */
 #define CGX_TRACE 0
 #if CGX_TRACE
 static void trace(const char *t, ULONG v)
@@ -235,7 +235,7 @@ static void trace(const char *t, ULONG v)
 int start(void) { return -1; }
 
 static const char lib_name[] = "cybergraphics.library";
-static const char lib_id[] = "cybergraphics.library 43.3 (15.10.2026) OpenRTG's CyberGraphX API, AmigaChrome Team\r\n";
+static const char lib_id[] = "cybergraphics.library 43.3 (15.10.2026) GFOpenRTG's CyberGraphX API, AmiCradle Team\r\n";
 
 static struct Library *lib_init(REG(d0, struct CGXBase *base), REG(a0, BPTR seglist), REG(a6, struct ExecBase *sys));
 static struct Library *lib_open(REG(a6, struct CGXBase *base));
@@ -474,7 +474,7 @@ static APTR LockBitMapTagList(REG(a0, struct BitMap *bm), REG(a1, struct TagItem
     struct OpenRTGBitMapInfo i;
     struct TagItem *t, *state = tags;
     if (!bm || !ortg_info(bm, &i)) return NULL;
-    /* OpenRTG 0.20: a bitmap in video RAM's card part gives no address: the
+    /* GFOpenRTG 0.20: a bitmap in video RAM's card part gives no address: the
      * CPU reads it at a crawl, so the program draws through graphics calls */
     if (i.flags & ORTG_BMI_CARD) return NULL;
     while ((t = NextTagItem(&state))) {
@@ -532,9 +532,9 @@ static ULONG WriteLUTPixelArray(REG(a0, APTR src), REG(d0, UWORD sx), REG(d1, UW
     return pixels(-78, src, sx, sy, smod, ORTG_PIX_INDEX, ctab, rp, (WORD)dx, (WORD)dy, w, h, 0, 0);
 }
 
-/* Alpha: on 16 and 32-bit OpenRTG screens the pixels are blended by their
- * alpha times the global alpha (its top byte), through OpenGPU's COMPOSITE
- * when it is there (openrtg.library 0.11 on). 8-bit screens have no
+/* Alpha: on 16 and 32-bit GFOpenRTG screens the pixels are blended by their
+ * alpha times the global alpha (its top byte), through GFOpenGPU's COMPOSITE
+ * when it is there (gfopenrtg.library 0.11 on). 8-bit screens have no
  * blending: a pixel is drawn where it is at least half opaque. */
 static ULONG WritePixelArrayAlpha(REG(a0, APTR src), REG(d0, UWORD sx), REG(d1, UWORD sy), REG(d2, UWORD smod), REG(a1, struct RastPort *rp),
                                   REG(d3, UWORD dx), REG(d4, UWORD dy), REG(d5, UWORD w), REG(d6, UWORD h), REG(d7, ULONG alpha))

@@ -1,5 +1,5 @@
 SDL 3.4.14 (Zlib): SDL's calls into the program from SDL3.module run with
-the program's A4 (src/SDL_os3callout.h). AmigaChrome Team, 2026.
+the program's A4 (src/SDL_os3callout.h). AmiCradle Team, 2026.
 
 diff --git a/src/audio/SDL_audio.c b/src/audio/SDL_audio.c
 index 2f9f127..ef5692d 100644

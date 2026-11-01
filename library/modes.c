@@ -51,7 +51,7 @@ uint32_t ortg_monitor_id(int monitor) {
  * then 0x1000 and the format in bits 8-9 (0x000 8-bit, 0x100 16-bit, 0x200
  * 32-bit), as Picasso96 lays out its own. The low twelve bits are the
  * chipset's mode flags to graphics and intuition (LACE, HAM, SUPERHIRES and
- * the rest), so OpenRTG keeps them clear but for bits 8 and 9, which mean
+ * the rest), so GFOpenRTG keeps them clear but for bits 8 and 9, which mean
  * nothing for a board's mode (5 Oct 2026: a LACE bit there broke the mouse). */
 static uint32_t mode_id(int monitor, int size, int format) {
     return ortg_monitor_id(monitor) | ((uint32_t)size << 16) | 0x1000u | ((uint32_t)format << 8);
@@ -67,10 +67,10 @@ static void put_str(char **p, char *end, const char *s) {
     while (*s && *p < end) *(*p)++ = *s++;
 }
 
-/* "OpenRTG.1: 1920x1080 32-bit"; the Native place "OpenRTG.1: Native 32-bit", whatever its size. */
+/* "GFOpenRTG.1: 1920x1080 32-bit"; the Native place "GFOpenRTG.1: Native 32-bit", whatever its size. */
 static void name_mode(char *out, int monitor, const struct size *s, int depth, int native) {
     char *p = out, *end = out + ORTG_NAME_LEN - 1;
-    put_str(&p, end, "OpenRTG."); put_num(&p, end, (unsigned)monitor);
+    put_str(&p, end, "GFOpenRTG."); put_num(&p, end, (unsigned)monitor);
     put_str(&p, end, ": ");
     if (native) put_str(&p, end, "Native");
     else { put_num(&p, end, s->w); put_str(&p, end, "x"); put_num(&p, end, s->h); }

@@ -1,28 +1,28 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * OpenGPUCheck: is OpenGPU on this Amiga drawing what it should, and how
- * fast? It names the back ends opengpu.library found, draws the golden
+ * OpenGPUCheck: is GFOpenGPU on this Amiga drawing what it should, and how
+ * fast? It names the back ends gfopengpu.library found, draws the golden
  * scenes (tests/golden_scenes.c) through the library, so through its driver
  * when there is one (ACRTG.gpu on the Cradle), and again on this 68k with
  * the C core linked in, and checks both against the golden checksums every
  * back end must give. Then it times the same batches both ways.
  *   OpenGPUCheck [QUICK]
  * Returns 0 when everything matches, 10 when something doesn't, 20 when
- * opengpu.library is missing. */
+ * gfopengpu.library is missing. */
 #include <exec/types.h>
 #include <exec/memory.h>
 #include <devices/timer.h>
 #include <proto/exec.h>
 #include <proto/dos.h>
 #include <proto/timer.h>
-#include <proto/opengpu.h>
+#include <proto/gfopengpu.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "../tests/golden_scenes.h"
-#include "../include/opengpu/opengpu.h"
-#include "../include/opengpu/build.h"
+#include "../include/gfopengpu/gfopengpu.h"
+#include "../include/gfopengpu/build.h"
 
 #define GOLDEN_G1  0xde825f7bUL
 #define GOLDEN_V11 0x400d1333UL
@@ -34,7 +34,7 @@ static struct timerequest treq;
 
 static ogpu_u8 *lib_map(void *user, ogpu_u32 address, ogpu_u32 length) { (void)user; (void)length; return (ogpu_u8 *)address; }
 
-/* Through opengpu.library: its driver, or its own CPU back end. */
+/* Through gfopengpu.library: its driver, or its own CPU back end. */
 static long run_library(void *user, const unsigned char *stream, long words)
 {
     ULONG fence = 0;
@@ -98,15 +98,15 @@ int main(int argc, char **argv)
     int bad = 0, i, quick = argc > 1;
     STRPTR name;
     if (!(OpenGPUBase = OpenLibrary((CONST_STRPTR)OPENGPU_NAME, 0))) {
-        printf("OpenGPUCheck: opengpu.library is not installed\n");
+        printf("OpenGPUCheck: gfopengpu.library is not installed\n");
         return 20;
     }
-    printf("opengpu.library %d.%d\n", OpenGPUBase->lib_Version, OpenGPUBase->lib_Revision);
+    printf("gfopengpu.library %d.%d\n", OpenGPUBase->lib_Version, OpenGPUBase->lib_Revision);
     for (i = 0; i < 4; i++)
         if ((name = OGPU_BackEndName(i)) != NULL) printf("  back end %d: %s\n", i, name);
     q = OGPU_Query(OGPU_OP_COMPOSITE, OGPU_FMT_ARGB32);
     printf("  COMPOSITE into ARGB32: %s, back end %d, %s\n", OGPU_ANSWER(q) == OGPU_FULL ? "full" : OGPU_ANSWER(q) == OGPU_PARTIAL ? "partly" : "no",
-           OGPU_BACKEND(q), OGPU_ONGPU(q) ? "on a GPU" : "on a CPU (or not said: opengpu.library before 0.21, a driver before ACRTG.gpu 1.5)");
+           OGPU_BACKEND(q), OGPU_ONGPU(q) ? "on a GPU" : "on a CPU (or not said: gfopengpu.library before 0.21, a driver before ACRTG.gpu 1.5)");
     q = OGPU_Query(OGPU_OP_VIRGL, 0);
     printf("  virgl (Mesa on the GPU): %s\n", OGPU_ANSWER(q) == OGPU_FULL ? "yes" : "no");
 

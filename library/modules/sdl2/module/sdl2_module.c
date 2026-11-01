@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: MIT
  *
  * SDL2.module: SDL 2 (with the Amiga back ends) as a module that
- * opengpu.library, or the link stub, loads for a program. It is linked on
+ * gfopengpu.library, or the link stub, loads for a program. It is linked on
  * library/modules/common: module_start.S's first code, and module_rt.c,
  * which sets libnix up the way its startup code would for a program
  * (SysBase and DOSBase, then its init list: memory, standard I/O on the
@@ -10,7 +10,7 @@
  * and reads variables with GetVar.
  *
  * Step 2 of the layout's residency plan: the module is built -fbaserel32,
- * so opengpu.library loads its code once for every program and gives each
+ * so gfopengpu.library loads its code once for every program and gives each
  * program its own copy of SDL's globals; the stub sets A4 on every call
  * (stubs/sdl2). SDL's calls back into the program (audio, timers, threads,
  * event filters) run with the program's A4, and its threads start with the

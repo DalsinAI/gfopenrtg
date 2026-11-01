@@ -182,6 +182,80 @@ static inline void pc_plane_put(UBYTE *row, LONG x, LONG n, const UBYTE *vals, c
     }
 }
 
+/* The runs of set bits among n bits of a row from bit x, from offset *at:
+ * up to max runs as [start, end) offsets, two WORDs each; *at moves past the
+ * last run given (n when the row is done). Whole zero bytes go by a byte at
+ * a time. */
+static inline int pc_runs(const UBYTE *row, LONG x, LONG n, LONG *at, WORD *runs, int max)
+{
+    int k = 0;
+    LONG i = *at;
+    while (i < n) {
+        LONG s;
+        UBYTE b = pc_bits8(row, x + i, n - i < 8 ? n - i : 8);
+        if (!b) { i += n - i < 8 ? n - i : 8; continue; }
+        while (!(b & 0x80)) { b <<= 1; i++; }
+        if (k == max) break;
+        s = i;
+        for (;;) {                                  /* to the end of the run */
+            b = pc_bits8(row, x + i, n - i < 8 ? n - i : 8);
+            if (b == 0xFF && n - i >= 8) { i += 8; if (i >= n) break; continue; }
+            while (b & 0x80) { b <<= 1; i++; }
+            break;
+        }
+        runs[2 * k] = (WORD)s; runs[2 * k + 1] = (WORD)i;
+        k++;
+    }
+    *at = i < n ? i : n;
+    return k;
+}
+
+/* The set bits of a w x h box of a mask (cmod bytes a row, the box's first
+ * at bit cx of row cy) as rectangles, offsets in the box: one for each run
+ * of set bits, and runs alike in rows one after another as one taller
+ * rectangle (an icon's body is one). emit returns 0 to stop: then this does. */
+#define PC_RUNS 8
+static inline int pc_mask_rects(const UBYTE *cookie, LONG cx, LONG cy, LONG cmod, LONG w, LONG h,
+                                int (*emit)(void *ctx, LONG x, LONG y, LONG w, LONG h), void *ctx)
+{
+    WORD prev[2 * PC_RUNS], cur[2 * PC_RUNS];
+    int np = 0, nc;
+    LONG py = 0, ph = 0;
+    if (w > 0x7FFF) return 0;
+    for (LONG j = 0; j <= h; j++) {
+        const UBYTE *row = cookie;
+        LONG at = 0;
+        int whole = 0;
+        nc = 0;
+        if (j < h) {
+            row = cookie + (cy + j) * cmod;
+            nc = pc_runs(row, cx, w, &at, cur, PC_RUNS);
+            whole = at >= w;
+            if (whole && ph && nc == np) {          /* as the rows before */
+                int k = 0;
+                while (k < 2 * nc && cur[k] == prev[k]) k++;
+                if (k == 2 * nc) { ph++; continue; }
+            }
+        }
+        for (int k = 0; k < np; k++)
+            if (!emit(ctx, prev[2 * k], py, prev[2 * k + 1] - prev[2 * k], ph)) return 0;
+        np = 0; ph = 0;
+        if (j == h) break;
+        if (whole) {
+            for (int k = 0; k < 2 * nc; k++) prev[k] = cur[k];
+            np = nc; py = j; ph = 1;
+            continue;
+        }
+        for (;;) {                                  /* more runs than kept: this row's, as they come */
+            for (int k = 0; k < nc; k++)
+                if (!emit(ctx, cur[2 * k], j, cur[2 * k + 1] - cur[2 * k], 1)) return 0;
+            if (at >= w) break;
+            nc = pc_runs(row, cx, w, &at, cur, PC_RUNS);
+        }
+    }
+    return 1;
+}
+
 /* ---- blits on the CPU: a row at a time ---------------------------------------------------- */
 
 /* A bitmap as pc_blit sees it: chunky (bpp 1, 2 or 4) or planar (bpp 0). */

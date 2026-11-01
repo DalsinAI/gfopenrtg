@@ -3,10 +3,11 @@
  *
  * library/pixconv.h against the per-pixel code it replaces in screens.c
  * (openrtg.library 0.24): the nearest pen and its memo, through palette
- * changes; the planes read and written a row at a time; and whole blits,
- * every pair of planar, 8, 16 and 32-bit bitmaps, with and without a mask
- * (cookie), minterms, plane masks, and overlapping copies within one
- * bitmap, compared pixel for pixel and plane for plane with the old loop.
+ * changes; the planes read and written a row at a time; the runs of a
+ * mask and its rectangles; and whole blits, every pair of planar, 8, 16 and 32-bit bitmaps,
+ * with and without a mask (cookie), minterms, plane masks, and overlapping
+ * copies within one bitmap, compared pixel for pixel and plane for plane
+ * with the old loop.
  *   test_pixconv [BLITS]     (default 60000 random blits) */
 #include <stdio.h>
 #include <stdlib.h>
@@ -153,6 +154,76 @@ static void test_nearest_and_memo(void)
     CHECK(pc_memo_pen(&memo, pal[3], 4, 200, 0x123456) == old_px_pen(pal[3], 4, 0x123456), "memo table 200");
 }
 
+static void test_runs(void)
+{
+    UBYTE row[40];
+    WORD runs[2 * 5];
+    for (int i = 0; i < 20000; i++) {
+        LONG x = rnd() % 64, n = 1 + rnd() % 250, at = 0, pos = 0;
+        int max = 1 + rnd() % 5;
+        int kind = rnd() % 4;
+        for (int b = 0; b < 40; b++) row[b] = kind == 0 ? rnd() : kind == 1 ? 0xFF : kind == 2 ? (rnd() & 1 ? 0 : 0xFF) : (rnd() % 5 ? 0 : rnd());
+        if (x + n > 320) n = 320 - x;
+        while (at < n) {
+            int k = pc_runs(row, x, n, &at, runs, max);
+            for (int r = 0; r < k; r++) {
+                /* every bit from pos to the run's start clear, the run set, its end clear or the row's end */
+                for (; pos < runs[2 * r]; pos++) CHECK(!((row[(x + pos) >> 3] >> (7 - ((x + pos) & 7))) & 1), "runs: bit %d set outside", pos);
+                CHECK(runs[2 * r] < runs[2 * r + 1], "runs: empty run");
+                for (; pos < runs[2 * r + 1]; pos++) CHECK((row[(x + pos) >> 3] >> (7 - ((x + pos) & 7))) & 1, "runs: bit %d clear inside", pos);
+                CHECK(pos == n || !((row[(x + pos) >> 3] >> (7 - ((x + pos) & 7))) & 1), "runs: run ends early at %d", pos);
+            }
+            if (k < max) { CHECK(at == n, "runs: stopped at %d of %d", at, n); break; }
+        }
+        for (; pos < n; pos++) CHECK(!((row[(x + pos) >> 3] >> (7 - ((x + pos) & 7))) & 1), "runs: bit %d missed", pos);
+    }
+}
+
+/* pc_mask_rects: every set bit of the box in one rectangle, once; no clear bit in any */
+static UBYTE cover[40][200];
+static int rect_count, rect_stop;
+static int cover_rect(void *ctx, LONG x, LONG y, LONG w, LONG h)
+{
+    (void)ctx;
+    if (rect_stop && ++rect_count > rect_stop) return 0;
+    for (LONG j = y; j < y + h; j++) for (LONG i = x; i < x + w; i++) cover[j][i]++;
+    return 1;
+}
+
+static void test_mask_rects(void)
+{
+    UBYTE mask[40 * 32];
+    for (int t = 0; t < 5000; t++) {
+        LONG cmod = 32, cx = rnd() % 40, cy = rnd() % 4, w = 1 + rnd() % 200, h = 1 + rnd() % 36;
+        int kind = rnd() % 5;
+        if (cx + w > 256) w = 256 - cx;
+        for (int y = 0; y < 40; y++)
+            for (int b = 0; b < 32; b++) {
+                UBYTE v;
+                switch (kind) {
+                case 0: v = (UBYTE)rnd(); break;                        /* many runs a row */
+                case 1: v = 0xFF; break;
+                case 2: v = (y / 3) & 1 ? 0xFF : 0x0F; break;            /* bands of rows alike */
+                case 3: { int r = (y - 20) * (y - 20); v = 0;            /* a disc, an icon's shape */
+                          for (int i = 0; i < 8; i++) { int x = b * 8 + i - 60; if (x * x + r < 300) v |= 0x80 >> i; } break; }
+                default: v = rnd() % 4 ? 0 : (UBYTE)rnd(); break;
+                }
+                mask[y * cmod + b] = v;
+            }
+        memset(cover, 0, sizeof cover);
+        rect_count = 0; rect_stop = 0;
+        CHECK(pc_mask_rects(mask, cx, cy, cmod, w, h, cover_rect, NULL) == 1, "mask_rects: stopped");
+        for (LONG y = 0; y < h; y++)
+            for (LONG x = 0; x < w; x++) {
+                LONG bit = cx + x;
+                int set = (mask[(cy + y) * cmod + (bit >> 3)] >> (7 - (bit & 7))) & 1;
+                CHECK(cover[y][x] == set, "mask_rects: kind %d, %ld,%ld covered %d times, bit %d", kind, (long)x, (long)y, cover[y][x], set);
+            }
+        rect_stop = 1;
+        if (kind == 0) CHECK(pc_mask_rects(mask, cx, cy, cmod, w, h, cover_rect, NULL) == 0 || rect_count <= 1, "mask_rects: no stop");
+    }
+}
+
 #define BW 100
 #define BH 24
 
@@ -249,8 +320,10 @@ static void test_blits(long count)
 int main(int argc, char **argv)
 {
     test_nearest_and_memo();
+    test_runs();
+    test_mask_rects();
     test_blits(argc > 1 ? atol(argv[1]) : 60000);
     if (fails) { printf("test_pixconv: %d FAILED\n", fails); return 1; }
-    printf("test_pixconv: the nearest pens, the memo and the blits are as before\n");
+    printf("test_pixconv: the nearest pens, the memo, the runs, the mask rectangles and the blits are as before\n");
     return 0;
 }

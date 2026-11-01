@@ -1352,6 +1352,54 @@ static int ogpu_copy_rect(struct ortg_bitmap *src, LONG sx, LONG sy,
     return ogpu_submit_async(&b);      /* 0.21: both OpenRTG bitmaps; left running */
 }
 
+/* 0.25: a copy through a mask (BltMaskBitMapRastPort's cookie, cmod bytes a
+ * row, the rectangle's first at bit cx of row cy) from one OpenRTG bitmap to
+ * another of its format, as the CPU code draws it: the source where a bit
+ * is set. A COPY for each run of set bits, a run of rows alike in one (an
+ * icon's body is one COPY), MB_WORDS a batch, left running as a plain
+ * copy's is. 0 when a batch is refused; the CPU then draws it all, the same
+ * over what went. */
+#define MB_WORDS (14 + 16 * 5)          /* two SURFACEs and a TARGET, then 16 COPYs */
+struct mb_ctx {
+    struct OGPUBatch b;
+    UBYTE stream[MB_WORDS * 4];
+    int copies;
+    const struct ortg_bitmap *os, *od;
+    LONG sx, sy, dx, dy;
+};
+
+static void mb_begin(struct mb_ctx *m)
+{
+    ogpu_batch_init(&m->b, m->stream, MB_WORDS);
+    ogpu_target_bitmap(&m->b, 0, m->os);
+    ogpu_target_bitmap(&m->b, 1, m->od);
+    ogpu_target(&m->b, 1);
+    m->copies = 0;
+}
+
+static int mb_copy(void *c, LONG x, LONG y, LONG w, LONG h)
+{
+    struct mb_ctx *m = c;
+    if (m->b.words + 5 > m->b.cap) {                /* full: it goes, and a new one starts */
+        if (!ogpu_submit_async(&m->b)) return 0;
+        mb_begin(m);
+    }
+    ogpu_copy(&m->b, 0, m->sx + x, m->sy + y, m->dx + x, m->dy + y, w, h);
+    m->copies++;
+    return !m->b.overflow;
+}
+
+static __attribute__((noinline)) int ogpu_masked_copy(const struct ortg_bitmap *os, LONG sx, LONG sy, const struct ortg_bitmap *od,
+                                                      LONG dx, LONG dy, LONG w, LONG h, const UBYTE *cookie, LONG cx, LONG cy, LONG cmod)
+{
+    struct mb_ctx m;
+    if (w <= 0 || h <= 0 || !ogpu_can(OGPU_OP_COPY, od)) return 0;
+    m.os = os; m.od = od; m.sx = sx; m.sy = sy; m.dx = dx; m.dy = dy;
+    mb_begin(&m);
+    if (!pc_mask_rects(cookie, cx, cy, cmod, w, h, mb_copy, &m)) return 0;
+    return !m.copies || ogpu_submit_async(&m.b);
+}
+
 /* ---- clipping: an operation on every visible piece of a RastPort's box -------------- */
 
 /* fn gets the target bitmap, the box in it (inclusive), and dx, dy: the bitmap
@@ -1681,6 +1729,13 @@ static void blit(struct BitMap *src, LONG sx, LONG sy, struct BitMap *dst, LONG 
         int ok = os->bpp == 1 ? ogpu_pixels_from(od, dx, dy, dx + w - 1, dy + h - 1, sp, os->stride, OGPU_FMT_INDEX8, ortg_pen_rgb[od->pal_index], 1)
                               : ogpu_pixels_from(od, dx, dy, dx + w - 1, dy + h - 1, sp, os->stride, ogpu_format_of(os), NULL, 1);
         ortg_stat(ORTG_STAT_BLIT_CONVERT, ok, (ULONG)w * (ULONG)h);
+        if (ok) return;
+    } else if (od && os && !same && cookie && os->bpp == od->bpp && (od->bpp == 1 ? mask == 0xFF : mask != 0)) {
+        /* 0.25: through a mask between OpenRTG bitmaps of one format (icons,
+         * BOBs): the source where a bit is set, whatever the minterm, as the
+         * CPU code below draws it; with no wait for what OpenGPU still draws */
+        int ok = ogpu_masked_copy(os, sx, sy, od, dx, dy, w, h, cookie, cookie_x, cookie_y, cookie_mod);
+        ortg_stat(ORTG_STAT_BLIT_MASKED, ok, (ULONG)w * (ULONG)h);
         if (ok) return;
     } else if (od)
         ortg_stat(cookie ? ORTG_STAT_BLIT_MASKED : !os ? ORTG_STAT_BLIT_PLANAR : os->bpp != od->bpp ? ORTG_STAT_BLIT_CONVERT : ORTG_STAT_BLIT,

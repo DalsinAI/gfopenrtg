@@ -174,6 +174,12 @@ int main(void)
         begin(); c = cmd(ACV_PRESENT, 12, pa);
         acvirgl_run(v, map, NULL, BLK, at - BLK);
         CHECK(result(c) == ACV_ERR_BADCMD, "present: a short rectangle list (%d)", result(c));
+        /* a target past 32 bits: bpr 0x01000000 and 257 rows wrap to one
+         * row in 32 bits; refused, not written 16 MiB a row past the map */
+        pa[5] = 0x01000000u; pa[7] = ((uint32_t)TW << 16) | 257u; pa[9] = 1;
+        begin(); c = cmd(ACV_PRESENT, 12, pa);
+        acvirgl_run(v, map, NULL, BLK, at - BLK);
+        CHECK(result(c) == ACV_ERR_NOMAP, "present: a target past 32 bits (%d)", result(c));
     }
 
     /* a wrong length: BADCMD, and nothing after it runs */

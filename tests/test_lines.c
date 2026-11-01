@@ -12,8 +12,16 @@
  * per pixel, both through clip pieces with a hidden part as a layer's.
  * Random calls in every DrawMode, LinePtrn, linpatcnt, FRST_DOT and Mask;
  * the pixels, cp, linpatcnt and Flags must match after every call.
- * Then the pixels against OpenRTG's line() before 0.25, for every line
- * within 40 pixels: the same Bresenham. */
+ * Side by side with them: OpenRTG's Draw and PolyDraw before 0.25 (main at
+ * 4b13804: line() and any_line()), counted where they differ from
+ * graphics.library; and the lines the CPU draws a pixel at a time, a layer
+ * lock each (0.25's first commit) against a run at a time (its second),
+ * which must be the same pixels. Then cases spelt out pixel by pixel:
+ * a COMPLEMENT box's corners, a pattern going on from line to line, JAM2's
+ * BgPen, INVERSVID, COMPLEMENT with JAM2. Then the pixels against line()
+ * before 0.25 for every line within 40 pixels: the same Bresenham.
+ * Built for the 68k too (qemu-m68k in tests/run.sh; tests/amiga/lines
+ * builds it for AmigaOS as OpenRTGLineModel). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -124,7 +132,11 @@ static void ref_polydraw(struct rp *rp, LONG count, const WORD *xy)
 
 #define ARENA (1L << 16)
 #define T0 0x1000
+#define T1 0x4000                   /* the same drawn a pixel at a time */
+#define T2 0x7000                   /* the same drawn by OpenRTG before 0.25 */
 static ogpu_u8 arena[ARENA];
+static long tgt = T0;               /* where ortg_lines() draws */
+static int batched = 1;             /* a run at a time (0.25), or a pixel at a time */
 static unsigned char sbuf[1 << 12];
 static struct ogpu_core C;
 static int gpu_on;
@@ -140,7 +152,7 @@ static ogpu_u8 *map(void *user, ogpu_u32 address, ogpu_u32 length)
 /* plot() for 8 bits */
 static void plot8(LONG x, LONG y, const struct rp *rp, int what)
 {
-    UBYTE *p = &arena[T0 + y * W + x];
+    UBYTE *p = &arena[tgt + y * W + x];
     if (!rp->Mask) return;
     if (what == ORTG_LINE_XOR) { *p ^= rp->Mask; return; }
     *p = (UBYTE)((*p & ~rp->Mask) | ((what == ORTG_LINE_BG ? rp->BgPen : rp->FgPen) & rp->Mask));
@@ -169,6 +181,19 @@ static void cpu_run(const struct rp *rp, LONG x0, LONG y0, const WORD *xy, LONG 
     }
 }
 
+/* the first commit's line_cpu(): a pixel at a time, through every piece */
+static void cpu_dots(const struct rp *rp, struct ortg_line *l)
+{
+    for (;;) {
+        int w = ortg_line_what(l);
+        if (w != ORTG_LINE_NONE)
+            for (int pc = 0; pc < 3; pc++)
+                if (l->x >= piece[pc].x0 && l->x <= piece[pc].x1 && l->y >= piece[pc].y0 && l->y <= piece[pc].y1) plot8(l->x, l->y, rp, w);
+        if (l->i == l->len) break;
+        ortg_line_next(l);
+    }
+}
+
 static int line_gpu(const struct rp *rp, const struct ortg_line *l, LONG x1, LONG y1, int go)
 {
     int w0 = ortg_line_what(l), kind = l->len ? ortg_line_rest(l) : w0;
@@ -183,7 +208,7 @@ static int line_gpu(const struct rp *rp, const struct ortg_line *l, LONG x1, LON
         struct OGPUBatch b;
         LONG bx0 = x0 < x1 ? x0 : x1, by0 = y0 < y1 ? y0 : y1, bx1 = x0 < x1 ? x1 : x0, by1 = y0 < y1 ? y1 : y0;
         ogpu_batch_init(&b, sbuf, sizeof sbuf / 4);
-        ogpu_surface(&b, 0, T0, W, W, H, OGPU_FMT_CLUT8);
+        ogpu_surface(&b, 0, (ogpu_u32)tgt, W, W, H, OGPU_FMT_CLUT8);
         ogpu_target(&b, 0);
         for (int pc = 0; pc < 3; pc++) {
             /* pieces_then: the box within the piece and the bitmap */
@@ -213,7 +238,11 @@ static void ortg_lines(struct rp *rp, const WORD *xy, LONG n)
         struct ortg_line l;
         LONG ex = xy[2 * j], ey = xy[2 * j + 1];
         ortg_line_init(&l, cx, cy, ex, ey, ptrn, cnt, mode, ortg_line_first_of(mode, frst, j));
-        if (!line_gpu(rp, &l, ex, ey, 1)) {
+        int g = line_gpu(rp, &l, ex, ey, 1);
+        if (!g && !batched) {
+            cpu_dots(rp, &l);
+            cpu_lines++;
+        } else if (!g) {
             LONG m = 1;
             BYTE c2 = ortg_line_cnt_after(&l);
             while (j + m < n) {
@@ -237,6 +266,36 @@ static void ortg_lines(struct rp *rp, const WORD *xy, LONG n)
     rp->cp_x = (WORD)cx; rp->cp_y = (WORD)cy;
 }
 
+/* ---- OpenRTG before 0.25 (main at 4b13804) ---------------------------------------------
+ * line() for every line (any_line()'s OpenGPU path drew the same pixels):
+ * every first pixel drawn, the pattern from bit 15 for each line, JAM2
+ * dropped, INVERSVID swapping the pens; linpatcnt and Flags left alone. */
+
+static void old_lines(struct rp *rp, const WORD *xy, LONG n)
+{
+    UBYTE pen = rp->DrawMode & INVERSVID ? rp->BgPen : rp->FgPen;
+    for (LONG j = 0; j < n; j++) {
+        LONG x0 = rp->cp_x, y0 = rp->cp_y, x1 = xy[2 * j], y1 = xy[2 * j + 1];
+        LONG ddx = x1 > x0 ? x1 - x0 : x0 - x1, ddy = -(y1 > y0 ? y1 - y0 : y0 - y1);
+        LONG sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, err = ddx + ddy;
+        UWORD pat = rp->LinePtrn;
+        int k = 0;
+        for (;;) {
+            if ((pat == 0xFFFF || ((pat >> (15 - (k & 15))) & 1)) && x0 >= 0 && y0 >= 0 && x0 < W && y0 < H && visible(x0, y0) && rp->Mask) {
+                UBYTE *p = &arena[T2 + y0 * W + x0];
+                if (rp->DrawMode & COMPLEMENT) *p ^= rp->Mask;
+                else *p = (UBYTE)((*p & ~rp->Mask) | (pen & rp->Mask));
+            }
+            k++;
+            if (x0 == x1 && y0 == y1) break;
+            LONG e2 = 2 * err;
+            if (e2 >= ddy) { err += ddy; x0 += sx; }
+            if (e2 <= ddx) { err += ddx; y0 += sy; }
+        }
+        rp->cp_x = (WORD)x1; rp->cp_y = (WORD)y1;
+    }
+}
+
 /* ---- the checks ------------------------------------------------------------------------- */
 
 static LONG coord(LONG span)
@@ -245,12 +304,14 @@ static LONG coord(LONG span)
     return (LONG)(rnd() % (unsigned long)(span + 16)) - 8;
 }
 
+static long calls, old_pixels_wrong, old_state_wrong;
+
 static void random_calls(int gpu, int rounds)
 {
     static const UWORD pats[] = { 0xFFFF, 0xFFFF, 0x0000, 0xF0F0, 0xAAAA, 0xCCCC, 0x8001, 0xFF00, 0x1234 };
     gpu_on = gpu;
     for (int r = 0; r < rounds && failures < 20; r++) {
-        struct rp a, b;
+        struct rp a, b, d, o;
         for (int i = 0; i < W * H; i++) ref[i] = arena[T0 + i] = (UBYTE)rnd();
         memset(&a, 0, sizeof a);
         a.FgPen = (UBYTE)rnd(); a.BgPen = (UBYTE)rnd();
@@ -282,8 +343,20 @@ static void random_calls(int gpu, int rounds)
                 else if (s == 1) xy[2 * i + 1] = (WORD)py;              /* horizontal */
                 else if (s == 2) { LONG d = coord(W) - px; xy[2 * i] = (WORD)(px + d); xy[2 * i + 1] = (WORD)(py + (rnd() & 1 ? d : -d)); }
             }
-            if (what < 5) { ref_draw(&a, xy[0], xy[1]); ortg_lines(&b, xy, 1); n = 1; }
-            else { ref_polydraw(&a, n, xy); ortg_lines(&b, xy, n); }
+            if (what < 5) n = 1;
+            memcpy(arena + T1, ref, W * H); memcpy(arena + T2, ref, W * H);
+            d = b; o = b;
+            if (what < 5) ref_draw(&a, xy[0], xy[1]);
+            else ref_polydraw(&a, n, xy);
+            tgt = T0; batched = 1; ortg_lines(&b, xy, n);
+            tgt = T1; batched = 0; ortg_lines(&d, xy, n);
+            tgt = T0; batched = 1;
+            old_lines(&o, xy, n);
+            calls++;
+            if (memcmp(ref, arena + T2, W * H)) old_pixels_wrong++;
+            if (o.linpatcnt != a.linpatcnt || o.Flags != a.Flags) old_state_wrong++;
+            CHECK(memcmp(arena + T0, arena + T1, W * H) == 0 && memcmp(&b, &d, sizeof b) == 0,
+                  "round %d call %d: a run at a time and a pixel at a time differ", r, c);
             CHECK(memcmp(ref, arena + T0, W * H) == 0, "round %d call %d (%s of %ld, mode %d, LinePtrn %04x, mask %02x, gpu %d): pixels differ",
                   r, c, n == 1 && what < 5 ? "Draw" : "PolyDraw", (long)n, a.DrawMode, a.LinePtrn, a.Mask, gpu);
             CHECK(a.cp_x == b.cp_x && a.cp_y == b.cp_y && a.linpatcnt == b.linpatcnt && a.Flags == b.Flags,
@@ -310,6 +383,87 @@ static void complement_box(int gpu)
     CHECK(arena[T0 + 10 * W + 90] == 0xFF && arena[T0 + 30 * W + 90] == 0xFF && arena[T0 + 30 * W + 62] == 0xFF, "box corners (gpu %d)", gpu);
     CHECK(arena[T0 + 10 * W + 62] == 0, "box's closing corner inverted twice (gpu %d)", gpu);
     CHECK(arena[T0 + 10 * W + 75] == 0xFF && arena[T0 + 20 * W + 90] == 0xFF, "box sides (gpu %d)", gpu);
+}
+
+/* ---- cases spelt out --------------------------------------------------------------------
+ * Each drawn on 0 by graphics.library's reference, 0.25 (with OpenGPU's
+ * core and without) and OpenRTG before 0.25; one row read back as pen
+ * numbers ('.' 0, 'X' 255). */
+
+static struct rp ca, cb, co;
+
+static void case_start(UBYTE mode, UWORD ptrn, UBYTE fg, UBYTE bg, LONG x, LONG y)
+{
+    memset(ref, 0, W * H); memset(arena + T0, 0, W * H); memset(arena + T2, 0, W * H);
+    memset(&ca, 0, sizeof ca);
+    ca.DrawMode = mode; ca.LinePtrn = ptrn; ca.FgPen = fg; ca.BgPen = bg; ca.Mask = 0xFF;
+    ref_move(&ca, x, y);
+    cb = ca; co = ca;
+}
+
+static void case_draw(const WORD *xy, LONG n, int poly)
+{
+    if (poly) ref_polydraw(&ca, n, xy);
+    else for (LONG i = 0; i < n; i++) ref_draw(&ca, xy[2 * i], xy[2 * i + 1]);
+    tgt = T0; batched = 1;
+    if (poly) ortg_lines(&cb, xy, n);
+    else for (LONG i = 0; i < n; i++) ortg_lines(&cb, xy + 2 * i, 1);
+    old_lines(&co, xy, n);
+}
+
+static void row(const UBYTE *p, LONG y, LONG x0, LONG x1, char *out)
+{
+    for (LONG x = x0; x <= x1; x++) {
+        UBYTE v = p[y * W + x];
+        *out++ = v == 0 ? '.' : v == 0xFF ? 'X' : v < 10 ? (char)('0' + v) : '?';
+    }
+    *out = 0;
+}
+
+static void case_check(const char *name, LONG y, LONG x0, LONG x1, const char *want, const char *old_want, int cnt)
+{
+    char r[W + 1], n[W + 1], o[W + 1];
+    row(ref, y, x0, x1, r); row(arena + T0, y, x0, x1, n); row(arena + T2, y, x0, x1, o);
+    CHECK(!strcmp(r, want), "%s: graphics.library's reference draws %s, the case says %s", name, r, want);
+    CHECK(!strcmp(n, want) && !memcmp(ref, arena + T0, W * H), "%s: 0.25 draws %s, graphics.library %s", name, n, want);
+    CHECK(!strcmp(o, old_want), "%s: before 0.25 drew %s, the case says %s", name, o, old_want);
+    CHECK(cb.linpatcnt == cnt && ca.linpatcnt == cnt && !(cb.Flags & FRST_DOT), "%s: linpatcnt %d (graphics %d), want %d", name, cb.linpatcnt, ca.linpatcnt, cnt);
+    if (!gpu_on) printf("test_lines: %-34s graphics.library and 0.25 %s, before 0.25 %s\n", name, n, o);
+}
+
+static void cases(int gpu)
+{
+    static const WORD two[4] = { 15, 5, 25, 5 };
+    static const WORD eight[2] = { 7, 8 };
+    static const WORD box[8] = { 90, 2, 90, 12, 62, 12, 62, 2 };
+    gpu_on = gpu;
+    /* LinePtrn F0F0 from Move: 15 to 10 for the first line's six pixels; the
+     * second leaves out its first (FRST_DOT clear) and goes on at bit 9 */
+    case_start(JAM1, 0xF0F0, 1, 2, 10, 5);
+    case_draw(two, 2, 0);
+    case_check("pattern on from line to line", 5, 10, 25, "1111....1111....", "1111.1111....111", 0);
+    case_start(JAM2, 0xF0F0, 1, 2, 10, 5);
+    case_draw(two, 2, 0);
+    case_check("JAM2: BgPen where the bit is 0", 5, 10, 25, "1111222211112222", "1111.1111....111", 0);
+    case_start(JAM1 | INVERSVID, 0xFFFF, 1, 2, 0, 8);
+    case_draw(eight, 1, 0);
+    case_check("INVERSVID JAM1 solid: nothing", 8, 0, 7, "........", "22222222", 8);
+    case_start(COMPLEMENT | JAM2, 0xF0F0, 1, 2, 0, 8);
+    case_draw(eight, 1, 0);
+    case_check("COMPLEMENT JAM2: every pixel", 8, 0, 7, "XXXXXXXX", "XXXX....", 8);
+    /* a COMPLEMENT box, Move and four Draws, then the same as a PolyDraw:
+     * every corner inverted once but the start, which the last line inverts again */
+    case_start(COMPLEMENT, 0xFFFF, 1, 2, 62, 2);
+    case_draw(box, 4, 0);
+    case_check("COMPLEMENT box, Draws: top", 2, 62, 66, ".XXXX", ".XXXX", (BYTE)(15 - 28 - 10 - 28 - 10));
+    case_check("COMPLEMENT box, Draws: bottom", 12, 62, 66, "XXXXX", ".XXXX", (BYTE)(15 - 28 - 10 - 28 - 10));
+    case_check("COMPLEMENT box, Draws: right", 12, 86, 90, "XXXXX", "XXXX.", (BYTE)(15 - 28 - 10 - 28 - 10));
+    case_check("COMPLEMENT box, Draws: top right", 2, 86, 90, "XXXXX", "XXXX.", (BYTE)(15 - 28 - 10 - 28 - 10));
+    case_start(COMPLEMENT, 0xFFFF, 1, 2, 62, 2);
+    case_draw(box, 4, 1);
+    case_check("COMPLEMENT box, PolyDraw: top", 2, 62, 66, ".XXXX", ".XXXX", (BYTE)(15 - 28 - 10 - 28 - 10));
+    case_check("COMPLEMENT box, PolyDraw: bottom", 12, 62, 66, "XXXXX", ".XXXX", (BYTE)(15 - 28 - 10 - 28 - 10));
+    case_check("COMPLEMENT box, PolyDraw: top right", 2, 86, 90, "XXXXX", "XXXX.", (BYTE)(15 - 28 - 10 - 28 - 10));
 }
 
 /* OpenRTG's line() before 0.25 */
@@ -353,8 +507,13 @@ int main(void)
     same_pixels_as_before();
     random_calls(0, 3000);
     random_calls(1, 3000);
+    printf("test_lines: %ld random Draw and PolyDraw calls the same as graphics.library, a run at a time and a pixel at a time; "
+           "before 0.25, %ld of them drew other pixels and %ld left linpatcnt or FRST_DOT wrong\n", calls, old_pixels_wrong, old_state_wrong);
+    CHECK(old_pixels_wrong > calls / 10, "the old code should differ often");
     complement_box(0);
     complement_box(1);
+    cases(0);
+    cases(1);
     printf("test_lines: %ld lines through the OpenGPU core, %ld on the CPU; %s\n", gpu_lines, cpu_lines, failures ? "FAILED" : "all the same as graphics.library");
     return failures != 0;
 }

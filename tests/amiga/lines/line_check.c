@@ -55,11 +55,20 @@ static ULONG rng = 2463534242UL;
 static ULONG rnd(void) { rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5; return rng; }
 static LONG rnd_in(LONG lo, LONG hi) { return lo + (LONG)(rnd() % (ULONG)(hi - lo + 1)); }
 
-static double now_ms(void)
+/* E clock ticks (the low word: a run is far shorter than its wrap), and
+ * ticks a millisecond */
+static ULONG eclock_khz;
+static ULONG now_ticks(void)
 {
     struct EClockVal e;
-    ULONG hz = ReadEClock(&e);
-    return ((double)e.ev_hi * 4294967296.0 + (double)e.ev_lo) * 1000.0 / (double)hz;
+    eclock_khz = ReadEClock(&e) / 1000;
+    return e.ev_lo;
+}
+
+static void print_ms(const char *what, ULONG t0)
+{
+    ULONG t = now_ticks() - t0;
+    printf("TIME %-44s %6lu.%lu ms\n", what, (unsigned long)(t / eclock_khz), (unsigned long)(t % eclock_khz * 10 / eclock_khz));
 }
 
 /* an end point inside, often straight or at 45 degrees from (px, py) */
@@ -176,21 +185,22 @@ static void timing(struct RastPort *rp, LONG w, LONG h)
     };
     int k, i;
     for (k = 0; k < 3; k++) {
-        double t0, t1;
+        ULONG t0;
+        char what[48];
         SetAPen(rp, 2); SetBPen(rp, 3); SetDrMd(rp, kinds[k].mode); SetDrPt(rp, kinds[k].ptrn); SetWriteMask(rp, 0xFF);
-        t0 = now_ms();
+        t0 = now_ticks();
         for (i = 0; i < 1000; i++) {
             LONG x0 = (i * 37) % (w / 2), y0 = (i * 13) % (h / 3);
             Move(rp, x0, y0);
             Draw(rp, x0 + w / 2 - 1 - (i % 50), y0 + h / 2 + (i % 40));     /* slanted, about 280 by 170 */
         }
-        t1 = now_ms();
-        printf("TIME 1000 slanted lines, %-10s: %8.1f ms\n", kinds[k].name, t1 - t0);
+        sprintf(what, "1000 slanted lines, %s:", kinds[k].name);
+        print_ms(what, t0);
     }
     {
-        double t0, t1;
+        ULONG t0;
         SetDrMd(rp, COMPLEMENT); SetDrPt(rp, 0xFFFF);
-        t0 = now_ms();
+        t0 = now_ticks();
         for (i = 0; i < 1000; i++) {
             WORD xy[8];
             LONG x0 = 10 + i % 100, y0 = 10 + i % 60;
@@ -198,8 +208,7 @@ static void timing(struct RastPort *rp, LONG w, LONG h)
             Move(rp, x0, y0);
             PolyDraw(rp, 4, xy);
         }
-        t1 = now_ms();
-        printf("TIME 1000 COMPLEMENT PolyDraw boxes 200x150: %8.1f ms\n", t1 - t0);
+        print_ms("1000 COMPLEMENT PolyDraw boxes 200x150:", t0);
     }
 }
 

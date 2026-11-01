@@ -19,6 +19,7 @@
 #define ORTG_TEXT_STRIP_H
 
 #include <exec/types.h>
+#include "../include/opengpu/stream.h"
 
 /* What the glyphs of one Text call need of its TextFont and RastPort. */
 struct ts_font {
@@ -121,6 +122,46 @@ static void ts_build(const struct ts_font *f, const UBYTE *s, LONG i, LONG j, LO
                 if (b == f->smear) break;
             }
         pos += ts_advance(f, k);
+    }
+}
+
+/* A TEMPLATE in Text's gathered batch, read back from the stream. target:
+ * how many SURFACEs came before it, less one (Text names each bitmap it
+ * draws on in a SURFACE of its own, in slot 0, and draws there). */
+struct ts_tmpl {
+    ULONG src, bpr, first, fg, bg;
+    LONG x, y, w, h;
+    int mode, target;
+};
+
+static ULONG ts_word(const UBYTE *p)
+{
+    return (ULONG)p[0] << 24 | (ULONG)p[1] << 16 | (ULONG)p[2] << 8 | (ULONG)p[3];
+}
+
+/* Each TEMPLATE in a batch of words words, as ogpu_build.c writes them
+ * (high byte first), to fn in order. When the back end refuses the batch,
+ * screens.c's ob_flush draws them on the CPU with these. */
+static void ts_templates(const UBYTE *buf, LONG words, void (*fn)(void *, const struct ts_tmpl *), void *ctx)
+{
+    LONG at = 0, n;
+    int target = -1;
+    for (; at < words; at += n) {
+        ULONG h = ts_word(buf + at * 4);
+        n = (LONG)OGPU_HDR_WORDS(h);
+        if (!n || at + n > words) return;
+        if (OGPU_HDR_OP(h) == OGPU_OP_SURFACE) target++;
+        else if (OGPU_HDR_OP(h) == OGPU_OP_TEMPLATE && n == 9) {
+            const UBYTE *a = buf + at * 4 + 4;
+            ULONG xy = ts_word(a + 12), wh = ts_word(a + 16);
+            struct ts_tmpl t;
+            t.src = ts_word(a); t.bpr = ts_word(a + 4); t.first = ts_word(a + 8);
+            t.x = (WORD)(UWORD)(xy >> 16); t.y = (WORD)(UWORD)xy;
+            t.w = (LONG)(wh >> 16); t.h = (LONG)(wh & 0xFFFF);
+            t.fg = ts_word(a + 20); t.bg = ts_word(a + 24); t.mode = (int)ts_word(a + 28);
+            t.target = target;
+            fn(ctx, &t);
+        }
     }
 }
 

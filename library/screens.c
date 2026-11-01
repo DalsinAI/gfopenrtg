@@ -1251,22 +1251,54 @@ static int ogpu_pattern_piece(struct ortg_bitmap *bm,
  * waits for ob_flush, which every CPU drawing in the call comes after.
  * 0.21: left running when every source in it was copied (wait 0). */
 #define OB_WORDS 128
+#define OB_TGTS 8               /* bitmaps one batch names: each takes 17 words or more, so 7 fit */
 struct obatch {
     struct OGPUBatch b;
     const struct ortg_bitmap *tgt;
-    int failed, wait;
+    const struct ortg_bitmap *tgts[OB_TGTS];    /* each SURFACE's bitmap, in the batch's order */
+    int ntgt, wait;
     ULONG held;                 /* the staging parts its copied rows are in (stage_room) */
     UBYTE buf[OB_WORDS * 4];
 };
 
-static void ob_init(struct obatch *o) { ogpu_batch_init(&o->b, o->buf, OB_WORDS); o->tgt = NULL; o->failed = 0; o->wait = 0; o->held = 0; }
+static void ob_init(struct obatch *o) { ogpu_batch_init(&o->b, o->buf, OB_WORDS); o->tgt = NULL; o->ntgt = 0; o->wait = 0; o->held = 0; }
 
+/* A TEMPLATE of a refused batch, drawn on the CPU as tmpl_piece draws a
+ * piece OpenGPU didn't take. ogpu_template_piece gathers one only where it
+ * gives the CPU's pixels (an 8-bit one with the mask 0xFF), with the ink's
+ * pixels and mode (less INVERSVID, already in the pens) in the stream. */
+static void ob_cpu(void *c, const struct ts_tmpl *t)
+{
+    struct obatch *o = c;
+    struct ortg_bitmap *bm;
+    struct ink k;
+    if (t->target < 0 || t->target >= o->ntgt) return;
+    bm = (struct ortg_bitmap *)o->tgts[t->target];
+    k.a = t->fg; k.b = t->bg; k.mode = (UBYTE)t->mode; k.mask = 0xFF; k.bpp = bm->bpp;
+    k.x = bm->bpp == 1 ? 0xFF : bm->bpp == 2 ? 0xFFFF : 0xFFFFFF;
+    for (LONG y = 0; y < t->h; y++) {
+        const UBYTE *s = (const UBYTE *)t->src + y * (LONG)t->bpr;
+        for (LONG x = 0; x < t->w; x++) {
+            ULONG bit = t->first + (ULONG)x;
+            plot(bm, t->x + x, t->y + y, &k, (s[bit >> 3] >> (7 - (bit & 7))) & 1);
+        }
+    }
+}
+
+/* 1 Nov 2026: a batch the back end refuses is drawn on the CPU, as a single
+ * piece's is (tmpl_piece), before the rows it reads are let go. Until now it
+ * was marked failed and never drawn, so Text went missing. A waited batch
+ * whose wait fails is drawn again too, as stage_submit's callers do. */
 static void ob_flush(struct obatch *o)
 {
     if (o && o->b.words) {
-        if (!(o->wait ? ogpu_submit_batch(&o->b) : ogpu_submit_async(&o->b))) o->failed = 1;
+        if (!(o->wait ? ogpu_submit_batch(&o->b) : ogpu_submit_async(&o->b))) {
+            ortg_ogpu_settle();                     /* what went before it is drawn first */
+            ts_templates(o->buf, o->b.words, ob_cpu, o);
+        }
         ogpu_batch_init(&o->b, o->buf, OB_WORDS);
         o->tgt = NULL;
+        o->ntgt = 0;
         o->wait = 0;
     }
     if (o) stage_release(&o->held);
@@ -1275,8 +1307,8 @@ static void ob_flush(struct obatch *o)
 /* Room for `words` more, drawing on bm. */
 static void ob_room(struct obatch *o, const struct ortg_bitmap *bm, int words)
 {
-    if (o->b.words + words + 8 > OB_WORDS) ob_flush(o);
-    if (o->tgt != bm) { ogpu_target_bitmap(&o->b, 0, bm); ogpu_target(&o->b, 0); o->tgt = bm; }
+    if (o->b.words + words + 8 > OB_WORDS || (o->tgt != bm && o->ntgt == OB_TGTS)) ob_flush(o);
+    if (o->tgt != bm) { ogpu_target_bitmap(&o->b, 0, bm); ogpu_target(&o->b, 0); o->tgt = bm; o->tgts[o->ntgt++] = bm; }
 }
 
 static int ogpu_template_piece(struct ortg_bitmap *bm,

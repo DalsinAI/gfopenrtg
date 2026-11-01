@@ -18,7 +18,9 @@
  * The TEMPLATEs are carried out by OpenGPU's core (ogpu_core.c), in CLUT8,
  * RGB565 and ARGB32, and again by the CPU's tmpl_piece loop (with an 8-bit
  * pen mask, which keeps a piece off OpenGPU), and the two bitmaps compared
- * byte for byte. The fonts are made up: monospace, proportional with
+ * byte for byte. On three more ways the strip's batches are refused by the
+ * back end: ob_flush reads their TEMPLATEs back (ts_templates) and draws
+ * them on the CPU, which must give 0.24's pixels from OpenGPU's core. The fonts are made up: monospace, proportional with
  * CharSpace and CharKern (negative kerning, so images overlap), a 23-pixel
  * one with a smear of 2, a smear of 0 (bold draws the image twice in one
  * place), no underline row, a baseline of 0; widths of 0; characters the
@@ -139,6 +141,8 @@ static struct OGPUBatch B;
 static struct ogpu_core C;
 static long stg_at;
 static int use_cpu;                     /* the pieces go to tmpl_piece's CPU loop */
+static int refuse;                      /* the strip way's batches are refused: drawn as ob_flush draws them */
+static long refused;                    /* TEMPLATEs drawn so */
 static long templates[2], strip_templates;   /* TEMPLATEs sent glyph by glyph (0.24) and by strips; from strips */
 static int way_now;                     /* 0: 0.24's, 1: the strip's */
 
@@ -147,13 +151,34 @@ static void batch_begin(void) {
     ogpu_surface(&B, 0, T0, (unsigned long)bpr, W, H, fmt);
     ogpu_target(&B, 0);
 }
-/* ob_flush: what the batch holds, carried out; the staging block free again */
+/* screens.c's ob_cpu: a TEMPLATE of a refused batch, read back by ts_templates, on the CPU */
+static void cpu_template(void *c, const struct ts_tmpl *t) {
+    struct ink k;
+    LONG x, y;
+    (void)c;
+    CHECK(t->target == 0, "a TEMPLATE on target %d", t->target);
+    k.a = t->fg; k.b = t->bg; k.mode = (UBYTE)t->mode; k.mask = 0xFF;
+    k.x = bpp == 1 ? 0xFF : bpp == 2 ? 0xFFFF : 0xFFFFFF;
+    for (y = 0; y < t->h; y++) {
+        const ogpu_u8 *s = arena + t->src + y * (LONG)t->bpr;
+        for (x = 0; x < t->w; x++) {
+            ULONG bit = t->first + (ULONG)x;
+            plot(t->x + x, t->y + y, &k, (s[bit >> 3] >> (7 - (bit & 7))) & 1);
+        }
+    }
+    refused++;
+}
+
+/* ob_flush: what the batch holds, carried out (or, refused, drawn on the CPU); the staging block free again */
 static void batch_flush(void) {
     if (B.words > 2 + 6) {
-        ogpu_core_init(&C);
-        C.map = map;
-        ogpu_core_run(&C, sbuf, B.words);
-        CHECK(C.last_error == OGPU_OK, "core error %d", C.last_error);
+        if (refuse && way_now) ts_templates(sbuf, B.words, cpu_template, NULL);
+        else {
+            ogpu_core_init(&C);
+            C.map = map;
+            ogpu_core_run(&C, sbuf, B.words);
+            CHECK(C.last_error == OGPU_OK, "core error %d", C.last_error);
+        }
     }
     CHECK(!B.overflow, "batch overflow");
     batch_begin();
@@ -180,8 +205,10 @@ static void tmpl_piece(void *c, LONG x0, LONG y0, LONG x1, LONG y1) {
         src = s; mod = t->staged ? t->mod : bytes; first &= 7;
         ogpu_template(&B, (unsigned long)src, (unsigned long)mod, (unsigned long)first, (int)x0, (int)y0, (int)(x1 - x0 + 1), (int)h,
                       t->k.a, t->k.b, t->k.mode & ~INVERSVID);
-        templates[way_now]++;
-        if (t->staged) strip_templates++;
+        if (!refuse) {                              /* counted on the ways the back end takes */
+            templates[way_now]++;
+            if (t->staged) strip_templates++;
+        }
         return;
     }
     batch_flush();
@@ -430,15 +457,17 @@ static const int styles[] = { 0, FSF_BOLD, FSF_ITALIC, FSF_UNDERLINED, FSF_BOLD 
 static const int modes[] = { JAM1, JAM2, COMPLEMENT, JAM1 | INVERSVID, JAM2 | INVERSVID, COMPLEMENT | JAM2 };
 static const char *const fmt_names[] = { "", "CLUT8", "RGB565", "ARGB32" };
 
-/* the ways the pieces are drawn: OpenGPU's core in each format, the CPU's loop */
-struct way { int fmt, cpu, mask; };
-static const struct way ways[] = { { OGPU_FMT_CLUT8, 0, 0xFF }, { OGPU_FMT_RGB565, 0, 0xFF }, { OGPU_FMT_ARGB32, 0, 0xFF },
-                                   { OGPU_FMT_CLUT8, 1, 0x0F }, { OGPU_FMT_RGB565, 1, 0xFF } };
+/* the ways the pieces are drawn: OpenGPU's core in each format, the CPU's loop; and the strip
+ * way's batches refused by the back end, drawn by ob_flush on the CPU, against 0.24 on the core */
+struct way { int fmt, cpu, mask, refuse; };
+static const struct way ways[] = { { OGPU_FMT_CLUT8, 0, 0xFF, 0 }, { OGPU_FMT_RGB565, 0, 0xFF, 0 }, { OGPU_FMT_ARGB32, 0, 0xFF, 0 },
+                                   { OGPU_FMT_CLUT8, 1, 0x0F, 0 }, { OGPU_FMT_RGB565, 1, 0xFF, 0 },
+                                   { OGPU_FMT_CLUT8, 0, 0xFF, 1 }, { OGPU_FMT_RGB565, 0, 0xFF, 1 }, { OGPU_FMT_ARGB32, 0, 0xFF, 1 } };
 #define NWAYS (int)(sizeof ways / sizeof ways[0])
 
 static void set_way(const struct way *w) {
     long i;
-    fmt = w->fmt; use_cpu = w->cpu;
+    fmt = w->fmt; use_cpu = w->cpu; refuse = w->refuse;
     bpp = fmt == OGPU_FMT_CLUT8 ? 1 : fmt == OGPU_FMT_RGB565 ? 2 : 4;
     bpr = W * bpp + 4;
     for (i = 0; i < bpr * H; i++) background[i] = (ogpu_u8)rnd();
@@ -459,8 +488,8 @@ static int one(const struct way *w, struct text *t, LONG max, int rooms) {
     {
         size_t i;
         for (i = 0; i < bytes && before_px[i] == after_px[i]; i++) ;
-        CHECK(0, "%s%s font %d \"%.20s\" (%ld) at %ld,%ld spacing %ld style %d mode %d max %ld rooms %d: differ from byte %lu (x %lu, y %lu)",
-              fmt_names[w->fmt], w->cpu ? " CPU" : "", (int)(t->f - fonts), (const char *)t->s, (long)t->n, (long)t->cp_x, (long)t->cp_y,
+        CHECK(0, "%s%s%s font %d \"%.20s\" (%ld) at %ld,%ld spacing %ld style %d mode %d max %ld rooms %d: differ from byte %lu (x %lu, y %lu)",
+              fmt_names[w->fmt], w->cpu ? " CPU" : "", w->refuse ? " refused" : "", (int)(t->f - fonts), (const char *)t->s, (long)t->n, (long)t->cp_x, (long)t->cp_y,
               (long)t->spacing, t->style, t->mode, (long)max, rooms, (unsigned long)i, (unsigned long)((i % (size_t)bpr) / (size_t)bpp),
               (unsigned long)(i / (size_t)bpr));
     }
@@ -505,7 +534,7 @@ int main(void) {
         LONG j, max;
         int rooms;
         const struct way *w = &ways[round % NWAYS];
-        if (round % NWAYS == 0) set_way(w);
+        set_way(w);                                 /* each round its own way (format, CPU, refused) */
         t.f = &fonts[rnd() % (unsigned long)nfonts];
         t.n = round % 50 == 0 ? rnd_in(200, 399) : rnd_in(0, 60);
         for (j = 0; j < t.n; j++) str[j] = (UBYTE)(rnd() % 4 ? rnd_in(32, 126) : rnd_in(0, 255));
@@ -520,6 +549,7 @@ int main(void) {
     }
     printf("text strip: %d ts_bits checks, %d Text cases drawn glyph by glyph and by strips, %d differ\n",
            before_cases, cases - before_cases, failures);
+    printf("text strip: %ld TEMPLATEs of refused batches drawn on the CPU\n", refused);
     printf("text strip: TEMPLATEs in all: %ld glyph by glyph, %ld by strips (%ld of them strips)\n",
            templates[0], templates[1], strip_templates);
     return failures != 0;

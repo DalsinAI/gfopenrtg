@@ -63,6 +63,7 @@
 #include "modes.h"
 #include "displaydb.h"
 #include "screens.h"
+#include "pixconv.h"
 #include "opengfx_bridge.h"
 
 #define REG(r, decl) register decl __asm(#r)
@@ -222,6 +223,7 @@ struct scr_g {
      * belong to one screen each, and its friends. */
     ULONG pen_rgb[ORTG_PEN_TABLES][256];
     struct ortg_bitmap *pen_owner[ORTG_PEN_TABLES];
+    struct pc_memo px_memo;     /* 0.25: ortg_px_pen's answers (pixconv.h), forgotten when a table changes */
     struct Library *OpenGfxBase;
     int ogfx_handoff;
     int ogfx_all;               /* OpenGfx 1.4: it patches every drawing call, and OpenRTG provides all of them */
@@ -426,8 +428,10 @@ static void own_pens(struct ortg_bitmap *o)
 {
     for (int t = ORTG_MAX_MONITORS + 1; t < ORTG_PEN_TABLES; t++)
         if (!pen_owner[t]) {
+            pc_memo_forget(&SC->px_memo);           /* 0.25: table t's pens change */
             for (int i = 0; i < 256; i++) ortg_pen_rgb[t][i] = ortg_pen_rgb[o->pal_index][i];
             pen_owner[t] = o; o->pal_index = (UBYTE)t;
+            pc_memo_forget(&SC->px_memo);
             return;
         }
 }
@@ -742,20 +746,16 @@ static inline void plot(struct ortg_bitmap *o, LONG x, LONG y, const struct ink 
     ortg_put(o, x, y, (d & ~k->mask) | ((on ? k->a : k->b) & k->mask));
 }
 
-/* The pen nearest a pixel's colour. */
+/* The pen nearest a pixel's colour. 0.25: a search of up to 256 colours,
+ * so each answer is kept (pixconv.h's memo, by pixel and pen table) until
+ * a pen table changes: ReadPixelArray8 of a 640 x 480 32-bit screen made
+ * 307,200 searches, tens of millions of steps on the 68k (review of
+ * 1 November 2026). The same pens as before (tests/test_pixconv.c). */
+typedef char ortg_pen_tables_fit_the_memo[ORTG_PEN_TABLES <= PC_MEMO_TABLES ? 1 : -1];
 UBYTE ortg_px_pen(const struct ortg_bitmap *o, ULONG px)
 {
-    const ULONG *pal = ortg_pen_rgb[o->pal_index];
-    ULONG rgb, best = 0, dist = ~0UL;
     if (o->bpp == 1) return (UBYTE)px;
-    rgb = ortg_decode(o, px);
-    for (ULONG i = 0; i < 256; i++) {
-        ULONG c = o->bpp == 2 ? ortg_decode(o, ortg_encode(o, pal[i])) : pal[i];
-        LONG dr = (LONG)((c >> 16) & 255) - (LONG)((rgb >> 16) & 255), dg = (LONG)((c >> 8) & 255) - (LONG)((rgb >> 8) & 255), db = (LONG)(c & 255) - (LONG)(rgb & 255);
-        ULONG d2 = (ULONG)(dr * dr + dg * dg + db * db);
-        if (d2 < dist) { dist = d2; best = i; if (!d2) break; }
-    }
-    return (UBYTE)best;
+    return pc_memo_pen(&SC->px_memo, ortg_pen_rgb[o->pal_index], o->bpp, o->pal_index, px);
 }
 
 /* ---- OpenGPU: the drawing that goes through its stream ---------------------------------
@@ -2356,7 +2356,18 @@ static void array_read_piece(void *c, struct ortg_bitmap *bm, LONG x0, LONG y0, 
     for (LONG y = y0; y <= y1; y++) {
         UBYTE *d = a->a + (y - dy - a->at_y) * a->bpr + (x0 - dx - a->at_x);
         if (bm->bpp == 1) { UBYTE *s = bm->mem + y * bm->stride + x0; for (LONG x = x0; x <= x1; x++) *d++ = *s++; }
-        else for (LONG x = x0; x <= x1; x++) *d++ = ortg_px_pen(bm, ortg_get(bm, x, y));
+        else {
+            /* 0.25: a run of one colour asks for its pen once; the rest come from the memo */
+            const UBYTE *row = bm->mem + y * bm->stride;
+            ULONG last = 0, v;
+            UBYTE pen = 0;
+            int have = 0;
+            for (LONG x = x0; x <= x1; x++) {
+                v = bm->bpp == 2 ? ((const UWORD *)row)[x] : ((const ULONG *)row)[x];
+                if (!have || v != last) { last = v; pen = ortg_px_pen(bm, v); have = 1; }
+                *d++ = pen;
+            }
+        }
     }
 }
 
@@ -2504,12 +2515,14 @@ static void pens_from(int index, struct ViewPort *vp)
 {
     ULONG rgb[3 * 16], n = vp->ColorMap ? vp->ColorMap->Count : 0;
     if (n > 256) n = 256;
+    pc_memo_forget(&SC->px_memo);                   /* 0.25: before and after, as a search may run meanwhile */
     for (ULONG first = 0; first < n; first += 16) {
         ULONG k = n - first > 16 ? 16 : n - first;
         GetRGB32(vp->ColorMap, first, k, rgb);
         for (ULONG i = 0; i < k; i++)
             ortg_pen_rgb[index][first + i] = (rgb[3 * i] >> 24) << 16 | (rgb[3 * i + 1] >> 24) << 8 | (rgb[3 * i + 2] >> 24);
     }
+    pc_memo_forget(&SC->px_memo);
 }
 
 static void palette_to_board(int n, struct ViewPort *vp, ULONG first, ULONG count)

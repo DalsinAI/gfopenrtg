@@ -55,6 +55,10 @@
  * draws the opcode on a graphics chip, not a CPU (ACRTG.gpu 1.5: the Cradle
  * draws on the PC's GPU). The CPU back end never gives it. The driver's
  * answers are read through OGPU_ANSWER, so the bit changes nothing else.
+ * 0.22: a batch the driver can't take whole is no longer sent whole to the
+ * 68k: the driver draws the runs it takes and only the rest run here, in
+ * order (split_submit, ogpu_variant.h). 3D and GPU API batches still run
+ * whole here when the driver lacks one of their commands.
  * Built bare by library/build.sh.
  */
 #include <exec/types.h>
@@ -84,7 +88,7 @@
 
 #define REG(r, decl) register decl __asm(#r)   /* bebbo gcc: an argument in a register */
 #define LIB_VERSION 0
-#define LIB_REVISION 21
+#define LIB_REVISION 22
 #define RESULTS 16                              /* the last batches' results, by fence */
 #define MAX_DRIVERS 8                           /* files looked at in LIBS:OpenGPU/ */
 #define ON_CPU 0                                /* dfence[] for a batch the CPU ran */
@@ -133,9 +137,9 @@ int start(void) { return -1; }
 const ULONG ogpu_ogfx_at = offsetof(struct OpenGPUBase, ogfx);
 
 static const char lib_name[] = "opengpu.library";
-static const char lib_id[] = "opengpu.library 0.21 (27.10.2026) OpenGPU, AmigaChrome Team\r\n";
+static const char lib_id[] = "opengpu.library 0.22 (1.11.2026) OpenGPU, AmigaChrome Team\r\n";
 /* For C:Version, which looks for "$VER:" in the file. */
-static const char lib_ver[] __attribute__((used)) = "\0$VER: opengpu.library 0.21 (27.10.2026) OpenGPU, AmigaChrome Team";
+static const char lib_ver[] __attribute__((used)) = "\0$VER: opengpu.library 0.22 (1.11.2026) OpenGPU, AmigaChrome Team";
 static const char cpu_name[] = "CPU";
 static const char dos_name[] = "dos.library";
 static const char drv_dir[] = "LIBS:OpenGPU";
@@ -481,6 +485,97 @@ static int driver_takes(struct OpenGPUBase *base, const UBYTE *s, ULONG words)
     return ogpu_batch_takes(s, words, base->drv_ok, base->drv_fmt);
 }
 
+/* 0.22: a batch the driver can't take whole, in runs (ogpu_variant.h):
+ * the driver's runs go to it, the others run here once the driver's are
+ * done, each after the batch's state commands from before it. A run sent
+ * to the driver is a copy, kept until the driver has finished with it.
+ * Called with drv_lock held. */
+struct split_job {
+    struct OpenGPUBase *base;
+    const UBYTE *s;
+    UBYTE *state;               /* the state commands before the run, in order */
+    ULONG nstate;               /* their words */
+    UBYTE *scratch;             /* a run for the CPU (the batch's words twice: state and run) */
+    APTR held;                  /* runs the driver may still read: a chain, first long the next */
+    unsigned long df;           /* the newest driver fence, or ON_CPU */
+    LONG r;                     /* the first error */
+};
+
+static void split_release(struct split_job *j)
+{
+    if (j->df != ON_CPU && j->base->drv) j->base->drv->wait(j->df);
+    j->df = ON_CPU;
+    while (j->held) {
+        APTR next = *(APTR *)j->held;
+        FreeVec(j->held);
+        j->held = next;
+    }
+}
+
+static long split_run(void *user, unsigned long start, unsigned long end, int driver)
+{
+    struct split_job *j = (struct split_job *)user;
+    struct OpenGPUBase *base = j->base;
+    ULONG words = j->nstate + (ULONG)(end - start), at;
+    UBYTE *block = driver && base->drv ? AllocVec(4 + words * 4, MEMF_ANY) : NULL;
+    UBYTE *run = block ? block + 4 : j->scratch;    /* no memory for a copy: this run here */
+    LONG r;
+    CopyMem(j->state, run, j->nstate * 4);
+    CopyMem((APTR)(j->s + start * 4), run + j->nstate * 4, (end - start) * 4);
+    /* this run's state commands, for the runs after it */
+    for (at = start; at < end;) {
+        unsigned op = (unsigned)j->s[at * 4] << 8 | j->s[at * 4 + 1], len = (unsigned)j->s[at * 4 + 2] << 8 | j->s[at * 4 + 3];
+        if (ogpu_is_state_op(op) && op != OGPU_OP_NOP) {
+            CopyMem((APTR)(j->s + at * 4), j->state + j->nstate * 4, len * 4);
+            j->nstate += len;
+        }
+        at += len;
+    }
+    if (block) {
+        unsigned long df = ON_CPU;
+        r = base->drv->submit(run, words, &df);
+        if (r != OGPU_ERR_DEVICE) {
+            *(APTR *)block = j->held;
+            j->held = block;
+            j->df = df;
+            base->drv_last = df;
+            if (r != OGPU_OK && j->r == OGPU_OK) j->r = r;
+            return 0;
+        }
+        split_release(j);       /* the hardware has gone: this run and the rest here */
+        base->drv = NULL;
+    }
+    split_release(j);           /* the driver's runs before this one are drawn first */
+    if (base->drv && base->drv_last) base->drv->wait(base->drv_last);
+    r = cpu_run(base, run, words);
+    if (block) FreeVec(block);
+    if (r != OGPU_OK && j->r == OGPU_OK) j->r = r;
+    return 0;
+}
+
+/* 0 when the batch was run in runs, its first error in *result; -1 when
+ * there was no memory to start (nothing was run: the caller runs it whole). */
+static LONG split_submit(struct OpenGPUBase *base, const UBYTE *s, ULONG words, unsigned long *df, LONG *result)
+{
+    struct split_job j;
+    j.base = base;
+    j.s = s;
+    j.nstate = 0;
+    j.held = NULL;
+    j.df = ON_CPU;
+    j.r = OGPU_OK;
+    if (!(j.state = AllocVec(words * 4 * 3 + 4, MEMF_ANY))) return -1;
+    j.scratch = j.state + words * 4;
+    ogpu_batch_runs(s, words, base->drv_ok, base->drv_fmt, split_run, &j);
+    /* the copies go once the driver is done with them: the batch is done
+     * when this returns, as it was when it ran whole on the CPU */
+    split_release(&j);
+    FreeVec(j.state);
+    *df = ON_CPU;
+    *result = j.r;
+    return 0;
+}
+
 /* ---- OpenGPU's calls ------------------------------------------------------------- */
 
 static ULONG OGPU_Query(REG(d0, ULONG op), REG(d1, ULONG format), REG(a6, struct OpenGPUBase *base))
@@ -520,8 +615,16 @@ static LONG OGPU_Submit(REG(a0, APTR stream), REG(d0, ULONG words), REG(a1, ULON
         ObtainSemaphore(&base->drv_lock);
         if (base->drv && !driver_takes(base, (const UBYTE *)stream, words)) {
             /* A command the driver doesn't know (a newer stream than its
-             * hardware): this batch on the CPU, once the driver's are done. */
-            if (base->drv_last) base->drv->wait(base->drv_last);
+             * hardware). 0.22: the driver still draws the runs it takes, and
+             * only the rest run here (split_submit); a batch that can't be
+             * split (3D, a GPU API, a state command it lacks) runs here
+             * whole, once the driver's are done, as before. */
+            if (ogpu_batch_splittable((const UBYTE *)stream, words, base->drv_ok, base->drv_fmt)
+                && split_submit(base, (const UBYTE *)stream, words, &df, &r) == 0) {
+                on_driver = 1;
+            } else if (base->drv && base->drv_last) {
+                base->drv->wait(base->drv_last);
+            }
         } else if (base->drv) {
             on_driver = 1;
             r = base->drv->submit(stream, words, &df);

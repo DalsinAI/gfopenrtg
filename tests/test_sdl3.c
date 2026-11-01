@@ -917,6 +917,80 @@ static void test_routing(void) {
     }
 }
 
+/* opengpu.library 0.22: a batch a v1.6 driver can't take whole is cut into
+ * runs (ogpu_batch_runs), each run after the state commands before it. Run
+ * one by one on the core, the runs draw exactly what the whole batch does. */
+static unsigned long split_starts[16], split_ends[16];
+static int split_sides[16], split_n;
+static long split_note(void *user, unsigned long start, unsigned long end, int driver) {
+    (void)user;
+    if (split_n < 16) { split_starts[split_n] = start; split_ends[split_n] = end; split_sides[split_n] = driver; }
+    split_n++;
+    return 0;
+}
+static void run_words(const ogpu_u8 *s, long words) {
+    ogpu_core_init(&C);
+    C.map = map; C.fence = 0; C.ext = 0; C.user = 0;
+    ogpu_core_run(&C, s, words);
+}
+static void test_split(void) {
+    static unsigned char ok16[256], fmt16[OGPU_FMT_COUNT];
+    static ogpu_u8 whole[64 * 64 * 4], seg[sizeof sbuf * 2];
+    int op, f, i, k;
+    for (op = 0; op < 256; op++)
+        ok16[op] = (unsigned char)(op <= OGPU_OP_PALETTE && op != OGPU_OP_PALETTE);
+    for (f = 0; f < OGPU_FMT_COUNT; f++)
+        fmt16[f] = (unsigned char)(f && ogpu_core_supports(OGPU_OP_SURFACE, f) != OGPU_NONE
+                                   && f != OGPU_FMT_INDEX8 && f != OGPU_FMT_RGBA32 && f != OGPU_FMT_ABGR32);
+    for (i = 0; i < 8 * 8 * 4; i++) arena[SA + i] = (ogpu_u8)rnd8();
+    begin();
+    ogpu_surface(&B, 1, SA, 32, 8, 8, OGPU_FMT_ARGB32);
+    ogpu_surface(&B, 0, TA, 256, 64, 64, OGPU_FMT_ARGB32);
+    ogpu_target(&B, 0);
+    ogpu_clip(&B, 2, 2, 60, 60);
+    ogpu_fill(&B, 0, 0, 40, 40, 0xFF102030UL);                                  /* the driver's */
+    ogpu_composite(&B, 1, 0, 0, 8, 8, 4, 4, 32, 32, 255, OGPU_COMP_PIXELART);   /* v1.7 only: here */
+    ogpu_fill(&B, 20, 20, 30, 30, 0xFF405060UL);                                /* the driver's */
+    check(!ogpu_batch_takes(sbuf, (unsigned long)B.words, ok16, fmt16), "split: a v1.6 driver can't take the batch whole");
+    check(ogpu_batch_splittable(sbuf, (unsigned long)B.words, ok16, fmt16), "split: the batch can be split");
+    split_n = 0;
+    check(ogpu_batch_runs(sbuf, (unsigned long)B.words, ok16, fmt16, split_note, 0) == 3 && split_n == 3,
+          "split: three runs");
+    check(split_sides[0] == 1 && split_sides[1] == 0 && split_sides[2] == 1, "split: driver, CPU, driver");
+    check(split_starts[0] == 0 && split_ends[2] == (unsigned long)B.words, "split: the runs cover the batch");
+    for (i = 0; i + 1 < 3; i++) check(split_ends[i] == split_starts[i + 1], "split: the runs meet");
+    memset(arena + TA, 0, 64 * 64 * 4);
+    run_words(sbuf, B.words);
+    memcpy(whole, arena + TA, sizeof whole);
+    memset(arena + TA, 0, 64 * 64 * 4);
+    {
+        /* the library's split_run: the state before the run, then the run */
+        unsigned long state = 0, at;
+        static ogpu_u8 st[sizeof sbuf];
+        for (k = 0; k < 3; k++) {
+            unsigned long n = state;
+            memcpy(seg, st, state * 4);
+            memcpy(seg + n * 4, sbuf + split_starts[k] * 4, (split_ends[k] - split_starts[k]) * 4);
+            n += split_ends[k] - split_starts[k];
+            for (at = split_starts[k]; at < split_ends[k];) {
+                unsigned o = (unsigned)sbuf[at * 4] << 8 | sbuf[at * 4 + 1], len = (unsigned)sbuf[at * 4 + 2] << 8 | sbuf[at * 4 + 3];
+                if (ogpu_is_state_op(o) && o != OGPU_OP_NOP) { memcpy(st + state * 4, sbuf + at * 4, len * 4); state += len; }
+                at += len;
+            }
+            run_words(seg, (long)n);
+        }
+    }
+    check(memcmp(whole, arena + TA, sizeof whole) == 0, "split: the runs draw what the whole batch draws");
+    /* what can't be split runs whole, as before */
+    begin();
+    ogpu_surface(&B, 0, TA, 256, 64, 64, OGPU_FMT_ARGB32); ogpu_surface(&B, 1, SA, 16, 8, 8, OGPU_FMT_RGB565PC);
+    ogpu_target(&B, 0); ogpu_triangles3d(&B, VTX, 3, 20, 0, 0, 1, 1, 0, OGPU_LAY_LIST);
+    check(!ogpu_batch_splittable(sbuf, (unsigned long)B.words, ok16, fmt16), "split: a 3D batch is not split");
+    begin();
+    ogpu_surface(&B, 0, TA, 64, 64, 64, OGPU_FMT_INDEX8); ogpu_target(&B, 0); ogpu_fill(&B, 0, 0, 4, 4, 1);
+    check(!ogpu_batch_splittable(sbuf, (unsigned long)B.words, ok16, fmt16), "split: a SURFACE the driver lacks is not split");
+}
+
 int main(void) {
     test_formats();
     test_premul();
@@ -927,6 +1001,7 @@ int main(void) {
     test_yuv();
     test_query();
     test_routing();
+    test_split();
     printf("sdl3 (stream v1.7): %d/%d checks passed\n", checks - failures, checks);
     return failures ? 1 : 0;
 }

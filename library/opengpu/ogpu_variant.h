@@ -102,4 +102,103 @@ static int ogpu_batch_takes(const unsigned char *s, unsigned long words, const u
     return 1;
 }
 
+/* ---- 0.22: a batch the driver can't take whole, split ---------------------
+ * Before 0.22 one command the driver lacked sent the whole batch to the 68k,
+ * after waiting for every earlier driver batch. Now the batch is cut into
+ * runs: those the driver takes go to it, the rest run on the CPU, in order.
+ * Each run is preceded by the batch's state commands from before it
+ * (SURFACE, TARGET, CLIP, PALETTE), so it draws where the whole batch would
+ * have. Only 2D batches are split: one with a 3D or GPU API command, a bad
+ * length, or a state command the driver lacks runs whole on the CPU as
+ * before. */
+struct ogpu_split_state {
+    unsigned char slot_fmt[OGPU_MAX_SLOTS];
+    unsigned long target;
+};
+
+static inline void ogpu_split_init(struct ogpu_split_state *st)
+{
+    int i;
+    for (i = 0; i < OGPU_MAX_SLOTS; i++) st->slot_fmt[i] = 0;
+    st->target = OGPU_MAX_SLOTS;
+}
+
+static inline int ogpu_is_state_op(unsigned op)
+{
+    return op == OGPU_OP_NOP || op == OGPU_OP_SURFACE || op == OGPU_OP_TARGET || op == OGPU_OP_CLIP
+           || op == OGPU_OP_PALETTE;
+}
+
+/* ogpu_batch_takes for one well-formed command at `at`, following the slots'
+ * formats and the target in st: 1 when the driver takes it. */
+static inline int ogpu_cmd_takes(struct ogpu_split_state *st, const unsigned char *s, unsigned long at, unsigned op,
+                          unsigned len, const unsigned char *ok, const unsigned char *fmt)
+{
+    unsigned need;
+    int takes = 1;
+    if (op > 255 || !ok[op]) takes = 0;
+    need = ogpu_variant_needs(s, at, op, len);
+    if (need && !ok[need]) takes = 0;
+    if (op == OGPU_OP_SURFACE && len >= 6) {
+        unsigned long slot = ogpu_arg_word(s, at, len, 0), f = ogpu_arg_word(s, at, len, 4);
+        if (f > 0 && f < OGPU_FMT_COUNT && !fmt[f]) takes = 0;
+        if (slot < OGPU_MAX_SLOTS) st->slot_fmt[slot] = (unsigned char)(f < OGPU_FMT_COUNT ? f : 0);
+    } else if (op == OGPU_OP_TARGET && len >= 2) {
+        st->target = ogpu_arg_word(s, at, len, 0);
+    } else if (op == OGPU_OP_TRIANGLES && (len == 9 || len == 10) && !ok[OGPU_OP_PALETTE]) {
+        unsigned long tex = ogpu_arg_word(s, at, len, 6);
+        if (tex < OGPU_MAX_SLOTS && st->slot_fmt[tex] && !ogpu_tri_v16_texture(st->slot_fmt[tex])) takes = 0;
+        if (len == 9 && st->target < OGPU_MAX_SLOTS && st->slot_fmt[st->target] && !ogpu_tri_v16_target(st->slot_fmt[st->target])) takes = 0;
+    }
+    return takes;
+}
+
+/* 1 when the batch may be split (above). */
+static inline int ogpu_batch_splittable(const unsigned char *s, unsigned long words, const unsigned char *ok, const unsigned char *fmt)
+{
+    struct ogpu_split_state st;
+    unsigned long at = 0;
+    ogpu_split_init(&st);
+    while (at < words) {
+        unsigned op = (unsigned)s[at * 4] << 8 | s[at * 4 + 1], len = (unsigned)s[at * 4 + 2] << 8 | s[at * 4 + 3];
+        if (!len || at + len > words) return 0;
+        if ((op >= 0x0030 && op <= 0x003F) || (op >= OGPU_OP_EXT_FIRST && op <= OGPU_OP_EXT_LAST) || op > 255) return 0;
+        if (!ogpu_cmd_takes(&st, s, at, op, len, ok, fmt) && ogpu_is_state_op(op)) return 0;
+        at += len;
+    }
+    return 1;
+}
+
+/* The runs of a splittable batch, for each(user, start, end, driver): words
+ * [start, end) of the batch, driver 1 for the driver's runs. Every state
+ * command belongs to the run it is in; a batch of state commands alone is
+ * one driver run. Returns the number of runs, or stops at (and returns)
+ * the first negative each() returns. */
+static inline long ogpu_batch_runs(const unsigned char *s, unsigned long words, const unsigned char *ok, const unsigned char *fmt,
+                            long (*each)(void *user, unsigned long start, unsigned long end, int driver), void *user)
+{
+    struct ogpu_split_state st;
+    unsigned long at = 0, start = 0;
+    int side = -1;
+    long runs = 0, r;
+    ogpu_split_init(&st);
+    while (at < words) {
+        unsigned op = (unsigned)s[at * 4] << 8 | s[at * 4 + 1], len = (unsigned)s[at * 4 + 2] << 8 | s[at * 4 + 3];
+        int t = ogpu_cmd_takes(&st, s, at, op, len, ok, fmt);
+        if (!ogpu_is_state_op(op)) {
+            if (side < 0) {
+                side = t;
+            } else if (t != side) {
+                if ((r = each(user, start, at, side)) < 0) return r;
+                runs++;
+                start = at;
+                side = t;
+            }
+        }
+        at += len;
+    }
+    if ((r = each(user, start, words, side < 0 ? 1 : side)) < 0) return r;
+    return runs + 1;
+}
+
 #endif

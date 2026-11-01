@@ -143,6 +143,41 @@ gla_present_virgl_fn gla_present_virgl_of(const struct gla_present *p)
     return NULL;
 }
 
+/* Present hooks that leave frames running (gla_present_set_async), kept the
+ * same way. */
+#define GLA_ASYNC_HOOKS 4
+struct gla_async {
+    void (*present)(void *user, const struct gla_frame *frame);
+    int  (*running)(void *user);
+    void (*settle)(void *user);
+};
+static struct gla_async gla_async_hooks[GLA_ASYNC_HOOKS];
+
+void gla_present_set_async(void (*present)(void *user, const struct gla_frame *frame),
+                           int (*running)(void *user), void (*settle)(void *user))
+{
+    int i, free_slot = -1;
+    if (!present) return;
+    for (i = 0; i < GLA_ASYNC_HOOKS; i++) {
+        if (gla_async_hooks[i].present == present) { free_slot = i; break; }
+        if (!gla_async_hooks[i].present && free_slot < 0) free_slot = i;
+    }
+    if (free_slot >= 0) {
+        gla_async_hooks[free_slot].present = present;
+        gla_async_hooks[free_slot].running = running;
+        gla_async_hooks[free_slot].settle = settle;
+    }
+}
+
+static const struct gla_async *gla_async_of(const struct gla_present *p)
+{
+    int i;
+    if (!p || !p->present) return NULL;
+    for (i = 0; i < GLA_ASYNC_HOOKS; i++)
+        if (gla_async_hooks[i].present == p->present) return &gla_async_hooks[i];
+    return NULL;
+}
+
 /* softpipe's flush_frontbuffer lands here; `priv` is the buffer's hook. */
 static void ws_dt_display(struct sw_winsys *ws, struct sw_displaytarget *d, void *priv,
                           unsigned nboxes, struct pipe_box *box)
@@ -362,15 +397,25 @@ void gla_context_destroy(struct gla_context *c)
     FREE(c);
 }
 
+/* Nothing a present started still reads the buffer's textures. */
+static void buf_settle(struct gla_buffer *b)
+{
+    const struct gla_async *a = gla_async_of(&b->present);
+    if (a && a->settle)
+        a->settle(b->present.user);
+}
+
 static bool buf_alloc(struct gla_buffer *b)
 {
     struct pipe_screen *screen = b->d->fscreen.screen;
     struct pipe_resource t;
     unsigned i;
 
-    if (b->w != b->new_w || b->h != b->new_h)
+    if (b->w != b->new_w || b->h != b->new_h) {
+        buf_settle(b);                  /* a present may still read them */
         for (i = 0; i < ST_ATTACHMENT_COUNT; i++)
             pipe_resource_reference(&b->tex[i], NULL);
+    }
     memset(&t, 0, sizeof t);
     t.target = b->target;
     t.width0 = b->new_w ? b->new_w : 1;
@@ -417,6 +462,29 @@ static void buf_show(struct gla_buffer *b, struct pipe_context *pipe, enum st_at
         screen->flush_frontbuffer(screen, pipe, b->tex[att], 0, 0, &b->present, 0, NULL);
 }
 
+/* After buf_show(att): if the present left the frame being read, the next
+ * frame must not be drawn into it. With a back buffer the back and front
+ * textures change places (as Mesa's xlib front end swaps them), and the
+ * state tracker takes the new back at its next draw; present() waited for
+ * the frame before, which was in the texture that becomes the back. With
+ * one buffer, wait. */
+static void buf_after_show(struct gla_buffer *b, struct st_context *st, enum st_attachment_type att)
+{
+    const struct gla_async *a = gla_async_of(&b->present);
+    struct pipe_resource *t;
+    if (!a || !a->running || !a->running(b->present.user))
+        return;
+    if (att == ST_ATTACHMENT_BACK_LEFT && b->tex[ST_ATTACHMENT_FRONT_LEFT] && st) {
+        t = b->tex[ST_ATTACHMENT_BACK_LEFT];
+        b->tex[ST_ATTACHMENT_BACK_LEFT] = b->tex[ST_ATTACHMENT_FRONT_LEFT];
+        b->tex[ST_ATTACHMENT_FRONT_LEFT] = t;
+        p_atomic_inc(&b->base.stamp);
+        st_context_invalidate_state(st, ST_INVALIDATE_FB_STATE);
+        return;
+    }
+    buf_settle(b);
+}
+
 /* Single-buffered drawing reaches the window at glFlush/glFinish. */
 static bool buf_flush_front(struct st_context *st, struct pipe_frontend_drawable *drawable,
                             enum st_attachment_type statt)
@@ -424,6 +492,7 @@ static bool buf_flush_front(struct st_context *st, struct pipe_frontend_drawable
     if (statt != ST_ATTACHMENT_FRONT_LEFT)
         return false;
     buf_show((struct gla_buffer *)drawable, st ? st->pipe : NULL, statt);
+    buf_after_show((struct gla_buffer *)drawable, NULL, statt);
     return true;
 }
 
@@ -464,6 +533,7 @@ void gla_buffer_destroy(struct gla_buffer *b)
     unsigned i;
     if (!b)
         return;
+    buf_settle(b);                      /* a present may still read its textures */
     st_api_destroy_drawable(&b->base);
     for (i = 0; i < ST_ATTACHMENT_COUNT; i++)
         pipe_resource_reference(&b->tex[i], NULL);
@@ -481,13 +551,17 @@ void gla_swap(struct gla_context *c, struct gla_buffer *b)
 {
     struct pipe_fence_handle *fence = NULL;
     struct pipe_screen *screen = b->d->fscreen.screen;
+    enum st_attachment_type att = (b->visual.buffer_mask & ST_ATTACHMENT_BACK_LEFT_MASK)
+                                  ? ST_ATTACHMENT_BACK_LEFT : ST_ATTACHMENT_FRONT_LEFT;
     st_context_flush(c->st, ST_FLUSH_FRONT | ST_FLUSH_END_OF_FRAME, &fence, NULL, NULL);
+    /* Mesa's fence: the frame is drawn before the present reads it (on
+     * softpipe it is done already; on virgl the read-back needs it). */
     if (fence) {
         screen->fence_finish(screen, NULL, fence, OS_TIMEOUT_INFINITE);
         screen->fence_reference(screen, &fence, NULL);
     }
-    buf_show(b, c->st->pipe, (b->visual.buffer_mask & ST_ATTACHMENT_BACK_LEFT_MASK)
-                             ? ST_ATTACHMENT_BACK_LEFT : ST_ATTACHMENT_FRONT_LEFT);
+    buf_show(b, c->st->pipe, att);
+    buf_after_show(b, c->st, att);
 }
 
 void *gla_get_proc_address(const char *name)

@@ -7,6 +7,8 @@
 #   OpenGPUVectorModel  tests/test_vector.c (stream v1.6) on the 68k
 #   OpenGPUAliasedModel tests/test_vector_aliased.c (stream v1.8) on the 68k
 #   OpenGPUGradProbe    grad_probe.c: one linear gradient, its pixels printed
+#   OpenGPUVectorCRC    vector_crc.c: vector_same's random batches on this core,
+#                       a CRC a round, to compare with the host's
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../../.." && pwd)
@@ -25,8 +27,10 @@ SOFT="-specs=$ROOT/tools/m68k-soft-m68040.specs"
     "$ROOT/tests/test_vector_aliased.c" "$OUT/ogpu_core.o" "$OUT/ogpu_build.o" -lm
 "$CC" -m68040 $SOFT -O2 -fno-delete-null-pointer-checks -Wall -Werror -noixemul -o "$OUT/c/OpenGPUGradProbe" \
     "$HERE/grad_probe.c" "$OUT/ogpu_core.o" "$OUT/ogpu_build.o"
+"$CC" -m68040 $SOFT -O2 -fno-delete-null-pointer-checks -w -noixemul -o "$OUT/c/OpenGPUVectorCRC" \
+    "$HERE/vector_crc.c" "$OUT/ogpu_core.o" "$OUT/ogpu_build.o"
 rm -f "$OUT"/*.o
-for t in OpenGPUVectorModel OpenGPUAliasedModel OpenGPUGradProbe; do
+for t in OpenGPUVectorModel OpenGPUAliasedModel OpenGPUGradProbe OpenGPUVectorCRC; do
     python3 "$ROOT/tools/fpcr_check.py" "${CC%gcc}objdump" "$OUT/c/$t" || true
     echo "$OUT/c/$t ($(wc -c < "$OUT/c/$t") bytes)"
     sha256sum "$OUT/c/$t"

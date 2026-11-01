@@ -59,6 +59,12 @@
  * 68k: the driver draws the runs it takes and only the rest run here, in
  * order (split_submit, ogpu_variant.h). 3D and GPU API batches still run
  * whole here when the driver lacks one of their commands.
+ * 0.23: stream v1.8, OGPU_PATH_ALIASED (PATH_FILL and PATH_STROKE without
+ * anti-aliasing, each pixel by its centre). The CPU core draws it; a batch
+ * with one goes to the driver without it, as no driver says it takes v1.8
+ * yet (OGPU_NEEDS_CPU, ogpu_variant.h), so an older driver never draws such
+ * a path anti-aliased. A program asks for 0.23 (lib_Revision) before it sets
+ * the bit: no opcode is new, so OGPU_Query can't say.
  * Built bare by library/build.sh.
  */
 #include <exec/types.h>
@@ -88,7 +94,7 @@
 
 #define REG(r, decl) register decl __asm(#r)   /* bebbo gcc: an argument in a register */
 #define LIB_VERSION 0
-#define LIB_REVISION 22
+#define LIB_REVISION 23
 #define RESULTS 16                              /* the last batches' results, by fence */
 #define MAX_DRIVERS 8                           /* files looked at in LIBS:OpenGPU/ */
 #define ON_CPU 0                                /* dfence[] for a batch the CPU ran */
@@ -137,9 +143,9 @@ int start(void) { return -1; }
 const ULONG ogpu_ogfx_at = offsetof(struct OpenGPUBase, ogfx);
 
 static const char lib_name[] = "opengpu.library";
-static const char lib_id[] = "opengpu.library 0.22 (1.11.2026) OpenGPU, AmigaChrome Team\r\n";
+static const char lib_id[] = "opengpu.library 0.23 (1.11.2026) OpenGPU, AmigaChrome Team\r\n";
 /* For C:Version, which looks for "$VER:" in the file. */
-static const char lib_ver[] __attribute__((used)) = "\0$VER: opengpu.library 0.22 (1.11.2026) OpenGPU, AmigaChrome Team";
+static const char lib_ver[] __attribute__((used)) = "\0$VER: opengpu.library 0.23 (1.11.2026) OpenGPU, AmigaChrome Team";
 static const char cpu_name[] = "CPU";
 static const char dos_name[] = "dos.library";
 static const char drv_dir[] = "LIBS:OpenGPU";
@@ -404,6 +410,7 @@ static int driver_try(struct OpenGPUBase *base, const char *name, int rom)
                 if (OGPU_ANSWER(d->supports(op, f, 0)) != OGPU_NONE) base->drv_ok[op] = 1;
         }
         base->drv_ok[OGPU_OP_NOP] = 1;
+        base->drv_ok[OGPU_NEEDS_CPU] = 0;          /* 0.23: v1.8's aliased paths run here */
         /* 0.19: a format is the driver's if it takes SURFACE in it (the 3D
          * state commands answer for any format, so they can't say). */
         base->drv_fmt[0] = 0;

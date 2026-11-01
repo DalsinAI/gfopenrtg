@@ -372,6 +372,16 @@ The `glA...` forms (`glASwapBuffers()` and the rest) pass the program's
   - TRIANGLES' SDL form also draws into XRGB32, BGRA32, RGBA32 and ABGR32,
     and both forms read a slot texture in any format. `_ADD_PREMUL` keeps
     the target's alpha, as SDL 3 does.
+- **Paths without anti-aliasing (stream v1.8, opengpu.library 0.23).**
+  `OGPU_PATH_ALIASED` in `PATH_FILL`'s or `PATH_STROKE`'s flags: each pixel
+  is in (coverage 255) when its centre is inside the path or the stroke's
+  outline, out (0) otherwise, as cairo's `CAIRO_ANTIALIAS_NONE` draws (SVG
+  `shape-rendering: crispEdges`, a browser's rectangle clips under a
+  transform). No opcode is new, so `OGPU_Query` can't say: check that
+  opengpu.library's `lib_Version` is above 0 or its `lib_Revision` is 23 or
+  more before setting it. An older library draws the path anti-aliased.
+  0.23 draws such a path on its CPU core whatever the driver, as no driver
+  says it takes v1.8 yet.
 - **SFD files** (`sfd/`) for opengpu.library, openrtg.library and
   Warp3D.library, for other compilers' stubs and pragmas.
 

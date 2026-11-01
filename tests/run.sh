@@ -58,6 +58,14 @@ cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanit
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
     -o "$OUT/test_vector" "$HERE/test_vector.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_build.c" -lm
 "$OUT/test_vector"
+# Stream v1.8 (OGPU_PATH_ALIASED) against its exact reference, and against cairo's
+# CAIRO_ANTIALIAS_NONE when cairo's headers are there (the browser's reference).
+ALIASED_CAIRO=""
+if pkg-config --exists cairo 2>/dev/null; then ALIASED_CAIRO="-DWITH_CAIRO $(pkg-config --cflags cairo)"; fi
+cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined $ALIASED_CAIRO \
+    -o "$OUT/test_vector_aliased" "$HERE/test_vector_aliased.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_build.c" \
+    $(if [ -n "$ALIASED_CAIRO" ]; then pkg-config --libs cairo; fi) -lm
+"$OUT/test_vector_aliased"
 # Stream v1.7 (SDL 3's blend modes, PIXELART, clamping one way, PALETTE, RGBA32 and ABGR32,
 # P010 and the new YUV spaces; the library's variant check) against its references, with
 # the 3D rasteriser for TRIANGLES' SDL form.

@@ -2,7 +2,8 @@
 # Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
 # openrtg.library, cybergraphics.library and opengpu.library (bare: no startup code or C
-# library; the RomTag's stub comes first), C:OpenRTG and its monitor driver, with the os32 stove (bebbo's m68k-amigaos-gcc).
+# library; the RomTag's stub comes first), C:OpenRTG and its monitor driver, with the os32 stove (bebbo's m68k-amigaos-gcc);
+# opengpu.library and its OpenGfx parts with OpenAmigaGCC 16.2.0-open4 (OPENGPU_STOVE, below).
 #   library/build.sh [OUT_DIR]     (default build/)
 # or, with `library/build.sh module [OUT_DIR]` (OUT_DIR: $OUT, else build/), only
 # the ROM modules, in OUT_DIR/modules, built for size (OPT=, -Os by default):
@@ -19,6 +20,14 @@ STOVE=${STOVE:-$HOME/AmigaChrome/stoves/os32}
 CC=${CC:-$STOVE/prefix/bin/m68k-amigaos-gcc}
 NM=${NM:-${CC%gcc}nm}
 if [ "$TARGET" = module ]; then OUT=${1:-${OUT:-$ROOT/build}}; else OUT=${1:-$ROOT/build}; fi
+# opengpu.library is built with OpenAmigaGCC 16.2.0-open4, and with nothing
+# else: GCC 6.5 (the os32 stove) miscompiles the CPU core's stroke walk, so
+# strokes painted with gradients or patterns came out wrong (openamigartg
+# #159; tests/amiga/vector's OpenGPUVectorCRC shows the core against the
+# host). OPENGPU_STOVE holds prefix/bin; OPENGPU_CC overrides the compiler.
+OPENGPU_GCC=16.2.0-open4
+OPENGPU_STOVE=${OPENGPU_STOVE:-$HOME/AmigaChrome/stoves/os32-gcc16}
+OPENGPU_CC=${OPENGPU_CC:-$OPENGPU_STOVE/prefix/bin/m68k-amigaos-gcc}
 # -fno-delete-null-pointer-checks on every 68k compile: address 0 is memory on
 # an Amiga, and without it GCC puts TRAP #7 (Software Failure 80000027) where
 # it proves a pointer null, in place of the access.
@@ -76,17 +85,22 @@ if [ -f "$HERE/opengpu/ogpu_3d.c" ]; then D3=-DOGPU_WITH_3D; D3SRC="$HERE/opengp
 # OpenGfx (library/ogfx): the patches' glue and its leaves. The leaves are AC090
 # magic functions: stack arguments, and no loop turned into a call (ogfx_leaves.c).
 # OpenGfx's drawing core comes from openamigagfx at a pinned commit (one copy).
+if ! "$OPENGPU_CC" --version 2>/dev/null | head -1 | grep -q "OpenAmigaGCC $OPENGPU_GCC)"; then
+    echo "opengpu.library needs OpenAmigaGCC $OPENGPU_GCC (OPENGPU_STOVE or OPENGPU_CC); $OPENGPU_CC is:" >&2
+    "$OPENGPU_CC" --version 2>&1 | head -1 >&2 || true
+    exit 1
+fi
 sh "$ROOT/tools/fetch_ogfx_core.sh" "$OUT"
 for f in gfx_core gfx_rp; do
-    "$CC" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -fno-builtin -Wall -Wextra -Werror -Wno-unused-parameter \
+    "$OPENGPU_CC" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -fno-builtin -Wall -Wextra -Werror -Wno-unused-parameter \
         -I"$OUT/ogfx-core" -c -o "$OUT/ogfx_$f.o" "$OUT/ogfx-core/$f.c"
 done
-"$CC" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -fno-builtin -Wall -Wextra -Werror -Wno-unused-parameter \
+"$OPENGPU_CC" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -fno-builtin -Wall -Wextra -Werror -Wno-unused-parameter \
     -I"$ROOT/include" -I"$OUT/ogfx-core" -c -o "$OUT/ogfx_lib.o" "$HERE/ogfx/ogfx_lib.c"
-"$CC" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -fno-lto -fno-builtin -fno-tree-loop-distribute-patterns -Wall -Wextra -Werror \
+"$OPENGPU_CC" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -fno-lto -fno-builtin -fno-tree-loop-distribute-patterns -Wall -Wextra -Werror \
     -c -o "$OUT/ogfx_leaves.o" "$HERE/ogfx/ogfx_leaves.c"
 # -mnobitfield: GCC's bitfield instructions are slow on the AC090's JIT (opengpu_core.c's header).
-"$CC" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -fno-toplevel-reorder -fno-builtin -Wall -Wextra -Werror -Wno-unused-parameter \
+"$OPENGPU_CC" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -fno-toplevel-reorder -fno-builtin -Wall -Wextra -Werror -Wno-unused-parameter \
     -nostartfiles -nostdlib $SOFT -I"$ROOT/include" \
     $D3 -o "$OUT/opengpu.library" "$HERE/opengpu/opengpu_lib.c" "$HERE/opengpu/ogpu_core.c" $D3SRC "$HERE/opengpu/ogpu_module.c" "$HERE/string.c" \
     "$OUT/ogfx_lib.o" "$OUT/ogfx_leaves.o" "$OUT/ogfx_gfx_core.o" "$OUT/ogfx_gfx_rp.o" -lgcc

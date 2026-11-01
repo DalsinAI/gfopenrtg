@@ -14,6 +14,10 @@ NM=${CC%gcc}nm
 SOFT="-specs=$ROOT/tools/m68k-soft-m68040.specs"
 mkdir -p "$OUT/libs"
 "$CC" --version | head -1
+# The release build (library/build.sh) takes only OpenAmigaGCC 16.2.0-open4;
+# this one, for the Cradle's stove, builds with what the stove has and says so.
+"$CC" --version | head -1 | grep -q "OpenAmigaGCC 16.2.0-open4)" \
+    || echo "note: not OpenAmigaGCC 16.2.0-open4, which the release opengpu.library is built with" >&2
 D3= D3SRC=
 if [ -f "$HERE/opengpu/ogpu_3d.c" ]; then D3=-DOGPU_WITH_3D; D3SRC="$HERE/opengpu/ogpu_3d.c"; fi
 sh "$ROOT/tools/fetch_ogfx_core.sh" "$OUT"

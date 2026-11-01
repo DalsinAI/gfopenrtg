@@ -1836,31 +1836,49 @@ static void pixel_piece(void *c, struct ortg_bitmap *bm, LONG x0, LONG y0, LONG 
  * carries LinePtrn's phase from line to line, JAM2 draws BgPen where the
  * pattern's bit is 0 and INVERSVID inverts the pattern. Before, every line
  * drew its first pixel and started its pattern afresh, and JAM2 was
- * dropped, so a COMPLEMENT rubber-band box lost its corners. */
+ * dropped, so a COMPLEMENT rubber-band box lost its corners. The lines the
+ * CPU draws take the layer once for a run of them, and wait for what
+ * OpenGPU has running once, not once a pixel; the pixels are the same. */
 #include "ortg_line.h"
 
-/* One pixel of a line on the CPU */
-struct dot_ctx { struct pens p; int what; };
+/* A run of lines for the CPU: from the pen position (x0, y0) through n end
+ * points; line j of it is the call's line k + j. */
+struct lines_ctx {
+    struct RastPort *rp;
+    const WORD *xy;
+    LONG x0, y0, n, k;
+    BYTE cnt;                       /* linpatcnt at the run's first line */
+    UBYTE mode, frst, settled;
+    UWORD ptrn;
+};
 
-static void dot_piece(void *c, struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1, LONG dx, LONG dy)
+static void lines_piece(void *c, struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1, LONG dx, LONG dy)
 {
-    struct dot_ctx *d = c;
+    struct lines_ctx *r = c;
+    struct pens p;
     struct ink k;
-    ink_of(&d->p, bm, &k);
-    ortg_ogpu_settle();                             /* 0.21 */
-    k.mode = d->what == ORTG_LINE_XOR ? COMPLEMENT : JAM2;
-    plot(bm, x0, y0, &k, d->what != ORTG_LINE_BG);
-}
-
-static void line_cpu(struct RastPort *rp, struct ortg_line *l)
-{
-    struct dot_ctx d;
-    d.p.a = rp->FgPen; d.p.b = rp->BgPen; d.p.mode = JAM2; d.p.mask = rp->Mask;
-    for (;;) {
-        d.what = ortg_line_what(l);
-        if (d.what != ORTG_LINE_NONE) pieces(rp, l->x, l->y, l->x, l->y, dot_piece, &d);
-        if (l->i == l->len) break;
-        ortg_line_next(l);
+    LONG px = r->x0, py = r->y0;
+    BYTE cnt = r->cnt;
+    p.a = r->rp->FgPen; p.b = r->rp->BgPen; p.mode = JAM2; p.mask = r->rp->Mask;
+    ink_of(&p, bm, &k);
+    if (!k.mask) return;
+    for (LONG j = 0; j < r->n; j++) {
+        struct ortg_line l;
+        LONG ex = r->xy[2 * j], ey = r->xy[2 * j + 1];
+        ortg_line_init(&l, px, py, ex, ey, r->ptrn, cnt, r->mode, ortg_line_first_of(r->mode, r->frst, r->k + j));
+        for (;;) {
+            int w = ortg_line_what(&l);
+            LONG bx = l.x + dx, by = l.y + dy;
+            if (w != ORTG_LINE_NONE && bx >= x0 && bx <= x1 && by >= y0 && by <= y1) {
+                if (!r->settled) { ortg_ogpu_settle(); r->settled = 1; }    /* 0.21: once a run */
+                k.mode = w == ORTG_LINE_XOR ? COMPLEMENT : JAM2;
+                plot(bm, bx, by, &k, w != ORTG_LINE_BG);
+            }
+            if (l.i == l.len) break;
+            ortg_line_next(&l);
+        }
+        cnt = ortg_line_cnt_after(&l);
+        px = ex; py = ey;
     }
 }
 
@@ -1932,7 +1950,7 @@ static int line_gpu(struct RastPort *rp, struct ortg_bitmap *o, const struct ort
 }
 
 /* Draw (one end point) and PolyDraw (n): each line through OpenGPU when it
- * draws exactly the same, else on the CPU, in order. */
+ * draws exactly the same, the others in runs on the CPU, in order. */
 static void lines(struct RastPort *rp, const WORD *xy, LONG n)
 {
     struct ortg_bitmap *o = ortg_of(rp->BitMap);
@@ -1946,8 +1964,29 @@ static void lines(struct RastPort *rp, const WORD *xy, LONG n)
         LONG ex = xy[2 * j], ey = xy[2 * j + 1];
         ortg_line_init(&l, cx, cy, ex, ey, ptrn, cnt, mode, ortg_line_first_of(mode, frst, j));
         if (!line_gpu(rp, o, &l, ex, ey, 1)) {
+            /* this line and the CPU's ones after it: the layer once */
+            struct lines_ctx r;
+            LONG m = 1, bx0 = cx < ex ? cx : ex, by0 = cy < ey ? cy : ey, bx1 = cx < ex ? ex : cx, by1 = cy < ey ? ey : cy;
+            BYTE c2 = ortg_line_cnt_after(&l);
             ortg_stat(ORTG_STAT_LINE, 0, (ULONG)l.len + 1);
-            line_cpu(rp, &l);
+            while (j + m < n) {
+                struct ortg_line t;
+                LONG tx = xy[2 * (j + m)], ty = xy[2 * (j + m) + 1];
+                ortg_line_init(&t, ex, ey, tx, ty, ptrn, c2, mode, ortg_line_first_of(mode, frst, j + m));
+                if (line_gpu(rp, o, &t, tx, ty, 0)) break;
+                ortg_stat(ORTG_STAT_LINE, 0, (ULONG)t.len + 1);
+                if (tx < bx0) bx0 = tx;
+                if (tx > bx1) bx1 = tx;
+                if (ty < by0) by0 = ty;
+                if (ty > by1) by1 = ty;
+                c2 = ortg_line_cnt_after(&t);
+                ex = tx; ey = ty; m++;
+            }
+            r.rp = rp; r.xy = xy + 2 * j; r.x0 = cx; r.y0 = cy; r.n = m; r.k = j;
+            r.cnt = cnt; r.mode = mode; r.frst = frst; r.settled = 0; r.ptrn = ptrn;
+            pieces(rp, bx0, by0, bx1, by1, lines_piece, &r);
+            j += m; cx = ex; cy = ey; cnt = c2;
+            continue;
         }
         cnt = ortg_line_cnt_after(&l);
         cx = ex; cy = ey; j++;

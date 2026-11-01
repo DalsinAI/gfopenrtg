@@ -1,12 +1,12 @@
 #!/bin/sh
 # Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
-# OpenRTG's tools, with the os32 stove (bebbo's m68k-amigaos-gcc, NDK 3.2).
+# GFOpenRTG's tools, with the os32 stove (bebbo's m68k-amigaos-gcc, NDK 3.2).
 #   tools/build.sh [OUT_DIR]     (default build/)
 # STOVE: the amiga-gcc install (holding prefix/bin); or CC: the compiler.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
-STOVE=${STOVE:-$HOME/AmigaChrome/stoves/os32}
+STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32}
 CC=${CC:-$STOVE/prefix/bin/m68k-amigaos-gcc}
 OUT=${1:-$HERE/../build}
 mkdir -p "$OUT"

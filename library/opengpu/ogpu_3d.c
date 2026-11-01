@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * OpenGPU's 3D core (stream v1.2): see ogpu_3d.h. The Team wrote it from the
+ * GFOpenGPU's 3D core (stream v1.2): see ogpu_3d.h. The Team wrote it from the
  * Warp3D and OpenGL 1.x specifications; software Warp3Ds (Wazp3D, AROS's
  * Warp3D) were behaviour references only, and none of their code is here.
  *

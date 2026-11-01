@@ -15,7 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../library/opengpu/ogpu_core.h"
-#include "../include/opengpu/build.h"
+#include "../include/gfopengpu/build.h"
 
 /* the earlier core, built with its three functions renamed */
 void old_ogpu_core_init(struct ogpu_core *c);

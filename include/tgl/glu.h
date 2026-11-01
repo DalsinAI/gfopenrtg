@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * TinyGL on OpenGPU: the GLU calls TinyGL programs use most, in
+ * TinyGL on GFOpenGPU: the GLU calls TinyGL programs use most, in
  * libtinygl.a. They are the Team's own, on GL 1.x calls; the rest of GLU
  * (tessellation, quadrics, NURBS) isn't here. */
 #ifndef TGL_GLU_H

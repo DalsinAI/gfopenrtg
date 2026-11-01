@@ -1,8 +1,8 @@
-# OpenAL in OpenGPU: OpenAL.module
+# OpenAL in GFOpenGPU: OpenAL.module
 
 OpenAL 1.1 for AmigaOS 3.2, built the same way as SDL2.module and
 SDL3.module (`library/modules/sdl2`, `library/modules/sdl3`): one copy of
-the code in `LIBS:OpenGPU/OpenAL.module` for every program, each program
+the code in `LIBS:GFOpenGPU/OpenAL.module` for every program, each program
 with its own copy of OpenAL's state, and programs that include `<AL/al.h>`
 and `<AL/alc.h>` and link `-lopenal` as on any other system. Built hard
 float (`-m68040 -m68881`): it needs a 68040 or 68060 with its FPU, and
@@ -48,7 +48,7 @@ GCC 16 stove:
 
 | File | What it is |
 | --- | --- |
-| `OpenAL.module` | OpenAL and its two back ends. Goes in `LIBS:OpenGPU/`. |
+| `OpenAL.module` | OpenAL and its two back ends. Goes in `LIBS:GFOpenGPU/`. |
 | `libopenal.a` | The link library programs use (`stubs/openal`). |
 | `include/AL/` | `al.h`, `alc.h` and `alext.h`, for programs. |
 | `libopenal_static.a` | All of OpenAL inside the program, with no module. |
@@ -79,7 +79,7 @@ Build a program the usual way:
 
 - `libopenal.a` has every AL and ALC call as an entry that jumps through a
   table (`struct OpenALProcs`, in `openal_procs.h`'s order). The first call
-  loads `OpenAL.module` with `OGPU_ModuleOpen` (opengpu.library 0.5 and
+  loads `OpenAL.module` with `OGPU_ModuleOpen` (gfopengpu.library 0.5 and
   later; a LoadSeg of its own before that) and asks it to fill the table.
   The table only grows at its end: a program built today runs on any later
   module, and a module refuses (the table's `fill` returns -1) a program
@@ -343,7 +343,7 @@ the OS 3.2 stove at build time, as for SDL.
     listener's, a suspended batch's, an offset's query, a play and stop;
   - `ALLab [DEVICE name] HOLD seconds [LEFT|RIGHT|CENTRE] [hz]`: a tone.
 - The lab (a copy of an instance, Host mix): `tests/openal/ahi_ring_rec.py`
-  records the instance's ACAHI ring (`/dev/shm/amigachrome-native-PORT.ahi`)
+  records the instance's ACAHI ring (`/dev/shm/amicradle-native-PORT.ahi`)
   while ALLab plays; `allab_ref OUT_DIR` writes the stream file
   (`alstream.raw`) and the PC's references of the three scenes through
   Voices and through Mix; `allab_compare.py RECORDING REFDIR voices|mix

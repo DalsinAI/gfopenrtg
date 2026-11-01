@@ -12,7 +12,7 @@ The package was built on the `daletop-amigachrome` self-hosted runner and run fo
 ```text
 OPENTENSOR: starting
 OpenTensor: renderer virgl (AMD Radeon RX 460 Graphics (radeonsi, polaris11, ACO...), driver virgl, OpenGL 4.3 (Compatibility Profile) Mesa 26.2.4
-OpenTensor: 960x540x32 full-screen OpenRTG direct, AHI 44.1 kHz stereo
+OpenTensor: 960x540x32 full-screen GFOpenRTG direct, AHI 44.1 kHz stereo
 OpenTensor: 50.0 fps, 1 AHI underruns
 OPENTENSOR: returned RC 0
 ```
@@ -20,8 +20,8 @@ OPENTENSOR: returned RC 0
 The run proved:
 
 - a GCC16 AmigaOS Hunk executable;
-- Mesa 26.2.4 using the VirGL/OpenGPU path;
-- a private 960x540x32 OpenRTG screen;
+- Mesa 26.2.4 using the VirGL/GFOpenGPU path;
+- a private 960x540x32 GFOpenRTG screen;
 - generated 44.1 kHz signed 16-bit stereo through `ahi.device`;
 - the live star-field scene and diagnostic overlay;
 - clean return to Workbench with return code zero;

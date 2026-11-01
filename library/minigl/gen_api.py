@@ -141,7 +141,7 @@ extern "C" {
 #define MINIGL_BACKEND_FLAG_STUB      (1UL << 0)
 #define MINIGL_BACKEND_FLAG_CLASSIC   (1UL << 1)
 #define MINIGL_BACKEND_FLAG_PISTORM3D (1UL << 2)
-#define MINIGL_BACKEND_FLAG_OPENRTG   (1UL << 16)   /* OpenRTG's minigl.library: OpenGPU or the 68k */
+#define MINIGL_BACKEND_FLAG_OPENRTG   (1UL << 16)   /* GFOpenRTG's minigl.library: GFOpenGPU or the 68k */
 
 typedef struct MGLDispatchTable {
     ULONG abiVersion;               /* MINIGL_DISPATCH_ABI_VERSION */

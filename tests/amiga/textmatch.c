@@ -1,11 +1,11 @@
-/* TextMatch: does Text on Workbench's screen (an RTG bitmap, drawn by OpenRTG) draw what
- * TextLength and TextExtent say, and the same pixels as OpenGfx's own text core draws on a
+/* TextMatch: does Text on Workbench's screen (an RTG bitmap, drawn by GFOpenRTG) draw what
+ * TextLength and TextExtent say, and the same pixels as GFOpenGfx's own text core draws on a
  * planar bitmap? (Team 4, 24 Oct 2026; lab only.)
  *   TextMatch
  * For topaz 8 and the first six fonts in the system's list, five soft styles and seven
  * strings, JAM2 then JAM1:
  *   - a strip of the window is filled with pen A, then Text in pen F on pen B at the pen;
- *   - the same on a planar bitmap of the same size (the reference: OpenGfx's core);
+ *   - the same on a planar bitmap of the same size (the reference: GFOpenGfx's core);
  *   - every pixel of the strip is classed A, F, B or other, on the screen by its RGB against
  *     the three pens' RGB, on the planar bitmap by its pen;
  *   - the classes must be the same everywhere, cp_x must move by TextLength on both, and with
@@ -14,7 +14,7 @@
  * background, . the strip) and "TextMatch: N cases, M differ".
  * Build: m68k-amigaos-gcc -O2 -m68020 -Wall -Wno-format -o TextMatch textmatch.c (the os32-gcc16 stove).
  * Run it on a Workbench screen on an ACRTG board, from a Shell. Colour and right-to-left fonts are
- * left out: OpenRTG doesn't draw those as OS 3.2 does yet.
+ * left out: GFOpenRTG doesn't draw those as OS 3.2 does yet.
  *
  * Copyright (c) 2026 AmigaChrome Team. MIT (LICENSE). */
 #include <exec/types.h>
@@ -43,7 +43,7 @@ extern struct GfxBase *GfxBase;
 #define MAXF 7
 
 static const char *const strs[] = {
-    "drawn after the writes", "PokePull frame 00001", "Ram Disk", "Workbench AmigaChrome 3.2",
+    "drawn after the writes", "PokePull frame 00001", "Ram Disk", "Workbench AmiCradle 3.2",
     "iiiWWW|j_gy,Qq", "11111111", "\x7f\xff\x80 A"
 };
 static const UBYTE styles[] = { 0, FSF_BOLD, FSF_ITALIC, FSF_UNDERLINED, FSF_BOLD | FSF_ITALIC | FSF_UNDERLINED };

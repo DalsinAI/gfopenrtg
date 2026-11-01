@@ -25,7 +25,7 @@ extern "C" {
 #endif /* __cplusplus */
 
 
-/* "Warp3D.library": OpenRTG's Warp3D, version 5's 68k function table (a */
+/* "Warp3D.library": GFOpenRTG's Warp3D, version 5's 68k function table (a */
 /* superset of version 4). Copyright (c) 2026 AmigaChrome Team, MIT licence. */
 /* The order and the registers are what existing programs call; the four */
 /* Tags forms and SetTextureBlendTags are link-library stubs, not entries. */

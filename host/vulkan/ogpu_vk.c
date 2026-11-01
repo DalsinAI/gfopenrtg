@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * OpenGPU's Vulkan back end (ogpu_vk.h). The stream is read here; state
+ * GFOpenGPU's Vulkan back end (ogpu_vk.h). The stream is read here; state
  * commands (SURFACE, TARGET, CLIP) and anything the GPU path doesn't take go
  * to a C core that lives inside this back end, so slots, the clip and every
  * error are the core's own. Drawing commands the GPU takes become one
@@ -786,7 +786,7 @@ static int gpu_copy(struct ogpu_vk *vk, const ogpu_u8 *a) {
             /* Two slots over the same bytes, laid out differently: the core
              * copies them in its own order, which only the core reproduces.
              * Two slots that are the same surface (the same pixels, bytes a
-             * row and format: OpenRTG's scrolls in a layer's surface) are
+             * row and format: GFOpenRTG's scrolls in a layer's surface) are
              * one surface, staged below: COPY is overlap safe, as if through
              * a temporary. On video RAM's card part such a scroll on the core
              * read the card's memory at 7 MB/s (lab, 24 October 2026). */
@@ -2191,7 +2191,7 @@ struct ogpu_vk *ogpu_vk_create(const struct ogpu_vk_config *cfg, char *err, int 
     vk->cfg.arena_size = (vk->cfg.arena_size + 3) & ~3u;
     if (!vk->cfg.vram_size || (vk->cfg.vram_size & 3)) { fail(err, errlen, "vram_size must be a multiple of 4", VK_ERROR_INITIALIZATION_FAILED); goto bad; }
 
-    app.pApplicationName = "OpenGPU";
+    app.pApplicationName = "GFOpenGPU";
     app.apiVersion = VK_API_VERSION_1_1;
     ii.pApplicationInfo = &app;
     if ((r = vkCreateInstance(&ii, 0, &vk->inst)) != VK_SUCCESS) { fail(err, errlen, "vkCreateInstance", r); goto bad; }

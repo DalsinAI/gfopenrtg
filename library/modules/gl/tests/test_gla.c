@@ -271,10 +271,10 @@ static unsigned long t_addr(void *u, const void *p) { (void)u; return BASE + (un
 static uint8_t *t_map(void *u, uint32_t a, uint32_t len) { (void)u; return a >= BASE && a - BASE <= ARENA && len <= ARENA - (a - BASE) ? arena + (a - BASE) : NULL; }
 static int t_run(void *u, void *block, unsigned long bytes) { (void)u; return acvirgl_run(host, t_map, NULL, (uint32_t)t_addr(NULL, block), (uint32_t)bytes); }
 
-/* The direct present (ACV_PRESENT) as openrtg.library sends it, into an
+/* The direct present (ACV_PRESENT) as gfopenrtg.library sends it, into an
  * XRGB32 "screen" in the arena: one rectangle, the frame's changed part. */
-#include "include/opengpu/virgl.h"
-#include "include/opengpu/stream.h"
+#include "include/gfopengpu/virgl.h"
+#include "include/gfopengpu/stream.h"
 static unsigned char *screen;
 static uint32_t be(uint32_t v)
 {
@@ -313,12 +313,12 @@ static long present_direct(void *user, const struct gla_virgl_frame *f)
 }
 #endif
 #if defined(GLA_TEST_VIRGL)
-/* The transport: OpenGPU's ring on the Amiga, the host side called directly here. */
+/* The transport: GFOpenGPU's ring on the Amiga, the host side called directly here. */
 static int virgl_transport(struct gla_virgl_transport *t, char *why, int whylen)
 {
 #if defined(__amigaos__)
     if (gla_os3_virgl_transport(t)) return 1;
-    snprintf(why, whylen, "opengpu.library has no OGPU_OP_VIRGL here");
+    snprintf(why, whylen, "gfopengpu.library has no OGPU_OP_VIRGL here");
     return 0;
 #else
     if (!(host = acvirgl_create(NULL, why, whylen))) return 0;

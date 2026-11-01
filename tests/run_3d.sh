@@ -21,7 +21,7 @@ cc -std=gnu99 -O1 -g -fwrapv -Wall -Wextra -Werror -fsanitize=address,undefined 
     -o "$OUT/test_ogpu3d_emul" "$HERE/test_ogpu3d_emul.c" "$HERE/scenes3d.c" "$HERE/golden_scene_3d.c" "$HERE/../host/vulkan/ogpu3d_rec.c" \
     "$OGPU/ogpu_3d.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_build.c" "$OGPU/ogpu_build3d.c" -lm
 "$OUT/test_ogpu3d_emul" "$HERE/golden/opengpu-3d.txt" 2000
-STOVE=${STOVE:-$HOME/AmigaChrome/stoves/os32}
+STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32}
 CC68K=${CC68K:-$STOVE/prefix/bin/m68k-amigaos-gcc}
 if [ -x "$CC68K" ]; then
     "$CC68K" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -Wall -Wextra -Werror -fno-builtin -c -o "$OUT/ogpu_3d-m68k.o" "$OGPU/ogpu_3d.c"

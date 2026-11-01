@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
-"""Records an AmigaChrome instance's sound ring into a WAV file, for the
+"""Records an AmiCradle instance's sound ring into a WAV file, for the
 OpenAL lab (allab.c, allab_compare.py). The runtime writes each board's
 output to a ring file ("ACA1": rate, capacity and the frames written so
 far in its header, then 16-bit stereo little-endian frames): Paula's is

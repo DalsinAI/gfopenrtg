@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: MIT
  *
  * SDL2_mixer.module: SDL2_mixer 2.8.2 (Zlib) as a shared, resident module in
- * LIBS:OpenGPU/ (stubs/sdl2/sat_module.h). It mixes into SDL's audio device
+ * LIBS:GFOpenGPU/ (stubs/sdl2/sat_module.h). It mixes into SDL's audio device
  * (SDL2.module: AHI, else Paula). Ogg Vorbis, MP3, FLAC and tracker modules
  * are decoded by the x86 or ARM64 cores (media.decode/1, ogpu_mixer.c)
  * when a services card or a paired Cradle has the service, else by

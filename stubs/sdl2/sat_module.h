@@ -2,8 +2,8 @@
  * SPDX-License-Identifier: MIT
  *
  * SDL 2's satellite modules: SDL2_image.module and SDL2_mixer.module in
- * LIBS:OpenGPU/, beside SDL2.module. Shared and resident like it
- * (include/opengpu/module.h): their code is loaded once for every program
+ * LIBS:GFOpenGPU/, beside SDL2.module. Shared and resident like it
+ * (include/gfopengpu/module.h): their code is loaded once for every program
  * and stays loaded; each program's open gets its own copy of their data.
  * Programs link -lSDL2_image or -lSDL2_mixer (a stub, stubs/sdl2/sat_stub.h)
  * with -lSDL2, and use SDL_image.h and SDL_mixer.h unchanged.
@@ -36,7 +36,7 @@
 #define SAT_MODULE_H
 
 #include <exec/types.h>
-#include <opengpu/module.h>
+#include <gfopengpu/module.h>
 
 #define SAT_MODULE_VERSION 3            /* what the modules give */
 #define SAT_MODULE_OPEN_VERSION 2       /* what a stub asks for: the first, with module ABI 2's A4.

@@ -16,7 +16,7 @@
 #include "SDL_vulkan.h"
 
 #include <exec/types.h>
-#include <opengpu/module.h>
+#include <gfopengpu/module.h>
 #include <stdarg.h>
 
 #include "sat_rt.h"

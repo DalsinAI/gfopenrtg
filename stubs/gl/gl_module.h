@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * GL.module's table (include/opengpu/module.h): what libGL.a (stubs/gl) and
+ * GL.module's table (include/gfopengpu/module.h): what libGL.a (stubs/gl) and
  * the module (library/modules/gl/module) share.
  *
  * The module hands out its calls by name: every GL and GLES entry point
@@ -15,10 +15,10 @@
 #ifndef GL_MODULE_H
 #define GL_MODULE_H
 
-#include <opengpu/module.h>
+#include <gfopengpu/module.h>
 
 #define GL_MODULE_NAME    "GL"
-#define GL_MODULE_FILE    "LIBS:OpenGPU/GL.module"
+#define GL_MODULE_FILE    "LIBS:GFOpenGPU/GL.module"
 #define GL_MODULE_VERSION 2
 
 struct GLModuleTable {

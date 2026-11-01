@@ -2,14 +2,14 @@
  * SPDX-License-Identifier: MIT
  *
  * A module's first code, and the heads of libnix's set lists
- * (include/opengpu/module.h). It must be the first object on the link line.
+ * (include/gfopengpu/module.h). It must be the first object on the link line.
  *
  * Built -fbaserel32 (a shared module: code loaded once, data per program),
  * the first code is a BRA.W over the module's header (struct
- * OGPUModuleHeader). opengpu.library reads the header, makes the opening
+ * OGPUModuleHeader). gfopengpu.library reads the header, makes the opening
  * program's copy of the data and calls the header's entry with A4 on that
  * copy. Anything that calls the first code itself (a stub on an
- * opengpu.library older than 0.5, or 0.5 itself) lands in module_self,
+ * gfopengpu.library older than 0.5, or 0.5 itself) lands in module_self,
  * which sets A4 on the data LoadSeg loaded: that load is then the
  * program's own copy, as in step 1.
  *

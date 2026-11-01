@@ -13,7 +13,7 @@
  *                 SDL_GameControllerAddMappingsFromFile (lines need
  *                 platform:AmigaOS 3)
  *
- * Exit 0 when every check passes. With OpenInput's test pad (vendor
+ * Exit 0 when every check passes. With GFOpenInput's test pad (vendor
  * 0xDA15: it presses each button in turn, A first, and sweeps the sticks
  * and triggers) every check runs; with another game controller, all but
  * the A-before-B order; without one, only the joystick check.
@@ -43,7 +43,7 @@ static int max_joysticks = 0;
 static int rumble_tried = 0, rumble_ok = 0;
 static int a_then_b = 0, b_then_a = 0;        /* which of A and B went down first, per cycle */
 static int last_ab = -1;
-static int testpad = 0;                      /* OpenInput's test pad (vendor 0xDA15) was seen */
+static int testpad = 0;                      /* GFOpenInput's test pad (vendor 0xDA15) was seen */
 
 static SDL_GameController *pads[MAX_PADS];
 

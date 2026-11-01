@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * OpenGPU 3D core tests (stream v1.2): coverage against an exact
+ * GFOpenGPU 3D core tests (stream v1.2): coverage against an exact
  * reference with the top-left rule, shared edges drawn once, Gouraud, Z,
  * perspective texturing, fog, every blend factor, alpha, stencil, logic ops,
  * the colour mask, chroma, strips, fans and indices, SDL's form, random
@@ -15,7 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../library/opengpu/ogpu_3d.h"
-#include "../include/opengpu/build3d.h"
+#include "../include/gfopengpu/build3d.h"
 #include "golden_scenes.h"
 
 #ifdef __amigaos__

@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: MIT
  *
  * What a module built with libnix needs in place of a program's startup
- * (include/opengpu/module.h): module_start.S first on the link line, then
+ * (include/gfopengpu/module.h): module_start.S first on the link line, then
  * module_rt.c. The module writes ogpu_module_entry:
  *
  *   struct OGPUModuleTable *ogpu_module_entry(struct OGPUModuleArgs *args)
@@ -20,7 +20,7 @@
 #ifndef OGPU_MODULE_RT_H
 #define OGPU_MODULE_RT_H
 
-#include <opengpu/module.h>
+#include <gfopengpu/module.h>
 
 struct Task;
 
@@ -30,7 +30,7 @@ struct Task;
 #define OGPU_MODULE_SHARED 0
 #endif
 
-/* From the args: opengpu.library (NULL from a stub on an older one). */
+/* From the args: gfopengpu.library (NULL from a stub on an older one). */
 extern struct Library *ogpu_module_OpenGPUBase;
 
 /* SysBase and DOSBase from args, then libnix's init list (memory, standard

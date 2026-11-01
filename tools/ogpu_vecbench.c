@@ -7,7 +7,7 @@
  * variants: the core at different commits), and each copy's pixels compared
  * with the first's, byte for byte. Everything is drawn into ARGB32 memory,
  * white before each round and not timed; nothing goes through
- * opengpu.library, so the 68k always draws, driver or not.
+ * gfopengpu.library, so the 68k always draws, driver or not.
  *   OGPUVecBench [ROUNDS] [work=KB] [only=SCENE]
  * tools/vecbench.sh builds it (the variants from git refs). Written by Team 5
  * (25 Oct 2026) for the 68040 work on the core's software paths.
@@ -24,7 +24,7 @@
 #include <proto/timer.h>
 
 #include "../library/opengpu/ogpu_core.h"
-#include "../include/opengpu/build.h"
+#include "../include/gfopengpu/build.h"
 
 /* vb_cores.h (tools/vecbench.sh writes it): VB_CORES, and for each variant
  * VB_CORE(name, init, run) */

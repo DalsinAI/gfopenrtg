@@ -12,7 +12,7 @@
 #       OUT_DIR  default build/; TARGETS default: module stub static tests
 #   CPU="-m68020 -m68881"   another CPU (default -m68040 -m68881)
 #
-# Needs the GCC 16 stove (STOVE, default ~/AmigaChrome/stoves/os32-gcc16/prefix)
+# Needs the GCC 16 stove (STOVE, default ~/AmiCradle/stoves/os32-gcc16/prefix)
 # and the AHI developer headers (SDK_HEADERS, default the OS 3.2 stove's
 # include directory). The PC tests are tests/openal/run_host.sh.
 set -eu
@@ -21,8 +21,8 @@ ROOT=$(CDPATH= cd -- "$HERE/../../.." && pwd)
 OUT=${1:-$ROOT/build}
 shift 2>/dev/null || true
 TARGETS=${*:-module stub static tests}
-SDK_HEADERS=${SDK_HEADERS:-$HOME/AmigaChrome/stoves/os32/prefix/m68k-amigaos/include}
-STOVE=${STOVE:-$HOME/AmigaChrome/stoves/os32-gcc16/prefix}
+SDK_HEADERS=${SDK_HEADERS:-$HOME/AmiCradle/stoves/os32/prefix/m68k-amigaos/include}
+STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32-gcc16/prefix}
 
 mkdir -p "$OUT"
 OUT=$(CDPATH= cd -- "$OUT" && pwd)

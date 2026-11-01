@@ -1,14 +1,14 @@
 /*
   SDL 2 on AmigaOS 3.x: SDL's window surface and the opengpu renderer's
-  textures in an OpenRTG board's video RAM, so OpenGPU's GPU draws in them.
+  textures in an GFOpenRTG board's video RAM, so GFOpenGPU's GPU draws in them.
   Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 
   amigachrome's docs/design/Design-OpenGPU-2D-On-The-GPU.md 5.4 B (the
-  user's decision, 17 October 2026). OpenRTG 0.19 puts a bitmap asked for
+  user's decision, 17 October 2026). GFOpenRTG 0.19 puts a bitmap asked for
   with BMF_DISPLAYABLE, whose friend is in a board's video RAM, in that
   board's video RAM while there is room (openamigartg #94). Everything else
-  stays in Fast RAM, as before: a screen that isn't a 32-bit OpenRTG one, a
-  board without room, a bitmap OpenRTG put in Fast RAM after all.
+  stays in Fast RAM, as before: a screen that isn't a 32-bit GFOpenRTG one, a
+  board without room, a bitmap GFOpenRTG put in Fast RAM after all.
 
   SDL_OPENGPU_VRAM=0 (SetEnv, or SDL_SetHint) keeps them in Fast RAM;
   SDL_OPENGPU=0 does too.
@@ -26,7 +26,7 @@ struct Window;
 struct BitMap;
 
 /* A w x h 32-bit bitmap in the video RAM of the board that shows win's
-   screen, when that is a 32-bit OpenRTG screen and the board has room; its
+   screen, when that is a 32-bit GFOpenRTG screen and the board has room; its
    pixels and pitch are LockBitMapTags'. NULL otherwise, with nothing kept. */
 extern struct BitMap *SDL_OS3_VRAM_AllocBitMap(struct Window *win, int w, int h, void **pixels, int *pitch);
 extern void SDL_OS3_VRAM_FreeBitMap(struct BitMap *bm);

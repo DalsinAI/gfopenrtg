@@ -38,7 +38,7 @@
 #include "SDL_vulkan.h"
 
 #include <exec/types.h>
-#include <opengpu/module.h>
+#include <gfopengpu/module.h>
 
 #include "sdl2_module.h"
 

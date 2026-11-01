@@ -5,12 +5,12 @@
  * step 3): with no size asked for (no ACRTG v5 board, or WANT_W 0) the
  * table must be exactly 0.16's.
  *
- * It writes every table as text: for the boards OpenRTG knows (and a few
+ * It writes every table as text: for the boards GFOpenRTG knows (and a few
  * more), every monitor, Standard and All, every listed mode and every mode
  * the board shows, then BestModeIDA's answers to a grid of requests. A
  * ModeID that doesn't look up to its own mode is written too.
  * tests/golden/modes-table.txt holds the FNV-1a of that text as
- * openrtg.library 0.16.0's modes.c (openamigartg f47794c) wrote it, and its
+ * gfopenrtg.library 0.16.0's modes.c (openamigartg f47794c) wrote it, and its
  * line count.
  *   modes_golden GOLDEN_FILE    compares; 0 when the same
  *   modes_golden --dump         writes the text, to compare by eye with an

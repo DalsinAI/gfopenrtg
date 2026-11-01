@@ -1,9 +1,9 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * opengpu.library 0.5 (G2 with stream v1.2, DESIGN.md section 5): the library, its
+ * gfopengpu.library 0.5 (G2 with stream v1.2, DESIGN.md section 5): the library, its
  * built-in CPU back end, which runs ogpu_core.c on the Amiga's own 68k, and
- * the drivers in LIBS:OpenGPU/ (include/opengpu/driver.h). The first time a
+ * the drivers in LIBS:GFOpenGPU/ (include/gfopengpu/driver.h). The first time a
  * DOS process asks anything, the library opens the drivers there and keeps
  * the first that finds its hardware (ACRTG.gpu: the Cradle's command ring).
  * From then on every batch goes to that driver, except one with a command
@@ -12,15 +12,15 @@
  * if the driver says its hardware has gone. Without a driver, batches
  * are carried out on the CPU as they are submitted, so a fence is done by
  * the time OGPU_Submit returns. OGPU_Wait gives a batch's first error.
- * OGPU_ModuleOpen loads a module from LIBS:OpenGPU/ (GL.module, SDL2.module)
- * for the calling program (include/opengpu/module.h): a shared one once for
+ * OGPU_ModuleOpen loads a module from LIBS:GFOpenGPU/ (GL.module, SDL2.module)
+ * for the calling program (include/gfopengpu/module.h): a shared one once for
  * every program, with data of each program's own, and kept (ogpu_module.c).
- * 0.6: OpenGfx inside (library/ogfx, include/opengpu/gfx.h): opengfx.library's
+ * 0.6: GFOpenGfx inside (library/ogfx, include/gfopengpu/gfx.h): gfopengfx.library's
  * calls are the LVOs from 66, and graphics.library's drawing and text patches
  * are thin entries into it.
- * 0.7: OpenGfx's look hook (LVOs 150 and 156): OpenLook draws window frames
- * through OpenGfx's RectFill and Text instead of patching them a second time.
- * 0.8: OpenGfx patches every graphics.library drawing call (22), and OpenRTG
+ * 0.7: GFOpenGfx's look hook (LVOs 150 and 156): GFOpenLook draws window frames
+ * through GFOpenGfx's RectFill and Text instead of patching them a second time.
+ * 0.8: GFOpenGfx patches every graphics.library drawing call (22), and GFOpenRTG
  * provides the fourteen new ones instead of patching them itself.
  * 0.9: resident. A shared module stays loaded after its last program closes
  * it, until the system resets or memory runs short: the library's
@@ -46,7 +46,7 @@
  * before v1.7, TRIANGLES' target and slot texture formats must be ones it
  * drew in and read right (ogpu_variant.h).
  * 0.20: batches may be left running (the compositor's step 4: the Cradle's
- * ring has a worker thread, and OpenRTG waits only at the hazards).
+ * ring has a worker thread, and GFOpenRTG waits only at the hazards).
  * OGPU_Wait(OGPU_FENCE_ALL) waits for every batch submitted so far, and a
  * fence too old to keep its result (OGPU_ERR_EXPIRED) is waited for as the
  * newest one is, where 0.19 returned at once.
@@ -89,10 +89,10 @@
 #ifdef OGPU_WITH_3D
 #include "ogpu_3d.h"
 #endif
-#include "../../include/opengpu/opengpu.h"
+#include "../../include/gfopengpu/gfopengpu.h"
 #include "ogpu_variant.h"                       /* driver_takes: each command's variant and formats */
-#include "../../include/opengpu/driver.h"
-#include "../../include/opengpu/module.h"
+#include "../../include/gfopengpu/driver.h"
+#include "../../include/gfopengpu/module.h"
 #include "ogpu_module.h"
 #include "../ogfx/ogfx.h"
 #include <stddef.h>
@@ -101,7 +101,7 @@
 #define LIB_VERSION 0
 #define LIB_REVISION 24
 #define RESULTS 16                              /* the last batches' results, by fence */
-#define MAX_DRIVERS 8                           /* files looked at in LIBS:OpenGPU/ */
+#define MAX_DRIVERS 8                           /* files looked at in LIBS:GFOpenGPU/ */
 #define ON_CPU 0                                /* dfence[] for a batch the CPU ran */
 
 struct OpenGPUBase {
@@ -114,7 +114,7 @@ struct OpenGPUBase {
     LONG result[RESULTS];
     unsigned long dfence[RESULTS];              /* the driver's fence for that batch, or ON_CPU */
     struct SignalSemaphore drv_lock;            /* the driver: loading it, and each call into it */
-    int drv_tried;                              /* LIBS:OpenGPU/ looked at */
+    int drv_tried;                              /* LIBS:GFOpenGPU/ looked at */
     struct Library *drv_lib;                    /* the driver's library, kept open */
     struct OGPUDriver *drv;                     /* its table, or NULL: the CPU does everything */
     UBYTE drv_ok[256];                          /* opcodes the driver carries out (for some format) */
@@ -125,7 +125,7 @@ struct OpenGPUBase {
     struct ogpu_modules modules;                /* shared modules loaded (ogpu_module.c) */
     struct Interrupt low_mem;                   /* the low-memory handler: unloads unused modules */
     UBYTE low_mem_on;                           /* added (exec 39 and later) */
-    struct ogfx_state ogfx;                     /* OpenGfx (library/ogfx) */
+    struct ogfx_state ogfx;                     /* GFOpenGfx (library/ogfx) */
     /* Fast RAM on the CPU's own bus, for the core's MOVE16 copies (a 68040
      * or 68060): looked at on the first batch the CPU runs, once every
      * board's memory is in the system. fast_state 0 not yet, 1 done. */
@@ -143,17 +143,17 @@ struct OpenGPUBase {
  * in the file: build.sh keeps source order (-fno-toplevel-reorder). */
 int start(void) { return -1; }
 
-/* where OpenGfx's state is in the base (library/ogfx): after the stub, as
+/* where GFOpenGfx's state is in the base (library/ogfx): after the stub, as
  * a constant before it was the file's first word */
 const ULONG ogpu_ogfx_at = offsetof(struct OpenGPUBase, ogfx);
 
-static const char lib_name[] = "opengpu.library";
-static const char lib_id[] = "opengpu.library 0.24 (1.11.2026) OpenGPU, AmigaChrome Team\r\n";
+static const char lib_name[] = "gfopengpu.library";
+static const char lib_id[] = "gfopengpu.library 0.24 (1.11.2026) GFOpenGPU, AmiCradle Team\r\n";
 /* For C:Version, which looks for "$VER:" in the file. */
-static const char lib_ver[] __attribute__((used)) = "\0$VER: opengpu.library 0.24 (1.11.2026) OpenGPU, AmigaChrome Team";
+static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopengpu.library 0.24 (1.11.2026) GFOpenGPU, AmiCradle Team";
 static const char cpu_name[] = "CPU";
 static const char dos_name[] = "dos.library";
-static const char drv_dir[] = "LIBS:OpenGPU";
+static const char drv_dir[] = "LIBS:GFOpenGPU";
 /* Tried first, in this order; any other *.gpu there after them. */
 static const char *const drv_first[] = { "ACRTG.gpu", "PiStorm.gpu", "AGA.gpu", NULL };
 
@@ -175,12 +175,12 @@ static const APTR lib_vectors[] = {
     (APTR)lib_open, (APTR)lib_close, (APTR)lib_expunge, (APTR)lib_null,
     (APTR)OGPU_Query, (APTR)OGPU_BackEndName, (APTR)OGPU_Submit, (APTR)OGPU_Wait,
     (APTR)OGPU_ModuleOpen, (APTR)OGPU_ModuleClose,
-    /* 0.6: OpenGfx, from 66 (library/ogfx/ogfx.h) */
+    /* 0.6: GFOpenGfx, from 66 (library/ogfx/ogfx.h) */
     (APTR)OGFX_Version, (APTR)OGFX_InstallPatches, (APTR)OGFX_SetEnabled, (APTR)OGFX_Status,
     (APTR)OGFX_RegisterProvider, (APTR)OGFX_UnregisterProvider,
     (APTR)OGFX_Text, (APTR)OGFX_TextLength, (APTR)OGFX_TextExtent, (APTR)OGFX_TextFit,
     (APTR)OGFX_RectFill, (APTR)OGFX_BltBitMap, (APTR)OGFX_BltTemplate, (APTR)OGFX_ScrollRaster,
-    /* 0.7: OpenGfx's look hook, 150 and 156 */
+    /* 0.7: GFOpenGfx's look hook, 150 and 156 */
     (APTR)OGFX_RegisterLook, (APTR)OGFX_UnregisterLook,
     (APTR)-1,
 };
@@ -347,7 +347,7 @@ static LONG cpu_run(struct OpenGPUBase *base, APTR stream, ULONG words)
     return core.last_error;
 }
 
-/* ---- the drivers in LIBS:OpenGPU/ ------------------------------------------------ */
+/* ---- the drivers in LIBS:GFOpenGPU/ ------------------------------------------------ */
 
 /* dos.library, opened by the first process that needs it (the library may
  * start from ROM, before dos.library is there). */
@@ -384,7 +384,7 @@ static int same_name(const char *a, const char *b)
     return *a == 0 && *b == 0;
 }
 
-/* Open LIBS:OpenGPU/name, or with rom the name alone (a ROM's driver, below); 1 when it is the driver
+/* Open LIBS:GFOpenGPU/name, or with rom the name alone (a ROM's driver, below); 1 when it is the driver
  * now in use. */
 static int driver_try(struct OpenGPUBase *base, const char *name, int rom)
 {
@@ -431,7 +431,7 @@ static int driver_try(struct OpenGPUBase *base, const char *name, int rom)
     return 1;
 }
 
-/* The first time a process asks: look in LIBS:OpenGPU/. A plain task (an
+/* The first time a process asks: look in LIBS:GFOpenGPU/. A plain task (an
  * input handler, a device's task) can't load from disk, so until a process
  * has asked, everything runs on the CPU. */
 static void drivers_load(struct OpenGPUBase *base)
@@ -597,7 +597,7 @@ static LONG split_submit(struct OpenGPUBase *base, const UBYTE *s, ULONG words, 
     return 0;
 }
 
-/* ---- OpenGPU's calls ------------------------------------------------------------- */
+/* ---- GFOpenGPU's calls ------------------------------------------------------------- */
 
 static ULONG OGPU_Query(REG(d0, ULONG op), REG(d1, ULONG format), REG(a6, struct OpenGPUBase *base))
 {
@@ -686,7 +686,7 @@ static LONG OGPU_Wait(REG(d0, ULONG fence), REG(a6, struct OpenGPUBase *base))
         } else {
             /* 0.20: done once the newest batch is (batches finish in order).
              * 0.19 returned at once, which with batches left running (the
-             * compositor's step 4: OpenRTG and layers wait only when they
+             * compositor's step 4: GFOpenRTG and layers wait only when they
              * must) could be before the batch was done. */
             r = OGPU_ERR_EXPIRED;
             newest = 1;
@@ -717,7 +717,7 @@ static LONG OGPU_Wait(REG(d0, ULONG fence), REG(a6, struct OpenGPUBase *base))
     return r;
 }
 
-/* ---- modules (include/opengpu/module.h, ogpu_module.c) --------------------------- */
+/* ---- modules (include/gfopengpu/module.h, ogpu_module.c) --------------------------- */
 
 static APTR OGPU_ModuleOpen(REG(a0, CONST_STRPTR name), REG(d0, ULONG version), REG(a1, APTR *table), REG(a6, struct OpenGPUBase *base))
 {

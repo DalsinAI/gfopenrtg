@@ -1,9 +1,9 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * TinyGL on OpenGPU: the context calls (GLInit, GLClose and the GLA calls)
+ * TinyGL on GFOpenGPU: the context calls (GLInit, GLClose and the GLA calls)
  * with which a TinyGL program opens GL on a window, a screen or a bitmap.
- * They are ordinary functions in libtinygl.a, which runs GL on OpenGPU's
+ * They are ordinary functions in libtinygl.a, which runs GL on GFOpenGPU's
  * GL.module (Mesa: virgl on the GPU, else softpipe on the 68k) through
  * libGL.a. The names and arguments are TinyGL's, so TinyGL programs build
  * unchanged; the code is the Team's (library/tinygl/README.md). */
@@ -33,7 +33,7 @@ GLContext *GLInit(void);
 void GLClose(GLContext *context);
 
 /* Start GL on a target. 1 on success, 0 when GL couldn't start (no
- * LIBS:OpenGPU/GL.module, or memory). The context becomes current. */
+ * LIBS:GFOpenGPU/GL.module, or memory). The context becomes current. */
 int GLAInitializeContext(GLContext *context, struct TagItem *tags);
 int GLAInitializeContextWindowed(GLContext *context, void *window);
 int GLAInitializeContextScreen(GLContext *context, void *screen);

@@ -3,7 +3,7 @@
  *
  * The link stub of a satellite module (sat_module.h): libSDL2_image.a and
  * libSDL2_mixer.a are each this file, included once with
- *   SAT_NAME    the module's name ("SDL2_image": LIBS:OpenGPU/SDL2_image.module)
+ *   SAT_NAME    the module's name ("SDL2_image": LIBS:GFOpenGPU/SDL2_image.module)
  *   SAT_PROCS   its ABI file ("SDL_image_procs.h")
  * and the library's header included first. Every function jumps through a
  * table the module fills on the first call, with the module's A4 set for
@@ -23,7 +23,7 @@
 
 #define OPENGPU_BASE_NAME sat_OpenGPUBase
 #include <exec/libraries.h>
-#include <inline/opengpu.h>
+#include <inline/gfopengpu.h>
 
 #define SAT_FILE OGPU_MODULE_DIR SAT_NAME OGPU_MODULE_EXT
 
@@ -84,19 +84,19 @@ static void sat_init(void)
 
     SDL2STUB_INIT();
     sdl_a4 = SDL2Stub_a4;
-    sat_OpenGPUBase = OpenLibrary((CONST_STRPTR) "opengpu.library", 0);
+    sat_OpenGPUBase = OpenLibrary((CONST_STRPTR) "gfopengpu.library", 0);
     if (sat_OpenGPUBase && (sat_OpenGPUBase->lib_Version > 0 ||
                             sat_OpenGPUBase->lib_Revision >= OGPU_MODULE_LIB_REVISION)) {
         sat_handle = OGPU_ModuleOpen((CONST_STRPTR)SAT_NAME, SAT_MODULE_OPEN_VERSION, (APTR *)&sat_module);
         if (!sat_handle && IoErr() == ERROR_OBJECT_NOT_FOUND) {
-            sat_fail("this program needs " SAT_FILE " (OpenGPU), which isn't installed.");
+            sat_fail("this program needs " SAT_FILE " (GFOpenGPU), which isn't installed.");
         }
     } else {
-        /* An opengpu.library older than 0.5: the module is this program's own. */
+        /* An gfopengpu.library older than 0.5: the module is this program's own. */
         struct OGPUModuleArgs args;
         sat_seg = LoadSeg((CONST_STRPTR)SAT_FILE);
         if (!sat_seg) {
-            sat_fail("this program needs " SAT_FILE " (OpenGPU), which isn't installed.");
+            sat_fail("this program needs " SAT_FILE " (GFOpenGPU), which isn't installed.");
         }
         args.SysBase = SysBase;
         args.DOSBase = (struct Library *)DOSBase;
@@ -105,7 +105,7 @@ static void sat_init(void)
         sat_module = (struct SatModuleTable *)OGPU_MODULE_ENTRY(sat_seg)(&args);
     }
     if (!sat_module) {
-        sat_fail(SAT_FILE " is older than this program, or couldn't start. Install a newer OpenGPU.");
+        sat_fail(SAT_FILE " is older than this program, or couldn't start. Install a newer GFOpenGPU.");
     }
     sat_module->head.caller_a4 = ogpu_a4_get();
     sat_a4 = sat_module->head.a4;
@@ -114,7 +114,7 @@ static void sat_init(void)
         filled = sat_module->bind(sdl_table, sizeof(SDL2Stub_jump_table), sdl_a4, &sat_table, sizeof(sat_table));
     }
     if (filled < sizeof(sat_table)) {
-        sat_fail(SAT_FILE " is older than this program. Install a newer OpenGPU.");
+        sat_fail(SAT_FILE " is older than this program. Install a newer GFOpenGPU.");
     }
     sat_hook.close = sat_close;
     SDL2Stub_AtClose(&sat_hook);

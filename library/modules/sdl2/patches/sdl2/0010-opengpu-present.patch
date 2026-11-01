@@ -147,7 +147,7 @@
 +                SDL_OS3_GPU_PresentEnd(&p);
 +                return 0;
 +            }
-+            /* Not sent (OpenGPU refused it): the window is shown on the
++            /* Not sent (GFOpenGPU refused it): the window is shown on the
 +               CPU from what the earlier batches drew. */
 +            SDL_OS3_GPU_PresentEnd(&p);
 +            data->started = SDL_FALSE;

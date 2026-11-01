@@ -13,7 +13,7 @@
      device->HasClipboardText = OS3_HasClipboardText;
  
 +#ifdef SDL_VIDEO_OPENGL
-+    /* OpenGL (Open): OpenGPU's GL module, through the program's libGL.a */
++    /* OpenGL (Open): GFOpenGPU's GL module, through the program's libGL.a */
 +    device->GL_LoadLibrary    = OS3_GL_LoadLibrary;
 +    device->GL_GetProcAddress = OS3_GL_GetProcAddress;
 +    device->GL_UnloadLibrary  = OS3_GL_UnloadLibrary;

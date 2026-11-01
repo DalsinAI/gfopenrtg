@@ -6,7 +6,7 @@
 #include <math.h>
 #include <string.h>
 #include "scenes3d.h"
-#include "../include/opengpu/build3d.h"
+#include "../include/gfopengpu/build3d.h"
 
 static unsigned char sbuf[1 << 16];
 static struct OGPUBatch B;

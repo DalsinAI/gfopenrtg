@@ -3,7 +3,7 @@
  *
  * Work for the x86 or ARM64 cores, from SDL's satellites: a named service
  * ("media.decode/1", DalsinAI/openamigaservice docs/MEDIA_DECODE.md) through
- * openservice.device, which takes it to the services card (AmigaChrome) or
+ * gfopenservice.device, which takes it to the services card (AmiCradle) or
  * a paired Cradle on the LAN. When neither offers the service,
  * sat_service_open fails and the caller does the work on this CPU.
  *
@@ -33,7 +33,7 @@ struct sat_svc {
  * the work itself. A picture or two seconds of sound take well under one. */
 #define SAT_SERVICE_TIMEOUT_MS 10000
 
-/* NULL when openservice.device isn't installed or nothing offers name. */
+/* NULL when gfopenservice.device isn't installed or nothing offers name. */
 struct sat_svc *sat_service_open(const char *name);
 /* Starts one request (the last one must be finished): buffer i is written
  * by the service when flags bit i is set. */

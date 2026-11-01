@@ -1,9 +1,9 @@
 #!/bin/sh
 # Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
-# OpenGfx's drawing core (DalsinAI/openamigagfx library/core) at a pinned
+# GFOpenGfx's drawing core (DalsinAI/openamigagfx library/core) at a pinned
 # commit, checked by sha256, into OUT/ogfx-core: the one copy of the core
-# lives in openamigagfx, and opengpu.library builds it from there.
+# lives in openamigagfx, and gfopengpu.library builds it from there.
 #   tools/fetch_ogfx_core.sh OUT_DIR
 # OGFX_CORE_DIR=<an openamigagfx checkout> uses that instead of fetching (its
 # files must still match the pin).
@@ -29,4 +29,4 @@ else
 fi
 for f in gfx_core.c gfx_core.h gfx_rp.c gfx_rp.h; do cp "$SRC/$f" "$DST/$f"; done
 (cd "$DST" && echo "$SUMS" | sha256sum -c --quiet) || { echo "fetch_ogfx_core.sh: $DST does not match openamigagfx $PIN" >&2; exit 1; }
-echo "OpenGfx core: openamigagfx $PIN"
+echo "GFOpenGfx core: openamigagfx $PIN"

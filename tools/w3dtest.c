@@ -9,7 +9,7 @@
  * mouse button or Ctrl-C ends it (its screen has no title bar to hold a close
  * gadget), then frees everything and exits. FRAMES n draws n frames and
  * SECONDS n draws for n seconds, each printing the frame rate as it always
- * has, for measuring; SNAP alone keeps the old run of 100 frames. CPU asks for W3D_DRIVER_CPU, GPU for W3D_DRIVER_3DHW (OpenGPU), AUTO lets
+ * has, for measuring; SNAP alone keeps the old run of 100 frames. CPU asks for W3D_DRIVER_CPU, GPU for W3D_DRIVER_3DHW (GFOpenGPU), AUTO lets
  * Warp3D choose. SNAP writes the first frame as raw ARGB (8-byte header:
  * width, height) and prints its checksum: the same frame from two drivers
  * should match within the 3D tolerance. Uses only the Warp3D API, as a

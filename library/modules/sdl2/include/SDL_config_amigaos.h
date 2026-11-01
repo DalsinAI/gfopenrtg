@@ -107,15 +107,15 @@
    fail on Chip RAM); SDL's spinlocks use Forbid() (patches/sdl2/0001). */
 
 /* Video: Intuition windows and screens; RTG through the CyberGraphX API
-   (OpenRTG's cybergraphics.library), AGA through c2p. */
+   (GFOpenRTG's cybergraphics.library), AGA through c2p. */
 #define SDL_VIDEO_DRIVER_AMIGAOS3   1
 #define SDL_VIDEO_DRIVER_DUMMY      1
 
-/* Renderers: opengpu first when the build has OpenGPU's headers (the
+/* Renderers: opengpu first when the build has GFOpenGPU's headers (the
    Makefile defines SDL_VIDEO_RENDER_OPENGPU), then software. */
 #define SDL_VIDEO_RENDER_SW         1
 
-/* OpenGL: SDL_GL_* on OpenGPU's GL module (Mesa: GL 4.3 and GLES 3.1 on the
+/* OpenGL: SDL_GL_* on GFOpenGPU's GL module (Mesa: GL 4.3 and GLES 3.1 on the
    PC's graphics chip through virgl, GL 3.3 and GLES 3.1 with softpipe), for
    programs linked with -lGL (src/video/amigaos3/SDL_os3gl.c). GLES contexts
    come from SDL_GL_CONTEXT_PROFILE_ES. */

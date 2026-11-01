@@ -1,6 +1,6 @@
-SDL3_68k's window framebuffer (Zlib) shown through OpenGPU where it can be
+SDL3_68k's window framebuffer (Zlib) shown through GFOpenGPU where it can be
 (src/video/amigaos3/SDL_os3gpu.c): one copy into the screen's bitmap through
-the window's visible parts, in place of WritePixelArray. AmigaChrome Team, 2026.
+the window's visible parts, in place of WritePixelArray. AmiCradle Team, 2026.
 
 --- a/src/video/amigaos3/SDL_os3framebuffer.c
 +++ b/src/video/amigaos3/SDL_os3framebuffer.c
@@ -19,7 +19,7 @@ the window's visible parts, in place of WritePixelArray. AmigaChrome Team, 2026.
      SDL_WindowData*d=window->internal;int i;(void)_this;if(!d||!d->syswin||!d->fb_pixels)return false;
      if(!CyberGfxBase)return SDL_SetError("AmigaOS3: RTG framebuffer currently requires CyberGraphX/P96");
 +#ifdef SDL_VIDEO_RENDER_OPENGPU
-+    /* AmigaOS 3.x (AmigaChrome Team, 2026): through OpenGPU, which copies the
++    /* AmigaOS 3.x (AmiCradle Team, 2026): through GFOpenGPU, which copies the
 +       rects into the screen's bitmap, where it can show the window
 +       (SDL_os3gpu.h); WritePixelArray otherwise. */
 +    if(window->surface&&window->surface->pixels==d->fb_pixels&&SDL_OS3_GPU_Present(window,window->surface,rects,numrects))return true;

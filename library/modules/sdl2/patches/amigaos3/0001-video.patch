@@ -149,10 +149,10 @@ diff -ruN a/src/video/amigaos3/SDL_os3framebuffer.c b/src/video/amigaos3/SDL_os3
 +#include <proto/layers.h>
 +#include <graphics/clip.h>
 +
-+/* Open (2026): a window is shown by OpenGPU, which copies the frame into
++/* Open (2026): a window is shown by GFOpenGPU, which copies the frame into
 +   video RAM (on the Cradle, the PC does it), through each visible part of
-+   the window's layer. A window with a covered part, a screen OpenGPU has no
-+   format for, or no opengpu.library: WritePixelArray, as before. */
++   the window's layer. A window with a covered part, a screen GFOpenGPU has no
++   format for, or no gfopengpu.library: WritePixelArray, as before. */
 +#define OS3_GPU_KEY "OS3_GPU"
 +#define OS3_GPU_WORDS 2048
 +
@@ -279,7 +279,7 @@ diff -ruN a/src/video/amigaos3/SDL_os3framebuffer.c b/src/video/amigaos3/SDL_os3
 +             * loads a6 with GfxBase before it works out the arguments, so a
 +             * nested cybergraphics call left a6 on CyberGfxBase and
 +             * AllocBitMap (-918) went through cybergraphics.library's table
-+             * (a Line-F software failure on OpenRTG, 6 Oct 2026). */
++             * (a Line-F software failure on GFOpenRTG, 6 Oct 2026). */
 +            ULONG depth = GetCyberMapAttr(friend_bm, CYBRMATTR_DEPTH);
 +            struct BitMap *scale_bm = AllocBitMap(w, h, depth,
                  BMF_MINPLANES, friend_bm);
@@ -308,7 +308,7 @@ diff -ruN a/src/video/amigaos3/SDL_os3framebuffer.c b/src/video/amigaos3/SDL_os3
 +            if (OS3_GPU_Present(window, data, surface, rects, numrects)) {
 +                static int gpu_logged = 0;
 +                if (!gpu_logged) {
-+                    SDL_Log("OS3_FB: OpenGPU present (into video RAM, through the window's layer)");
++                    SDL_Log("OS3_FB: GFOpenGPU present (into video RAM, through the window's layer)");
 +                    gpu_logged = 1;
 +                }
 +                return 0;
@@ -340,11 +340,11 @@ diff -ruN a/src/video/amigaos3/SDL_os3framebuffer.c b/src/video/amigaos3/SDL_os3
  }
 +
 +#if SDL_VIDEO_RENDER_OPENGPU
-+/* The window surface in an OpenRTG board's video RAM (Open, 18 Oct 2026;
++/* The window surface in an GFOpenRTG board's video RAM (Open, 18 Oct 2026;
 + * SDL_os3vram.c, amigachrome's Design-OpenGPU-2D-On-The-GPU 5.4 B). On a
-+ * 32-bit OpenRTG screen, a window that needs no scaling gets its surface in
-+ * a displayable friend of the screen's bitmap, so OpenGPU's GPU draws in it
-+ * and shows it from there. Any other window, or one whose bitmap OpenRTG
++ * 32-bit GFOpenRTG screen, a window that needs no scaling gets its surface in
++ * a displayable friend of the screen's bitmap, so GFOpenGPU's GPU draws in it
++ * and shows it from there. Any other window, or one whose bitmap GFOpenRTG
 + * can only give in Fast RAM, keeps the framebuffer above, as before. These
 + * go round the back end's own functions (SDL_OS3_VRAM_HookFramebuffer). */
 +#define OS3_VRAM_KEY "OS3_VRAM"
@@ -433,12 +433,12 @@ diff -ruN a/src/video/amigaos3/SDL_os3framebuffer.c b/src/video/amigaos3/SDL_os3
 +    if (!data || !data->window) {
 +        return SDL_SetError("OS3_FB: the window has gone");
 +    }
-+    /* OpenGPU copies from video RAM into the window's visible parts: on its
++    /* GFOpenGPU copies from video RAM into the window's visible parts: on its
 +       Vulkan back end, the GPU does it */
 +    if (surface && surface->pixels == vw->pixels && OS3_GPU_Present(window, data, surface, rects, numrects)) {
 +        return 0;
 +    }
-+    /* A covered part, or no OpenGPU: OpenRTG blits from the bitmap through
++    /* A covered part, or no GFOpenGPU: GFOpenRTG blits from the bitmap through
 +       the window's layer */
 +    all.x = 0;
 +    all.y = 0;
@@ -552,7 +552,7 @@ diff -ruN a/src/video/amigaos3/SDL_os3video.c b/src/video/amigaos3/SDL_os3video.
      device->PumpEvents = OS3_PumpEvents;
  
 +#if SDL_VIDEO_RENDER_OPENGPU
-+    /* The window surface in video RAM on a 32-bit OpenRTG screen (Open,
++    /* The window surface in video RAM on a 32-bit GFOpenRTG screen (Open,
 +       SDL_os3vram.h): round the framebuffer functions, all set above */
 +    SDL_OS3_VRAM_HookFramebuffer(device);
 +#endif
@@ -574,7 +574,7 @@ diff -ruN a/src/video/amigaos3/SDL_os3video.c b/src/video/amigaos3/SDL_os3video.
 -       common on FS-UAE where uaegfx provides the card but the P96
 -       monitor driver is not installed). Both provide the same API. */
 +    /* cybergraphics.library only: CyberGraphX, Picasso96's emulation of it,
-+       or OpenRTG's. Picasso96API.library is not a stand-in: its jump table
++       or GFOpenRTG's. Picasso96API.library is not a stand-in: its jump table
 +       is a different one, so IsCyberModeID (-54) and the rest called
 +       unrelated Picasso96 functions, and SDL_Init(VIDEO) hung on a machine
 +       with Picasso96 installed and no board active (6 Oct 2026). Without
@@ -626,7 +626,7 @@ diff -ruN a/src/video/amigaos3/SDL_os3window.c b/src/video/amigaos3/SDL_os3windo
          TAG_DONE
      );
 +    if (!screen && depth == 32) {
-+        /* A 32-bit board mode reports a MaxDepth of 24 (OpenRTG, 6 Oct 2026),
++        /* A 32-bit board mode reports a MaxDepth of 24 (GFOpenRTG, 6 Oct 2026),
 +         * and not every RTG system lets SA_Depth 32 past that. */
 +        depth = 24;
 +        screen = OpenScreenTags(NULL,

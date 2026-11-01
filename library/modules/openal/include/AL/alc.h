@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: MIT
  *
  * OpenAL 1.1's ALC API (devices and contexts) for programs on AmigaOS 3.2
- * (OpenGPU's OpenAL.module, library/modules/openal). Written by the Team
+ * (GFOpenGPU's OpenAL.module, library/modules/openal). Written by the Team
  * from section 6 of the OpenAL 1.1 Specification and Reference. The names
  * and values of the tokens are the interface, and are kept as the
  * specification gives them. */

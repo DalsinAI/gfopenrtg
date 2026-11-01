@@ -1,5 +1,5 @@
 /*
-  SDL 2 on AmigaOS 3.x: opengpu.library, shared by the opengpu renderer and
+  SDL 2 on AmigaOS 3.x: gfopengpu.library, shared by the opengpu renderer and
   the window present.
   Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 */

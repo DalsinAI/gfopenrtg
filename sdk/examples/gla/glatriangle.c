@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenGPU developer kit, MIT licence.
  * SPDX-License-Identifier: MIT
  *
- * GLATriangle: OpenGL with GLA, OpenGPU's own GL interface, in an
+ * GLATriangle: OpenGL with GLA, GFOpenGPU's own GL interface, in an
  * Intuition window, with no SDL. GLA gives a display (virgl on the GPU,
  * else softpipe on the 68k), a context, and a buffer whose
  * frames gla_swap shows in the window. A spinning triangle; Esc or the

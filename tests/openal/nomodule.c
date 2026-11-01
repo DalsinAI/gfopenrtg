@@ -2,9 +2,9 @@
  * SPDX-License-Identifier: MIT
  *
  * nomodule.m: a program on libopenal.a still runs when OpenAL.module isn't
- * there, with no sound. With LIBS:OpenGPU/OpenAL.module renamed away, run
+ * there, with no sound. With LIBS:GFOpenGPU/OpenAL.module renamed away, run
  * it from a Shell: one line, "OpenAL: this program's sound needs
- * LIBS:OpenGPU/OpenAL.module (OpenGPU), which isn't installed.", then
+ * LIBS:GFOpenGPU/OpenAL.module (GFOpenGPU), which isn't installed.", then
  * "nomodule: no sound device", and return code 0. With the module in place
  * it prints "nomodule: device AHI Mix" and returns 0. The stub's host test
  * is tests/openal/stub_nomodule.c. */

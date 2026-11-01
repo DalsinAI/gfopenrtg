@@ -20,7 +20,7 @@
  * 3D pictures are compared with a tolerance (+-2 a channel, edge pixels
  * excepted): a GPU never matches an integer core bit for bit.
  * v1.7, SDL's form only (what SDL 3's renderer needs): the target may also
- * be XRGB32 (a 32-bit OpenRTG screen), BGRA32, RGBA32 or ABGR32, and the
+ * be XRGB32 (a 32-bit GFOpenRTG screen), BGRA32, RGBA32 or ABGR32, and the
  * flags take the premultiplied blends, PIXELART and clamping one way.
  * v1.7, both forms: a texture slot is read in any of stream.h's formats as
  * the 2D commands read it (before, only ARGB32, RGB565, A8 and CLUT8 were

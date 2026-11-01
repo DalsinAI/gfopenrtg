@@ -1,18 +1,18 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * Draw and PolyDraw on OpenRTG's 8-bit bitmaps (library/ortg_line.h, 0.25)
- * against graphics.library's, on the host. The reference is OpenGfx's core
+ * Draw and PolyDraw on GFOpenRTG's 8-bit bitmaps (library/ortg_line.h, 0.25)
+ * against graphics.library's, on the host. The reference is GFOpenGfx's core
  * (openamigagfx library/core/gfx_rp.c, line(), Draw, PolyDraw and Move at
  * 6c8b6d9), which OpenGfxCheck compares byte for byte with OS 3.2's
  * graphics.library on planar bitmaps; it is copied here onto a byte per
  * pixel. The other side is library/screens.c's lines(), line_gpu() and
- * lines_piece() as they use ortg_line.h: the lines OpenGPU takes drawn by
- * the OpenGPU core (CLIP and LINE, as line_piece sends them), the others
+ * lines_piece() as they use ortg_line.h: the lines GFOpenGPU takes drawn by
+ * the GFOpenGPU core (CLIP and LINE, as line_piece sends them), the others
  * per pixel, both through clip pieces with a hidden part as a layer's.
  * Random calls in every DrawMode, LinePtrn, linpatcnt, FRST_DOT and Mask;
  * the pixels, cp, linpatcnt and Flags must match after every call.
- * Side by side with them: OpenRTG's Draw and PolyDraw before 0.25 (main at
+ * Side by side with them: GFOpenRTG's Draw and PolyDraw before 0.25 (main at
  * 4b13804: line() and any_line()), counted where they differ from
  * graphics.library; and the lines the CPU draws a pixel at a time, a layer
  * lock each (0.25's first commit) against a run at a time (its second),
@@ -28,7 +28,7 @@
 #include <exec/types.h>
 #include "../library/ortg_line.h"
 #include "../library/opengpu/ogpu_core.h"
-#include "../include/opengpu/build.h"
+#include "../include/gfopengpu/build.h"
 
 #define W 96
 #define H 64
@@ -57,7 +57,7 @@ static int visible(LONG x, LONG y)
     return 0;
 }
 
-/* ---- the reference: OpenGfx's core ---------------------------------------------------- */
+/* ---- the reference: GFOpenGfx's core ---------------------------------------------------- */
 
 static UBYTE ref[W * H];
 enum { GFX_JAM1, GFX_JAM2, GFX_XOR };
@@ -128,12 +128,12 @@ static void ref_polydraw(struct rp *rp, LONG count, const WORD *xy)
     for (LONG i = 0; i < count; i++, xy += 2) ref_line(rp, xy[0], xy[1], i ? again : (rp->Flags & FRST_DOT) != 0);
 }
 
-/* ---- OpenRTG: screens.c's lines() on ortg_line.h ------------------------------------------ */
+/* ---- GFOpenRTG: screens.c's lines() on ortg_line.h ------------------------------------------ */
 
 #define ARENA (1L << 16)
 #define T0 0x1000
 #define T1 0x4000                   /* the same drawn a pixel at a time */
-#define T2 0x7000                   /* the same drawn by OpenRTG before 0.25 */
+#define T2 0x7000                   /* the same drawn by GFOpenRTG before 0.25 */
 static ogpu_u8 arena[ARENA];
 static long tgt = T0;               /* where ortg_lines() draws */
 static int batched = 1;             /* a run at a time (0.25), or a pixel at a time */
@@ -221,7 +221,7 @@ static int line_gpu(const struct rp *rp, const struct ortg_line *l, LONG x1, LON
         ogpu_core_init(&C);
         C.map = map; C.user = 0;
         ogpu_core_run(&C, sbuf, b.words);
-        CHECK(C.last_error == OGPU_OK, "OpenGPU core: error %ld", (long)C.last_error);
+        CHECK(C.last_error == OGPU_OK, "GFOpenGPU core: error %ld", (long)C.last_error);
         gpu_lines++;
         return 1;
     }
@@ -266,8 +266,8 @@ static void ortg_lines(struct rp *rp, const WORD *xy, LONG n)
     rp->cp_x = (WORD)cx; rp->cp_y = (WORD)cy;
 }
 
-/* ---- OpenRTG before 0.25 (main at 4b13804) ---------------------------------------------
- * line() for every line (any_line()'s OpenGPU path drew the same pixels):
+/* ---- GFOpenRTG before 0.25 (main at 4b13804) ---------------------------------------------
+ * line() for every line (any_line()'s GFOpenGPU path drew the same pixels):
  * every first pixel drawn, the pattern from bit 15 for each line, JAM2
  * dropped, INVERSVID swapping the pens; linpatcnt and Flags left alone. */
 
@@ -386,8 +386,8 @@ static void complement_box(int gpu)
 }
 
 /* ---- cases spelt out --------------------------------------------------------------------
- * Each drawn on 0 by graphics.library's reference, 0.25 (with OpenGPU's
- * core and without) and OpenRTG before 0.25; one row read back as pen
+ * Each drawn on 0 by graphics.library's reference, 0.25 (with GFOpenGPU's
+ * core and without) and GFOpenRTG before 0.25; one row read back as pen
  * numbers ('.' 0, 'X' 255). */
 
 static struct rp ca, cb, co;
@@ -466,7 +466,7 @@ static void cases(int gpu)
     case_check("COMPLEMENT box, PolyDraw: top right", 2, 86, 90, "XXXXX", "XXXX.", (BYTE)(15 - 28 - 10 - 28 - 10));
 }
 
-/* OpenRTG's line() before 0.25 */
+/* GFOpenRTG's line() before 0.25 */
 static int old_line(LONG x0, LONG y0, LONG x1, LONG y1, LONG *pts)
 {
     LONG ddx = x1 > x0 ? x1 - x0 : x0 - x1, ddy = -(y1 > y0 ? y1 - y0 : y0 - y1);
@@ -514,6 +514,6 @@ int main(void)
     complement_box(1);
     cases(0);
     cases(1);
-    printf("test_lines: %ld lines through the OpenGPU core, %ld on the CPU; %s\n", gpu_lines, cpu_lines, failures ? "FAILED" : "all the same as graphics.library");
+    printf("test_lines: %ld lines through the GFOpenGPU core, %ld on the CPU; %s\n", gpu_lines, cpu_lines, failures ? "FAILED" : "all the same as graphics.library");
     return failures != 0;
 }

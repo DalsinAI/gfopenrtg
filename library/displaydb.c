@@ -3,13 +3,13 @@
  *
  * The display database (DESIGN.md, section 4): graphics.library's
  * NextDisplayInfo, FindDisplayInfo, GetDisplayInfoData and ModeNotAvailable
- * answer for OpenRTG's ModeIDs from the mode table (modes.c), so ScreenMode
+ * answer for GFOpenRTG's ModeIDs from the mode table (modes.c), so ScreenMode
  * prefs, the ASL screen mode requester and programs see the monitors; and
- * BestModeIDA picks an OpenRTG mode when the request is for one (0.8).
+ * BestModeIDA picks an GFOpenRTG mode when the request is for one (0.8).
  *
  * OS-friendly (DESIGN.md, section 4): SetFunction() under Forbid() with the
  * caches cleared; every call that isn't ours goes to the vector SetFunction()
- * returned; the patches are never taken out, and when OpenRTG is off they
+ * returned; the patches are never taken out, and when GFOpenRTG is off they
  * pass every call straight through. They run on the caller's stack and task,
  * are re-entrant, and never call DOS or Wait().
  */
@@ -39,7 +39,7 @@
 /* Intuition keeps the mouse in a 16-bit range: the pointer stops at 30000
  * ticks. A picture wider than 30000 / ORTG_TICKS pixels (1667 at 18) could
  * not be reached in its right-hand part, the screen bar's icons, a window's
- * right edge and its scroll bar among it (OpenRTG 0.13.1, 10 Oct 2026: 1920 x
+ * right edge and its scroll bar among it (GFOpenRTG 0.13.1, 10 Oct 2026: 1920 x
  * 1080 stopped the pointer at 1666; with 15 ticks it reaches the edge).
  * So a mode gets as many ticks as keep its larger side under the limit, up
  * to ORTG_TICKS. */
@@ -53,8 +53,8 @@ typedef ULONG (*best_fn)(REG(a0, struct TagItem *), REG(a6, struct Library *));
 
 /* A DisplayInfoHandle is a pointer to graphics' own DisplayInfoRecord, and
  * graphics and intuition read some of its fields straight from the handle
- * (5 Oct 2026: with a handle to OpenRTG's mode table instead, intuition's
- * mouse ran to its limits). So OpenRTG's handles are records laid out as
+ * (5 Oct 2026: with a handle to GFOpenRTG's mode table instead, intuition's
+ * mouse ran to its limits). So GFOpenRTG's handles are records laid out as
  * graphics' are (V37 onwards): the node, the keys, the clip rectangle. */
 struct record_node { struct record_node *succ, *pred, *child, *parent; };
 struct ortg_record {
@@ -71,7 +71,7 @@ struct ortg_record {
      * counts the 8-byte pairs that follow (measured on the chipset's and
      * Picasso96's records, 5 Oct 2026): DISP, DIMS, MNTR, NAME, TAG_DONE */
     ULONG data[80];
-    const struct ortg_mode *mode;   /* OpenRTG's own, after graphics' fields */
+    const struct ortg_mode *mode;   /* GFOpenRTG's own, after graphics' fields */
     ULONG gen;                      /* a Native mode's: native_gen[] when its data was filled (0.17) */
 };
 /* What the display database writes (0.18): its part of the library's state (ortg_state.h). */
@@ -221,14 +221,14 @@ static ULONG next_patch(REG(d0, ULONG id), REG(a6, struct Library *gfx))
         }
     }
     {
-        /* graphics' own walk passes OpenRTG's records too, since they are in
+        /* graphics' own walk passes GFOpenRTG's records too, since they are in
          * its tree (0.4): those are listed in our order below, Standard or
          * All, so the walk steps over them (6 Oct 2026: ScreenMode and
-         * OpenRTG LISTDB showed only the first, 320x200) */
+         * GFOpenRTG LISTDB showed only the first, 320x200) */
         ULONG r = old_next(id, gfx);
         while (db_on && r != NO_ID && table_for(r)) r = old_next(r, gfx);
         if (r == NO_ID && db_on) {
-            ortg_native_check(0);           /* OpenRTG's list next: its Native modes at the size asked for now (0.17) */
+            ortg_native_check(0);           /* GFOpenRTG's list next: its Native modes at the size asked for now (0.17) */
             return first_from(1);
         }
         return r;
@@ -324,7 +324,7 @@ static ULONG fill(const struct ortg_mode *m, UBYTE *buf, ULONG size, ULONG tag)
             }
         }   /* as the resolution: intuition scales the mouse by them */
         /* the monitor's preferred mode: the one at the board's display size, in this mode's format
-         * (ACRTG v6's DISPLAY); before, or with no such mode, the mode itself, as OpenRTG always gave */
+         * (ACRTG v6's DISPLAY); before, or with no such mode, the mode itself, as GFOpenRTG always gave */
         {
             const struct ortg_mode_table *tb = (tables && n >= 1 && n <= ORTG_MAX_MONITORS) ? tables[n] : NULL;
             ULONG pref = tb ? ortg_preferred_mode(tb, m->format) : 0;
@@ -362,15 +362,15 @@ static ULONG avail_patch(REG(d0, ULONG id), REG(a6, struct Library *gfx))
     return old_avail(id, gfx);
 }
 
-/* The property flags OpenRTG's modes have (fill(), DTAG_DISP). */
+/* The property flags GFOpenRTG's modes have (fill(), DTAG_DISP). */
 #define ORTG_PROPS (0x02000000UL | DIPF_IS_DBUFFER | DIPF_IS_SPRITES_CHNG_RES | DIPF_IS_DRAGGABLE | DIPF_IS_WB | DIPF_IS_GENLOCK)
 
 /* BestModeIDA. Graphics' own answer stands unless the request is for a
  * board's mode: the RTG property (0x02000000) is a must-have, more than 8
- * bits are asked for, the monitor or the source mode is OpenRTG's, graphics
- * found nothing, or an 8-bit mode is asked for while an OpenRTG screen is
+ * bits are asked for, the monitor or the source mode is GFOpenRTG's, graphics
+ * found nothing, or an 8-bit mode is asked for while an GFOpenRTG screen is
  * showing (6 Oct 2026: SDL's 320x200x8 got PAL Low Res). A must-have flag
- * OpenRTG's modes lack, or the RTG flag as a must-not-have, keeps graphics'
+ * GFOpenRTG's modes lack, or the RTG flag as a must-not-have, keeps graphics'
  * answer. The size is the desired one, else the nominal one, else the
  * source mode's, else 640x480. */
 static ULONG best_patch(REG(a0, struct TagItem *tags), REG(a6, struct Library *gfx))
@@ -435,7 +435,7 @@ int ortg_displaydb(struct Library *gfx, struct ortg_mode_table **t, int on)
          * monitor's: graphics and intuition call its functions (ms_transform,
          * ms_translate, ms_scale and the overscan ones) for any mode. */
         /* graphics' calls go through ortg_S->gfx (ortg_state.h), which screens.c sets only when
-         * OpenRTG's screens go on: gfx here, for these two calls */
+         * GFOpenRTG's screens go on: gfx here, for these two calls */
         struct GfxBase *gb = (struct GfxBase *)gfx, *was = ortg_S->gfx;
         struct MonitorSpec *def;
         ortg_S->gfx = gb;
@@ -468,7 +468,7 @@ int ortg_displaydb(struct Library *gfx, struct ortg_mode_table **t, int on)
             mspec[n].ms_LegalView.MinX = mspec[n].ms_LegalView.MinY = mspec[n].ms_LegalView.MaxX = mspec[n].ms_LegalView.MaxY = 0;
             mspec[n].ms_maxoscan = NULL; mspec[n].ms_videoscan = NULL;
             mspec[n].total_rows = 628; mspec[n].total_colorclocks = 94;
-            const char *p = "OpenRTG.";
+            const char *p = "GFOpenRTG.";
             int i = 0;
             while (*p) s[i++] = *p++;
             s[i++] = (char)('0' + n);

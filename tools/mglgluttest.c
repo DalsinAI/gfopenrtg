@@ -15,7 +15,7 @@
 #define MGLTEST_NO_LIBM
 #include "mgltest_scene.c"
 
-static const char version[] __attribute__((used)) = "$VER: MGLGlutTest 1.0 (8.10.2026) OpenRTG MiniGL, AmigaChrome Team";
+static const char version[] __attribute__((used)) = "$VER: MGLGlutTest 1.0 (8.10.2026) GFOpenRTG MiniGL, AmiCradle Team";
 
 static float reduce(float x, int *k)
 {

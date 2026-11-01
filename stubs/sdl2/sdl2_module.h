@@ -3,7 +3,7 @@
  *
  * SDL2.module's interface: what its first code takes and gives back. The
  * link stub (stubs/sdl2) and the module (library/modules/sdl2/module) share
- * it. It is the module ABI of include/opengpu/module.h: an entry taking
+ * it. It is the module ABI of include/gfopengpu/module.h: an entry taking
  * SysBase, DOSBase, OpenGPUBase and a version, returning the module's table,
  * which starts with struct OGPUModuleTable (its version and the A4 for
  * calls into it).
@@ -15,7 +15,7 @@
  * Version 2 (8 October 2026): the A4 calls (residency step 2). A version 1
  * stub is refused, as it would call the module without A4.
  *
- * Version 3 (8 October 2026): set_gl, SDL_GL_* on OpenGPU's GL module. A
+ * Version 3 (8 October 2026): set_gl, SDL_GL_* on GFOpenGPU's GL module. A
  * stub still asks for version 2 (SDL2_MODULE_OPEN_VERSION), so a program
  * runs on a version 2 module too, without OpenGL; it calls set_gl only when
  * the table says 3 or later.
@@ -30,10 +30,10 @@
 
 #include <exec/types.h>
 #include <exec/execbase.h>
-#include <opengpu/module.h>
+#include <gfopengpu/module.h>
 
 #define SDL2_MODULE_NAME    "SDL2"
-#define SDL2_MODULE_FILE    "LIBS:OpenGPU/SDL2.module"
+#define SDL2_MODULE_FILE    "LIBS:GFOpenGPU/SDL2.module"
 #define SDL2_MODULE_VERSION 4
 #define SDL2_MODULE_OPEN_VERSION 2      /* what a stub asks for */
 #define SDL2_MODULE_GL_VERSION 3        /* the first table with set_gl */
@@ -50,7 +50,7 @@ struct SDL2ModuleTable {
     void (*set_gl)(const struct SDL2GLBridge *bridge);
 };
 
-/* SDL_GL_* on OpenGPU's GL module (GL.module and libGL.a, library/modules/gl).
+/* SDL_GL_* on GFOpenGPU's GL module (GL.module and libGL.a, library/modules/gl).
  *
  * A program has one copy of GL: the one its libGL.a opens. SDL's GL calls
  * must reach that copy, or SDL's context would be in another copy of Mesa
@@ -86,7 +86,7 @@ struct SDL2GLTarget {
 
 struct SDL2GLBridge {
     ULONG version;              /* SDL2_GL_BRIDGE_VERSION */
-    /* A display: the PC's graphics chip through virgl when opengpu.library
+    /* A display: the PC's graphics chip through virgl when gfopengpu.library
        carries it (and cpu_only is 0), else softpipe on this CPU. */
     APTR (*display)(LONG cpu_only);
     void (*display_destroy)(APTR display);

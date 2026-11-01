@@ -236,7 +236,7 @@ const ALchar *AL_APIENTRY alGetString(ALenum param)
     c = al_current;
     switch (param) {
     case AL_VENDOR:
-        r = "AmigaChrome Team";
+        r = "AmiCradle Team";
         break;
     case AL_VERSION:
         r = "1.1 OpenAL.module 2";

@@ -4,7 +4,7 @@
 
   SDL's clipboard text is UTF-8; the Amiga clipboard's FTXT CHRS chunks are
   ISO-8859-1 (the Amiga's own character set). Text is converted both ways;
-  a character Latin-1 hasn't got is written as '?'. On AmigaChrome, ACClip
+  a character Latin-1 hasn't got is written as '?'. On AmiCradle, ACClip
   carries unit 0 to and from the PC's clipboard, so SDL programs share it.
 
   iffparse.library is opened for each call and closed after, so a program

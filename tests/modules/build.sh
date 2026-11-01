@@ -10,8 +10,8 @@
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
-STOVE16=${STOVE16:-$HOME/AmigaChrome/stoves/os32-gcc16/prefix}
-STOVE=${STOVE:-$HOME/AmigaChrome/stoves/os32}
+STOVE16=${STOVE16:-$HOME/AmiCradle/stoves/os32-gcc16/prefix}
+STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32}
 OUT=${1:-$ROOT/build/modules}
 COMMON=$ROOT/library/modules/common
 mkdir -p "$OUT/shared" "$OUT/each"

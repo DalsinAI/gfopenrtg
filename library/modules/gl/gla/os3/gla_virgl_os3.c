@@ -13,8 +13,8 @@
 #include <proto/exec.h>
 #define TIMER_BASE_NAME gla_timer_base     /* not TimerBase: a program linking this may have its own */
 #include <proto/timer.h>
-#include <proto/opengpu.h>
-#include <opengpu/build.h>
+#include <proto/gfopengpu.h>
+#include <gfopengpu/build.h>
 
 struct Library *OpenGPUBase;
 

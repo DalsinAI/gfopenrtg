@@ -4,11 +4,11 @@
 # GL.module and libGL.a for AmigaOS 3.2, on the Mesa build that mesa/build.sh
 # makes (run first, for the AmigaOS cross file), with the GCC 16 stove.
 # GL.module is shared: Mesa is built -fbaserel32 (the cross file), the module
-# linked -resident32, so opengpu.library loads its code once and gives each
-# program its own copy of the data (include/opengpu/module.h). libGL.a sets
+# linked -resident32, so gfopengpu.library loads its code once and gives each
+# program its own copy of the data (include/gfopengpu/module.h). libGL.a sets
 # A4 on every call.
 #   library/modules/gl/module/build.sh [OUT_DIR]      (default build/gl)
-# OUT_DIR gets GL.module (for LIBS:OpenGPU/), libGL.a and include/ (the
+# OUT_DIR gets GL.module (for LIBS:GFOpenGPU/), libGL.a and include/ (the
 # GLA headers; programs take GL's own from Mesa, $SRC/include in
 # gla-link.env). GL_WORK as for mesa/build.sh. cybergraphics.library's
 # headers come from the GCC 6.5 stove (STOVE), as the GCC 16 one has none.
@@ -18,8 +18,8 @@ GL=$(CDPATH= cd -- "$HERE/.." && pwd)
 REPO=$(CDPATH= cd -- "$GL/../../.." && pwd)
 COMMON=$REPO/library/modules/common
 STUBS=$REPO/stubs/gl
-STOVE16=${STOVE16:-$HOME/AmigaChrome/stoves/os32-gcc16/prefix}
-STOVE=${STOVE:-$HOME/AmigaChrome/stoves/os32}
+STOVE16=${STOVE16:-$HOME/AmiCradle/stoves/os32-gcc16/prefix}
+STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32}
 OUT=${1:-$REPO/build/gl}
 mkdir -p "$OUT"
 OUT=$(CDPATH= cd -- "$OUT" && pwd)

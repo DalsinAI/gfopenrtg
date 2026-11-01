@@ -7,8 +7,8 @@
    Simple DirectMedia Layer
    Copyright (C) 1997-2025 Sam Lantinga <slouken@libsdl.org>
 +  Altered by the AmigaChrome Team, 2026: this is SDL's software renderer
-+  (src/render/software/SDL_render_sw.c) with its drawing sent to OpenGPU
-+  where OpenGPU can do it. It is not the original software.
++  (src/render/software/SDL_render_sw.c) with its drawing sent to GFOpenGPU
++  where GFOpenGPU can do it. It is not the original software.
  
    This software is provided 'as-is', without any express or implied
    warranty.  In no event will the authors be held liable for any damages
@@ -19,12 +19,12 @@
 +
 +  How it draws
 +  ------------
-+  Textures and the target are surfaces in memory, described to OpenGPU as
-+  slots. On a 32-bit OpenRTG screen, the window's surface and ARGB8888 and
++  Textures and the target are surfaces in memory, described to GFOpenGPU as
++  slots. On a 32-bit GFOpenRTG screen, the window's surface and ARGB8888 and
 +  RGB888 textures are in the board's video RAM where it has room
-+  (SDL_os3vram.h), so OpenGPU's GPU draws from them and in them; the rest,
++  (SDL_os3vram.h), so GFOpenGPU's GPU draws from them and in them; the rest,
 +  and everything elsewhere, are in Fast RAM. SDL's commands become one
-+  OpenGPU batch per RunCommandQueue:
++  GFOpenGPU batch per RunCommandQueue:
 +
 +    clear, opaque fills           FILL
 +    fills in any blend mode       FILL_BLEND (v1.2)
@@ -44,10 +44,10 @@
 +  after the batch so far has been sent and finished. Custom blend modes
 +  (SDL_ComposeCustomBlendMode) always take that path.
 +
-+  SDL chooses this renderer first when opengpu.library opens and the
-+  window's surface is in a format OpenGPU draws; otherwise it chooses the
++  SDL chooses this renderer first when gfopengpu.library opens and the
++  window's surface is in a format GFOpenGPU draws; otherwise it chooses the
 +  software renderer. SDL_RENDER_DRIVER=software picks the software one,
-+  SDL_OPENGPU=0 keeps SDL off OpenGPU altogether, and SDL_OPENGPU_STATS=1
++  SDL_OPENGPU=0 keeps SDL off GFOpenGPU altogether, and SDL_OPENGPU_STATS=1
 +  logs how many commands each path drew.
  */
  #include "../../SDL_internal.h"
@@ -84,8 +84,8 @@
 +#include "../../video/amigaos3/SDL_os3vram.h"
 +
 +#if defined(__has_include)
-+#if __has_include(<opengpu/build3d.h>)
-+#include <opengpu/build3d.h>
++#if __has_include(<gfopengpu/build3d.h>)
++#include <gfopengpu/build3d.h>
 +#endif
 +#endif
 +
@@ -115,7 +115,7 @@
 +} OGPUR_DrawStateCache;
  
 +/* One of two buffers: a batch is built in one while the other may still be
-+   with OpenGPU. Scratch memory holds what the batch's commands point at
++   with GFOpenGPU. Scratch memory holds what the batch's commands point at
 +   (1x1 colours, point lists, vertices) until the batch is done. */
  typedef struct
  {
@@ -125,12 +125,12 @@
 +    Uint32 *stream;
 +    Uint32 *scratch;
 +    long nscratch;
-+    Uint32 fence;        /* 0 when OpenGPU is done with it */
++    Uint32 fence;        /* 0 when GFOpenGPU is done with it */
 +} OGPUR_Buffer;
  
 -static SDL_Surface *SW_ActivateRenderer(SDL_Renderer *renderer)
 +/* A YUV or NV texture: its planes, and the ARGB32 surface (the texture's
-+   driverdata) OpenGPU converts them into when they have changed. */
++   driverdata) GFOpenGPU converts them into when they have changed. */
 +typedef struct
  {
 -    SW_RenderData *data = (SW_RenderData *)renderer->driverdata;
@@ -155,7 +155,7 @@
 +    struct OGPUBatch batch;
 +    SDL_bool started;     /* the batch has described its target */
 +
-+    int target_fmt;       /* the target's OpenGPU format, 0 = CPU only */
++    int target_fmt;       /* the target's GFOpenGPU format, 0 = CPU only */
 +    SDL_bool can_fill, can_line, can_copy, can_composite;
 +    SDL_bool can_fill_blend, can_lines_blend, can_points_blend, can_affine, can_tris;
 +    SDL_bool can_yuv;     /* into ARGB32 texture surfaces */
@@ -170,7 +170,7 @@
 +    Uint32 tex_vram, tex_fast; /* textures made in video RAM, in Fast RAM (the same) */
 +} OGPUR_RenderData;
 +
-+/* ---- OpenGPU ----------------------------------------------------------------- */
++/* ---- GFOpenGPU ----------------------------------------------------------------- */
 +
 +static int OGPUR_Format(Uint32 sdl_format)
 +{
@@ -196,7 +196,7 @@
 -        }
 +}
 +
-+/* SDL's blend mode as OpenGPU's, or -1 for a custom one. */
++/* SDL's blend mode as GFOpenGPU's, or -1 for a custom one. */
 +static int OGPUR_Blend(SDL_BlendMode blend)
 +{
 +#if OGPUR_V12
@@ -255,7 +255,7 @@
 +    data->started = SDL_FALSE;
 +}
 +
-+/* Send the batch and wait until OpenGPU has drawn everything, before the
++/* Send the batch and wait until GFOpenGPU has drawn everything, before the
 +   CPU reads or writes a surface. */
 +static void OGPUR_Sync(OGPUR_RenderData *data)
 +{
@@ -354,7 +354,7 @@
 +}
 +
 +/* The target changed (SetRenderTarget, a resized window): describe it in
-+   the next batch and ask what OpenGPU can do on its format. */
++   the next batch and ask what GFOpenGPU can do on its format. */
 +static void OGPUR_SetTargetSurface(OGPUR_RenderData *data, SDL_Surface *surface)
 +{
 +    int f;
@@ -516,7 +516,7 @@
  }
  
 +/* A texture's surface in the video RAM of the board that shows the window,
-+   where it can be (SDL_os3vram.h): OpenGPU's GPU then draws from it and in
++   where it can be (SDL_os3vram.h): GFOpenGPU's GPU then draws from it and in
 +   it. NULL leaves it to SDL's own, in Fast RAM. */
 +static SDL_Surface *OGPUR_VRAMSurface(SDL_Renderer *renderer, int w, int h, Uint32 format)
 +{
@@ -542,7 +542,7 @@
  
 +#if OGPUR_V12 && SDL_HAVE_YUV
 +    if (OGPUR_YUVLayout(texture->format)) {
-+        /* Drawn from an XRGB surface OpenGPU fills from the planes, in
++        /* Drawn from an XRGB surface GFOpenGPU fills from the planes, in
 +           video RAM where it can be. */
 +        SDL_Surface *s = OGPUR_VRAMSurface(renderer, texture->w, texture->h, SDL_PIXELFORMAT_RGB888);
 +        if (!s) {
@@ -592,7 +592,7 @@
 +    SDL_SetSurfaceColorMod(texture->driverdata, texture->color.r, texture->color.g, texture->color.b);
 +    SDL_SetSurfaceAlphaMod(texture->driverdata, texture->color.a);
 +    SDL_SetSurfaceBlendMode(texture->driverdata, texture->blendMode);
-+    /* No RLE: OpenGPU reads the pixels as they are. */
++    /* No RLE: GFOpenGPU reads the pixels as they are. */
      return 0;
  }
  
@@ -734,7 +734,7 @@
      }
 +}
 +
-+/* ---- the renderer (SDL's software renderer, with OpenGPU's paths) ------------- */
++/* ---- the renderer (SDL's software renderer, with GFOpenGPU's paths) ------------- */
 +
 +static SDL_Surface *OGPUR_ActivateRenderer(SDL_Renderer *renderer)
 +{
@@ -870,7 +870,7 @@
      SDL_Rect srcrect;
 -    SDL_Rect dstrect;
 +    SDL_Rect dstrect;   /* whole pixels, for SDL's software path */
-+    SDL_FRect fdst;     /* as given, for OpenGPU's matrix */
++    SDL_FRect fdst;     /* as given, for GFOpenGPU's matrix */
      double angle;
      SDL_FPoint center;
      SDL_RendererFlip flip;
@@ -908,7 +908,7 @@
 +    return 0;
 +}
 +
-+/* SDL_RenderGeometry's vertices, kept as given (scaled) for OpenGPU's
++/* SDL_RenderGeometry's vertices, kept as given (scaled) for GFOpenGPU's
 +   TRIANGLES, and turned into SDL's own form if the CPU draws them. */
 +typedef struct OGPUR_Vertex
 +{
@@ -1295,8 +1295,8 @@
  }
  
 -static int SW_RunCommandQueue(SDL_Renderer *renderer, SDL_RenderCommand *cmd, void *vertices, size_t vertsize)
-+/* OpenGPU's clip follows the surface's clip rectangle. SDL_FALSE when that
-+   is empty: nothing can be drawn, and OpenGPU's CLIP has no empty form. */
++/* GFOpenGPU's clip follows the surface's clip rectangle. SDL_FALSE when that
++   is empty: nothing can be drawn, and GFOpenGPU's CLIP has no empty form. */
 +static SDL_bool OGPUR_FollowClip(OGPUR_RenderData *data, SDL_Surface *surface)
 +{
 +    const SDL_Rect *c = &surface->clip_rect;
@@ -1310,7 +1310,7 @@
 +    return SDL_TRUE;
 +}
 +
-+/* A copy as OpenGPU commands (srcrect from the texture, dst on the target,
++/* A copy as GFOpenGPU commands (srcrect from the texture, dst on the target,
 +   viewport already added), or SDL_FALSE for SDL's software path. */
 +static SDL_bool OGPUR_GpuCopy(OGPUR_RenderData *data, const SDL_RenderCommand *cmd, const SDL_Rect *srcrect,
 +                              const SDL_Rect *dstrect, const SDL_FRect *fdst, double angle, const SDL_FPoint *center,
@@ -1547,7 +1547,7 @@
      drawstate.cliprect = NULL;
      drawstate.surface_cliprect_dirty = SDL_TRUE;
  
-+/* Before the CPU draws: everything OpenGPU was given is finished. */
++/* Before the CPU draws: everything GFOpenGPU was given is finished. */
 +#define CPU_PATH() do { OGPUR_Sync(data); data->ops_cpu++; } while (0)
 +#define GPU_DONE() do { data->ops_gpu++; } while (0)
 +
@@ -2169,7 +2169,7 @@
 +    if (data) {
 +        OGPUR_Sync(data);
 +        if (SDL_GetHintBoolean("SDL_OPENGPU_STATS", SDL_FALSE)) {
-+            SDL_Log("opengpu renderer: %lu commands drawn by OpenGPU, %lu on the CPU",
++            SDL_Log("opengpu renderer: %lu commands drawn by GFOpenGPU, %lu on the CPU",
 +                    (unsigned long)data->ops_gpu, (unsigned long)data->ops_cpu);
 +            SDL_Log("opengpu renderer: %lu textures made in video RAM, %lu in Fast RAM",
 +                    (unsigned long)data->tex_vram, (unsigned long)data->tex_fast);
@@ -2247,7 +2247,7 @@
 -    } else {
 -        no_hint_set = SDL_FALSE;
 +    if (!SDL_OS3_GPU_Open()) {
-+        return SDL_SetError("opengpu.library isn't installed, or SDL_OPENGPU is 0");
++        return SDL_SetError("gfopengpu.library isn't installed, or SDL_OPENGPU is 0");
      }
  
 +    hint = SDL_GetHint(SDL_HINT_RENDER_VSYNC);
@@ -2268,12 +2268,12 @@
          return -1;
      }
 -    return SW_CreateRendererForSurface(renderer, surface);
-+    /* A target OpenGPU has no format for would draw everything on the CPU:
++    /* A target GFOpenGPU has no format for would draw everything on the CPU:
 +       the software renderer does that better, so let SDL pick it. */
 +    fmt = OGPUR_Format(surface->format->format);
 +    if (!fmt || !OGPUR_Can(OGPU_OP_COMPOSITE, fmt)) {
 +        SDL_OS3_GPU_Close();
-+        return SDL_SetError("OpenGPU can't draw on a %s window", SDL_GetPixelFormatName(surface->format->format));
++        return SDL_SetError("GFOpenGPU can't draw on a %s window", SDL_GetPixelFormatName(surface->format->format));
 +    }
 +
 +    data = (OGPUR_RenderData *)SDL_calloc(1, sizeof(*data));
@@ -2325,7 +2325,7 @@
 +        renderer->info.flags |= SDL_RENDERER_PRESENTVSYNC;
 +    }
 +#if OGPUR_V12 && SDL_HAVE_YUV
-+    /* YUV textures, when OpenGPU converts YUV on this machine */
++    /* YUV textures, when GFOpenGPU converts YUV on this machine */
 +    if (OGPUR_Can(OGPU_OP_YUV, OGPU_FMT_ARGB32)) {
 +        static const Uint32 yuv[] = { SDL_PIXELFORMAT_IYUV, SDL_PIXELFORMAT_YV12, SDL_PIXELFORMAT_NV12,
 +                                      SDL_PIXELFORMAT_NV21, SDL_PIXELFORMAT_YUY2, SDL_PIXELFORMAT_UYVY,
@@ -2354,12 +2354,12 @@
       {
 -      SDL_PIXELFORMAT_ARGB8888,
 -      SDL_PIXELFORMAT_ABGR8888,
-+      SDL_PIXELFORMAT_ARGB8888, /* OpenGPU's ARGB32: the format to use */
++      SDL_PIXELFORMAT_ARGB8888, /* GFOpenGPU's ARGB32: the format to use */
 +      SDL_PIXELFORMAT_RGB888,   /* XRGB, drawn as ARGB32 without its alpha: SDL's
 +                                   choice for pictures without alpha */
-+      SDL_PIXELFORMAT_RGB565,   /* OpenGPU's RGB565 */
-+      SDL_PIXELFORMAT_BGRA8888, /* OpenGPU's BGRA32 (stream v1.2) */
-+      SDL_PIXELFORMAT_RGB555,   /* OpenGPU's RGB555 (stream v1.2) */
++      SDL_PIXELFORMAT_RGB565,   /* GFOpenGPU's RGB565 */
++      SDL_PIXELFORMAT_BGRA8888, /* GFOpenGPU's BGRA32 (stream v1.2) */
++      SDL_PIXELFORMAT_RGB555,   /* GFOpenGPU's RGB555 (stream v1.2) */
 +      SDL_PIXELFORMAT_ABGR8888, /* the rest are drawn on the CPU */
        SDL_PIXELFORMAT_RGBA8888,
 -      SDL_PIXELFORMAT_BGRA8888,

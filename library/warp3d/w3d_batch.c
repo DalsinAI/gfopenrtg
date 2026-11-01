@@ -5,10 +5,10 @@
  * stream v1.2 commands (stream3d.h) to the context's batch; vertices and
  * small data go in the batch's data area. A flush puts the drawing area's
  * SURFACE in front, then runs the batch:
- *  - W3D_OpenGPU: OGPU_Submit to opengpu.library, which hands it to its back
- *    end (ACRTG.gpu: the host on AmigaChrome), and OGPU_Wait;
+ *  - W3D_OpenGPU: OGPU_Submit to gfopengpu.library, which hands it to its back
+ *    end (ACRTG.gpu: the host on AmiCradle), and OGPU_Wait;
  *  - W3D_CPU: the 3D core linked in here, on this 68k.
- * A batch carries all the state it draws with, as OpenGPU's back ends keep
+ * A batch carries all the state it draws with, as GFOpenGPU's back ends keep
  * nothing between batches. */
 #include <exec/memory.h>
 #include <graphics/rastport.h>
@@ -18,8 +18,8 @@
 #include <proto/cybergraphics.h>
 
 #include "w3d_internal.h"
-#include "../../include/opengpu/opengpu.h"
-#include "../../include/proto/opengpu.h"
+#include "../../include/gfopengpu/gfopengpu.h"
+#include "../../include/proto/gfopengpu.h"
 
 /* ---- the drawing area ------------------------------------------------------------- */
 

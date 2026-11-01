@@ -5,7 +5,7 @@
  * in which order, and what each one does. Pure C, so the host checks it
  * (tests/test_lines.c); library/screens.c draws with it (0.25).
  *
- * The reference is OpenGfx's core (openamigagfx library/core/gfx_rp.c,
+ * The reference is GFOpenGfx's core (openamigagfx library/core/gfx_rp.c,
  * line() and PolyDraw at 6c8b6d9), which OpenGfxCheck compares byte for
  * byte with OS 3.2's graphics.library on planar bitmaps, every DrawMode,
  * LinePtrn, linpatcnt and FRST_DOT:
@@ -23,7 +23,7 @@
  *     first pixel, but in COMPLEMENT without JAM2 a corner ends up inverted
  *     once whatever LinePtrn holds there: the later line's first pixel
  *     inverts it only where LinePtrn's bit is 0 (ORTG_LINE_JOINT).
- * The pixels are the ones OpenRTG's line() drew before 0.25 (the same
+ * The pixels are the ones GFOpenRTG's line() drew before 0.25 (the same
  * Bresenham, checked on the host for every line within 40 pixels). */
 #ifndef ORTG_LINE_H
 #define ORTG_LINE_H

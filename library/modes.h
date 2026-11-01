@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * The display database's mode table: the modes each OpenRTG monitor offers,
+ * The display database's mode table: the modes each GFOpenRTG monitor offers,
  * built once per monitor, so NextDisplayInfo, FindDisplayInfo,
  * GetDisplayInfoData and BestModeIDA answer from a table and never work a
  * mode out per call (DESIGN.md, section 4). Plain C with no Amiga headers, so
@@ -25,7 +25,7 @@ enum ortg_format { ORTG_CLUT8 = 0, ORTG_RGB16 = 1, ORTG_ARGB32 = 2 };
  * 32-bit. It is the last place in SIZES, so its ModeIDs are 0x6n221000,
  * 0x6n221100 and 0x6n221200 for good. */
 #define ORTG_NATIVE_PLACE   0x22
-#define ORTG_IS_NATIVE(id)  ((((id) >> 16) & 0xFFUL) == ORTG_NATIVE_PLACE && ((id) & 0x1000UL))   /* as openrtg.h */
+#define ORTG_IS_NATIVE(id)  ((((id) >> 16) & 0xFFUL) == ORTG_NATIVE_PLACE && ((id) & 0x1000UL))   /* as gfopenrtg.h */
 /* The Native modes always come last in the table, after every other mode,
  * so the others keep their places when the Native size comes or goes. */
 #define ORTG_NATIVE_MODES 3
@@ -50,7 +50,7 @@ struct ortg_mode {
     uint8_t  format;                 /* enum ortg_format */
     uint8_t  standard;               /* 1: in the Standard list */
     uint8_t  native;                 /* 1: the Native place, its size the host's */
-    char     name[ORTG_NAME_LEN];    /* "OpenRTG.1: 1920x1080 32-bit", "OpenRTG.1: Native 32-bit" */
+    char     name[ORTG_NAME_LEN];    /* "GFOpenRTG.1: 1920x1080 32-bit", "GFOpenRTG.1: Native 32-bit" */
 };
 
 struct ortg_mode_table {

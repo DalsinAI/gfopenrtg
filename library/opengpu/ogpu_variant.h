@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * What a batch needs of a driver beyond its opcodes (opengpu.library 0.19's
+ * What a batch needs of a driver beyond its opcodes (gfopengpu.library 0.19's
  * driver_takes; plain C, so tests/test_sdl3.c checks it on the host).
  * An older driver takes a v1.2 command's opcode but not v1.7's variants of
  * it (SDL 3's blend modes, PIXELART, clamping one way, P010 and the new YUV
@@ -16,8 +16,8 @@
 #ifndef OGPU_VARIANT_H
 #define OGPU_VARIANT_H
 
-#include "../../include/opengpu/stream.h"
-#include "../../include/opengpu/stream3d.h"
+#include "../../include/gfopengpu/stream.h"
+#include "../../include/gfopengpu/stream3d.h"
 
 /* Word k after the header of the command at word `at` (len words, header
  * included), or 0 past its end. */
@@ -29,7 +29,7 @@ static unsigned long ogpu_arg_word(const unsigned char *s, unsigned long at, uns
 }
 
 /* v1.8: a flag a driver must take, as a pseudo-opcode of the ok[] table:
- * opengpu.library 0.24 sets ok[OGPU_NEEDS_PATH_ALIASED] when the driver
+ * gfopengpu.library 0.24 sets ok[OGPU_NEEDS_PATH_ALIASED] when the driver
  * answers OGPU_QUERY_FLAG(OGPU_OP_PATH_FILL, OGPU_PATH_ALIASED_BIT) (stream.h);
  * a driver that predates the form answers OGPU_NONE, so its batches with an
  * aliased path run on the CPU core, which a v1.6 or v1.7 driver would draw

@@ -1,21 +1,21 @@
-# AutoDocs-OpenGPU: building programs on OpenGPU
+# AutoDocs-GFOpenGPU: building programs on GFOpenGPU
 
-The reference for the OpenGPU developer kit (`OpenGPU-SDK-0.6`): how a
-program reaches OpenGPU, how it links, what each part gives, and the
+The reference for the GFOpenGPU developer kit (`GFOpenGPU-SDK-0.6`): how a
+program reaches GFOpenGPU, how it links, what each part gives, and the
 settings it reads. The kit's `README` says how to install it. The design is
 openamigartg's `DESIGN.md`, section 5.
 
 ## 1. The parts
 
-OpenGPU is one library and the modules it loads:
+GFOpenGPU is one library and the modules it loads:
 
 | Part | File | What it is |
 | --- | --- | --- |
-| opengpu.library 0.6 | `LIBS:opengpu.library` | the command stream (`include/opengpu/`), its back ends (the CPU, the GPU through AC090), OpenGfx's drawing, and the module loader |
-| SDL2.module 4 | `LIBS:OpenGPU/SDL2.module` | SDL 2.32.10 with the Amiga back ends |
-| GL.module | `LIBS:OpenGPU/GL.module` | Mesa 26.2.4's GL and GLES, and GLA |
-| minigl.library 29 | `LIBS:minigl.library` | MiniGL (OpenGL 1.1) on OpenGPU's 3D |
-| Warp3D.library | `LIBS:Warp3D.library` | Warp3D on OpenGPU's 3D |
+| gfopengpu.library 0.6 | `LIBS:gfopengpu.library` | the command stream (`include/gfopengpu/`), its back ends (the CPU, the GPU through AC090), GFOpenGfx's drawing, and the module loader |
+| SDL2.module 4 | `LIBS:GFOpenGPU/SDL2.module` | SDL 2.32.10 with the Amiga back ends |
+| GL.module | `LIBS:GFOpenGPU/GL.module` | Mesa 26.2.4's GL and GLES, and GLA |
+| minigl.library 29 | `LIBS:minigl.library` | MiniGL (OpenGL 1.1) on GFOpenGPU's 3D |
+| Warp3D.library | `LIBS:Warp3D.library` | Warp3D on GFOpenGPU's 3D |
 | tinygl.library 53 | `LIBS:tinygl.library` | a stand-in TinyGL programs open; their calls are in `libtinygl.a` and run on GL.module |
 
 A program links a small library from the kit and opens the rest at run
@@ -23,25 +23,25 @@ time:
 
 | The program uses | It links | It needs at run time |
 | --- | --- | --- |
-| SDL 2 | `-lSDL2` (and `-lGL` when it calls `SDL_GL_`) | opengpu.library, SDL2.module (and GL.module) |
+| SDL 2 | `-lSDL2` (and `-lGL` when it calls `SDL_GL_`) | gfopengpu.library, SDL2.module (and GL.module) |
 | SDL_image, SDL_mixer | `-lSDL2_image`, `-lSDL2_mixer`, before `-lSDL2` | as SDL 2, and SDL2_image.module, SDL2_mixer.module |
 | SDL_ttf, SDL_net | `-lSDL2_ttf`, `-lSDL2_net`, before `-lSDL2` | as SDL 2 (SDL_net: bsdsocket.library) |
-| All of SDL in the program | `-lSDL2_image_static -lSDL2_mixer_static -lSDL2_static` | nothing of OpenGPU's |
+| All of SDL in the program | `-lSDL2_image_static -lSDL2_mixer_static -lSDL2_static` | nothing of GFOpenGPU's |
 | SDL 1.2 (a kit built with it) | `-lSDL` (`sdl-config --libs`; with `--gl`, `-lSDL_gl` and `-lGL` too) | as SDL 2 |
-| OpenGL, GLES, GLA | `-lGL` | opengpu.library, GL.module |
-| TinyGL | `-ltinygl -lGL` (`pkg-config tinygl`) | opengpu.library, GL.module, tinygl.library |
+| OpenGL, GLES, GLA | `-lGL` | gfopengpu.library, GL.module |
+| TinyGL | `-ltinygl -lGL` (`pkg-config tinygl`) | gfopengpu.library, GL.module, tinygl.library |
 | MiniGL | `-lminigl` (stubs) or `-lmgl` (GLUT-style helpers) | minigl.library |
 | Warp3D | the `proto/Warp3D.h` calls | Warp3D.library |
-| opengpu.library | the `proto/opengpu.h` calls | opengpu.library |
+| gfopengpu.library | the `proto/gfopengpu.h` calls | gfopengpu.library |
 
 ## 2. Modules and stubs
 
 `libSDL2.a` and `libGL.a` are stubs: they hold no SDL and no Mesa.
 
-- **Loading.** The program's first SDL (or GL) call opens opengpu.library
+- **Loading.** The program's first SDL (or GL) call opens gfopengpu.library
   and calls `OGPU_ModuleOpen("SDL2", 2, &table)` (or `"GL"`). The library
-  loads `LIBS:OpenGPU/SDL2.module` once and returns its table. On an
-  opengpu.library older than 0.5 the stub `LoadSeg`s the module itself.
+  loads `LIBS:GFOpenGPU/SDL2.module` once and returns its table. On an
+  gfopengpu.library older than 0.5 the stub `LoadSeg`s the module itself.
 - **The table.** SDL2.module's table is SDL's own dynamic API
   (`SDL_dynapi_procs.h`): the stub's every `SDL_` function jumps through it.
   The order is SDL's, so a program built today runs on every later module.
@@ -60,7 +60,7 @@ time:
 
 ## 3. Residency: code once, data per program
 
-Modules are built `-fbaserel32`. opengpu.library loads a module's code once
+Modules are built `-fbaserel32`. gfopengpu.library loads a module's code once
 for every program and gives each program's open its own copy of the
 module's data, reached through A4.
 
@@ -126,10 +126,10 @@ m68k-amigaos-gcc -O2 gl.c -o GLProgram $(pkg-config --cflags --libs gl)
 SDL 2.32.10, with the Amiga back ends (libSDL2-amigaos3 0.7.0 and the
 Team's):
 
-| Part | On OpenGPU |
+| Part | On GFOpenGPU |
 | --- | --- |
-| Video | Intuition windows and screens. RTG through the CyberGraphX API (OpenRTG); AGA through c2p. |
-| Renderer | `opengpu` first (fills, lines, copies with blending, scaling, rotation, geometry, YUV, drawn by OpenGPU), then `software`. |
+| Video | Intuition windows and screens. RTG through the CyberGraphX API (GFOpenRTG); AGA through c2p. |
+| Renderer | `opengpu` first (fills, lines, copies with blending, scaling, rotation, geometry, YUV, drawn by GFOpenGPU), then `software`. |
 | OpenGL | `SDL_WINDOW_OPENGL`, `SDL_GL_CreateContext`, `SDL_GL_SwapWindow`, `SDL_GL_GetProcAddress`, on GL.module (below). |
 | Audio | AHI first (8 or 16-bit, mono or stereo), then Paula's audio.device. |
 | Input | Keyboard, mouse (relative mode too), Ctrl-C quits; joysticks and CD32 pads through lowlevel.library. |
@@ -176,7 +176,7 @@ called `./PROGDIR`, which no module can repair; take the folder from
 
 ### SDL_image and SDL_mixer: modules, and the cores
 
-SDL_image and SDL_mixer are modules like SDL 2: `LIBS:OpenGPU/SDL2_image.module`
+SDL_image and SDL_mixer are modules like SDL 2: `LIBS:GFOpenGPU/SDL2_image.module`
 and `SDL2_mixer.module`, loaded once and kept resident, each program with
 its own copy of their data. `-lSDL2_image` and `-lSDL2_mixer` are their
 stubs, and they call SDL through the program's own `libSDL2.a`, so link
@@ -212,7 +212,7 @@ GL:
   `SDL_GL_ALPHA_SIZE`. Compatibility 2.1, SDL's default, gives the highest
   compatibility version there is.
 - Each window gets a GL buffer the size of its inside. `SDL_GL_SwapWindow`
-  shows it in the window (OpenGPU, or WritePixelArray where the window is
+  shows it in the window (GFOpenGPU, or WritePixelArray where the window is
   covered) and follows the window's size.
 - Swap intervals are kept but frames are not held for the display.
 - `SDL_GL_GetProcAddress` returns `libGL.a`'s own entries, so calls through
@@ -246,18 +246,18 @@ GL.module is Mesa's GL state tracker on one of two drivers:
 
 | Driver | Where | Gives |
 | --- | --- | --- |
-| virgl | AmigaChrome: the GPU, through opengpu.library and the ACRTG board | GL 4.3, GLES 3.1 |
+| virgl | AmiCradle: the GPU, through gfopengpu.library and the ACRTG board | GL 4.3, GLES 3.1 |
 | softpipe | every other Amiga, or when asked | GL 3.3, GLES 3.1 |
 
 The headers are Mesa's and Khronos's: `GL/gl.h`, `GL/glext.h`,
 `GL/glcorearb.h`, `GLES2/`, `GLES3/`, `KHR/`. GLES 1 isn't there.
 
-GLA (`include/gla/`) is OpenGPU's own interface to GL: what a program uses
+GLA (`include/gla/`) is GFOpenGPU's own interface to GL: what a program uses
 without SDL.
 
 | Call | What it does |
 | --- | --- |
-| `gla_os3_virgl_transport(&t)` | fills `t` when opengpu.library carries virgl; 0 when it doesn't |
+| `gla_os3_virgl_transport(&t)` | fills `t` when gfopengpu.library carries virgl; 0 when it doesn't |
 | `gla_display_create_virgl(&t)` | a display on the GPU, or NULL |
 | `gla_display_create()` | a softpipe display |
 | `gla_display_driver(d)` | `"virgl"` or `"softpipe"` |
@@ -301,26 +301,26 @@ The `glA...` forms (`glASwapBuffers()` and the rest) pass the program's
 `examples/tinygl/tglspin.c` is a TinyGL program. openamigartg's
 `library/tinygl/README.md` says what isn't there yet.
 
-## 7. Warp3D, MiniGL and opengpu.library
+## 7. Warp3D, MiniGL and gfopengpu.library
 
 - **Warp3D** (`include/Warp3D/`, `proto/Warp3D.h`): Warp3D's API, drawn by
-  OpenGPU's 3D (openamigartg `DESIGN.md`, section 6).
+  GFOpenGPU's 3D (openamigartg `DESIGN.md`, section 6).
 - **MiniGL** (`include/mgl/`, `libraries/minigl.h`, `proto/minigl.h`):
   OpenGL 1.1 on the same 3D. `libminigl.a` holds its stubs, `libmgl.a` the
   GLUT-style helpers.
-- **opengpu.library** (`include/opengpu/`, `proto/opengpu.h`,
-  `sfd/opengpu_lib.sfd`): `OGPU_Query` (what a back end does, per operation
-  and pixel format; from opengpu.library 0.21 also whether it draws it on a
+- **gfopengpu.library** (`include/gfopengpu/`, `proto/gfopengpu.h`,
+  `sfd/gfopengpu_lib.sfd`): `OGPU_Query` (what a back end does, per operation
+  and pixel format; from gfopengpu.library 0.21 also whether it draws it on a
   graphics chip, `OGPU_ONGPU(answer)`, which ACRTG.gpu 1.5 says when the
   Cradle draws on the PC's GPU), `OGPU_Submit` and `OGPU_Wait` (a command stream and its
   fence), `OGPU_BackEndName`, `OGPU_ModuleOpen` and `OGPU_ModuleClose`, and
-  OpenGfx's calls. From opengpu.library 0.7, `OGFX_RegisterLook` and
+  GFOpenGfx's calls. From gfopengpu.library 0.7, `OGFX_RegisterLook` and
   `OGFX_UnregisterLook` (`gfx.h`) let a program draw the system's look on
-  RectFill and Text (OpenLook's window frames) without patching them: OpenGfx
-  asks the look first. From 0.8 OpenGfx patches every graphics.library drawing
-  call (22); an RTG system provides them through `struct OGFXProviderAll`. The stream's commands are in `include/opengpu/stream.h`
+  RectFill and Text (GFOpenLook's window frames) without patching them: GFOpenGfx
+  asks the look first. From 0.8 GFOpenGfx patches every graphics.library drawing
+  call (22); an RTG system provides them through `struct OGFXProviderAll`. The stream's commands are in `include/gfopengpu/stream.h`
   and `stream3d.h`; `build.h` and `build3d.h` write them.
-- **Vector drawing (stream v1.6, opengpu.library 0.18).** Ask
+- **Vector drawing (stream v1.6, gfopengpu.library 0.18).** Ask
   `OGPU_Query(OGPU_OP_PATH_FILL, format)` first; a back end that answers it
   takes all of v1.6. `stream.h` describes each command's words; `build.h`
   writes them:
@@ -347,7 +347,7 @@ The `glA...` forms (`glASwapBuffers()` and the rest) pass the program's
     (canvas `shadowBlur`, CSS `box-shadow`), on A8 or 32-bit pixels.
   - The paths and the blur need work memory from the program (its address
     and size in the command; `stream.h` says how much).
-- **SDL 3's renderer (stream v1.7, opengpu.library 0.19).** Ask
+- **SDL 3's renderer (stream v1.7, gfopengpu.library 0.19).** Ask
   `OGPU_Query(OGPU_OP_PALETTE, format)` first; a back end that answers it
   takes all of v1.7:
   - Blend modes `OGPU_BLEND_BLEND_PREMUL` and `OGPU_BLEND_ADD_PREMUL` (and
@@ -372,14 +372,14 @@ The `glA...` forms (`glASwapBuffers()` and the rest) pass the program's
   - TRIANGLES' SDL form also draws into XRGB32, BGRA32, RGBA32 and ABGR32,
     and both forms read a slot texture in any format. `_ADD_PREMUL` keeps
     the target's alpha, as SDL 3 does.
-- **Paths without anti-aliasing (stream v1.8, opengpu.library 0.23).**
+- **Paths without anti-aliasing (stream v1.8, gfopengpu.library 0.23).**
   `OGPU_PATH_ALIASED` in `PATH_FILL`'s or `PATH_STROKE`'s flags: each pixel
   is in (coverage 255) when its centre is inside the path or the stroke's
   outline, out (0) otherwise, as cairo's `CAIRO_ANTIALIAS_NONE` draws (SVG
   `shape-rendering: crispEdges`, a browser's rectangle clips under a
   transform). No opcode is new; ask for the flag itself (below). An older
   library draws the path anti-aliased.
-- **Asking for a flag (opengpu.library 0.24).**
+- **Asking for a flag (gfopengpu.library 0.24).**
   `OGPU_Query(OGPU_QUERY_FLAG(op, bit), format)` answers whether a back end
   carries out one flag (bit number `bit`) of command `op`'s first word:
   `OGPU_QUERY_FLAG(OGPU_OP_PATH_FILL, OGPU_PATH_ALIASED_BIT)` for paths
@@ -389,9 +389,9 @@ The `glA...` forms (`glASwapBuffers()` and the rest) pass the program's
   predate it answer `OGPU_NONE`, as for an operation they don't know, so a
   program that asks never sets a flag something would ignore. Drivers:
   answer the form in `supports()` for each flag you carry out;
-  opengpu.library 0.24 runs the commands with a flag a driver doesn't take
+  gfopengpu.library 0.24 runs the commands with a flag a driver doesn't take
   on its CPU core.
-- **SFD files** (`sfd/`) for opengpu.library, openrtg.library and
+- **SFD files** (`sfd/`) for gfopengpu.library, gfopenrtg.library and
   Warp3D.library, for other compilers' stubs and pragmas.
 
 ## 8. Settings
@@ -401,15 +401,15 @@ Set with `SetEnv` (or `SDL_SetHint` from the program):
 | Variable | Effect |
 | --- | --- |
 | `SDL_RENDER_DRIVER=software` | SDL's software renderer instead of `opengpu` |
-| `SDL_OPENGPU=0` | keeps SDL off OpenGPU: software renderer, windows by WritePixelArray |
-| `SDL_OPENGPU_STATS=1` | logs how many commands OpenGPU and the CPU drew, when a renderer closes |
+| `SDL_OPENGPU=0` | keeps SDL off GFOpenGPU: software renderer, windows by WritePixelArray |
+| `SDL_OPENGPU_STATS=1` | logs how many commands GFOpenGPU and the CPU drew, when a renderer closes |
 | `SDL_OPENGPU_GL=cpu` | SDL's GL on softpipe even where virgl is there |
 | `SDL_AUDIODRIVER=paula` | Paula instead of AHI (`dummy` for none) |
-| `TinyGL/Driver=CPU` | TinyGL on softpipe even where virgl is there (`OpenGPU`: the GPU or fail; `Auto`, the default) |
+| `TinyGL/Driver=CPU` | TinyGL on softpipe even where virgl is there (`GFOpenGPU`: the GPU or fail; `Auto`, the default) |
 
 ## 9. Versions
 
-| Kit | opengpu.library | SDL2.module | GL.module | SDL | Mesa |
+| Kit | gfopengpu.library | SDL2.module | GL.module | SDL | Mesa |
 | --- | --- | --- | --- | --- | --- |
 | 0.6 (8 October 2026) | 0.6 | 3 | 2 | 2.32.10 | 26.2.4 |
 

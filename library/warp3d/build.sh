@@ -2,7 +2,7 @@
 # Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
 # Warp3D.library (bare: no startup code or C library; the RomTag's stub comes
-# first), with the OpenGPU core and 3D core linked in for the W3D_CPU driver,
+# first), with the GFOpenGPU core and 3D core linked in for the W3D_CPU driver,
 # and the W3D test program, with the os32 stove (bebbo's m68k-amigaos-gcc).
 #   library/warp3d/build.sh [OUT_DIR]          (default build/)
 #   library/warp3d/build.sh headers            remake include/inline, proto, clib from warp3d_lib.sfd
@@ -13,7 +13,7 @@
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
-STOVE=${STOVE:-$HOME/AmigaChrome/stoves/os32}
+STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32}
 CC=${CC:-$STOVE/prefix/bin/m68k-amigaos-gcc}
 SFDC=${SFDC:-$STOVE/prefix/bin/sfdc}
 if [ "${1:-}" = headers ]; then
@@ -34,7 +34,7 @@ mkdir -p "$OUT"
 # it proves a pointer null, in place of the access.
 FLAGS="-m68040 -specs=$ROOT/tools/m68k-soft-m68040.specs -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -Wall -Wextra -Werror -Wno-unused-parameter -I$ROOT/include"
 OGPU="$ROOT/library/opengpu"
-# The cores as opengpu.library builds them (-m68040, no FPU code). Built
+# The cores as gfopengpu.library builds them (-m68040, no FPU code). Built
 # with -m68040 -mhard-float they ran a quarter slower on the AC090 than at
 # -m68020 (8 October 2026, W3DTest); every build is 68040 now.
 mkdir -p "$OUT/w3d-obj"

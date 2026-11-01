@@ -1,7 +1,7 @@
 #!/bin/sh
 # Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
-# SDL 1.2 on OpenGPU's SDL 2: sdl12-compat (Zlib) built for AmigaOS 3.2 as
+# SDL 1.2 on GFOpenGPU's SDL 2: sdl12-compat (Zlib) built for AmigaOS 3.2 as
 # libSDL.a, with the GCC 16 stove.
 #   library/modules/sdl12/build.sh [OUT_DIR]     (default build/)
 # Needs OUT_DIR's SDL 2 (library/modules/sdl2/build.sh: libSDL2.a and
@@ -20,8 +20,8 @@ set -eu
 export LC_ALL=C          # sort and comm agree on order
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO=$(CDPATH= cd -- "$HERE/../../.." && pwd)
-STOVE16=${STOVE16:-$HOME/AmigaChrome/stoves/os32-gcc16/prefix}
-TARBALLS=${TARBALLS:-$HOME/AmigaChrome-dev/upstream-tarballs}
+STOVE16=${STOVE16:-$HOME/AmiCradle/stoves/os32-gcc16/prefix}
+TARBALLS=${TARBALLS:-$HOME/AmiCradle-dev/upstream-tarballs}
 OUT=${1:-$REPO/build}
 OUT=$(CDPATH= cd -- "$OUT" && pwd)
 CC=$STOVE16/bin/m68k-amigaos-gcc

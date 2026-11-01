@@ -3,15 +3,15 @@
  *
  * The Amiga around SDL3.module's opengpu renderer, on a Linux PC, for
  * tests/sdl3/rendercompare_host.sh:
- *   - opengpu.library is OpenGPU's own core (library/opengpu, with the 3D
+ *   - gfopengpu.library is GFOpenGPU's own core (library/opengpu, with the 3D
  *     range), as the CPU back end is on an Amiga: OGPU_Query answers what
  *     the core answers, and OGPU_Submit runs the batch there and then;
  *   - a stream's addresses are 32 bits, so SDL's memory comes from an arena
  *     below 2 GB (SDL_SetMemoryFunctions, before main), and an address that
- *     isn't in it is reported: the renderer handed OpenGPU memory that isn't
+ *     isn't in it is reported: the renderer handed GFOpenGPU memory that isn't
  *     SDL's;
  *   - the window's present (SDL_os3gpu.c's Amiga part) answers "can't", so
- *     SDL_UpdateWindowSurface shows the frame, as without a screen OpenGPU
+ *     SDL_UpdateWindowSurface shows the frame, as without a screen GFOpenGPU
  *     draws on.
  * With OPENGPU_HOST_LIBRARY=0.18 it is a library before stream v1.7: it
  * answers OGPU_Query as 0.18 did, and each command that carries v1.7 (a
@@ -200,7 +200,7 @@ static void scan_v17(const ogpu_u8 *s, long words)
     }
 }
 
-/* ---- opengpu.library ------------------------------------------------------------ */
+/* ---- gfopengpu.library ------------------------------------------------------------ */
 
 static struct ogpu_core core;
 static struct ogpu3d core3d;

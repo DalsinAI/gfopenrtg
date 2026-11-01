@@ -6,10 +6,10 @@ diff -ruN a/src/video/amigaos3/SDL_os3events.c b/src/video/amigaos3/SDL_os3event
  #include "../../events/SDL_windowevents_c.h"
  
 +/* Open: while SDL holds the screen saver off (SDL_DisableScreenSaver, SDL's
-+   default while a program runs), OpenBlanker is told every few seconds, as
-+   X11's back end resets its screen saver. OpenBlanker 1.2 counts a CTRL_E to
++   default while a program runs), GFOpenBlanker is told every few seconds, as
++   X11's back end resets its screen saver. GFOpenBlanker 1.2 counts a CTRL_E to
 +   its task as a key or the mouse; older ones ignore it. */
-+#define OS3_BLANKER_PORT  "OpenBlanker"
++#define OS3_BLANKER_PORT  "GFOpenBlanker"
 +#define OS3_BLANKER_EVERY 5000      /* ms */
 +static Uint64 os3_blanker_told;
 +

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
-# OpenRTG's host tests, and a check that the library's C builds for the 68k.
+# GFOpenRTG's host tests, and a check that the library's C builds for the 68k.
 #   tests/run.sh      (STOVE or CC68K as in tools/build.sh; the 68k check is skipped without it)
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -30,8 +30,8 @@ if command -v m68k-linux-gnu-gcc >/dev/null && command -v qemu-m68k >/dev/null; 
         -o "$OUT/test_scroll_plan-m68k" "$HERE/test_scroll_plan.c"
     qemu-m68k -cpu m68040 "$OUT/test_scroll_plan-m68k"
 fi
-# Draw and PolyDraw on 8-bit bitmaps (openrtg.library 0.25, library/ortg_line.h) against
-# graphics.library's (OpenGfx's core): FRST_DOT, linpatcnt, JAM2, INVERSVID, through OpenGPU's LINE too.
+# Draw and PolyDraw on 8-bit bitmaps (gfopenrtg.library 0.25, library/ortg_line.h) against
+# graphics.library's (GFOpenGfx's core): FRST_DOT, linpatcnt, JAM2, INVERSVID, through GFOpenGPU's LINE too.
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined -I"$HERE/host-include" \
     -o "$OUT/test_lines" "$HERE/test_lines.c" "$HERE/../library/opengpu/ogpu_core.c" "$HERE/../library/opengpu/ogpu_build.c"
 "$OUT/test_lines"
@@ -59,9 +59,9 @@ cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanit
     -o "$OUT/test_vector" "$HERE/test_vector.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_build.c" -lm
 "$OUT/test_vector"
 # The GL module's OS 3.2 present (library/modules/gl/gla/os3/gla_present_os3.c) on a fake
-# OpenGPU: every frame reaches the screen whole and in order, and a screen's present neither
+# GFOpenGPU: every frame reaches the screen whole and in order, and a screen's present neither
 # waits with the bitmap locked nor, with a back buffer, for the batch it has just sent
-# (opengpu.library 0.19: it waits as before). Pairs with openamigamesa #23.
+# (gfopengpu.library 0.19: it waits as before). Pairs with openamigamesa #23.
 cc -std=gnu99 -O1 -g -Wall -Wextra -Werror -Wno-unused-parameter -fsanitize=address,undefined -fno-sanitize-recover=undefined \
     -I"$HERE/gla_present-include" -I"$HERE/../include" -I"$HERE/../library/modules/gl" \
     -o "$OUT/test_gla_present" "$HERE/test_gla_present.c" "$HERE/../library/modules/gl/gla/os3/gla_present_os3.c" -lpthread
@@ -76,7 +76,7 @@ gla_present() {     # arguments, then counts that must be 0
 gla_present "1 23 screen" waits_locked waits_own            # a back buffer: nothing waits for its own frame
 gla_present "0 23 screen" waits_locked waits_own_in_present  # one buffer: waits after present, unlocked
 gla_present "1 23 window"                                   # WritePixelArray
-gla_present "1 19 screen"                                   # opengpu.library 0.19: as before
+gla_present "1 19 screen"                                   # gfopengpu.library 0.19: as before
 gla_present "1 23 mixed" waits_locked waits_own             # virgl's frames between: kept in order
 # Stream v1.8 (OGPU_PATH_ALIASED) against its exact reference, and against cairo's
 # CAIRO_ANTIALIAS_NONE when cairo's headers are there (the browser's reference).
@@ -156,7 +156,7 @@ if command -v m68k-linux-gnu-gcc >/dev/null && command -v qemu-m68k >/dev/null; 
 else
     echo "no m68k-linux-gnu-gcc or qemu-m68k; the big-endian run is skipped"
 fi
-STOVE=${STOVE:-$HOME/AmigaChrome/stoves/os32}
+STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32}
 CC68K=${CC68K:-$STOVE/prefix/bin/m68k-amigaos-gcc}
 if [ -x "$CC68K" ]; then
     "$CC68K" -m68040 -O2 -fno-delete-null-pointer-checks -Wall -Wextra -Werror -c -o "$OUT/modes-m68k.o" "$HERE/../library/modes.c"
@@ -165,9 +165,9 @@ if [ -x "$CC68K" ]; then
 else
     echo "no m68k compiler; the 68k check is skipped"
 fi
-# OpenGfx (library/ogfx): its leaves, the compositing reference, the patch entry.
+# GFOpenGfx (library/ogfx): its leaves, the compositing reference, the patch entry.
 sh "$HERE/ogfx/run.sh"
 # The module loader's test (Test.module and ModuleCheck, run on an Amiga), when both stoves are there.
-if [ -x "${STOVE16:-$HOME/AmigaChrome/stoves/os32-gcc16/prefix}/bin/m68k-amigaos-gcc" ] && [ -x "$CC68K" ]; then
+if [ -x "${STOVE16:-$HOME/AmiCradle/stoves/os32-gcc16/prefix}/bin/m68k-amigaos-gcc" ] && [ -x "$CC68K" ]; then
     sh "$HERE/modules/build.sh" "$OUT/modules" >/dev/null && echo "tests/modules build (ModuleCheck runs on an Amiga)"
 fi

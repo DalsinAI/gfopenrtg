@@ -1,18 +1,18 @@
-# OpenGPU SDL Keyboard Text Input Fix
+# GFOpenGPU SDL Keyboard Text Input Fix
 
 **Description:** `opengpu-sdl-keyboard-fix`  
 **Repository:** `DalsinAI/openamigartg`  
 **Status:** Ready for implementation  
-**Scope:** OpenGPU SDL2 AmigaOS 3.x keyboard backend  
+**Scope:** GFOpenGPU SDL2 AmigaOS 3.x keyboard backend  
 **Primary proving application:** AstroMenace profile naming
 
 ## 1. Purpose
 
-The OpenGPU SDL2 AmigaOS 3.x backend currently delivers physical keyboard events (`SDL_KEYDOWN` and `SDL_KEYUP`) but does not deliver translated text events (`SDL_TEXTINPUT`).
+The GFOpenGPU SDL2 AmigaOS 3.x backend currently delivers physical keyboard events (`SDL_KEYDOWN` and `SDL_KEYUP`) but does not deliver translated text events (`SDL_TEXTINPUT`).
 
 This is visible in AstroMenace. The game runs and responds to control keys, but the pilot-profile naming page does not accept typed letters. AstroMenace handles Backspace and Return through key events, while printable characters are appended only when it receives `SDL_TEXTINPUT`.
 
-The fix belongs in the shared OpenGPU SDL2 backend, not in AstroMenace. Once corrected, the same text-input path will benefit every SDL2 application running on OpenUp, including games, editors, launchers and future OpenBench applications.
+The fix belongs in the shared GFOpenGPU SDL2 backend, not in AstroMenace. Once corrected, the same text-input path will benefit every SDL2 application running on GFOpenUp, including games, editors, launchers and future GFOpenBench applications.
 
 ## 2. Current Behaviour
 
@@ -20,10 +20,10 @@ The present input route is:
 
 ```text
 PC keyboard
-    -> AmigaChrome raw Amiga key record
+    -> AmiCradle raw Amiga key record
     -> Amiga input event
     -> Intuition IDCMP_RAWKEY
-    -> OpenGPU SDL2 AmigaOS backend
+    -> GFOpenGPU SDL2 AmigaOS backend
     -> SDL_SendKeyboardKey()
     -> SDL_KEYDOWN / SDL_KEYUP
 ```
@@ -45,7 +45,7 @@ The corrected route is:
 
 ```text
 PC keyboard
-    -> AmigaChrome raw Amiga key record
+    -> AmiCradle raw Amiga key record
     -> Amiga input event
     -> Intuition IDCMP_RAWKEY
        |-> SDL_SendKeyboardKey()
@@ -431,7 +431,7 @@ The test must cover:
 
 1. activate the SDL window;
 2. type text successfully;
-3. switch to another Workbench/OpenBench window;
+3. switch to another Workbench/GFOpenBench window;
 4. verify the SDL program receives nothing;
 5. reactivate it;
 6. verify text input resumes without stuck modifiers or duplicate characters.
@@ -464,7 +464,7 @@ one TEXTINPUT
 one KEYUP
 ```
 
-## 15. Automated AmigaChrome Input Test
+## 15. Automated AmiCradle Input Test
 
 A disposable clone of Instance-32 should be used. The runtime input endpoint can inject raw Amiga key records without touching the live instance.
 
@@ -519,10 +519,10 @@ The test should also try Shift, punctuation and Caps Lock on the profile page.
 The runtime file is:
 
 ```text
-LIBS:OpenGPU/SDL2.module
+LIBS:GFOpenGPU/SDL2.module
 ```
 
-The shared module ABI is unchanged, so an existing application linked through the OpenGPU `libSDL2.a` stub should gain the corrected behaviour when the module is replaced. An AstroMenace relink is not technically required for the fix, but a clean rebuild is recommended for release qualification and provenance.
+The shared module ABI is unchanged, so an existing application linked through the GFOpenGPU `libSDL2.a` stub should gain the corrected behaviour when the module is replaced. An AstroMenace relink is not technically required for the fix, but a clean rebuild is recommended for release qualification and provenance.
 
 Deployment order:
 
@@ -551,7 +551,7 @@ It changes only event production inside the AmigaOS video backend. Therefore:
 - static SDL applications must be rebuilt to receive the fix;
 - module-linked applications receive it from the updated runtime module.
 
-The OpenRTG/OpenGPU package patch version should be incremented and the module build provenance recorded.
+The GFOpenRTG/GFOpenGPU package patch version should be incremented and the module build provenance recorded.
 
 ## 19. Risks And Mitigations
 
@@ -601,14 +601,14 @@ The OpenRTG/OpenGPU package patch version should be incremented and the module b
 
 This change does not:
 
-- redesign the AmigaChrome browser-to-Amiga raw-key protocol;
+- redesign the AmiCradle browser-to-Amiga raw-key protocol;
 - alter mouse or joystick input;
 - change AstroMenace's profile UI;
 - add an on-screen keyboard;
 - implement full Unicode input beyond the AmigaOS keymap's character output;
 - remap SDL physical keycodes to every national layout;
 - change clipboard support;
-- change the OpenInput ABI.
+- change the GFOpenInput ABI.
 
 A later enhancement may build SDL's keycode map from the active Amiga keymap so key-binding screens display national punctuation more accurately. That is separate from the immediate `SDL_TEXTINPUT` repair.
 
@@ -650,4 +650,4 @@ Backspace       removes the final character
 Return          accepts the completed profile name
 ```
 
-The wider result is more important than AstroMenace alone: OpenGPU SDL2 gains a proper native Amiga text-input path, allowing future OpenUp and OpenBench software to use SDL text entry without application-specific workarounds.
+The wider result is more important than AstroMenace alone: GFOpenGPU SDL2 gains a proper native Amiga text-input path, allowing future GFOpenUp and GFOpenBench software to use SDL text entry without application-specific workarounds.

@@ -1,16 +1,16 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * OpenGPU's golden scenes (golden/opengpu-g1.txt, golden/opengpu-v11.txt),
+ * GFOpenGPU's golden scenes (golden/opengpu-g1.txt, golden/opengpu-v11.txt),
  * built once for the host test (test_opengpu.c, the C core) and for
- * OpenGPUCheck on an Amiga (tools/ogpu_check.c, through opengpu.library and
+ * OpenGPUCheck on an Amiga (tools/ogpu_check.c, through gfopengpu.library and
  * its driver). test_opengpu_vk.c keeps its own copy, which draws parts of
  * the scene from the board's video RAM. The
  * scene's memory is one arena; e->addr is the address the back end knows
  * arena[0] by (0 on the host, the arena itself on an Amiga). */
 #include <string.h>
 #include "golden_scenes.h"
-#include "../include/opengpu/build.h"
+#include "../include/gfopengpu/build.h"
 
 #define T0 0x1000L      /* target */
 #define S0 0x40000L     /* a second surface */

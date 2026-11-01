@@ -1,8 +1,8 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * ModuleCheck: opengpu.library's OGPU_ModuleOpen and OGPU_ModuleClose
- * (include/opengpu/module.h) on an Amiga, with Test.module (shared, built
+ * ModuleCheck: gfopengpu.library's OGPU_ModuleOpen and OGPU_ModuleClose
+ * (include/gfopengpu/module.h) on an Amiga, with Test.module (shared, built
  * -fbaserel32) and TestEach.module (a copy for each program) beside it:
  *   - a module opens, its table works, libnix started inside it (a
  *     constructor, printf, getenv through GetVar);
@@ -11,17 +11,17 @@
  *   - A4: a callback into the program runs with the program's A4 and the
  *     module has its own back afterwards; a thread the module starts works
  *     on the copy that started it;
- *   - a stub's own LoadSeg (an opengpu.library older than 0.5) still runs
+ *   - a stub's own LoadSeg (an gfopengpu.library older than 0.5) still runs
  *     a shared module, as that program's copy;
  *   - refusals (too new, too old an ABI, missing) give IoErr's reason;
- *   - residency (opengpu.library 0.9): a shared module stays loaded after
+ *   - residency (gfopengpu.library 0.9): a shared module stays loaded after
  *     its last close, and the next open runs the same code without loading
  *     it; a low-memory flush (as C:Avail FLUSH makes) leaves a module a
  *     program has open, and unloads one nobody has; a replaced module file
  *     is loaded anew while programs on the old one keep it;
  *   - memory: what the first and second opens take, and twenty opens and
  *     closes keep nothing (with another copy open meanwhile, and not);
- *   - SDL2.module and GL.module, when LIBS:OpenGPU/ has them: the time and
+ *   - SDL2.module and GL.module, when LIBS:GFOpenGPU/ has them: the time and
  *     memory of a first, second and third open, of an open after all have
  *     closed, and of the load after a flush.
  * Prints one line per check and "ModuleCheck: n of m checks passed".
@@ -44,7 +44,7 @@
 #include <proto/exec.h>
 #include <proto/dos.h>
 #include <proto/timer.h>
-#include <proto/opengpu.h>
+#include <proto/gfopengpu.h>
 
 #include "test_module.h"
 
@@ -80,7 +80,7 @@ static void flush(void)
     }
 }
 
-/* opengpu.library 0.9 keeps shared modules loaded after their last close. */
+/* gfopengpu.library 0.9 keeps shared modules loaded after their last close. */
 static int resident;
 
 /* ---- calls into a table, with its A4 ----------------------------------------------- */
@@ -208,7 +208,7 @@ static void installed(const char *name, ULONG version)
     closed = avail();
     if (!code) return;
     if (!resident) {
-        /* An opengpu.library older than 0.9: the last close unloads it. */
+        /* An gfopengpu.library older than 0.9: the last close unloads it. */
         hr = open_one(name, version, &tr, &ms_r, &mem_r);
         printf("      %s: all three closed, %lu KB kept; the next program's open takes %.0f ms and %lu KB (it loads again)\n",
                name, (unsigned long)(idle - closed) / 1024, ms_r, (unsigned long)mem_r / 1024);
@@ -328,12 +328,12 @@ int main(int argc, char **argv)
     if (OpenDevice((CONST_STRPTR)TIMERNAME, UNIT_ECLOCK, &tr.tr_node, 0)) return RETURN_FAIL;
     TimerBase = tr.tr_node.io_Device;
     if (!(OpenGPUBase = OpenLibrary((CONST_STRPTR)OPENGPU_NAME, 0))) {
-        printf("ModuleCheck: no opengpu.library\n");
+        printf("ModuleCheck: no gfopengpu.library\n");
         CloseDevice(&tr.tr_node);
         return RETURN_FAIL;
     }
     if (OpenGPUBase->lib_Version == 0 && OpenGPUBase->lib_Revision < OGPU_MODULE_LIB_REVISION) {
-        printf("ModuleCheck: this opengpu.library has no OGPU_ModuleOpen\n");
+        printf("ModuleCheck: this gfopengpu.library has no OGPU_ModuleOpen\n");
         CloseLibrary(OpenGPUBase);
         CloseDevice(&tr.tr_node);
         return RETURN_FAIL;
@@ -346,7 +346,7 @@ int main(int argc, char **argv)
         CloseDevice(&tr.tr_node);
         return rc;
     }
-    printf("ModuleCheck: opengpu.library %u.%u\n", OpenGPUBase->lib_Version, OpenGPUBase->lib_Revision);
+    printf("ModuleCheck: gfopengpu.library %u.%u\n", OpenGPUBase->lib_Version, OpenGPUBase->lib_Revision);
     resident = OpenGPUBase->lib_Version > 0 || OpenGPUBase->lib_Revision >= 9;
 
     /* one copy, its table (from nothing loaded) */
@@ -360,7 +360,7 @@ int main(int argc, char **argv)
     CHECK(t_add(a, 2, 40) == 42, "its calls work (2 + 40 = %ld)", t_add(a, 2, 40));
     CHECK(t_ctor_ran(a), "its constructor ran");
     CHECK(t_say(a, "hello") > 0, "its printf writes to this program's output");
-    CHECK(t_opengpu(a) == OpenGPUBase, "it was given opengpu.library");
+    CHECK(t_opengpu(a) == OpenGPUBase, "it was given gfopengpu.library");
     SetVar((CONST_STRPTR)"OGPUModuleTest", (CONST_STRPTR)"one", -1, GVF_LOCAL_ONLY);
     v = t_getenv(a, "OGPUModuleTest");
     CHECK(v && !strcmp(v, "one"), "its getenv reads a variable (%s)", v ? v : "none");
@@ -444,7 +444,7 @@ int main(int argc, char **argv)
     close_test(b, hb);
     close_test(a, ha);
 
-    /* a stub's own LoadSeg, on an opengpu.library older than 0.5 */
+    /* a stub's own LoadSeg, on an gfopengpu.library older than 0.5 */
     {
         BPTR seg = LoadSeg((CONST_STRPTR)path);
         struct OGPUModuleArgs args;

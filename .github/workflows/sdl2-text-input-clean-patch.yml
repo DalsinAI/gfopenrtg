@@ -30,10 +30,10 @@ jobs:
           git -C backend checkout -q 1eefa8f35c5ad4b63fa835e251e801a9315dff5c
           patch --batch --forward -s -p1 -d backend \
             < library/modules/sdl2/patches/amigaos3/0001-video.patch
-          git -C backend config user.name 'OpenRTG CI'
+          git -C backend config user.name 'GFOpenRTG CI'
           git -C backend config user.email 'openrtg-ci@invalid'
           git -C backend add -A
-          git -C backend commit -q -m 'Baseline after OpenRTG 0001-video'
+          git -C backend commit -q -m 'Baseline after GFOpenRTG 0001-video'
 
       - name: Reuse the reviewed transformation and generate clean patch
         shell: bash

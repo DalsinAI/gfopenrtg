@@ -7,8 +7,8 @@
  * dlsym. */
 #define _GNU_SOURCE
 #include "acvirgl.h"
-#include "../../include/opengpu/stream.h"
-#include "../../include/opengpu/virgl.h"
+#include "../../include/gfopengpu/stream.h"
+#include "../../include/gfopengpu/virgl.h"
 #include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>

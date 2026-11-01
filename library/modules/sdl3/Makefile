@@ -7,7 +7,7 @@
 # files.
 #
 #   module   SDL3.module: SDL 3 with the Amiga back ends, SDL's dynamic API
-#            on (LIBS:OpenGPU/SDL3.module). Built -fbaserel32 (SHARED=1, the
+#            on (LIBS:GFOpenGPU/SDL3.module). Built -fbaserel32 (SHARED=1, the
 #            default): its code is loaded once for every program, and each
 #            program gets its own copy of SDL's data. SHARED=0: a copy for
 #            each program.
@@ -21,7 +21,7 @@ ROOT    := $(abspath $(HERE)/../../..)
 SDL     ?= $(error set SDL to the prepared SDL 3 tree)
 OUT     ?= $(ROOT)/build
 WORK    ?= $(OUT)/sdl3-work
-STOVE   ?= $(HOME)/AmigaChrome/stoves/os32-gcc16/prefix
+STOVE   ?= $(HOME)/AmiCradle/stoves/os32-gcc16/prefix
 CC      := $(STOVE)/bin/m68k-amigaos-gcc
 AR      := $(STOVE)/bin/m68k-amigaos-ar
 RANLIB  := $(STOVE)/bin/m68k-amigaos-ranlib
@@ -97,7 +97,7 @@ SRCS_CORE = \
 	filesystem/SDL_filesystem.c audio/dummy/SDL_dummyaudio.c
 
 # The Amiga back ends: SDL3_68k's (Zlib) with patches/amigaos3, and the
-# Team's (src/): OpenGPU, and the opengpu renderer (patches/sdl3/0004).
+# Team's (src/): GFOpenGPU, and the opengpu renderer (patches/sdl3/0004).
 SRCS_AMIGA = \
 	video/amigaos3/SDL_os3video.c video/amigaos3/SDL_os3window.c \
 	video/amigaos3/SDL_os3framebuffer.c video/amigaos3/SDL_os3events.c \
@@ -125,12 +125,12 @@ CORE_DIR   = $(WORK)/obj-module
 STUB_DIR   = $(WORK)/obj-stub
 TEST_DIR   = $(OUT)/tests/sdl3
 
-# OpenGPU's batch builders (library/opengpu), in SDL as in SDL2.module.
+# GFOpenGPU's batch builders (library/opengpu), in SDL as in SDL2.module.
 OGPU_OBJS   = ogpu_build.o ogpu_build3d.o
 STATIC_OBJS = $(addprefix $(STATIC_DIR)/,$(SRCS:.c=.o) $(OGPU_OBJS))
 CORE_OBJS   = $(addprefix $(CORE_DIR)/,$(SRCS:.c=.o) $(OGPU_OBJS))
 TEST_OBJS   = $(addprefix $(STATIC_DIR)/,$(SRCS_TEST:.c=.o))
-INLINE      = $(SDK_INC)/inline/opengpu.h
+INLINE      = $(SDK_INC)/inline/gfopengpu.h
 
 .PHONY: all module stub static tests
 all: module stub static tests
@@ -139,7 +139,7 @@ module: $(OUT)/SDL3.module
 stub: $(OUT)/libSDL3.a
 static: $(OUT)/libSDL3_static.a $(OUT)/libSDL3_test.a
 
-$(INLINE): $(OGPU_SRC)/opengpu_lib.sfd
+$(INLINE): $(OGPU_SRC)/gfopengpu_lib.sfd
 	@mkdir -p $(dir $@)
 	$(SFDC) --quiet --mode=macros --output=$@ $<
 

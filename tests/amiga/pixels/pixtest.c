@@ -1,9 +1,9 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * PixTest: what OpenRTG's pixel conversions and blits draw, as checksums,
+ * PixTest: what GFOpenRTG's pixel conversions and blits draw, as checksums,
  * and what they cost, on its own 640 x 480 screens of 8, 16 and 32 bits.
- * Run it with one openrtg.library and then another: the lines starting
+ * Run it with one gfopenrtg.library and then another: the lines starting
  * "sum" must be the same (lib/screens.c's blits and pen lookups changed
  * how, not what); the lines starting "time" are the costs.
  *   - ReadPixelArray8 of the whole screen (pixels of any colour, so on 16
@@ -15,9 +15,9 @@
  *   - a 320 x 256 x 8 planar picture blitted to the screen (copy, two other
  *     minterms, a plane mask), and the screen blitted to planes;
  *   - the masked blits once with ORTG_DRAW_CPU_ONLY and once through
- *     OpenGPU, compared.
+ *     GFOpenGPU, compared.
  *   PixTest [DEPTH=8|16|32]      (all three when not given)
- * Returns 0, or 10 when the OpenGPU and CPU masked blits differ. */
+ * Returns 0, or 10 when the GFOpenGPU and CPU masked blits differ. */
 #include <exec/types.h>
 #include <exec/memory.h>
 #include <devices/timer.h>
@@ -31,7 +31,7 @@
 #include <proto/graphics.h>
 #include <proto/intuition.h>
 #include <proto/timer.h>
-#include <proto/openrtg.h>
+#include <proto/gfopenrtg.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -57,7 +57,7 @@ static ULONG fnv(ULONG h, const UBYTE *p, ULONG n)
 static ULONG rs = 1;
 static ULONG rnd(void) { rs = rs * 1103515245UL + 12345UL; return rs >> 8; }
 
-/* The 640 x 480 OpenRTG ModeID of a depth (32 may be listed as 24). */
+/* The 640 x 480 GFOpenRTG ModeID of a depth (32 may be listed as 24). */
 static ULONG find_mode(int depth)
 {
     ULONG id = INVALID_ID;
@@ -148,7 +148,7 @@ static void stats_say(int kind, const char *what)
 {
     static ULONG a[ORTG_STAT_COUNT * 4];
     ORTG_DrawStats(a, ORTG_STAT_COUNT, 0);
-    printf("info  %-26s pieces %lu OpenGPU, %lu CPU\n", what, (unsigned long)(a[kind * 4] - stat_before[kind * 4]),
+    printf("info  %-26s pieces %lu GFOpenGPU, %lu CPU\n", what, (unsigned long)(a[kind * 4] - stat_before[kind * 4]),
            (unsigned long)(a[kind * 4 + 1] - stat_before[kind * 4 + 1]));
 }
 
@@ -167,7 +167,7 @@ static void test_depth(int depth)
     double t0, t1;
     char tag[8];
     sprintf(tag, "D%d", depth);
-    if (id == INVALID_ID) { printf("info  %s: no 640 x 480 OpenRTG mode of this depth; skipped\n", tag); return; }
+    if (id == INVALID_ID) { printf("info  %s: no 640 x 480 GFOpenRTG mode of this depth; skipped\n", tag); return; }
     s = OpenScreenTags(NULL, SA_DisplayID, id, SA_Width, 640, SA_Height, 480, SA_Depth, depth,
                        SA_Quiet, TRUE, SA_ShowTitle, FALSE, SA_Type, CUSTOMSCREEN, TAG_DONE);
     if (!s) { printf("info  %s: OpenScreen failed; skipped\n", tag); fails++; return; }
@@ -255,7 +255,7 @@ static void test_depth(int depth)
     t0 = now_ms();
     for (i = 0; i < 100; i++)
         BltMaskBitMapRastPort(icon, 0, 0, w->RPort, (i % 10) * 41 + (i / 10), (i / 10) * 29, IW, IH, 0xE0, mask);
-    (void)ReadPixel(w->RPort, 0, 0);               /* what OpenGPU drew is done */
+    (void)ReadPixel(w->RPort, 0, 0);               /* what GFOpenGPU drew is done */
     t1 = now_ms();
     stats_say(ORTG_STAT_BLIT_MASKED, "100 masked icons");
     printf("time  %s 100 masked icon blits      %9.1f ms\n", tag, t1 - t0);
@@ -275,7 +275,7 @@ static void test_depth(int depth)
     printf("sum   %s masked blits, window       %08lx\n", tag, (unsigned long)grab(w->RPort, 0, 0, 420, 300, bpp));
     printf("sum   %s masked blits, screen       %08lx\n", tag, (unsigned long)grab(&s->RastPort, 0, 0, 640, 480, bpp));
 
-    /* the same through OpenGPU and with the CPU only, on the screen (no layers) */
+    /* the same through GFOpenGPU and with the CPU only, on the screen (no layers) */
     {
         ULONG a, b;
         SetAPen(&s->RastPort, 2); RectFill(&s->RastPort, 0, 0, 639, 99);
@@ -286,7 +286,7 @@ static void test_depth(int depth)
         a = grab(&s->RastPort, 0, 0, 320, 100, bpp);
         b = grab(&s->RastPort, 320, 0, 320, 100, bpp);
         printf("sum   %s masked CPU-only half       %08lx\n", tag, (unsigned long)a);
-        printf("check %s masked OpenGPU = CPU-only: %s\n", tag, a == b ? "the same" : "DIFFERENT");
+        printf("check %s masked GFOpenGPU = CPU-only: %s\n", tag, a == b ? "the same" : "DIFFERENT");
         if (a != b) fails++;
     }
 
@@ -337,12 +337,12 @@ int main(int argc, char **argv)
     int only = 0;
     if (argc > 1 && !strncmp(argv[1], "DEPTH=", 6)) only = atoi(argv[1] + 6);
     if (!(OpenRTGBase = OpenLibrary((CONST_STRPTR)OPENRTG_NAME, 0)) || (OpenRTGBase->lib_Version == 0 && OpenRTGBase->lib_Revision < 11)) {
-        printf("PixTest: needs openrtg.library 0.11\n");
+        printf("PixTest: needs gfopenrtg.library 0.11\n");
         return 20;
     }
     if (OpenDevice((CONST_STRPTR)TIMERNAME, UNIT_ECLOCK, (struct IORequest *)&treq, 0)) { printf("PixTest: no timer.device\n"); return 20; }
     TimerBase = treq.tr_node.io_Device;
-    printf("info  openrtg.library %d.%d\n", OpenRTGBase->lib_Version, OpenRTGBase->lib_Revision);
+    printf("info  gfopenrtg.library %d.%d\n", OpenRTGBase->lib_Version, OpenRTGBase->lib_Revision);
     if (!only || only == 8) test_depth(8);
     if (!only || only == 16) test_depth(16);
     if (!only || only == 32) test_depth(32);

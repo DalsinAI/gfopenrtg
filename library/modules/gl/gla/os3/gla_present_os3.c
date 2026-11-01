@@ -6,24 +6,24 @@
  * stack rather than the bare CPU:
  *
  *  - A window, or anything with layers: WritePixelArray (RECTFMT_ARGB) into
- *    the RastPort. That is OpenRTG's cybergraphics call, which clips to the
- *    layers and draws through OpenGPU (one PIXELS command per visible part).
+ *    the RastPort. That is GFOpenRTG's cybergraphics call, which clips to the
+ *    layers and draws through GFOpenGPU (one PIXELS command per visible part).
  *  - A whole screen of its own (an SDL full-screen game): with
- *    opengpu.library open, one SURFACE + PIXELS + FENCE batch straight into
+ *    gfopengpu.library open, one SURFACE + PIXELS + FENCE batch straight into
  *    the screen's bitmap, locked only while the batch is built and sent. On
- *    a plain 68040 that runs on OpenGPU's CPU back end; on AmigaChrome on
+ *    a plain 68040 that runs on GFOpenGPU's CPU back end; on AmiCradle on
  *    the host's GPU. present() does not wait for the batch: it waits for
  *    the one before (the previous frame's), and the GLA core draws the next
  *    frame into its other texture (gla_present_set_async); a single buffer,
  *    a resize and the buffer's end wait for it (settle). With
- *    opengpu.library before 0.20 it is waited for at once, as before.
+ *    gfopengpu.library before 0.20 it is waited for at once, as before.
  *  - A frame virgl drew on the host's graphics chip (gla_virgl.c): with
- *    openrtg.library 0.15, ORTG_PresentVirgl, which hands the host the
+ *    gfopenrtg.library 0.15, ORTG_PresentVirgl, which hands the host the
  *    visible rectangles and lets it write the frame straight in (ACV_PRESENT),
  *    a window's or a screen's alike. Otherwise it is read back and comes
  *    through one of the two above.
  *  - No RTG (AGA only): not in phase 1. GL there needs a chunky-to-planar
- *    step, which comes with the AGA back end (OpenGPU G5).
+ *    step, which comes with the AGA back end (GFOpenGPU G5).
  *
  * Big-endian builds draw GLA_ARGB, which is RECTFMT_ARGB and OGPU_FMT_ARGB32,
  * so no frame is converted on the way. */
@@ -38,11 +38,11 @@
 #include <dos/var.h>
 #include <proto/cybergraphics.h>
 
-#include <opengpu/opengpu.h>
-#include <opengpu/build.h>
-#include <proto/opengpu.h>
+#include <gfopengpu/gfopengpu.h>
+#include <gfopengpu/build.h>
+#include <proto/gfopengpu.h>
 #define OPENRTG_BASE_NAME gla_openrtg_base   /* not OpenRTGBase: a program linking this may have its own */
-#include <proto/openrtg.h>
+#include <proto/gfopenrtg.h>
 
 #include "../gla_core.h"
 #include "gla_present_os3.h"
@@ -90,7 +90,7 @@ static int running(void *user)
     return user && pending_slot(user) >= 0;
 }
 
-/* opengpu.library 0.20 or later: OGPU_Wait(OGPU_FENCE_ALL) lets OpenRTG wait
+/* gfopengpu.library 0.20 or later: OGPU_Wait(OGPU_FENCE_ALL) lets GFOpenRTG wait
  * for our batch too at its hazards (the CPU on the bitmap, freeing it). An
  * older one: the batch is waited for at once, as before. */
 static int may_leave_running(void)
@@ -110,7 +110,7 @@ static int present_gpu(struct gla_os3_target *t, const struct gla_frame *f)
                           LBMI_BYTESPERROW, (ULONG)&bpr, LBMI_PIXFMT, (ULONG)&fmt, TAG_DONE);
     if (!lock)
         return 0;
-    if (fmt == PIXFMT_ARGB32)           /* OpenRTG's 32-bit pixels have alpha 0: XRGB32 (v1.3) gives it */
+    if (fmt == PIXFMT_ARGB32)           /* GFOpenRTG's 32-bit pixels have alpha 0: XRGB32 (v1.3) gives it */
         ofmt = OGPU_ANSWER(OGPU_Query(OGPU_OP_PIXELS, OGPU_FMT_XRGB32)) != OGPU_NONE ? OGPU_FMT_XRGB32 : OGPU_FMT_ARGB32;
     else if (fmt == PIXFMT_RGB16)
         ofmt = OGPU_FMT_RGB565;
@@ -129,8 +129,8 @@ static int present_gpu(struct gla_os3_target *t, const struct gla_frame *f)
     slot = err == OGPU_OK && may_leave_running() ? pending_slot(NULL) : -1;
     if (err == OGPU_OK && slot < 0)
         OGPU_Wait(fence);               /* as before 0.20, or with no slot free */
-    /* Unlocked once the batch is sent: OpenRTG's bitmaps keep their memory,
-     * and OpenRTG waits for running batches itself before the CPU or a new
+    /* Unlocked once the batch is sent: GFOpenRTG's bitmaps keep their memory,
+     * and GFOpenRTG waits for running batches itself before the CPU or a new
      * lock touches a bitmap (ortg_ogpu_settle, OGPU_FENCE_ALL). */
     UnLockBitMap(lock);
     settle(t);                          /* the frame before: its texture is drawn into next */
@@ -151,8 +151,8 @@ static void publish_state(void)
         "", "direct: the host writes GL frames straight in",
         "read back: the runtime's host has no ACV_PRESENT",
         "read back: the program's present hook has no direct present",
-        "read back: openrtg.library refused the frame (CLUT or planar screen, or no OpenGPU virgl)",
-        "read back: no openrtg.library 0.15 or later",
+        "read back: gfopenrtg.library refused the frame (CLUT or planar screen, or no GFOpenGPU virgl)",
+        "read back: no gfopenrtg.library 0.15 or later",
         "read back: no RastPort or bitmap to present to" };
     static int shown = -1;
     int st = gla_counts.direct_state;
@@ -178,7 +178,7 @@ static void present(void *user, const struct gla_frame *f)
     }
 }
 
-/* openrtg.library walks the RastPort's visible pieces and the host writes
+/* gfopenrtg.library walks the RastPort's visible pieces and the host writes
  * the frame into them; -1 when it can't (no 0.15, a CLUT or planar screen,
  * a runtime without ACV_PRESENT), and then the frame is read back. */
 static long present_virgl(void *user, const struct gla_virgl_frame *f)
@@ -188,11 +188,11 @@ static long present_virgl(void *user, const struct gla_virgl_frame *f)
     struct RastPort rp, *r = t->rp;
     long n;
     if (!gla_openrtg_base) {
-        /* openrtg.library is version 0 (0.15 is revision 15), so OpenLibrary
+        /* gfopenrtg.library is version 0 (0.15 is revision 15), so OpenLibrary
          * can't ask for 0.15: open any, then look at the revision */
         if (!openrtg_tried) {
             openrtg_tried = 1;
-            if ((gla_openrtg_base = OpenLibrary((CONST_STRPTR)"openrtg.library", 0)) != NULL
+            if ((gla_openrtg_base = OpenLibrary((CONST_STRPTR)"gfopenrtg.library", 0)) != NULL
                 && gla_openrtg_base->lib_Version == 0 && gla_openrtg_base->lib_Revision < 15) {
                 CloseLibrary(gla_openrtg_base);
                 gla_openrtg_base = NULL;

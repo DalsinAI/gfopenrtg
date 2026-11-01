@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * libSDL2_image.a: SDL2_image for programs, from LIBS:OpenGPU/SDL2_image.module
+ * libSDL2_image.a: SDL2_image for programs, from LIBS:GFOpenGPU/SDL2_image.module
  * (sat_stub.h). Programs link -lSDL2_image -lSDL2 and include SDL_image.h
  * as on any other system. */
 #include "SDL_image.h"

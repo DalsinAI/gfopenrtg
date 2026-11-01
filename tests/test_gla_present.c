@@ -3,7 +3,7 @@
  *
  * The GL module's OS 3.2 present (library/modules/gl/gla/os3/gla_present_os3.c)
  * on the PC, with stub AmigaOS headers (tests/gla_present-include) and a
- * fake OpenGPU. By default the fake carries out a batch only when it is
+ * fake GFOpenGPU. By default the fake carries out a batch only when it is
  * waited for (the worst case), so a batch that reads its frame after the
  * next frame was drawn into it puts a wrong frame on the screen. The GLA
  * core's side is modelled: after each present, buf_after_show (swap the
@@ -31,9 +31,9 @@
 #include <exec/types.h>
 #include <cybergraphx/cybergraphics.h>
 #include <proto/cybergraphics.h>
-#include <opengpu/opengpu.h>
-#include <opengpu/build.h>
-#include <openrtg/openrtg.h>
+#include <gfopengpu/gfopengpu.h>
+#include <gfopengpu/build.h>
+#include <gfopenrtg/gfopenrtg.h>
 #include "gla/gla_core.h"
 #include "gla/os3/gla_present_os3.h"
 
@@ -76,7 +76,7 @@ static int frame_shown(const uint32_t *px)
 static void record_screen(void) { if (ndisplayed < FRAMES * 2) displayed[ndisplayed++] = frame_shown(screen_px); }
 
 /* ---- AmigaOS, faked ---- */
-struct Library *OpenLibrary(CONST_STRPTR name, ULONG version) { (void)version; return strcmp(name, "openrtg.library") ? NULL : &ortg_lib; }
+struct Library *OpenLibrary(CONST_STRPTR name, ULONG version) { (void)version; return strcmp(name, "gfopenrtg.library") ? NULL : &ortg_lib; }
 void CloseLibrary(struct Library *lib) { (void)lib; }
 void InitRastPort(struct RastPort *rp) { memset(rp, 0, sizeof *rp); }
 LONG SetVar(CONST_STRPTR name, CONST_STRPTR buffer, LONG size, ULONG flags) { (void)name; (void)buffer; (void)size; (void)flags; return 1; }
@@ -122,7 +122,7 @@ LONG ORTG_PresentVirgl(struct RastPort *rp, LONG x, LONG y, const struct OpenRTG
     return W * H;
 }
 
-/* ---- OpenGPU, faked: a batch runs when waited for, or on the GPU thread ---- */
+/* ---- GFOpenGPU, faked: a batch runs when waited for, or on the GPU thread ---- */
 struct job { unsigned long src, sbpr, dst, dbpr; int x, y, w, h; unsigned long fence; int done; double due; };
 static struct job built, jobs[MAXJOBS];
 static int njobs;

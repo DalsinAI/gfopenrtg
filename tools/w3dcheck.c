@@ -4,7 +4,7 @@
  * W3DCheck: every one of Warp3D.library's 92 calls, on each driver, into an
  * ARGB32 W3D_Bitmap in memory (no screen needed), with what each should
  * answer; then the same small scene from every driver, which must come out
- * the same. Run on an Amiga with OpenRTG's Warp3D.library:
+ * the same. Run on an Amiga with GFOpenRTG's Warp3D.library:
  *   W3DCheck            prints one line a call that fails, and a summary */
 #include <exec/types.h>
 #include <exec/memory.h>
@@ -239,10 +239,10 @@ int main(void)
     printf("W3DCheck: %s %d.%d\n", Warp3DBase->lib_Node.ln_Name, Warp3DBase->lib_Version, Warp3DBase->lib_Revision);
     drvname = "CPU";
     a = run(W3D_DRIVER_CPU);
-    drvname = "OpenGPU";
+    drvname = "GFOpenGPU";
     b = (W3D_CheckDriver() & W3D_DRIVER_3DHW) ? run(W3D_DRIVER_3DHW) : a;
-    printf("scene: CPU %08lx, OpenGPU %08lx%s\n", (unsigned long)a, (unsigned long)b,
-           (W3D_CheckDriver() & W3D_DRIVER_3DHW) ? "" : " (no OpenGPU 3D driver: the CPU's again)");
+    printf("scene: CPU %08lx, GFOpenGPU %08lx%s\n", (unsigned long)a, (unsigned long)b,
+           (W3D_CheckDriver() & W3D_DRIVER_3DHW) ? "" : " (no GFOpenGPU 3D driver: the CPU's again)");
     checks++;
     if (a != b) { fails++; printf("FAIL: the drivers draw the scene differently\n"); }
     printf("W3DCheck: %d checks, %d failed\n", checks, fails);

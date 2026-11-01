@@ -12,8 +12,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../host/virgl/acvirgl.h"
-#include "../include/opengpu/stream.h"
-#include "../include/opengpu/virgl.h"
+#include "../include/gfopengpu/stream.h"
+#include "../include/gfopengpu/virgl.h"
 #include "virgl_protocol.h"     /* virglrenderer's, from its pinned source */
 
 #define ARENA (1u << 20)

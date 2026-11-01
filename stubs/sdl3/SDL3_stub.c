@@ -1,6 +1,6 @@
 /*
   SDL 3's link library for AmigaOS 3.2 (Open): libSDL3.a, for programs that
-  use SDL 3 from OpenGPU's SDL3.module.
+  use SDL 3 from GFOpenGPU's SDL3.module.
 
   Simple DirectMedia Layer
   Copyright (C) 1997-2026 Sam Lantinga <slouken@libsdl.org>
@@ -25,7 +25,7 @@
   3. This notice may not be removed or altered from any source distribution.
 
   How it works: every SDL_ function here jumps through a table. The first
-  call loads SDL3.module (SDL 3 with the Amiga back ends, LIBS:OpenGPU/) and
+  call loads SDL3.module (SDL 3 with the Amiga back ends, LIBS:GFOpenGPU/) and
   calls its SDL_DYNAPI_entry, which fills the table with the module's own
   functions. The table's layout is SDL_dynapi_procs.h, the same file the
   module is built from, so a program built against these headers runs on
@@ -36,10 +36,10 @@
   gets its own copy of SDL's globals (the layout's residency step 2): the
   module is built -fbaserel32, and every call here sets A4 to the program's
   copy (the table's a4) and puts the program's A4 back afterwards. This
-  file is built with -ffixed-a4 for that (include/opengpu/module.h,
+  file is built with -ffixed-a4 for that (include/gfopengpu/module.h,
   OGPU_A4). It works as SDL2.module's link library
   (stubs/sdl2) does; SDL 3's dynamic API is its version 2.
-  opengpu.library (0.5 and later) loads the module with
+  gfopengpu.library (0.5 and later) loads the module with
   OGPU_ModuleOpen; on an older one the stub LoadSegs the module itself,
   which is then this program's copy.
 */
@@ -50,12 +50,12 @@
 #include <proto/dos.h>
 #include <stdlib.h>
 
-/* opengpu.library's calls through the stub's own base, so a program's
+/* gfopengpu.library's calls through the stub's own base, so a program's
    OpenGPUBase is left alone. */
 #define OPENGPU_BASE_NAME SDL3Stub_OpenGPUBase
 #include <exec/libraries.h>
 #include <dos/dos.h>
-#include <inline/opengpu.h>
+#include <inline/gfopengpu.h>
 static struct Library *SDL3Stub_OpenGPUBase = NULL;
 static APTR SDL3Stub_handle = NULL;
 
@@ -114,17 +114,17 @@ void SDL3Stub_Init(void)
     if (SDL3Stub_ready) {
         return;
     }
-    SDL3Stub_OpenGPUBase = OpenLibrary((CONST_STRPTR) "opengpu.library", 0);
+    SDL3Stub_OpenGPUBase = OpenLibrary((CONST_STRPTR) "gfopengpu.library", 0);
     if (SDL3Stub_OpenGPUBase && (SDL3Stub_OpenGPUBase->lib_Version > 0 ||
                                  SDL3Stub_OpenGPUBase->lib_Revision >= OGPU_MODULE_LIB_REVISION)) {
         SDL3Stub_handle = OGPU_ModuleOpen((CONST_STRPTR)SDL3_MODULE_NAME, SDL3_MODULE_OPEN_VERSION, (APTR *)&SDL3Stub_module);
         if (!SDL3Stub_handle && IoErr() == ERROR_OBJECT_NOT_FOUND) {
-            SDL3Stub_Fail("this program needs " SDL3_MODULE_FILE " (OpenGPU), which isn't installed.");
+            SDL3Stub_Fail("this program needs " SDL3_MODULE_FILE " (GFOpenGPU), which isn't installed.");
         }
     } else {
         SDL3Stub_seg = LoadSeg((CONST_STRPTR)SDL3_MODULE_FILE);
         if (!SDL3Stub_seg) {
-            SDL3Stub_Fail("this program needs " SDL3_MODULE_FILE " (OpenGPU), which isn't installed.");
+            SDL3Stub_Fail("this program needs " SDL3_MODULE_FILE " (GFOpenGPU), which isn't installed.");
         }
         entry = (SDL3ModuleEntry)((UBYTE *)BADDR(SDL3Stub_seg) + 4);
         args.SysBase = SysBase;
@@ -134,14 +134,14 @@ void SDL3Stub_Init(void)
         SDL3Stub_module = (struct SDL3ModuleTable *)entry(&args);
     }
     if (!SDL3Stub_module) {
-        SDL3Stub_Fail(SDL3_MODULE_FILE " is older than this program, or couldn't start. Install a newer OpenGPU.");
+        SDL3Stub_Fail(SDL3_MODULE_FILE " is older than this program, or couldn't start. Install a newer GFOpenGPU.");
     }
     /* The module's calls back into this program (audio, timers, threads)
        run with this program's A4. */
     SDL3Stub_module->head.caller_a4 = ogpu_a4_get();
     SDL3Stub_a4 = SDL3Stub_module->head.a4;
     if (SDL3Stub_DynapiEntry() < 0) {
-        SDL3Stub_Fail(SDL3_MODULE_FILE " is older than this program, or couldn't start. Install a newer OpenGPU.");
+        SDL3Stub_Fail(SDL3_MODULE_FILE " is older than this program, or couldn't start. Install a newer GFOpenGPU.");
     }
     SDL3Stub_ready = 1;
 }

@@ -3,14 +3,14 @@
  *
  * MGLTest: the MiniGL test scene (mgltest_scene.c) through minigl.library,
  * for comparing drivers and libraries. Built against the minigl.library 29
- * table, so it runs on OpenRTG's minigl.library and on the classic one.
+ * table, so it runs on GFOpenRTG's minigl.library and on the classic one.
  *   MGLTest [CPU|GPU|AUTO] [W] [H] [DEPTH] [FRAMES] [SNAP]
  *           (FRAMES n, SECONDS n and SNAP file also work by name)
  * Started plainly (a Shell name, or the Workbench icon) it shows the scene in
  * a Workbench window, until its close gadget, Esc or Ctrl-C ends it, then
  * frees everything and exits. Giving FRAMES or SECONDS (or SNAP) makes it the
  * measuring run, as it always was, full screen, printing the frame rate.
- * CPU or GPU sets ENV:MiniGL/Driver for this run (OpenRTG's library reads
+ * CPU or GPU sets ENV:MiniGL/Driver for this run (GFOpenRTG's library reads
  * it; the classic library draws through Warp3D whatever it says). The first
  * frame (t = 0) is read back and its checksum printed (and written as a PPM
  * picture to SNAP); then FRAMES frames are drawn and timed. MGLTestStatic
@@ -38,7 +38,7 @@
 #define MGLTEST_NO_LIBM
 #include "mgltest_scene.c"
 
-static const char version[] __attribute__((used)) = "$VER: MGLTest 1.0 (8.10.2026) OpenRTG MiniGL, AmigaChrome Team";
+static const char version[] __attribute__((used)) = "$VER: MGLTest 1.0 (8.10.2026) GFOpenRTG MiniGL, AmiCradle Team";
 
 /* sin and cos without the maths library (whose 68040 code traps). */
 static float reduce(float x, int *k)
@@ -105,7 +105,7 @@ int main(int argc, char **argv)
     if (h < 16) h = 240;
     had = GetVar((STRPTR)"MiniGL/Driver", (STRPTR)old, sizeof old, GVF_GLOBAL_ONLY) > 0;
     if (!stricmp(drv, "CPU")) SetVar((STRPTR)"MiniGL/Driver", (STRPTR)"CPU", -1, GVF_GLOBAL_ONLY);
-    else if (!stricmp(drv, "GPU")) SetVar((STRPTR)"MiniGL/Driver", (STRPTR)"OpenGPU", -1, GVF_GLOBAL_ONLY);
+    else if (!stricmp(drv, "GPU")) SetVar((STRPTR)"MiniGL/Driver", (STRPTR)"GFOpenGPU", -1, GVF_GLOBAL_ONLY);
     if (!MiniGLOpen()) { printf("MGLTest: no minigl.library 29\n"); return 10; }
     INFO("MGLTest: %s %ld.%ld, %dx%d, %d bits\n", MiniGLBase->lib_Node.ln_Name, (long)MiniGLBase->lib_Version,
            (long)MiniGLBase->lib_Revision, w, h, depth);

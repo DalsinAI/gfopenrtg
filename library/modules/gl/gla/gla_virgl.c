@@ -1,9 +1,9 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenGPU's GL module, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * The GLA core's virgl winsys: Mesa's virgl driver (Gallium) on OpenGPU.
+ * The GLA core's virgl winsys: Mesa's virgl driver (Gallium) on GFOpenGPU.
  * Every call virgl makes of its winsys becomes ACVirgl commands
- * (include/opengpu/virgl.h) in a request block, which the transport hands
+ * (include/gfopengpu/virgl.h) in a request block, which the transport hands
  * to the host: on the Amiga one OGPU_OP_VIRGL batch on the ACRTG board's
  * ring, which the Cradle's runtime gives to virglrenderer; in the host
  * tests a direct call of acvirgl_run.
@@ -38,7 +38,7 @@
 #include "virgl/virgl_winsys.h"
 #include "virtio-gpu/virgl_hw.h"
 #include "virtio-gpu/virgl_protocol.h"
-#include "opengpu/virgl.h"
+#include "gfopengpu/virgl.h"
 
 /* Words in the Amiga's order (big-endian), as a request block has them. */
 #if UTIL_ARCH_BIG_ENDIAN

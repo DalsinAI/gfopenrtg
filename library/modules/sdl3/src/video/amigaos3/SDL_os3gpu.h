@@ -1,9 +1,9 @@
 /*
-  SDL 3 on AmigaOS 3.x: opengpu.library, shared by the opengpu renderer
+  SDL 3 on AmigaOS 3.x: gfopengpu.library, shared by the opengpu renderer
   (src/render/opengpu) and the window framebuffer.
   Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 
-  SDL_OPENGPU=0 (SetEnv, or SDL_SetHint) keeps SDL off OpenGPU entirely:
+  SDL_OPENGPU=0 (SetEnv, or SDL_SetHint) keeps SDL off GFOpenGPU entirely:
   the software renderer, and windows shown by WritePixelArray.
 */
 #ifndef SDL_os3gpu_h_
@@ -14,33 +14,33 @@
 #ifdef SDL_VIDEO_RENDER_OPENGPU
 
 #include <exec/libraries.h>
-#include <opengpu/opengpu.h>
-#include <opengpu/build.h>
+#include <gfopengpu/gfopengpu.h>
+#include <gfopengpu/build.h>
 
-/* SDL's own base, so a program that opens opengpu.library keeps its own. */
+/* SDL's own base, so a program that opens gfopengpu.library keeps its own. */
 extern struct Library *SDL_OS3_OpenGPUBase;
 #define OPENGPU_BASE_NAME SDL_OS3_OpenGPUBase
-#include <inline/opengpu.h>
+#include <inline/gfopengpu.h>
 
-/* Opens opengpu.library (counted). false when it isn't installed or
+/* Opens gfopengpu.library (counted). false when it isn't installed or
    SDL_OPENGPU is 0. */
 extern bool SDL_OS3_GPU_Open(void);
 extern void SDL_OS3_GPU_Close(void);
 
-/* Stream v1.7 (opengpu.library 0.19): SDL 3's premultiplied blend modes,
+/* Stream v1.7 (gfopengpu.library 0.19): SDL 3's premultiplied blend modes,
    PIXELART, clamping one way, palette textures, the RGBA32 and ABGR32 byte
    orders, P010 and the BT.709 full range and BT.2020 colour spaces. Asked
    once, by the first SDL_OS3_GPU_Open. */
 extern bool SDL_OS3_GPU_HasV17(void);
 
-/* OpenGPU's format for a CyberGraphX pixel format, 0 for none. */
+/* GFOpenGPU's format for a CyberGraphX pixel format, 0 for none. */
 extern int SDL_OS3_GPU_FormatOfPixfmt(unsigned long pixfmt);
-/* OpenGPU's format for an SDL pixel format, 0 for none. The pixels are as
+/* GFOpenGPU's format for an SDL pixel format, 0 for none. The pixels are as
    SDL keeps them in memory, so a packed format maps by this machine's byte
-   order (on the Amiga, SDL_PIXELFORMAT_ARGB8888 is OpenGPU's ARGB32). */
+   order (on the Amiga, SDL_PIXELFORMAT_ARGB8888 is GFOpenGPU's ARGB32). */
 extern int SDL_OS3_GPU_FormatOfSDL(SDL_PixelFormat format);
 
-/* Showing a window's surface with OpenGPU, split so that the copy can go at
+/* Showing a window's surface with GFOpenGPU, split so that the copy can go at
    the end of a batch someone else has built (the opengpu renderer puts it
    after the frame's drawing, so a frame is one submit and one wait).
 
@@ -52,7 +52,7 @@ extern int SDL_OS3_GPU_FormatOfSDL(SDL_PixelFormat format);
    added them: send b, wait for it, then call SDL_OS3_GPU_PresentEnd, which
    lets the bitmap go, draws the covered parts into the layer's backing
    store with the CPU (a smart refresh window's), and lets the layer go.
-   0: OpenGPU can't show this window (nothing is held, b unchanged); the
+   0: GFOpenGPU can't show this window (nothing is held, b unchanged); the
    caller draws it as before. SDL_OS3_GPU_NOROOM: b has no room for it
    (nothing is held, b unchanged); send b and try again with an empty one.
    SDL_OS3_GPU_Abandon lets go what PresentAppend holds when b wasn't sent. */
@@ -80,7 +80,7 @@ extern void SDL_OS3_GPU_PresentEnd(SDL_OS3_GPUPresent *p);
 extern void SDL_OS3_GPU_Abandon(SDL_OS3_GPUPresent *p);
 
 /* The window framebuffer's present (OS3_UpdateWindowFramebuffer): the rects
-   of the window's surface through OpenGPU in a batch of their own, waited
+   of the window's surface through GFOpenGPU in a batch of their own, waited
    for. false: not shown (the caller uses WritePixelArray). */
 extern bool SDL_OS3_GPU_Present(SDL_Window *window, SDL_Surface *surface, const SDL_Rect *rects, int numrects);
 

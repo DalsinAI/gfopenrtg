@@ -19,7 +19,7 @@
 #define ORTG_TEXT_STRIP_H
 
 #include <exec/types.h>
-#include "../include/opengpu/stream.h"
+#include "../include/gfopengpu/stream.h"
 
 /* What the glyphs of one Text call need of its TextFont and RastPort. */
 struct ts_font {

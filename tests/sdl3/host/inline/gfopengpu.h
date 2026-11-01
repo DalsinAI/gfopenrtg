@@ -1,6 +1,6 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
- * opengpu.library's module calls for stubs/sdl3's host test, through the
+ * gfopengpu.library's module calls for stubs/sdl3's host test, through the
  * base the stub names (OPENGPU_BASE_NAME), as sfdc's inline header has them. */
 #ifndef INLINE_OPENGPU_H
 #define INLINE_OPENGPU_H

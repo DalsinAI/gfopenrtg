@@ -162,6 +162,6 @@ int main(void)
     for (i = 0; i < 5000 && ok; ++i) ok = check_mask(i);
     for (i = 0; i < 5000 && ok; ++i) ok = check_solid(i);
 
-    printf("%s OpenGfx composite: 15000 random cases\n", ok ? "ok  " : "FAIL");
+    printf("%s GFOpenGfx composite: 15000 random cases\n", ok ? "ok  " : "FAIL");
     return ok ? 0 : 1;
 }

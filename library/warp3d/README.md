@@ -1,8 +1,8 @@
 # Warp3D.library 5.0 for AmigaOS 3
 
-OpenRTG's Warp3D: the classic Amiga 3D API that 68k games, MiniGL and StormMesa call.
+GFOpenRTG's Warp3D: the classic Amiga 3D API that 68k games, MiniGL and StormMesa call.
 
-It is a thin front end over the one library's 3D path. It keeps Warp3D's state, converts vertices and textures, and turns every call into OGPU stream v1.2 commands (`include/opengpu/stream3d.h`). One rasteriser draws them.
+It is a thin front end over the one library's 3D path. It keeps Warp3D's state, converts vertices and textures, and turns every call into OGPU stream v1.2 commands (`include/gfopengpu/stream3d.h`). One rasteriser draws them.
 
 ![W3DTest's first frame: W3D_CPU, W3D_OpenGPU and, for comparison, Wazp3D 56 with its default settings](w3dtest-cpu-opengpu-wazp3d.png)
 
@@ -16,12 +16,12 @@ It is a thin front end over the one library's 3D path. It keeps Warp3D's state, 
 
 | Driver | `W3D_CC_DRIVERTYPE` | Where it draws |
 | --- | --- | --- |
-| W3D_OpenGPU | `W3D_DRIVER_3DHW` | It sends batches to `opengpu.library`, whose back end draws them. On AmigaChrome that is `ACRTG.gpu`, the Cradle on the PC; on a PiStorm it will be `PiStorm.gpu`. It is offered when `OGPU_Query(OGPU_OP_TRIANGLES)` answers. |
-| W3D_CPU | `W3D_DRIVER_CPU` | The same 3D core (`library/opengpu/ogpu_3d.c`) linked in, on the 68k. It needs no `opengpu.library`, so it works on any Amiga with a 68040 or 68060 and RTG. Warp3D is soft float, so an LC040 or EC040 (no FPU) runs it too. |
+| W3D_OpenGPU | `W3D_DRIVER_3DHW` | It sends batches to `gfopengpu.library`, whose back end draws them. On AmiCradle that is `ACRTG.gpu`, the Cradle on the PC; on a PiStorm it will be `PiStorm.gpu`. It is offered when `OGPU_Query(OGPU_OP_TRIANGLES)` answers. |
+| W3D_CPU | `W3D_DRIVER_CPU` | The same 3D core (`library/opengpu/ogpu_3d.c`) linked in, on the 68k. It needs no `gfopengpu.library`, so it works on any Amiga with a 68040 or 68060 and RTG. Warp3D is soft float, so an LC040 or EC040 (no FPU) runs it too. |
 
-`W3D_DRIVER_BEST` takes OpenGPU when its back end is not the 68k itself, and the CPU driver otherwise, unless the preferences say which.
+`W3D_DRIVER_BEST` takes GFOpenGPU when its back end is not the 68k itself, and the CPU driver otherwise, unless the preferences say which.
 
-Both drivers draw the same pixels, because both run the same core: W3DCheck and W3DTest compare them. W3D_AGA, the blitter as a simple 3D chip, is a later stage (`AGA.gpu`, OpenGPU's G5).
+Both drivers draw the same pixels, because both run the same core: W3DCheck and W3DTest compare them. W3D_AGA, the blitter as a simple 3D chip, is a later stage (`AGA.gpu`, GFOpenGPU's G5).
 
 ## What is in it
 
@@ -61,9 +61,9 @@ Both drivers draw the same pixels, because both run the same core: W3DCheck and 
 
 ## Preferences
 
-`C:Warp3DPrefs` sets ENV:Warp3D/, which OpenPrefs' Acceleration page also writes:
+`C:Warp3DPrefs` sets ENV:Warp3D/, which GFOpenPrefs' Acceleration page also writes:
 
-- `Driver` is Auto, CPU or OpenGPU.
+- `Driver` is Auto, CPU or GFOpenGPU.
 - `ZBuffer` is 16 or 32.
 - `Fog`, `Perspective`, `Filtering` and `Lighting` can each be switched off for speed. These are Wazp3D's options of those names.
 
@@ -77,10 +77,10 @@ No program found so far needs Wazp3D's `soft3d.library`, so there is no stand-in
 
 ## Measured
 
-All runs are on a scratch copy of Instance-11 (OS 3.2.3, AC090 68040, hyper pace, OpenRTG), 8 October 2026.
+All runs are on a scratch copy of Instance-11 (OS 3.2.3, AC090 68040, hyper pace, GFOpenRTG), 8 October 2026.
 
 - W3D_OpenGPU ran on a lab runtime built with the 3D core and a lab `ACRTG.gpu` that answers for it. The ring runs the C core on the PC, not yet the PC's GPU.
-- The OpenGPU core was openamigartg#27's.
+- The GFOpenGPU core was openamigartg#27's.
 
 W3DTest, started plainly (its Workbench icon, or the name in a Shell), runs until Esc, a mouse button or Ctrl-C, then frees everything and exits. For the measurements below, `W3DTest CPU FRAMES 100` or `W3DTest GPU SECONDS 10` draws that many frames, or for that long, and prints the frame rate; `SNAP file` alone keeps the run of 100 frames.
 
@@ -128,7 +128,7 @@ The library, its headers and its tests are MIT, Copyright (c) 2026 AmigaChrome T
 - **MiniGL.** Classic MiniGL games link MiniGL into themselves and call Warp3D.library's table, so they need only this library.
   - MiniGL 1.2 is under Hyperion's MiniGL Open Source License.
   - The 2026 68k minigl.library repository has no licence file, so it is not shipped here.
-  - OpenRTG's own minigl.library comes next.
+  - GFOpenRTG's own minigl.library comes next.
 
 ## Files
 

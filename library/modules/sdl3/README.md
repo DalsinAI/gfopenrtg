@@ -1,7 +1,7 @@
-# SDL 3 in OpenGPU: SDL3.module
+# SDL 3 in GFOpenGPU: SDL3.module
 
 SDL 3 for AmigaOS 3.2, built the same way as SDL2.module
-(`library/modules/sdl2`): one copy of SDL's code in `LIBS:OpenGPU/SDL3.module`
+(`library/modules/sdl2`): one copy of SDL's code in `LIBS:GFOpenGPU/SDL3.module`
 for every program, each program with its own copy of SDL's data, and
 programs that link `-lSDL3` as on any other system. Built hard float
 (`-m68040 -m68881`): it needs a 68040 or 68060 with its FPU.
@@ -20,11 +20,11 @@ third-party is committed; the Team's work is in:
 | `patches/sdl3/0004-opengpu-renderer.patch` | The opengpu renderer (below): build.sh copies SDL's software renderer to `src/render/opengpu`, and this turns the copy into it. It goes in SDL's list before the software one, and takes lines as lines. |
 | `patches/amigaos3/0001-shared-module.patch` | SDL's threads start with the A4 of the program's copy of SDL. |
 | `patches/amigaos3/0002-build.patch` | What the back ends need to build on SDL 3.4.14 as released. |
-| `patches/amigaos3/0003-opengpu-present.patch` | The window framebuffer shown through OpenGPU where it can be, WritePixelArray otherwise. |
+| `patches/amigaos3/0003-opengpu-present.patch` | The window framebuffer shown through GFOpenGPU where it can be, WritePixelArray otherwise. |
 | `patches/amigaos3/0004-timer-signal.patch` | timer.device opened without a reply port, and closed when the program ends: before, each SDL program left a signal behind in its Shell, and after about a dozen runs that Shell could open no windows. |
-| `patches/amigaos3/0005-screensaver.patch` | While SDL holds the screen saver off (`SDL_DisableScreenSaver`, SDL's default while a program runs), OpenBlanker is told every 5 seconds: a CTRL_E to the task of its `OpenBlanker` port, which OpenBlanker 1.2 counts as a key or the mouse. `SDL_VIDEO_ALLOW_SCREENSAVER=1` lets the show come. |
+| `patches/amigaos3/0005-screensaver.patch` | While SDL holds the screen saver off (`SDL_DisableScreenSaver`, SDL's default while a program runs), GFOpenBlanker is told every 5 seconds: a CTRL_E to the task of its `GFOpenBlanker` port, which GFOpenBlanker 1.2 counts as a key or the mouse. `SDL_VIDEO_ALLOW_SCREENSAVER=1` lets the show come. |
 | `patches/amigaos3/0006-system-cursor-ownership.patch` | System cursor creation returns an unregistered backend cursor. Calling SDL's public cursor factory from the backend registered the same cursor twice, made its `next` point to itself, and hung SDL_SetCursor when selecting an older cursor (observed in OpenLoco). |
-| `src/video/amigaos3/SDL_os3gpu.c`, `.h` | opengpu.library for SDL: opening it, the pixel formats, and a window's present (one copy into the screen's bitmap through the window's visible parts). |
+| `src/video/amigaos3/SDL_os3gpu.c`, `.h` | gfopengpu.library for SDL: opening it, the pixel formats, and a window's present (one copy into the screen's bitmap through the window's visible parts). |
 | `src/SDL_os3callout.h` | The callouts (as SDL2.module's). |
 | `include/SDL_build_config_amigaos3.h` | SDL's configuration for the Amiga. |
 | `module/sdl3_module.c` | The module's table (`stubs/sdl3/sdl3_module.h`). |
@@ -44,7 +44,7 @@ stove:
 
 | File | What it is |
 | --- | --- |
-| `SDL3.module` | SDL 3 and its back ends. Goes in `LIBS:OpenGPU/`. |
+| `SDL3.module` | SDL 3 and its back ends. Goes in `LIBS:GFOpenGPU/`. |
 | `libSDL3.a` | The link library programs use. |
 | `include/SDL3/` | SDL's headers, for programs. |
 | `libSDL3_static.a`, `libSDL3_test.a` | All of SDL inside the program, with no module; SDL's test framework. |
@@ -57,11 +57,11 @@ Build a program the usual way:
 ## The opengpu renderer
 
 SDL_CreateRenderer gives a program the `opengpu` renderer when
-opengpu.library opens and OpenGPU draws on the window's surface; otherwise
+gfopengpu.library opens and GFOpenGPU draws on the window's surface; otherwise
 SDL's software renderer. It is SDL's software renderer with its drawing sent
-to OpenGPU, in one batch for each of SDL's command queues:
+to GFOpenGPU, in one batch for each of SDL's command queues:
 
-| SDL | OpenGPU |
+| SDL | GFOpenGPU |
 | --- | --- |
 | clears, opaque fills | FILL |
 | fills, points and lines in any blend mode | FILL_BLEND, POINTS_BLEND, LINES_BLEND (SDL's own rule for line ends) |
@@ -72,26 +72,26 @@ to OpenGPU, in one batch for each of SDL's command queues:
 | YUV, NV12, NV21 and P010 textures | YUV into the texture's own ARGB32 surface, or YUV_SCALED straight into the target |
 | SDL_RenderPresent | the copy to the screen, at the end of the frame's last batch: one submit a frame |
 
-Stream v1.7 (opengpu.library 0.19) brings SDL 3's own: the premultiplied
+Stream v1.7 (gfopengpu.library 0.19) brings SDL 3's own: the premultiplied
 blend modes, `SDL_SCALEMODE_PIXELART`, clamping one way, palette textures,
 the RGBA32 and ABGR32 byte orders, P010, and BT.709's full range and
 BT.2020. With an older library those draw on the CPU, and their texture
-formats aren't offered, so SDL converts them. Anything OpenGPU doesn't
+formats aren't offered, so SDL converts them. Anything GFOpenGPU doesn't
 answer for on the target's format is drawn by SDL's software code into the
-same surface, after OpenGPU has finished what it was given.
+same surface, after GFOpenGPU has finished what it was given.
 
 - `SDL_RENDER_DRIVER=software`: SDL's software renderer.
-- `SDL_OPENGPU=0`: SDL off OpenGPU altogether (windows by WritePixelArray).
+- `SDL_OPENGPU=0`: SDL off GFOpenGPU altogether (windows by WritePixelArray).
 - `SDL_OPENGPU_STATS=1`: how many commands each path drew, logged at the end.
 
 `tests/sdl3/rendercompare` draws 16 scenes with both renderers and compares
 them. `tests/sdl3/rendercompare_host.sh` runs it on a Linux PC (SDL built
-for the PC, OpenGPU's own core as the library, with the sanitizers), once as
+for the PC, GFOpenGPU's own core as the library, with the sanitizers), once as
 0.19 and once as 0.18, where no command may carry v1.7.
 
 ## Still to come
 
-The rest of SDL2.module's OpenGPU work, as patches on these back ends:
+The rest of SDL2.module's GFOpenGPU work, as patches on these back ends:
 video RAM surfaces, the screen's own pixel format, AGA chunky to planar,
-Paula audio, OpenInput joysticks, the clipboard and OpenGL through OpenGPU's
+Paula audio, GFOpenInput joysticks, the clipboard and OpenGL through GFOpenGPU's
 GL module.

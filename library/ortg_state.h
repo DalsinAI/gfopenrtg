@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * openrtg.library's state (0.18): everything the library writes.
+ * gfopenrtg.library's state (0.18): everything the library writes.
  *
  * The library keeps no data or BSS in its file, so the same file runs from
  * a ROM (`library/build.sh module`) as from LIBS:. What it writes, the

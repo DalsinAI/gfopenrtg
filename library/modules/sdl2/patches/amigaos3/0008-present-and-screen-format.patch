@@ -43,15 +43,15 @@
  #include "SDL_os3vram.h"
 @@ -146,9 +169,12 @@ static void sdl2_prof_dump(void)
  
- /* Open (2026): a window is shown by OpenGPU, which copies the frame into
+ /* Open (2026): a window is shown by GFOpenGPU, which copies the frame into
     video RAM (on the Cradle, the PC does it), through each visible part of
--   the window's layer. A window with a covered part, a screen OpenGPU has no
--   format for, or no opengpu.library: WritePixelArray, as before. */
+-   the window's layer. A window with a covered part, a screen GFOpenGPU has no
+-   format for, or no gfopengpu.library: WritePixelArray, as before. */
 -#define OS3_GPU_KEY "OS3_GPU"
 +   the window's layer. The parts behind other windows go into the layer's
 +   backing store with the CPU (SDL's windows are smart refresh), so a
-+   partly covered window stays on OpenGPU. A screen OpenGPU has no format
-+   for, or no opengpu.library: WritePixelArray, as before. */
++   partly covered window stays on GFOpenGPU. A screen GFOpenGPU has no format
++   for, or no gfopengpu.library: WritePixelArray, as before. */
 +#define OS3_GPU_KEY  "OS3_GPU"
 +#define OS3_VRAM_KEY "OS3_VRAM"
  #define OS3_GPU_WORDS 2048
@@ -98,7 +98,7 @@
 +    return n;
 +}
 +
-+/* The window's OpenGPU state, made on its first frame. */
++/* The window's GFOpenGPU state, made on its first frame. */
 +static OS3_GPUPresent *OS3_GPU_State(SDL_Window *window)
  {
      OS3_GPUPresent *gp = (OS3_GPUPresent *)SDL_GetWindowData(window, OS3_GPU_KEY);
@@ -534,7 +534,7 @@
      scale_rp = (struct RastPort *)SDL_SetWindowData(window, OS3_SCALERP_KEY, NULL);
      if (scale_rp) {
 @@ -715,14 +988,18 @@ void OS3_DestroyWindowFramebuffer(_THIS, SDL_Window *window)
-  * and shows it from there. Any other window, or one whose bitmap OpenRTG
+  * and shows it from there. Any other window, or one whose bitmap GFOpenRTG
   * can only give in Fast RAM, keeps the framebuffer above, as before. These
   * go round the back end's own functions (SDL_OS3_VRAM_HookFramebuffer). */
 -#define OS3_VRAM_KEY "OS3_VRAM"

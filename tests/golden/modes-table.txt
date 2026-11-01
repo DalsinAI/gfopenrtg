@@ -1,3 +1,4 @@
-a586f2dc 5003
+9fe59aa1 5003
 # The mode table with no size asked for (tests/modes_golden.c): FNV-1a of its text and its line count, as
-# openrtg.library 0.16.0's modes.c (openamigartg f47794c) wrote it. 0.17's Native modes must leave it as it is.
+# gfopenrtg.library 0.16.0's modes.c (openamigartg f47794c) wrote it, with the modes named GFOpenRTG.n (the rename,
+# 1 November 2026: the table is the same but for the names). 0.17's Native modes must leave it as it is.

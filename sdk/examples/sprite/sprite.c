@@ -1,9 +1,9 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenGPU developer kit, MIT licence.
  * SPDX-License-Identifier: MIT
  *
- * Sprite: SDL 2's renderer on OpenGPU. Bouncing balls drawn from one
- * texture with alpha; OpenGPU composites them (SDL's opengpu renderer), or
- * the CPU does when OpenGPU can't. The title shows the frame rate. Esc or
+ * Sprite: SDL 2's renderer on GFOpenGPU. Bouncing balls drawn from one
+ * texture with alpha; GFOpenGPU composites them (SDL's opengpu renderer), or
+ * the CPU does when GFOpenGPU can't. The title shows the frame rate. Esc or
  * the close gadget quits.
  *   Sprite [COUNT n] [SECONDS n]
  * Build:

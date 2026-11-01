@@ -4,8 +4,8 @@
  * TGLSpin: a TinyGL program, written as one is on other systems with
  * TinyGL: it opens tinygl.library, gets its context from GLInit(), starts
  * GL in an Intuition window with glAInitializeContextWindowed, and shows
- * each frame with glASwapBuffers. On OpenGPU it runs on the GL module
- * (Mesa: the GPU through virgl on AmigaChrome, else softpipe on the 68k;
+ * each frame with glASwapBuffers. On GFOpenGPU it runs on the GL module
+ * (Mesa: the GPU through virgl on AmiCradle, else softpipe on the 68k;
  * SetEnv TinyGL/Driver CPU picks softpipe). A lit, spinning cube; Esc or
  * the close gadget quits.
  *   TGLSpin [SECONDS n]

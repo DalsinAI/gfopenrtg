@@ -9,7 +9,7 @@
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
-STOVE=${STOVE:-$HOME/AmigaChrome/stoves/os32-gcc16}
+STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32-gcc16}
 CC=${CC:-$STOVE/prefix/bin/m68k-amigaos-gcc}
 OUT=$1
 shift

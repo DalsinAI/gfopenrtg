@@ -3,11 +3,11 @@
  *
  * GfxBench: what graphics.library's and CyberGraphX's drawing calls cost
  * in a window on the Workbench screen, call by call, and (with
- * openrtg.library 0.11 on) whether OpenRTG drew each through OpenGPU or on
- * the CPU. For comparing OpenRTG and OpenGPU builds on the same machine.
+ * gfopenrtg.library 0.11 on) whether GFOpenRTG drew each through GFOpenGPU or on
+ * the CPU. For comparing GFOpenRTG and GFOpenGPU builds on the same machine.
  *   GfxBench [N=count] [DELAY=seconds before starting] [WALL=directory]
  * The Amiga's clock may not see time its host spends inside a board's
- * register write (OpenGPU's ring runs there), so WALL= also makes a file in
+ * register write (GFOpenGPU's ring runs there), so WALL= also makes a file in
  * the directory before and after each test ("03a", "03b"): a host reading
  * their times gets the wall clock's answer. */
 #include <exec/types.h>
@@ -24,7 +24,7 @@
 #include <proto/intuition.h>
 #include <proto/timer.h>
 #include <proto/cybergraphics.h>
-#include <proto/openrtg.h>
+#include <proto/gfopenrtg.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -77,7 +77,7 @@ static void report(const char *what, double ms)
         ULONG g = 0, c = 0, k;
         ORTG_DrawStats(after, ORTG_STAT_COUNT, 0);
         for (k = 0; k < ORTG_STAT_COUNT; k++) { g += after[k * 4] - before[k * 4]; c += after[k * 4 + 1] - before[k * 4 + 1]; }
-        printf("   pieces: %5lu OpenGPU, %5lu CPU", (unsigned long)g, (unsigned long)c);
+        printf("   pieces: %5lu GFOpenGPU, %5lu CPU", (unsigned long)g, (unsigned long)c);
     }
     printf("\n");
 }
@@ -129,8 +129,8 @@ int main(int argc, char **argv)
     if (planar) { SetAPen(&prp, 3); RectFill(&prp, 10, 10, 100, 50); }
 
     printf("GfxBench: %d calls each, on %s, %s\n", n,
-           OpenRTGBase ? "openrtg.library" : "no OpenRTG", CyberGfxBase ? "with cybergraphics.library" : "no CyberGraphX");
-    if (OpenRTGBase) printf("openrtg.library %d.%d\n", OpenRTGBase->lib_Version, OpenRTGBase->lib_Revision);
+           OpenRTGBase ? "gfopenrtg.library" : "no GFOpenRTG", CyberGfxBase ? "with cybergraphics.library" : "no CyberGraphX");
+    if (OpenRTGBase) printf("gfopenrtg.library %d.%d\n", OpenRTGBase->lib_Version, OpenRTGBase->lib_Revision);
 
     SetAPen(rp, 2); SetBPen(rp, 1); SetDrMd(rp, JAM1);
     BENCH("RectFill 300x200", RectFill(rp, x0, y0, x0 + 299, y0 + 199));
@@ -160,7 +160,7 @@ int main(int argc, char **argv)
         BENCH("InvertPixelArray 300x200", InvertPixelArray(rp, x0, y0, 300, 200));
         BENCH("WritePixelArrayAlpha 128x128", wpaa(argba, 0, 0, 512, rp, x0 + 150, y0 + 150, 128, 128, 0xFFFFFFFFUL));
     }
-    /* small calls, where a patch's own cost shows (OpenGfx 1.4 patches
+    /* small calls, where a patch's own cost shows (GFOpenGfx 1.4 patches
      * every drawing call: 8 October 2026) */
     SetDrMd(rp, JAM1);
     BENCH("RectFill 8x8, x100", for (int k = 0; k < 100; k++) RectFill(rp, x0 + (k & 31) * 9, y0 + 220, x0 + (k & 31) * 9 + 7, y0 + 227));

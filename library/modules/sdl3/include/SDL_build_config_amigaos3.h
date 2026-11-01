@@ -21,9 +21,9 @@
 
 /* SDL 3's configuration for AmigaOS 3.x on the 68k (Open): SDL3.module and
    libSDL3_static.a, built with the GCC 16 stove and libnix. Written by the
-   AmigaChrome Team, 2026, from SDL3_68k's (Zlib) configuration, whose back
+   AmiCradle Team, 2026, from SDL3_68k's (Zlib) configuration, whose back
    ends it uses (library/modules/sdl3/UPSTREAM.json). OpenGL waits for
-   OpenGPU's GL module (SDL_OS3_SetGLBridge, as in SDL2.module). */
+   GFOpenGPU's GL module (SDL_OS3_SetGLBridge, as in SDL2.module). */
 #ifndef SDL_build_config_amigaos3_h_
 #define SDL_build_config_amigaos3_h_
 #define SDL_build_config_h_

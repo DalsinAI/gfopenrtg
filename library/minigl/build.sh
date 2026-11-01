@@ -2,7 +2,7 @@
 # Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
 # minigl.library (bare: no startup code or C library; the RomTag's stub
-# comes first), with the OpenGPU core and 3D core linked in for drawing on
+# comes first), with the GFOpenGPU core and 3D core linked in for drawing on
 # the 68k, its link libraries and its test program, with the os32 stove
 # (bebbo's m68k-amigaos-gcc).
 #   library/minigl/build.sh [OUT_DIR]     (default build/)
@@ -23,7 +23,7 @@ if [ "${1:-}" = api ]; then
     python3 "$HERE/gen_api.py"
     exit 0
 fi
-STOVE=${STOVE:-$HOME/AmigaChrome/stoves/os32}
+STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32}
 CC=${CC:-$STOVE/prefix/bin/m68k-amigaos-gcc}
 AR=${AR:-$STOVE/prefix/bin/m68k-amigaos-ar}
 OBJDUMP=${OBJDUMP:-$STOVE/prefix/bin/m68k-amigaos-objdump}
@@ -69,7 +69,7 @@ for a in "$GCCDIR/libm020/libm881/libgcc.a" "$GCCDIR/libm020/libgcc.a" "$NIXDIR/
     [ -f "$a" ] || { echo "no $a" >&2; exit 1; }
 done
 OGPU="$ROOT/library/opengpu"
-# The cores as opengpu.library builds them (-m68040, no FPU code): one copy,
+# The cores as gfopengpu.library builds them (-m68040, no FPU code): one copy,
 # which both halves call (no float crosses).
 for f in ogpu_core ogpu_3d ogpu_build ogpu_build3d; do
     "$CC" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -ffixed-a4 -fno-builtin $WARN -I"$ROOT/include" \

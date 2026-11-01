@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * openservice.device for SDL's satellites (sat_service.h). */
+ * gfopenservice.device for SDL's satellites (sat_service.h). */
 #include <exec/memory.h>
 #include <exec/semaphores.h>
 #include <exec/execbase.h>

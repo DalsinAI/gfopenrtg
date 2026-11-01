@@ -4,7 +4,7 @@
 #
 # tests/sdl3/rendercompare.c on a Linux PC: SDL 3.4.14 built for the PC (its
 # dummy video driver), with SDL3.module's opengpu renderer patched in as
-# build.sh patches it, and OpenGPU's own core as opengpu.library
+# build.sh patches it, and GFOpenGPU's own core as gfopengpu.library
 # (tests/sdl3/render_host/host.c). The renderer, the core and the test are
 # built with AddressSanitizer and UBSan. It checks the renderer's logic on
 # a fast machine; the Amiga's build and its screen are checked by
@@ -37,7 +37,7 @@ cp "$MOD/src/video/amigaos3/SDL_os3gpu.h" "$MOD/src/video/amigaos3/SDL_os3gpu.c"
 
 # 2. SDL for the PC: a static library, video only. SDL's CMake builds every
 #    renderer in src/render, the opengpu one with it, so the harness's
-#    headers (render_host/include) and OpenGPU's are on its path. All of SDL
+#    headers (render_host/include) and GFOpenGPU's are on its path. All of SDL
 #    is built with the sanitizers; UBSan carries on and reports.
 SAN="-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined"
 INC="-I$HERE/render_host/include -I$HERE/../host-include -I$ROOT/include"
@@ -80,7 +80,7 @@ command cc -std=gnu11 $SAN -Wall -Werror -I"$TREE/include" -c "$HERE/rendercompa
 command cc $SAN -o "$OUT/rendercompare" "$OBJ/rendercompare.o" "$OBJ/os3gpu.o" "$OBJ/host.o" \
     "$OBJ/ogpu_core.o" "$OBJ/ogpu_3d.o" "$OBJ/ogpu_build.o" "$OBJ/ogpu_build3d.o" "$LIB" -lm -lpthread
 
-# 4. Run it: with a library of stream v1.7, then as opengpu.library 0.18
+# 4. Run it: with a library of stream v1.7, then as gfopengpu.library 0.18
 #    (v1.6), where what v1.7 brought must take the CPU's path or SDL's
 #    conversion, and no command may carry v1.7
 fail=0
@@ -91,7 +91,7 @@ for lib in 0.19 0.18; do
         OPENGPU_HOST_LIBRARY=$lib "$OUT/rendercompare" >"$log" 2>&1
     rc=$?
     set -e
-    echo "== as opengpu.library $lib"
+    echo "== as gfopengpu.library $lib"
     cat "$log"
     if [ $rc -ne 0 ] || ! grep -q ", 0 with an error, 0 addresses outside" "$log" || grep -q "runtime error" "$log"; then
         fail=1

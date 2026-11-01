@@ -1,6 +1,6 @@
 Short:        Counts the calls programs make to libs
 Uploader:     (We fill this in at upload time)
-Author:       AmigaChrome Team
+Author:       AmiCradle Team
 Type:         dev/debug
 Version:      1.0
 Architecture: m68k-amigaos >= 2.0.4
@@ -22,7 +22,7 @@ libcount_report.py (Python 3, on x86 or ARM64 cores) names the offsets from
 the NDK's FD files and sorts them into a table.
 
 It was written to find which graphics, intuition and layers calls Workbench
-and programs really make on an RTG screen, for OpenRTG.
+and programs really make on an RTG screen, for GFOpenRTG.
 
 Free software under the MIT licence, Copyright (c) 2026 AmigaChrome Team. Use
 it, change it, fork it and ship it; keep the copyright notice and the licence

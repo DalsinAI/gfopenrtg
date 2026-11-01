@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * OpenGPU's core (DESIGN.md section 5): one rasterizer for every back end.
+ * GFOpenGPU's core (DESIGN.md section 5): one rasterizer for every back end.
  * The 68k runs it as the CPU back end, the Cradle's runtime runs it behind
  * ACRTG.gpu, and a PiStorm's spare ARM core runs it behind PiStorm.gpu;
  * tests/test_opengpu.c checks it against simple per-pixel references and
@@ -730,7 +730,7 @@ OP_FN op_pixels(struct ogpu_core *c, const ogpu_u8 *a) {
             continue;
         }
         if (t->format == OGPU_FMT_XRGB32 && (format == OGPU_FMT_ARGB32 || format == OGPU_FMT_XRGB32)) {
-            /* The colour as it is, X 0: a 32-bit OpenRTG screen's ARGB pixels. */
+            /* The colour as it is, X 0: a 32-bit GFOpenRTG screen's ARGB pixels. */
             for (i = 0; i < w; i++, sp += 4, dp += 4) { dp[0] = 0; dp[1] = sp[1]; dp[2] = sp[2]; dp[3] = sp[3]; }
             continue;
         }
@@ -1202,6 +1202,21 @@ OP_FN op_points_blend(struct ogpu_core *c, const ogpu_u8 *a) {
  * products, as long long (libgcc's on the 68k, outside the pixel loop). */
 typedef long long ogpu_s64;
 
+/* num * 2^32 / det: an entry of an inverse matrix (num 16.16, det 32.32,
+ * the entry 16.16). GCC for the 68k (6.5 in the os32 stove, 13 in Linux's
+ * cross compiler, at -O1 and above) passes such a dividend, whose low word
+ * it knows is 0, to __divdi3 from the wrong stack slot, and the entry comes
+ * out as garbage or 0: gradients and patterns then stood still along an axis
+ * (tests/amiga/vector, run on an Amiga). The empty asm makes the dividend a
+ * value it must keep, which it passes right. num is at most 2^30 either way. */
+static ogpu_s64 inv_div(long num, ogpu_s64 det) {
+    ogpu_s64 v = (ogpu_s64)num * 4294967296LL;
+#if defined(__GNUC__)
+    __asm__ ("" : "+g"(v));
+#endif
+    return v / det;
+}
+
 OP_FN op_composite_affine(struct ogpu_core *c, const ogpu_u8 *a) {
     ogpu_u32 slot = rd32(a), sxy = rd32(a + 4), swh = rd32(a + 8), colour = rd32(a + 36), flags = rd32(a + 40);
     long m00 = (long)rd32(a + 12), m01 = (long)rd32(a + 16), m02 = (long)rd32(a + 20);
@@ -1233,8 +1248,8 @@ OP_FN op_composite_affine(struct ogpu_core *c, const ogpu_u8 *a) {
     det = (ogpu_s64)m00 * m11 - (ogpu_s64)m01 * m10;   /* 32.32 */
     if (det == 0) return OGPU_OK;                   /* flat: nothing to draw */
     /* The inverse, 16.16: target offsets to source offsets. */
-    i00 = (ogpu_s64)m11 * 4294967296LL / det; i01 = -((ogpu_s64)m01 * 4294967296LL) / det;
-    i10 = -((ogpu_s64)m10 * 4294967296LL) / det; i11 = (ogpu_s64)m00 * 4294967296LL / det;
+    i00 = inv_div(m11, det); i01 = -inv_div(m01, det);
+    i10 = -inv_div(m10, det); i11 = inv_div(m00, det);
     if (i00 >= 0x40000000LL || i00 <= -0x40000000LL || i01 >= 0x40000000LL || i01 <= -0x40000000LL
         || i10 >= 0x40000000LL || i10 <= -0x40000000LL || i11 >= 0x40000000LL || i11 <= -0x40000000LL)
         return OGPU_ERR_UNSUPPORTED;                /* shrunk below 1/16384 */
@@ -1817,7 +1832,7 @@ OP_FN op_composite_pd(struct ogpu_core *c, const ogpu_u8 *a) {
 
 /* ---- v1.6: anti-aliased paths ------------------------------------------------------ */
 
-/* OpenFont's rasteriser (openamigafont src/of_raster.c, of_raster_a8),
+/* GFOpenFont's rasteriser (openamigafont src/of_raster.c, of_raster_a8),
  * moved here: exact area coverage in integers. Each line adds, to every
  * cell it crosses, how far it climbs there (cover) and that climb times
  * twice its mean place across the cell (area); one sweep along each row
@@ -1846,6 +1861,8 @@ struct rast {
     long nlist, cap;        /* edges walked, and room for cap of them (past it, only counted) */
     int w, h, eo, tw;       /* eo: the even-odd rule */
     int collect;            /* 1: edge() adds to the list instead of drawing */
+    int mono;               /* v1.8 OGPU_PATH_ALIASED: a winding step a pixel row, where the
+                               edge crosses the row's centre line, in its sub-row 0's cover */
     long ox, oy;            /* the band's corner on the target, 24.8 */
 };
 
@@ -1960,12 +1977,38 @@ static void rows(struct rast *r, long x0, long y0, long x1, long y1) {
     }
 }
 
+/* v1.8, OGPU_PATH_ALIASED: a line in the band (any x: left of it counts at its first pixel) as
+ * the winding it adds at each pixel centre right of it, row by row: for each
+ * row whose centre line y + 1/2 the line crosses (y0 <= centre < y1, its
+ * ends sorted), a step of 1 in sub-row 0's cover of the first pixel whose
+ * centre is right of the crossing (x + 1/2 > crossing), so a pixel is in
+ * the path when its centre is (cairo's CAIRO_ANTIALIAS_NONE). */
+static void rows_mono(struct rast *r, long x0, long y0, long x1, long y1) {
+    long ylim = (long)r->h << 8, t, dx, d, k, k1, yc, x, i;
+    int sign = 1;
+    if (y0 > y1) { t = x0; x0 = x1; x1 = t; t = y0; y0 = y1; y1 = t; sign = -1; }
+    if (y1 <= 0 || y0 >= ylim) return;
+    dx = x1 - x0; d = y1 - y0;
+    k = (long)floor_div((ogpu_s64)y0 - 128 + 255, 256);          /* the first centre at or below y0 */
+    if (k < 0) k = 0;
+    k1 = (long)floor_div((ogpu_s64)y1 - 128 + 255, 256);         /* the first centre at or below y1 */
+    if (k1 > r->h) k1 = r->h;
+    for (; k < k1; k++) {
+        yc = (k << 8) + 128;
+        x = x0 + (long)floor_div((ogpu_s64)dx * (yc - y0), d);
+        i = (long)floor_div((ogpu_s64)x - 128 + 255, 256);          /* centre (i + 1/2) >= x */
+        if (i < 0) i = 0;
+        if (i < r->w) cell(r, i, (int)(k << 2), sign, 0, 0);
+    }
+}
+
 /* A line on the target (24.8). What lies left of the band climbs in its
  * first column (as a line down its left edge); what lies right of it
  * covers nothing there. */
 static void edge_rel(struct rast *r, long x0, long y0, long x1, long y1) {
     long xl = (long)r->w << 8, yc;
     if (y0 == y1) return;
+    if (r->mono) { rows_mono(r, x0, y0, x1, y1); return; }  /* whole: a cut line's rounded end would move its crossings */
     if ((x0 < 0 && x1 > 0) || (x0 > 0 && x1 < 0)) {
         yc = y0 + (long)((ogpu_s64)(y1 - y0) * -x0 / (x1 - x0));
         edge_rel(r, x0, y0, 0, yc); edge_rel(r, 0, yc, x1, y1);
@@ -2362,10 +2405,10 @@ static int set_inv(struct paint *p, const ogpu_u8 *mw) {
     for (k = 0; k < 6; k++) m[k] = clampl(sgn32(rd32(mw + 4 * k)), 0x3FFFFFFF);
     det = (ogpu_s64)m[0] * m[4] - (ogpu_s64)m[1] * m[3];
     if (!det) return 0;
-    p->inv[0] = clampl((ogpu_s64)m[4] * 4294967296LL / det, 0x3FFFFFFF);
-    p->inv[1] = clampl(-((ogpu_s64)m[1] * 4294967296LL) / det, 0x3FFFFFFF);
-    p->inv[3] = clampl(-((ogpu_s64)m[3] * 4294967296LL) / det, 0x3FFFFFFF);
-    p->inv[4] = clampl((ogpu_s64)m[0] * 4294967296LL / det, 0x3FFFFFFF);
+    p->inv[0] = clampl(inv_div(m[4], det), 0x3FFFFFFF);
+    p->inv[1] = clampl(inv_div(-m[1], det), 0x3FFFFFFF);
+    p->inv[3] = clampl(inv_div(-m[3], det), 0x3FFFFFFF);
+    p->inv[4] = clampl(inv_div(m[0], det), 0x3FFFFFFF);
     p->inv[2] = -((p->inv[0] * m[2] + p->inv[1] * m[5]) >> 16);       /* within 2^45 */
     p->inv[5] = -((p->inv[3] * m[2] + p->inv[4] * m[5]) >> 16);
     return 1;
@@ -2845,6 +2888,12 @@ BIG_FN void put_run(struct prun *r, int n, unsigned al) {
     }
 }
 
+/* v1.8, OGPU_PATH_ALIASED: a pixel in (255) or out (0), by the winding at
+ * its centre (rows_mono's steps summed left of it). */
+PX_FN unsigned mono_cov(long winding, int evenodd) {
+    return (evenodd ? (winding & 1) != 0 : winding != 0) ? 255 : 0;
+}
+
 /* A pixel's coverage, 0-255, from its sub-rows' sums of cover left of it
  * and their areas in it (ar; 0 when its cells are clear). */
 PX_FN unsigned path_cov(const long *acc, const int *ar, int evenodd) {
@@ -2968,6 +3017,7 @@ OP_FN op_path(struct ogpu_core *c, const ogpu_u8 *a, int stroke) {
     if (!(work = c->map(c->user, waddr, len))) return OGPU_ERR_NOMAP;
     if (!aligned4(work)) return OGPU_ERR_UNSUPPORTED;
     rs.w = w; rs.eo = evenodd; rs.tw = tw; rs.seen = 0; rs.list = 0; rs.nlist = 0; rs.collect = 0;
+    rs.mono = (fl & OGPU_PATH_ALIASED) != 0;
     pc.r = &rs;
     if (len >= rowb + 16) {                         /* walked once, into the list */
         rs.list = (int *)(void *)work; rs.cap = (long)((len - rowb) >> 4); rs.collect = 1;
@@ -3018,11 +3068,11 @@ OP_FN op_path(struct ogpu_core *c, const ogpu_u8 *a, int stroke) {
             for (i = 0; i < w; i += n) {
                 if (sn && !(sn[i >> 5] & bit_of[i & 31])) {
                     n = unseen(sn, i, w);
-                    al = path_cov(acc, 0, evenodd);
+                    al = rs.mono ? mono_cov(acc[0], evenodd) : path_cov(acc, 0, evenodd);
                 } else {
                     const int *cv = cl + ((long)i << 3);
                     for (q = 0; q < OGPU_SUBROWS; q++) acc[q] += cv[q];
-                    al = path_cov(acc, cv + 4, evenodd);
+                    al = rs.mono ? mono_cov(acc[0], evenodd) : path_cov(acc, cv + 4, evenodd);
                     n = 1;
                     if (colour) {                   /* a colour's edge pixel, without put_run's call */
                         if (al || !bounded) {
@@ -3228,8 +3278,20 @@ long ogpu_core_run(struct ogpu_core *c, const ogpu_u8 *stream, long words) {
     return done;
 }
 
+/* v1.8 (0.24): the flags this core carries out in each command's first word,
+ * for OGPU_QUERY_FLAG (bits 8-15: PATH_FILL's and PATH_STROKE's). */
+static int core_flag(unsigned op, int bit) {
+    if (op == OGPU_OP_PATH_FILL || op == OGPU_OP_PATH_STROKE)
+        return bit >= 8 && bit <= OGPU_PATH_ALIASED_BIT;    /* EVENODD .. ALIASED */
+    return 0;
+}
+
 int ogpu_core_supports(int op, int format) {
     int colour = is_colour(format);
+    if (OGPU_QUERY_IS_FLAG((unsigned long)op)) {
+        unsigned fop = OGPU_QUERY_FLAG_OP((unsigned long)op);
+        return core_flag(fop, OGPU_QUERY_FLAG_BIT((unsigned long)op)) ? ogpu_core_supports((int)fop, format) : OGPU_NONE;
+    }
 #ifdef OGPU_WITH_3D
     if (op >= 0x0030 && op <= 0x003F) return ogpu3d_supports(op, format);
 #endif

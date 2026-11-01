@@ -1,18 +1,18 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * C:OpenRTG 0.2: what openrtg.library found, from a Shell.
- *   OpenRTG                       the RTG monitors and their boards
- *   OpenRTG MODES [MONITOR n]     each monitor's listed modes
- *   OpenRTG ALL|STANDARD [MONITOR n]   switch the list (until the prefs app
+ * C:GFOpenRTG 0.2: what gfopenrtg.library found, from a Shell.
+ *   GFOpenRTG                       the RTG monitors and their boards
+ *   GFOpenRTG MODES [MONITOR n]     each monitor's listed modes
+ *   GFOpenRTG ALL|STANDARD [MONITOR n]   switch the list (until the prefs app
  *                                 keeps the choice)
- *   OpenRTG ACTIVATE [FORCE] | OFF  OpenRTG's modes in the display database
+ *   GFOpenRTG ACTIVATE [FORCE] | OFF  GFOpenRTG's modes in the display database
  *                                 (FORCE: even beside Picasso96, for tests)
- *   OpenRTG LISTDB                  every mode the display database lists
- *   OpenRTG STATS [RESET]           how its drawing went: through OpenGPU or on
- *                                 the CPU, by kind (openrtg.library 0.11 on)
- *   OpenRTG NATIVE [MONITOR n]      the size the host's window asks for, and the
- *                                 Native modes (openrtg.library 0.17 on)
+ *   GFOpenRTG LISTDB                  every mode the display database lists
+ *   GFOpenRTG STATS [RESET]           how its drawing went: through GFOpenGPU or on
+ *                                 the CPU, by kind (gfopenrtg.library 0.11 on)
+ *   GFOpenRTG NATIVE [MONITOR n]      the size the host's window asks for, and the
+ *                                 Native modes (gfopenrtg.library 0.17 on)
  */
 #include <exec/types.h>
 #include <dos/dos.h>
@@ -21,9 +21,9 @@
 #include <proto/graphics.h>
 #include <graphics/displayinfo.h>
 #include <graphics/modeid.h>
-#include <proto/openrtg.h>
+#include <proto/gfopenrtg.h>
 
-static const char version[] __attribute__((used)) = "$VER: OpenRTG 0.4 (12.10.2026) AmigaChrome Team";
+static const char version[] __attribute__((used)) = "$VER: GFOpenRTG 0.4 (12.10.2026) AmiCradle Team";
 struct Library *OpenRTGBase;
 
 int main(void)
@@ -32,19 +32,19 @@ int main(void)
     struct RDArgs *rd = ReadArgs("MODES/S,ALL/S,STANDARD/S,MONITOR/K/N,ACTIVATE/S,OFF/S,FORCE/S,LISTDB/S,SCREENS/S,STATS/S,RESET/S,NATIVE/S", args, NULL);
     int rc = RETURN_OK;
     (void)version;
-    if (!rd) { PrintFault(IoErr(), "OpenRTG"); return RETURN_FAIL; }
+    if (!rd) { PrintFault(IoErr(), "GFOpenRTG"); return RETURN_FAIL; }
     OpenRTGBase = OpenLibrary(OPENRTG_NAME, OPENRTG_VERSION);
     if (!OpenRTGBase) {
-        Printf("OpenRTG: openrtg.library isn't in LIBS: (copy it there, or run the OpenRTG Installer).\n");
+        Printf("GFOpenRTG: gfopenrtg.library isn't in LIBS: (copy it there, or run the GFOpenRTG Installer).\n");
         FreeArgs(rd);
         return RETURN_FAIL;
     }
     ULONG count = ORTG_MonitorCount();
     ULONG only = args[3] ? *(ULONG *)args[3] : 0;
-    Printf("openrtg.library %ld.%ld: %ld RTG monitor%s\n", (LONG)OpenRTGBase->lib_Version, (LONG)OpenRTGBase->lib_Revision,
+    Printf("gfopenrtg.library %ld.%ld: %ld RTG monitor%s\n", (LONG)OpenRTGBase->lib_Version, (LONG)OpenRTGBase->lib_Revision,
            (LONG)count, count == 1 ? "" : "s");
     if (count == 0)
-        Printf("No ACRTG board was found. In AmigaChrome, fit one in Cradle (Hardware, Display).\n");
+        Printf("No ACRTG board was found. In AmiCradle, fit one in Cradle (Hardware, Display).\n");
     for (ULONG n = 1; n <= 4; n++) {
         APTR board = ORTG_BoardAddress(n);
         if (!board || (only && n != only)) continue;
@@ -60,7 +60,7 @@ int main(void)
             struct OpenRTGNativeSize ns;
             struct OpenRTGMode nm;
             if (OpenRTGBase->lib_Version == 0 && OpenRTGBase->lib_Revision < 17)
-                Printf("  Native: this openrtg.library has no Native modes (0.17 on).\n");
+                Printf("  Native: this gfopenrtg.library has no Native modes (0.17 on).\n");
             else if (!ORTG_NativeSize(n, &ns))
                 Printf("  Native: this board can't be asked for a size (ACRTG v5 on).\n");
             else {
@@ -83,7 +83,7 @@ int main(void)
         }
         if (!args[0]) continue;
         struct OpenRTGMode m;
-        m.native = 0;                       /* an openrtg.library before 0.17 leaves it */
+        m.native = 0;                       /* an gfopenrtg.library before 0.17 leaves it */
         id = 0;
         while ((id = ORTG_NextMode(n, id)) != 0)
             if (ORTG_GetMode(id, &m))
@@ -96,32 +96,32 @@ int main(void)
         p96 = FindName(&SysBase->LibList, (STRPTR)"rtg.library") != NULL;
         Permit();
         if (args[4] && p96 && !args[6]) {
-            Printf("OpenRTG: Picasso96 is running. OpenRTG and Picasso96 don't run together; turn Picasso96's monitors off first.\n");
+            Printf("GFOpenRTG: Picasso96 is running. GFOpenRTG and Picasso96 don't run together; turn Picasso96's monitors off first.\n");
             rc = RETURN_WARN;
         } else if (!ORTG_DisplayDatabase(args[4] ? 1 : 0)) {
-            Printf("OpenRTG: the display database could not be changed (no monitors?).\n");
+            Printf("GFOpenRTG: the display database could not be changed (no monitors?).\n");
             rc = RETURN_WARN;
-        } else Printf("OpenRTG: the display database %s OpenRTG's modes.\n", args[4] ? (LONG)"now lists" : (LONG)"no longer lists");
+        } else Printf("GFOpenRTG: the display database %s GFOpenRTG's modes.\n", args[4] ? (LONG)"now lists" : (LONG)"no longer lists");
     }
     if (args[8]) {
-        /* OpenRTG's own screens: its modes in the display database, and
-         * screens on them drawn by OpenRTG, with no Picasso96 */
+        /* GFOpenRTG's own screens: its modes in the display database, and
+         * screens on them drawn by GFOpenRTG, with no Picasso96 */
         int p96;
         Forbid();
         p96 = FindName(&SysBase->LibList, (STRPTR)"rtg.library") != NULL;
         Permit();
         if (p96 && !args[6]) {
-            Printf("OpenRTG: Picasso96 is running. OpenRTG's screens need Picasso96's monitors off.\n");
+            Printf("GFOpenRTG: Picasso96 is running. GFOpenRTG's screens need Picasso96's monitors off.\n");
             rc = RETURN_WARN;
         } else if (!ORTG_DisplayDatabase(1) || !ORTG_Screens(1)) {
-            Printf("OpenRTG: screens could not be switched on (no monitors?).\n");
+            Printf("GFOpenRTG: screens could not be switched on (no monitors?).\n");
             rc = RETURN_WARN;
         } else {
-            /* the compatibility libraries: opened from LIBS:OpenRTG/ once, they
+            /* the compatibility libraries: opened from LIBS:GFOpenRTG/ once, they
              * are in the library list under their own names, and stay (never
-             * closed) while OpenRTG is the RTG system */
-            struct Library *cgx = OpenLibrary((STRPTR)"LIBS:OpenRTG/cybergraphics.library", 41);
-            Printf("OpenRTG: screens on OpenRTG's modes are now OpenRTG's own%s.\n",
+             * closed) while GFOpenRTG is the RTG system */
+            struct Library *cgx = OpenLibrary((STRPTR)"LIBS:GFOpenRTG/cybergraphics.library", 41);
+            Printf("GFOpenRTG: screens on GFOpenRTG's modes are now GFOpenRTG's own%s.\n",
                    cgx ? (LONG)", with cybergraphics.library" : (LONG)"");
         }
     }
@@ -150,11 +150,11 @@ int main(void)
         static ULONG c[ORTG_STAT_COUNT * 4];
         ULONG tg = 0, tc = 0, k;
         if (OpenRTGBase->lib_Version == 0 && OpenRTGBase->lib_Revision < 11) {
-            Printf("OpenRTG: this openrtg.library has no drawing statistics (0.11 on).\n");
+            Printf("GFOpenRTG: this gfopenrtg.library has no drawing statistics (0.11 on).\n");
             rc = RETURN_WARN;
         } else {
             ORTG_DrawStats(c, ORTG_STAT_COUNT, args[10] ? 1 : 0);
-            Printf("%-14s %10s %10s %12s %12s %5s\n", (LONG)"drawing", (LONG)"OpenGPU", (LONG)"CPU", (LONG)"OpenGPU px", (LONG)"CPU px", (LONG)"GPU%");
+            Printf("%-14s %10s %10s %12s %12s %5s\n", (LONG)"drawing", (LONG)"GFOpenGPU", (LONG)"CPU", (LONG)"GFOpenGPU px", (LONG)"CPU px", (LONG)"GPU%");
             for (k = 0; k < ORTG_STAT_COUNT; k++) {
                 ULONG *v = c + k * 4, all = v[2] + v[3];
                 if (!v[0] && !v[1]) continue;
@@ -167,7 +167,7 @@ int main(void)
             if (args[10]) Printf("(the counts are now back at 0)\n");
         }
     }
-    if (only && !ORTG_BoardAddress(only)) { Printf("OpenRTG: there is no monitor %ld.\n", (LONG)only); rc = RETURN_WARN; }
+    if (only && !ORTG_BoardAddress(only)) { Printf("GFOpenRTG: there is no monitor %ld.\n", (LONG)only); rc = RETURN_WARN; }
     CloseLibrary(OpenRTGBase);
     FreeArgs(rd);
     return rc;

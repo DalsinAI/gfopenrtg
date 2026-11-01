@@ -49,7 +49,7 @@
 #define AL_HOOK_A4() 0ul
 #endif
 
-#define AL_VMODE 0x00AC0001ul           /* AmigaChrome: Host mix 16 bit stereo++ */
+#define AL_VMODE 0x00AC0001ul           /* AmiCradle: Host mix 16 bit stereo++ */
 #define AL_VTICK 50                     /* PlayerFunc, a second */
 #define AL_VRATE 44100                  /* the board mixes at */
 #define AL_VPRIORITY 5

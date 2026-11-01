@@ -4,9 +4,9 @@
  * Warp3D.library's insides: the library base, a context's private state and
  * a texture's. The library is a thin front end: it keeps Warp3D's state,
  * converts vertices and textures, and turns every call into OGPU stream
- * v1.2 commands (include/opengpu/stream3d.h). A batch goes to
- * opengpu.library (the "W3D_OpenGPU" driver: the host's GPU on AmigaChrome)
- * or, with no opengpu.library that draws 3D, to the same 3D core linked in
+ * v1.2 commands (include/gfopengpu/stream3d.h). A batch goes to
+ * gfopengpu.library (the "W3D_OpenGPU" driver: the host's GPU on AmiCradle)
+ * or, with no gfopengpu.library that draws 3D, to the same 3D core linked in
  * here ("W3D_CPU"). Both draw the same pixels. */
 #ifndef W3D_INTERNAL_H
 #define W3D_INTERNAL_H
@@ -21,7 +21,7 @@
 
 #include "../opengpu/ogpu_core.h"
 #include "../opengpu/ogpu_3d.h"
-#include "../../include/opengpu/build3d.h"
+#include "../../include/gfopengpu/build3d.h"
 
 #define REG(r, decl) register decl __asm(#r)   /* bebbo gcc: an argument in a register */
 #define LIBCALL                                 /* library entry points */
@@ -30,7 +30,7 @@
 #define W3D_LIB_REVISION  0
 
 /* Drivers (W3D_GetDrivers order). */
-#define ROUTE_GPU 0                             /* opengpu.library: the ring to the host when there is one */
+#define ROUTE_GPU 0                             /* gfopengpu.library: the ring to the host when there is one */
 #define ROUTE_CPU 1                             /* the 3D core on this 68k */
 
 struct W3DBase {
@@ -39,10 +39,10 @@ struct W3DBase {
     struct SignalSemaphore lock;
     W3D_Driver drv[2];
     W3D_Driver *drivers[3];                     /* W3D_GetDrivers: 0-terminated */
-    int gpu_3d;                                 /* opengpu.library opened and draws 3D */
+    int gpu_3d;                                 /* gfopengpu.library opened and draws 3D */
     int gpu_host;                               /* ... on a back end that is not this 68k */
     int prefer_cpu;                             /* ENV:Warp3D/Driver says CPU */
-    int prefer_gpu;                             /* ... OpenGPU, even on its CPU back end */
+    int prefer_gpu;                             /* ... GFOpenGPU, even on its CPU back end */
     int z32;                                    /* ENV:Warp3D/ZBuffer says 32 */
     /* Speed against looks, as Wazp3D offered them (ENV:Warp3D/Fog, Perspective,
      * Filtering, Lighting: "0" turns one off; all on by default). */

@@ -1,6 +1,6 @@
 SDL3_68k's timer (Zlib): timer.device opened without a reply port, and
 closed when the program ends, so an SDL program no longer leaves a signal
-behind in the Shell that ran it. AmigaChrome Team, 2026.
+behind in the Shell that ran it. AmiCradle Team, 2026.
 
 --- a/src/timer/amigaos3/SDL_systimer.c
 +++ b/src/timer/amigaos3/SDL_systimer.c
@@ -10,7 +10,7 @@ behind in the Shell that ran it. AmigaChrome Team, 2026.
  
 -static struct MsgPort *timer_port = NULL;
 -static struct timerequest *timer_io = NULL;
-+/* AmigaOS 3.x (AmigaChrome Team, 2026): the request only opens timer.device
++/* AmigaOS 3.x (AmiCradle Team, 2026): the request only opens timer.device
 +   for TimerBase (ReadEClock and GetSysTime send no I/O), so it has no reply
 +   port, and so no signal: the port it had was never deleted, and each SDL
 +   program left a signal behind in the Shell that ran it, until that Shell

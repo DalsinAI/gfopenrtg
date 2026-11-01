@@ -1,20 +1,20 @@
 /*
   SDL 2 on AmigaOS 3.x: SDL's window surface and the opengpu renderer's
-  textures in an OpenRTG board's video RAM (SDL_os3vram.h).
+  textures in an GFOpenRTG board's video RAM (SDL_os3vram.h).
   Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 
   A bitmap is asked for as Picasso96 programs ask for one on the card:
   AllocBitMap(w, h, depth, BMF_DISPLAYABLE | BMF_MINPLANES, the screen's
-  bitmap). OpenRTG may still put it in Fast RAM (past the share of video RAM
+  bitmap). GFOpenRTG may still put it in Fast RAM (past the share of video RAM
   displayable friends may take, or with the board full), so it is kept only
-  when OpenRTG says it is in the screen's board's video RAM; otherwise it is
+  when GFOpenRTG says it is in the screen's board's video RAM; otherwise it is
   freed at once and SDL makes its surface in Fast RAM, as before. The pixels
   and the pitch are LockBitMapTags', never worked out here.
 
-  OpenRTG never moves a bitmap once it is made (its LockBitMap has nothing
+  GFOpenRTG never moves a bitmap once it is made (its LockBitMap has nothing
   to hold), so the address stays good until the bitmap is freed.
 
-  openrtg.library is opened for each bitmap and closed after: only its word
+  gfopenrtg.library is opened for each bitmap and closed after: only its word
   on where a bitmap is (ORTG_BitMapInfo's monitor) is needed, once.
 */
 #include "../../SDL_internal.h"
@@ -33,21 +33,21 @@
 #include <proto/graphics.h>
 #include <proto/cybergraphics.h>
 
-/* openrtg.library's calls go through the local `ortg` of the function that
+/* gfopenrtg.library's calls go through the local `ortg` of the function that
    makes them: SDL keeps no base of its own, and a program's OpenRTGBase is
    its own. */
-#include <openrtg/openrtg.h>
+#include <gfopenrtg/gfopenrtg.h>
 #define OPENRTG_BASE_NAME ortg
-#include <inline/openrtg.h>
+#include <inline/gfopenrtg.h>
 
 #include "SDL_os3gpu.h"
 #include "SDL_os3vram.h"
 
-#define OS3_VRAM_ORTG_REVISION 19  /* openrtg.library 0.19: displayable friends in video RAM */
+#define OS3_VRAM_ORTG_REVISION 19  /* gfopenrtg.library 0.19: displayable friends in video RAM */
 #define OS3_VRAM_ORTG_ARGB32   2   /* OpenRTGBitMapInfo's format: 32-bit ARGB */
 
 /* At most this many bitmaps a program in video RAM (its window surfaces and
-   textures). OpenRTG keeps every board's video RAM in 128 blocks, and the
+   textures). GFOpenRTG keeps every board's video RAM in 128 blocks, and the
    share it gives displayable friends counts bytes, not blocks: a program
    with hundreds of small textures must not leave no block for a screen. */
 #define OS3_VRAM_MOST 32
@@ -62,8 +62,8 @@ static SDL_atomic_t vram_bitmaps;           /* held now */
 static OS3_VRAMSurface *vram_surfaces;      /* the textures' (SDL_OS3_VRAM_CreateSurface) */
 static SDL_SpinLock vram_lock;
 
-/* Only for OpenGPU, which is what draws in video RAM: with SDL_OPENGPU=0,
-   SDL_OPENGPU_VRAM=0 or no opengpu.library, Fast RAM as before. */
+/* Only for GFOpenGPU, which is what draws in video RAM: with SDL_OPENGPU=0,
+   SDL_OPENGPU_VRAM=0 or no gfopengpu.library, Fast RAM as before. */
 static SDL_bool OS3_VRAM_Wanted(void)
 {
     if (!SDL_GetHintBoolean("SDL_OPENGPU_VRAM", SDL_TRUE) || !SDL_OS3_GPU_Open()) {
@@ -92,7 +92,7 @@ struct BitMap *SDL_OS3_VRAM_AllocBitMap(struct Window *win, int w, int h, void *
     }
     ortg = OpenLibrary((CONST_STRPTR)OPENRTG_NAME, 0);
     if (!ortg) {
-        return NULL; /* not OpenRTG */
+        return NULL; /* not GFOpenRTG */
     }
     sbm = win->WScreen->RastPort.BitMap;
     /* The screen's own bitmap: in a board's video RAM, 32-bit ARGB */
@@ -110,7 +110,7 @@ struct BitMap *SDL_OS3_VRAM_AllocBitMap(struct Window *win, int w, int h, void *
             UnLockBitMap(lock);
         }
         /* Kept only in the screen's board's video RAM: ORTG_BitMapInfo's
-           monitor is 0 for a bitmap OpenRTG put in Fast RAM. */
+           monitor is 0 for a bitmap GFOpenRTG put in Fast RAM. */
         if (lock && base && pixfmt == PIXFMT_ARGB32 && bpr >= (ULONG)w * 4 &&
             ORTG_BitMapInfo(bm, &bi) && bi.monitor == si.monitor && (ULONG)bi.memory == base) {
             kept = SDL_TRUE;

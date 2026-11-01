@@ -2,8 +2,8 @@
 # Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
 """baserel_check.py PREFIX MODULE.debug MODULE.map [--allow FILE]: a shared module (built
--fbaserel32 -resident32, include/opengpu/module.h) must reach its data only
-through A4. opengpu.library loads its code once and gives each program a copy
+-fbaserel32 -resident32, include/gfopengpu/module.h) must reach its data only
+through A4. gfopengpu.library loads its code once and gives each program a copy
 of the data; the data LoadSeg loaded is never anyone's. Two things would
 reach it instead, and this lists both and exits 1 when there is either:
 

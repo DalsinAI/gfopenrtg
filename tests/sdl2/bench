@@ -2,13 +2,13 @@
 ; Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 ;
 ; Copy build/tests/sdl2/ to a directory with SDL's icon.bmp and sample.bmp
-; (SDL2-2.32.10/test), SDL2.module to LIBS:OpenGPU/, then run
+; (SDL2-2.32.10/test), SDL2.module to LIBS:GFOpenGPU/, then run
 ;   Execute bench
 ; Each line's output lands in results/. SDL's testsprite2 and
 ; testrendercopyex run 20 s each (SDLTEST_SECONDS) on SDL2.module (.m):
-;   -cpu   no OpenGPU at all (SDL_OPENGPU=0): the software renderer, and the
+;   -cpu   no GFOpenGPU at all (SDL_OPENGPU=0): the software renderer, and the
 ;          window shown with WritePixelArray
-;   -ogpu  the opengpu renderer, and the window shown by OpenGPU
+;   -ogpu  the opengpu renderer, and the window shown by GFOpenGPU
 ; then the static builds once, rendercompare, sdlcheck and satcheck.
 Stack 200000
 MakeDir results >NIL:

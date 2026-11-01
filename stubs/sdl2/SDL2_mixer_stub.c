@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * libSDL2_mixer.a: SDL2_mixer for programs, from LIBS:OpenGPU/SDL2_mixer.module
+ * libSDL2_mixer.a: SDL2_mixer for programs, from LIBS:GFOpenGPU/SDL2_mixer.module
  * (sat_stub.h). Programs link -lSDL2_mixer -lSDL2 and include SDL_mixer.h
  * as on any other system. */
 #include "SDL_mixer.h"

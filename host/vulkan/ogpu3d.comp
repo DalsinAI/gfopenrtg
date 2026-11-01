@@ -1,7 +1,7 @@
 // Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 // SPDX-License-Identifier: MIT
 //
-// OpenGPU's 3D range on the host's GPU: a compute rasteriser that colours
+// GFOpenGPU's 3D range on the host's GPU: a compute rasteriser that colours
 // the pixels of the triangles ogpu_3d.c has set up, exactly as ogpu_3d.c
 // colours them (ogpu3d_px.h, shared with the host test that runs it on the
 // CPU). The layout of what it reads is in ogpu3d_layout.h; ogpu3d_rec.c

@@ -1,6 +1,6 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
- * OpenRTG's own screens and its chunky bitmaps (screens.c). */
+ * GFOpenRTG's own screens and its chunky bitmaps (screens.c). */
 #ifndef OPENRTG_SCREENS_H
 #define OPENRTG_SCREENS_H
 
@@ -15,7 +15,7 @@
 
 struct Screen;
 
-/* A chunky bitmap: the BitMap graphics sees, then OpenRTG's own fields. */
+/* A chunky bitmap: the BitMap graphics sees, then GFOpenRTG's own fields. */
 struct ortg_bitmap {
     struct BitMap bm;
     ULONG magic;
@@ -25,7 +25,7 @@ struct ortg_bitmap {
     UBYTE monitor;              /* 1-4: in that board's video RAM; 0: fast RAM */
     ULONG vram_off;             /* its offset in the board's video RAM */
     ULONG vram_block;           /* where its block starts (the head, then the pixels) */
-    struct Screen *screen;      /* the screen OpenRTG made it for, if any */
+    struct Screen *screen;      /* the screen GFOpenRTG made it for, if any */
     UBYTE format;               /* ORTG_CLUT8 (a pen a byte), ORTG_RGB16 (R5G6B5), ORTG_ARGB32 */
     UBYTE bpp;                  /* bytes a pixel: 1, 2 or 4 */
     UBYTE pal_index;            /* which pen table its pens use (16 and 32-bit) */
@@ -39,7 +39,7 @@ struct ortg_bitmap {
 /* 0.18: the tables are the first thing in screens.c's part of the library's state (ortg_state.h) */
 #define ortg_pen_rgb ((ULONG (*)[256])ortg_S->scr)
 
-/* 1 when any monitor shows an OpenRTG screen. */
+/* 1 when any monitor shows an GFOpenRTG screen. */
 int ortg_any_shown(void);
 
 static inline ULONG ortg_encode(const struct ortg_bitmap *o, ULONG rgb)
@@ -81,23 +81,23 @@ int ortg_is(struct BitMap *bm);
 struct ortg_bitmap *ortg_alloc(int monitor, ULONG w, ULONG h, int clear, int format);
 struct ortg_bitmap *ortg_alloc_card(int monitor, ULONG w, ULONG h, int clear, int format, int card);
 int ortg_in_card(const struct ortg_bitmap *o);
-/* 0.23: ORTG_WrittenSpans (openrtg.h): what the CPU wrote into bm by address since the last call, from the board's watch. */
+/* 0.23: ORTG_WrittenSpans (gfopenrtg.h): what the CPU wrote into bm by address since the last call, from the board's watch. */
 struct OpenRTGSpan;
 ULONG ortg_written_spans(struct BitMap *bm, struct OpenRTGSpan *s, ULONG max);
 void ortg_free(struct ortg_bitmap *o);
 
-/* For pixels.c: the OpenRTG bitmap a BitMap is (or NULL); every visible
+/* For pixels.c: the GFOpenRTG bitmap a BitMap is (or NULL); every visible
  * piece of a RastPort's box, in bitmap coordinates (dx, dy: the bitmap
- * position of the RastPort's 0,0), 0 when the RastPort isn't on an OpenRTG
+ * position of the RastPort's 0,0), 0 when the RastPort isn't on an GFOpenRTG
  * bitmap; the colours a RastPort's pens stand for; a count that moves on
- * whenever an OpenRTG screen's palette changes. */
+ * whenever an GFOpenRTG screen's palette changes. */
 typedef void (*ortg_piece_fn)(void *ctx, struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1, LONG dx, LONG dy);
 struct ortg_bitmap *ortg_find(struct BitMap *bm);
 int ortg_pieces(struct RastPort *rp, LONG x0, LONG y0, LONG x1, LONG y1, ortg_piece_fn fn, void *ctx);
 struct ColorMap *ortg_colormap(struct RastPort *rp);
 #define ortg_palette_gen (ortg_S->palette_gen)   /* 0.18: in the library's state (ortg_state.h) */
 
-/* For pixels.c: OpenGPU drawing a piece exactly as the CPU code would (1),
+/* For pixels.c: GFOpenGPU drawing a piece exactly as the CPU code would (1),
  * or nothing (0); and the draw statistics (ORTG_DrawStats). */
 int ortg_ogpu_fill(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1, ULONG value);
 int ortg_ogpu_invert(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1, ULONG mask);
@@ -111,14 +111,14 @@ int ortg_ogpu_scale(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1, 
                     LONG sw, LONG sh, int format, LONG dx, LONG dy, LONG dw, LONG dh);
 void ortg_stat(int kind, int gpu, ULONG pixels);
 ULONG ortg_draw_stats(ULONG *counts, ULONG kinds, ULONG flags);
-/* 0.21: the batches OpenGPU still has running are done (screens.c, the
- * compositor's step 4): before the CPU draws on or reads an OpenRTG
+/* 0.21: the batches GFOpenGPU still has running are done (screens.c, the
+ * compositor's step 4): before the CPU draws on or reads an GFOpenRTG
  * bitmap, or hands its address out. */
 void ortg_ogpu_settle(void);
 struct OpenRTGVirglFrame;
 LONG ortg_present_virgl(struct RastPort *rp, LONG x, LONG y, const struct OpenRTGVirglFrame *f);
 
-/* OpenRTG's screens on: the patches go in (once). boards[n]: monitor n's board. */
+/* GFOpenRTG's screens on: the patches go in (once). boards[n]: monitor n's board. */
 int ortg_screens_on(struct Library *gfx, struct ortg_mode_table **tables, APTR *boards, const ULONG *board_sizes);
 int ortg_screens_are_on(void);
 void ortg_late_opengpu(void);

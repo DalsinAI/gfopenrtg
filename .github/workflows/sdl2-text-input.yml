@@ -418,7 +418,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: OpenGPU-SDL2-TextInput-${{ github.run_id }}
+          name: GFOpenGPU-SDL2-TextInput-${{ github.run_id }}
           path: |
             build/sdl2-text-input/SDL2.module
             build/sdl2-text-input/libSDL2.a

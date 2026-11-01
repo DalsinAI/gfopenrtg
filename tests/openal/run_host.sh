@@ -66,7 +66,7 @@ mkdir -p "$OUT/allab_refs"
 "$OUT/allab_ref" "$OUT/allab_refs" > /dev/null
 
 # libopenal.a with no module: the stub's own file with exec, dos and
-# opengpu.library answered by the test (tests/sdl3/host's stand-ins).
+# gfopengpu.library answered by the test (tests/sdl3/host's stand-ins).
 $CC -std=gnu11 -Wall -Wextra -Werror $SAN -I"$ROOT/tests/sdl3/host" -I"$ROOT/tests/host-include" -I"$ROOT/include" \
     -I"$ROOT/stubs/openal" -I"$MOD/include" -o "$OUT/stub_nomodule" "$HERE/stub_nomodule.c"
 "$OUT/stub_nomodule"

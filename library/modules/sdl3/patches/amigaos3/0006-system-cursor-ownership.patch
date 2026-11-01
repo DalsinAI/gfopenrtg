@@ -1,6 +1,6 @@
 SDL3_68k Amiga backend: return an unregistered system cursor to SDL.
 Avoid double-list insertion and the SDL_SetCursor infinite loop.
-AmigaChrome Team, 2026.
+AmiCradle Team, 2026.
 
 --- a/src/video/amigaos3/SDL_os3mouse.c
 +++ b/src/video/amigaos3/SDL_os3mouse.c

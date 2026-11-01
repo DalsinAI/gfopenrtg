@@ -14,7 +14,7 @@ Every Act II run reported:
 
 ```text
 OpenTensor: renderer virgl (AMD Radeon RX 460 Graphics (radeonsi, polaris11, ACO...), driver virgl, OpenGL 4.3 (Compatibility Profile) Mesa 26.2.4
-OpenTensor: 960x540x32 full-screen OpenRTG direct, AHI 44.1 kHz stereo, sequence 164 seconds
+OpenTensor: 960x540x32 full-screen GFOpenRTG direct, AHI 44.1 kHz stereo, sequence 164 seconds
 ```
 
 All six scene runs returned `RC 0`, used VirGL, and reported **zero AHI underruns**. Measured end-of-run rates were 49–50 fps.
@@ -56,9 +56,9 @@ eed6d4cc9eb6eb6554fe89f760452537e5db4f3199a1a3c2472847d02cc865d4  opentensor-aft
 OpenTensor now serves as both a production and a repeatable integration benchmark for:
 
 - Mesa/GLA/VirGL rendering;
-- private-screen direct OpenGPU presentation;
+- private-screen direct GFOpenGPU presentation;
 - layered Intuition-window compatibility presentation;
-- OpenRTG mode switching and restoration;
+- GFOpenRTG mode switching and restoration;
 - generated AHI stereo playback and clean shutdown;
 - AC090 68040 + FPU performance.
 

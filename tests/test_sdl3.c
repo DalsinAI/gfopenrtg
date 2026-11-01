@@ -18,7 +18,7 @@
  *     16-bit PC and 555 orders as their ARGB32 copies;
  *   - P010: exactly NV12's pixels from its samples' top bytes, rounded; the
  *     new YUV colour spaces from their matrices in doubles: within 2;
- *   - OGPU_Query's answers, and opengpu.library's batch check
+ *   - OGPU_Query's answers, and gfopengpu.library's batch check
  *     (ogpu_variant.h) for a v1.6 driver and a v1.7 one. */
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,8 +27,8 @@
 #include "../library/opengpu/ogpu_core.h"
 #include "../library/opengpu/ogpu_3d.h"
 #include "../library/opengpu/ogpu_variant.h"
-#include "../include/opengpu/build.h"
-#include "../include/opengpu/build3d.h"
+#include "../include/gfopengpu/build.h"
+#include "../include/gfopengpu/build3d.h"
 
 #define ARENA (4L << 20)
 static ogpu_u8 arena[ARENA];
@@ -856,7 +856,7 @@ static void test_query(void) {
     }
 }
 
-/* opengpu.library 0.19's whole-batch check (ogpu_batch_takes), for a v1.6
+/* gfopengpu.library 0.19's whole-batch check (ogpu_batch_takes), for a v1.6
  * driver and a v1.7 one: the tables the library keeps (opcodes it carries
  * out; formats it takes SURFACE in, as each core answers). */
 static void test_routing(void) {
@@ -917,7 +917,7 @@ static void test_routing(void) {
     }
 }
 
-/* opengpu.library 0.22: a batch a v1.6 driver can't take whole is cut into
+/* gfopengpu.library 0.22: a batch a v1.6 driver can't take whole is cut into
  * runs (ogpu_batch_runs), each run after the state commands before it. Run
  * one by one on the core, the runs draw exactly what the whole batch does. */
 static unsigned long split_starts[16], split_ends[16];

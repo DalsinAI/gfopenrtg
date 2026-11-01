@@ -15,7 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../library/opengpu/ogpu_core.h"
-#include "../include/opengpu/build.h"
+#include "../include/gfopengpu/build.h"
 
 /* the earlier core, built with its three functions renamed */
 void old_ogpu_core_init(struct ogpu_core *c);
@@ -39,7 +39,7 @@ static ogpu_u8 *map(void *user, ogpu_u32 address, ogpu_u32 length) {
     return cur + address;
 }
 
-static unsigned long seed = 1;
+static unsigned long long seed = 1;   /* 64 bits everywhere, so the 68k draws the same batches (tests/amiga/vector/vector_crc.c) */
 static unsigned long rnd(void) { seed = seed * 6364136223846793005ULL + 1442695040888963407ULL; return (unsigned long)(seed >> 33); }
 static long rn(long n) { return n > 0 ? (long)(rnd() % (unsigned long)n) : 0; }
 static long rr(long a, long b) { return a + rn(b - a + 1); }

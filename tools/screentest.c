@@ -1,8 +1,8 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * ScreenTest: phase 2's first screen. Opens an 8-bit screen on OpenRTG
- * monitor 1 (C:OpenRTG SCREENS first), a window on it, and draws what the
+ * ScreenTest: phase 2's first screen. Opens an 8-bit screen on GFOpenRTG
+ * monitor 1 (C:GFOpenRTG SCREENS first), a window on it, and draws what the
  * Workbench draws most: fills, lines, text, a blit, a scroll. Not shipped.
  *   ScreenTest [SECS n]
  */
@@ -14,7 +14,7 @@
 #include <proto/dos.h>
 #include <proto/intuition.h>
 #include <proto/graphics.h>
-#include <proto/openrtg.h>
+#include <proto/gfopenrtg.h>
 
 struct Library *OpenRTGBase;
 
@@ -30,10 +30,10 @@ int main(void)
         {0xaa,0xaa,0xaa},{0x00,0x00,0x00},{0xff,0xff,0xff},{0x66,0x88,0xbb},{0xe9,0x54,0x20},{0x3f,0x9a,0x3a},{0x36,0x5f,0xa3},{0xf4,0xd3,0x6b},
         {0x12,0x18,0x25},{0xe8,0xea,0xee},{0x8a,0x94,0xa6},{0xcf,0xda,0xee},{0x7c,0xc0,0x6d},{0xd9,0x3f,0x3f},{0x6f,0x9a,0xd8},{0x40,0x40,0x40} };
     if (rd) { if (args[0]) secs = *(LONG *)args[0]; FreeArgs(rd); }
-    if (!(OpenRTGBase = OpenLibrary((STRPTR)"openrtg.library", 0))) { PutStr((STRPTR)"ScreenTest: no openrtg.library\n"); return 20; }
+    if (!(OpenRTGBase = OpenLibrary((STRPTR)"gfopenrtg.library", 0))) { PutStr((STRPTR)"ScreenTest: no gfopenrtg.library\n"); return 20; }
     id = ORTG_BestMode(1, 800, 600, 8);
     Printf((STRPTR)"ScreenTest: mode $%08lx\n", id);
-    s = OpenScreenTags(NULL, SA_DisplayID, id, SA_Depth, 8, SA_Title, (ULONG)"OpenRTG: our own screen", SA_ShowTitle, TRUE,
+    s = OpenScreenTags(NULL, SA_DisplayID, id, SA_Depth, 8, SA_Title, (ULONG)"GFOpenRTG: our own screen", SA_ShowTitle, TRUE,
                        SA_Pens, (ULONG)"\xff\xff", SA_FullPalette, TRUE, SA_LikeWorkbench, TRUE, TAG_DONE);
     if (!s) { PutStr((STRPTR)"ScreenTest: the screen didn't open\n"); CloseLibrary(OpenRTGBase); return 10; }
     pal[0] = 16 << 16;
@@ -50,7 +50,7 @@ int main(void)
                (LONG)srp->BitMap->BytesPerRow, (ULONG)srp->BitMap, (ULONG)&s->BitMap);
     }
     w = OpenWindowTags(NULL, WA_CustomScreen, (ULONG)s, WA_Left, 60, WA_Top, 60, WA_Width, 520, WA_Height, 360,
-                       WA_Title, (ULONG)"A window on OpenRTG", WA_DragBar, TRUE, WA_DepthGadget, TRUE, WA_CloseGadget, TRUE,
+                       WA_Title, (ULONG)"A window on GFOpenRTG", WA_DragBar, TRUE, WA_DepthGadget, TRUE, WA_CloseGadget, TRUE,
                        WA_SizeGadget, TRUE, WA_SmartRefresh, TRUE, WA_Activate, TRUE, TAG_DONE);
     if (w) {
         struct RastPort *rp = w->RPort;
@@ -61,7 +61,7 @@ int main(void)
         Move(rp, x0, y0 + 160); Draw(rp, x0 + 440, y0 + 60);
         SetAPen(rp, 6); DrawEllipse(rp, x0 + 220, y0 + 110, 80, 40);
         SetAPen(rp, 1); SetBPen(rp, 0); SetDrMd(rp, JAM2);
-        Move(rp, x0, y0 + 190); Text(rp, (STRPTR)"Hello from OpenRTG: no Picasso96 here.", 38);
+        Move(rp, x0, y0 + 190); Text(rp, (STRPTR)"Hello from GFOpenRTG: no Picasso96 here.", 38);
         SetAPen(rp, 2); SetBPen(rp, 6);
         Move(rp, x0, y0 + 210); Text(rp, (STRPTR)"JAM2 white on blue", 18);
         SetDrMd(rp, JAM1);

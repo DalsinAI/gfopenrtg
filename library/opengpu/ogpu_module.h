@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * opengpu.library's module loader (ogpu_module.c): what opengpu_lib.c's
+ * gfopengpu.library's module loader (ogpu_module.c): what opengpu_lib.c's
  * OGPU_ModuleOpen and OGPU_ModuleClose call, and its expunge. The library
  * base holds a struct ogpu_modules: the shared modules now loaded. The
  * loader keeps no globals: exec and dos.library come with each call. */
@@ -11,7 +11,7 @@
 #include <exec/types.h>
 #include <exec/lists.h>
 #include <exec/semaphores.h>
-#include "../../include/opengpu/module.h"
+#include "../../include/gfopengpu/module.h"
 
 struct ExecBase;
 struct DosLibrary;

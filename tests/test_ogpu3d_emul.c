@@ -18,7 +18,7 @@
 #include <stdbool.h>
 #include <math.h>
 #include "../host/vulkan/ogpu3d_rec.h"
-#include "../include/opengpu/build3d.h"
+#include "../include/gfopengpu/build3d.h"
 #include "golden_scenes.h"
 #include "scenes3d.h"
 
@@ -391,6 +391,23 @@ int main(int argc, char **argv) {
             CHECK((st.declined > declined) == (k2 == 4 || k2 == 6), "%s: %s by the GPU path", name, st.declined > declined ? "declined" : "taken");
         }
         printf("ogpu3d emulated: stream v1.7's SDL form: as the core\n");
+    }
+    /* A vertex span past 32 bits (stride 0x10000, 0x10001 vertices: one
+     * vertex in 32 bits), indices reaching the end of other memory: refused
+     * on both paths, nothing read. */
+    {
+        static ogpu_u8 sb[1024];
+        struct OGPUBatch b;
+        make_rec("gpu", 8 << 20, 8 << 20, 8 << 20);
+        fresh();
+        fast_ref[0x7000] = fast_gpu[0x7000] = 0; fast_ref[0x7001] = fast_gpu[0x7001] = 0x20; fast_ref[0x7002] = fast_gpu[0x7002] = 0x1F;
+        ogpu_batch_init(&b, sb, (long)sizeof sb / 4);
+        ogpu_surface(&b, 0, VBASE, 256, 64, 64, OGPU_FMT_ARGB32);
+        ogpu_surface(&b, 1, FBASE + 0x1000, 64, 16, 16, OGPU_FMT_ARGB32);
+        ogpu_target(&b, 0);
+        ogpu_triangles(&b, FBASE, 0x10001, 0x10000, FBASE + 0x7000, 3, 1, 1, OGPU_TRI_BLEND_PREMUL);
+        both(sb, sb, b.words, "a vertex span past 32 bits");
+        CHECK(C_ref.last_error == OGPU_ERR_NOMAP, "a vertex span past 32 bits: %d", C_ref.last_error);
     }
     if (failures) { printf("ogpu3d emulated: %d FAILED\n", failures); return 1; }
     printf("ogpu3d emulated: all tests passed\n");

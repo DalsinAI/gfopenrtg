@@ -3,9 +3,9 @@
  *
  * nomodule.m: a program on libSDL3.a ends when SDL3.module isn't there.
  * It calls SDL_Quit at its end as programs do, from atexit() and from a
- * destructor. With LIBS:OpenGPU/SDL3.module renamed away, run it from a
- * Shell: one line, "SDL 3: this program needs LIBS:OpenGPU/SDL3.module
- * (OpenGPU), which isn't installed.", then the prompt, with return code 20.
+ * destructor. With LIBS:GFOpenGPU/SDL3.module renamed away, run it from a
+ * Shell: one line, "SDL 3: this program needs LIBS:GFOpenGPU/SDL3.module
+ * (GFOpenGPU), which isn't installed.", then the prompt, with return code 20.
  * (It used to print that line for ever: the destructor's SDL_Quit tried the
  * module again and called exit() again, inside libnix's exit list.) With
  * the module in place it prints "nomodule: SDL_Init ok" and returns 0.

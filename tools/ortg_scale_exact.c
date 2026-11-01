@@ -3,8 +3,8 @@
  *
  * OpenRTGScaleExact: does a pixel array written at another size
  * (ORTG_WritePixels with dest_width and dest_height, as ScalePixelArray and
- * OpenPlay's films use it) draw the same pixels on the CPU and through
- * OpenGPU's COMPOSITE (0.16)? Each target pixel must show the source pixel
+ * GFOpenPlay's films use it) draw the same pixels on the CPU and through
+ * GFOpenGPU's COMPOSITE (0.16)? Each target pixel must show the source pixel
  * under its centre: for target pixel r of d, source pixel s of n is
  * (r * step + step / 2) >> 16 with step = (n << 16) / d.
  *
@@ -16,10 +16,10 @@
  * ARGB colours on both (every alpha byte non-zero: a 32-bit pixel must come
  * out 00RRGGBB), and on 16-bit a 16-bit bitmap's own pixels (RAW) too. The
  * pixels are read back from the bitmap's memory (ORTG_BitMapInfo). Each
- * case runs with ORTG_DRAW_CPU_ONLY and then with OpenGPU on, and the
- * OpenGPU run says how many pieces OpenGPU drew.
+ * case runs with ORTG_DRAW_CPU_ONLY and then with GFOpenGPU on, and the
+ * GFOpenGPU run says how many pieces GFOpenGPU drew.
  *   OpenRTGScaleExact     Returns 0 when every case is exact, 10 when one isn't.
- * openrtg.library 0.16 or later. */
+ * gfopenrtg.library 0.16 or later. */
 #include <exec/types.h>
 #include <exec/memory.h>
 #include <intuition/intuition.h>
@@ -29,7 +29,7 @@
 #include <proto/exec.h>
 #include <proto/graphics.h>
 #include <proto/intuition.h>
-#include <proto/openrtg.h>
+#include <proto/gfopenrtg.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -189,7 +189,7 @@ static int in_bitmap(int n, const char *mode, struct Screen *scr)
     return r;
 }
 
-/* A screen of its own, 640 x 480 at depth d, behind; NULL when OpenRTG has
+/* A screen of its own, 640 x 480 at depth d, behind; NULL when GFOpenRTG has
  * no such mode. */
 static struct Screen *open_depth(int d)
 {
@@ -205,7 +205,7 @@ static struct Screen *open_depth(int d)
 
 static void run(struct Screen *scr, int *rc)
 {
-    static const char *const modes[] = { "CPU", "OpenGPU" };
+    static const char *const modes[] = { "CPU", "GFOpenGPU" };
     static const ULONG flags[] = { ORTG_DRAW_CPU_ONLY, ORTG_DRAW_OPENGPU };
     ULONG counts[ORTG_STAT_COUNT * 4];
     int m, n;
@@ -216,7 +216,7 @@ static void run(struct Screen *scr, int *rc)
             if (!in_bitmap(n, modes[m], scr)) { printf("case %d %s bitmap: no bitmap of the screen's format\n", n, modes[m]); *rc = 20; }
         }
         ORTG_DrawStats(counts, ORTG_STAT_COUNT, 0);
-        printf("%2d-bit %-4s %-8s pixel pieces: %lu by OpenGPU, %lu by the CPU\n", depth, fmt_now == ORTG_PIX_RAW ? "RAW" : "ARGB",
+        printf("%2d-bit %-4s %-8s pixel pieces: %lu by GFOpenGPU, %lu by the CPU\n", depth, fmt_now == ORTG_PIX_RAW ? "RAW" : "ARGB",
                modes[m], (unsigned long)counts[ORTG_STAT_PIXELS * 4], (unsigned long)counts[ORTG_STAT_PIXELS * 4 + 1]);
     }
     ORTG_DrawStats(NULL, 0, ORTG_DRAW_OPENGPU);
@@ -229,7 +229,7 @@ int main(void)
     ULONG i;
     int d, rc = 0, ran = 0;
     if (!(OpenRTGBase = OpenLibrary((CONST_STRPTR)OPENRTG_NAME, 0)) || (OpenRTGBase->lib_Version == 0 && OpenRTGBase->lib_Revision < 16)) {
-        printf("OpenRTGScaleExact: needs openrtg.library 0.16\n");
+        printf("OpenRTGScaleExact: needs gfopenrtg.library 0.16\n");
         if (OpenRTGBase) CloseLibrary(OpenRTGBase);
         return 20;
     }
@@ -239,7 +239,7 @@ int main(void)
     snap_before = snap_base + IW * IH;
     snap_now = snap_before + IW * IH;
     for (d = 0; d < 2; d++) {
-        if (!(scr = open_depth(depths[d]))) { printf("OpenRTGScaleExact: no %d-bit OpenRTG screen, so no %d-bit cases\n", depths[d], depths[d]); continue; }
+        if (!(scr = open_depth(depths[d]))) { printf("OpenRTGScaleExact: no %d-bit GFOpenRTG screen, so no %d-bit cases\n", depths[d], depths[d]); continue; }
         depth = depths[d];
         fmt_now = ORTG_PIX_ARGB;
         run(scr, &rc);
@@ -248,7 +248,7 @@ int main(void)
         ran++;
     }
     if (!ran) rc = 20;
-    printf("OpenRTGScaleExact: %d of %d exact%s\n", checks - fails, checks, fails ? "" : ": the CPU and OpenGPU draw the same pixels");
+    printf("OpenRTGScaleExact: %d of %d exact%s\n", checks - fails, checks, fails ? "" : ": the CPU and GFOpenGPU draw the same pixels");
     if (fails && rc < 10) rc = 10;
     FreeVec(snap_base);
     CloseLibrary(OpenRTGBase);

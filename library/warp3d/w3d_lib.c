@@ -20,8 +20,8 @@
 
 #include "w3d_internal.h"
 #include "w3d_calls.h"
-#include "../../include/opengpu/opengpu.h"
-#include "../../include/proto/opengpu.h"
+#include "../../include/gfopengpu/gfopengpu.h"
+#include "../../include/proto/gfopengpu.h"
 
 struct ExecBase *SysBase;
 struct DosLibrary *DOSBase;
@@ -42,10 +42,10 @@ struct Library *MathIeeeSingBasBase, *MathIeeeSingTransBase, *MathIeeeDoubBasBas
 int start(void) { return -1; }
 
 static const char lib_name[] = "Warp3D.library";
-static const char lib_id[] = "Warp3D.library 5.0 (8.10.2026) OpenRTG Warp3D, AmigaChrome Team\r\n";
-static const char lib_ver[] __attribute__((used)) = "\0$VER: Warp3D.library 5.0 (8.10.2026) OpenRTG Warp3D, AmigaChrome Team";
-static char name_gpu[64] = "OpenGPU";
-static const char name_cpu[] = "CPU (OpenRTG's 3D core on this 68k)";
+static const char lib_id[] = "Warp3D.library 5.0 (8.10.2026) GFOpenRTG Warp3D, AmiCradle Team\r\n";
+static const char lib_ver[] __attribute__((used)) = "\0$VER: Warp3D.library 5.0 (8.10.2026) GFOpenRTG Warp3D, AmiCradle Team";
+static char name_gpu[64] = "GFOpenGPU";
+static const char name_cpu[] = "CPU (GFOpenRTG's 3D core on this 68k)";
 
 static struct Library *lib_init(REG(d0, struct W3DBase *base), REG(a0, BPTR seglist), REG(a6, struct ExecBase *sys));
 static struct Library *lib_open(REG(a6, struct W3DBase *base));
@@ -129,13 +129,13 @@ static int open_libs(struct W3DBase *base)
     if (!DOSBase || !GfxBase || !UtilityBase || !IntuitionBase) return 0;
     if (!MathIeeeSingBasBase || !MathIeeeSingTransBase || !MathIeeeDoubBasBase || !MathIeeeDoubTransBase) return 0;
     if (!OpenGPUBase) {
-        OpenGPUBase = OpenLibrary("opengpu.library", 0);
+        OpenGPUBase = OpenLibrary("gfopengpu.library", 0);
         base->gpu_3d = 0;
         if (OpenGPUBase) {
             ULONG a = OGPU_Query(OGPU_OP_TRIANGLES, OGPU_FMT_ARGB32);
             if (OGPU_ANSWER(a) != OGPU_NONE) {
                 STRPTR n = OGPU_BackEndName((ULONG)OGPU_BACKEND(a));
-                const char *p = "OpenGPU: ";
+                const char *p = "GFOpenGPU: ";
                 int i = 0;
                 base->gpu_3d = 1;
                 base->gpu_host = OGPU_BACKEND(a) != OGPU_BACKEND_CPU;
@@ -192,9 +192,9 @@ static BPTR lib_expunge(REG(a6, struct W3DBase *base))
     return seglist;
 }
 
-/* The preferences, in ENV:Warp3D/ (OpenPrefs' Acceleration page writes them;
+/* The preferences, in ENV:Warp3D/ (GFOpenPrefs' Acceleration page writes them;
  * C:Warp3DPrefs FROMWAZP3D carries Wazp3D's settings over):
- *   Driver      Auto, CPU or OpenGPU   which driver W3D_DRIVER_BEST gets
+ *   Driver      Auto, CPU or GFOpenGPU   which driver W3D_DRIVER_BEST gets
  *   ZBuffer     16 or 32               bits of depth
  *   Fog, Perspective, Filtering, Lighting   "0" leaves that out, for speed
  * Read again for each new context, so a change applies to the next program. */

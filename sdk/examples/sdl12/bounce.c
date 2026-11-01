@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: MIT
  *
  * Bounce: an SDL 1.2 program (SDL_SetVideoMode, SDL_FillRect, SDL_Flip).
- * On OpenGPU, SDL 1.2 is sdl12-compat on OpenGPU's SDL 2 (SDL2.module), so
+ * On GFOpenGPU, SDL 1.2 is sdl12-compat on GFOpenGPU's SDL 2 (SDL2.module), so
  * SDL 1.2 programs draw through the same engine as SDL 2 ones. Squares
  * bounce in a 320x240 window; the title shows the frame rate. Esc or the
  * close gadget quits.

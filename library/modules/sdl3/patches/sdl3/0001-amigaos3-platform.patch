@@ -1,5 +1,5 @@
 SDL 3.4.14 (Zlib): AmigaOS 3.x (68k) as a platform, for SDL3.module.
-AmigaChrome Team, 2026. SDL_PLATFORM_AMIGAOS3, its build configuration
+AmiCradle Team, 2026. SDL_PLATFORM_AMIGAOS3, its build configuration
 (include/SDL_build_config_amigaos3.h), its back ends in SDL's driver lists,
 SDL3_68k's window property, the 68k's 16-bit alignment, and SDL's dynamic
 API on inside the module (SDL_OPEN_LIBRARY_BUILD), where it hands its
@@ -16,7 +16,7 @@ index 7963149..22ebf28 100644
 +#if defined(__AMIGAOS3__) || (defined(__amiga__) && !defined(__amigaos4__) && !defined(__MORPHOS__))
 +/**
 + * A preprocessor macro that is only defined if compiling for AmigaOS 3.x
-+ * on the 68k (AmigaChrome Team, 2026).
++ * on the 68k (AmiCradle Team, 2026).
 + */
 +#define SDL_PLATFORM_AMIGAOS3 1
 +#endif

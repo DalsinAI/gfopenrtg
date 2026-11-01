@@ -2,10 +2,10 @@
  * SPDX-License-Identifier: MIT
  *
  * The GLA core: Mesa's GL state tracker and softpipe behind a small C API.
- * On OS 3.2 programs reach it through OpenGPU's GL module (libGL.a and
+ * On OS 3.2 programs reach it through GFOpenGPU's GL module (libGL.a and
  * GL.module), and the host tests call it directly. It knows nothing of the
  * Amiga: finished frames go to a present hook, which on OS 3.2 sends them
- * through OpenGPU (one PIXELS command) or OpenRTG (WritePixelArray). */
+ * through GFOpenGPU (one PIXELS command) or GFOpenRTG (WritePixelArray). */
 #ifndef GLA_CORE_H
 #define GLA_CORE_H
 
@@ -24,7 +24,7 @@ struct gla_config {
 };
 
 /* Byte orders of a frame's pixels in memory. Big-endian builds (the 68k)
- * draw GLA_ARGB, which is OpenGPU's ARGB32 and WritePixelArray's
+ * draw GLA_ARGB, which is GFOpenGPU's ARGB32 and WritePixelArray's
  * RECTFMT_ARGB; little-endian hosts draw GLA_BGRA. */
 enum gla_format { GLA_BGRA = 0, GLA_ARGB = 1 };
 
@@ -66,6 +66,20 @@ typedef long (*gla_present_virgl_fn)(void *user, const struct gla_virgl_frame *f
 void gla_present_set_virgl(void (*present)(void *user, const struct gla_frame *frame), gla_present_virgl_fn virgl);
 gla_present_virgl_fn gla_present_virgl_of(const struct gla_present *p);
 
+/* A present hook that may return with its frame still being read (an
+ * GFOpenGPU batch not waited for: gla_present_os3.c) registers two more
+ * companions against its present function, as for virgl's:
+ *   running(user)  nonzero when the last present() left its frame being read;
+ *   settle(user)   wait until nothing present() started is still running.
+ * present() itself waits, before it returns, for the frame it was given the
+ * time before. So with a back buffer the core swaps the back and front
+ * textures after a frame left running: the next frame is drawn into the
+ * other one, which that wait has made free. Otherwise (one buffer, or a
+ * texture freed) it settles first. A hook with no companions is done with
+ * the pixels when present() returns, as before. */
+void gla_present_set_async(void (*present)(void *user, const struct gla_frame *frame),
+                           int (*running)(void *user), void (*settle)(void *user));
+
 /* What GLA did with its frames, since it started or was last reset. */
 struct gla_stats {
     unsigned long frames;           /* virgl frames finished (flush_frontbuffer) */
@@ -85,8 +99,8 @@ enum {
     GLA_DIRECT_ON = 1,              /* written straight in by the host */
     GLA_DIRECT_NO_HOST = 2,         /* the host has no ACV_PRESENT (HELLO's flags) */
     GLA_DIRECT_NO_HOOK = 3,         /* the present hook has no present_virgl */
-    GLA_DIRECT_REFUSED = 4,         /* present_virgl said no (openrtg.library's -1) */
-    GLA_DIRECT_NO_LIBRARY = 5,      /* OS 3.2: no openrtg.library 0.15 or later */
+    GLA_DIRECT_REFUSED = 4,         /* present_virgl said no (gfopenrtg.library's -1) */
+    GLA_DIRECT_NO_LIBRARY = 5,      /* OS 3.2: no gfopenrtg.library 0.15 or later */
     GLA_DIRECT_NO_TARGET = 6        /* OS 3.2: neither a RastPort nor a bitmap to present to */
 };
 /* The counts into s (when s isn't 0); reset puts them back to 0. */

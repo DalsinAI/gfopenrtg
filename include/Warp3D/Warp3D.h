@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: MIT
  *
  * Warp3D.h: the Team's own header for Warp3D, the Amiga's classic 3D API, as
- * OpenRTG's Warp3D.library offers it (version 5's 68k function table, a
+ * GFOpenRTG's Warp3D.library offers it (version 5's 68k function table, a
  * superset of version 4). Programs written for Warp3D build against it
  * unchanged.
  *
@@ -338,7 +338,7 @@ typedef struct {                /* V3 */
 #define W3D_DRIVER_3DHW         (1 << 2)
 #define W3D_DRIVER_CPU          (1 << 3)
 
-/* Chips (W3D_Driver.ChipID): for information only; OpenRTG reports
+/* Chips (W3D_Driver.ChipID): for information only; GFOpenRTG reports
  * W3D_CHIP_UNKNOWN. Version 5 renumbered the ones above 4: these are its
  * numbers, and the version 4 names that version 5 dropped keep theirs. */
 #define W3D_CHIP_UNKNOWN        1

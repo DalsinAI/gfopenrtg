@@ -1,27 +1,27 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * OpenGPUBench: how fast OpenGPU's C core draws on this 68k, command by
+ * OpenGPUBench: how fast GFOpenGPU's C core draws on this 68k, command by
  * command, beside a plain C loop over the same memory, so a slow command
  * shows as the core's fault and not the machine's. The same batches go
- * through opengpu.library too (its driver, when there is one).
+ * through gfopengpu.library too (its driver, when there is one).
  *   OpenGPUBench [CHIP|FAST|ANY|VRAM]  (where the pictures live; ANY by default;
- *                                       VRAM: over the Workbench screen's own pixels, on OpenRTG) */
+ *                                       VRAM: over the Workbench screen's own pixels, on GFOpenRTG) */
 #include <exec/types.h>
 #include <exec/memory.h>
 #include <devices/timer.h>
 #include <proto/exec.h>
 #include <proto/timer.h>
-#include <proto/opengpu.h>
+#include <proto/gfopengpu.h>
 #include <proto/intuition.h>
-#include <proto/openrtg.h>
+#include <proto/gfopenrtg.h>
 #include <intuition/screens.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "../library/opengpu/ogpu_core.h"
-#include "../include/opengpu/opengpu.h"
-#include "../include/opengpu/build.h"
+#include "../include/gfopengpu/gfopengpu.h"
+#include "../include/gfopengpu/build.h"
 
 struct Library *OpenGPUBase, *OpenRTGBase;
 struct IntuitionBase *IntuitionBase;
@@ -108,7 +108,7 @@ int main(int argc, char **argv)
         OpenRTGBase = OpenLibrary((CONST_STRPTR)OPENRTG_NAME, 0);
         wb = IntuitionBase ? LockPubScreen(NULL) : NULL;
         if (!wb || !OpenRTGBase || !ORTG_BitMapInfo(wb->RastPort.BitMap, &bi) || bi.bytes_per_row * bi.height < 0x80000) {
-            printf("VRAM: no OpenRTG Workbench screen big enough\n");
+            printf("VRAM: no GFOpenRTG Workbench screen big enough\n");
             return 20;
         }
         arena = bi.memory;

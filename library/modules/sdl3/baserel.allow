@@ -10,7 +10,7 @@
 ^table of _\w+_bootstrap \(.*\), from the code at .*\(SDL_(video|audio|camera)\.o\)\)$
 # SDL_render.c's render_drivers[]: the SDL_RenderDriver of the opengpu and
 # the software renderers (a function and a name); SDL only reads them.
-^table of _(OPENGPU|SW)_RenderDriver \(.*\), from the code at .*\(SDL_render\.o\)\)$
+^table of _(GFOPENGPU|SW)_RenderDriver \(.*\), from the code at .*\(SDL_render\.o\)\)$
 # SDL_wave.c: its IMA ADPCM step table, a function's static const array,
 # which GCC puts in the data and indexes from its absolute address.
 ^address of \.data\+0x0 of .*\(SDL_wave\.o\), from the code at .*\(SDL_wave\.o\)\)$

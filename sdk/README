@@ -1,19 +1,19 @@
-OpenGPU developer kit
+GFOpenGPU developer kit
 =====================
 
-Everything for building programs on OpenGPU: SDL 2 (and SDL 1.2, where the
+Everything for building programs on GFOpenGPU: SDL 2 (and SDL 1.2, where the
 kit was built with it), OpenGL and GLES, GLA, TinyGL, Warp3D, MiniGL and
-opengpu.library itself, for AmigaOS 3.2 on a 68040 or
+gfopengpu.library itself, for AmigaOS 3.2 on a 68040 or
 68060 with an FPU, with bebbo's m68k-amigaos-gcc (GCC 6.5 or GCC 16).
 SDL, GL, GLES, GLA and TinyGL are hard float (-m68881): programs using them
 need the FPU, so they don't run on an LC040 or EC040. Warp3D and
-opengpu.library are soft float, and minigl.library uses the FPU when there
+gfopengpu.library are soft float, and minigl.library uses the FPU when there
 is one; all three run on any 68040.
 
-Programs built with it run on OpenGPU's runtime, which OpenUp installs:
-opengpu.library, and LIBS:OpenGPU/SDL2.module, SDL2_image.module,
+Programs built with it run on GFOpenGPU's runtime, which GFOpenUp installs:
+gfopengpu.library, and LIBS:GFOpenGPU/SDL2.module, SDL2_image.module,
 SDL2_mixer.module and GL.module. The kit has no runtime files of its own.
-SDL_GL_* needs SDL2.module 3 (OpenGPU 0.6 and later); an older SDL2.module
+SDL_GL_* needs SDL2.module 3 (GFOpenGPU 0.6 and later); an older SDL2.module
 runs the same programs without OpenGL.
 
 
@@ -25,10 +25,10 @@ What is in it
   include/SDL2/           SDL 2.32.10, SDL_image, SDL_mixer, SDL_ttf, SDL_net
   include/GL/ GLES2/ GLES3/ KHR/
                           OpenGL and GLES (Mesa's and Khronos's headers)
-  include/gla/            GLA: OpenGPU's own GL interface (displays, contexts,
+  include/gla/            GLA: GFOpenGPU's own GL interface (displays, contexts,
                           buffers shown in a window)
-  include/opengpu/ proto/ inline/ clib/ libraries/
-                          opengpu.library, OpenRTG, Warp3D and MiniGL
+  include/gfopengpu/ proto/ inline/ clib/ libraries/
+                          gfopengpu.library, GFOpenRTG, Warp3D and MiniGL
   include/Warp3D/ mgl/    Warp3D and MiniGL
   include/tgl/ proto/tinygl.h
                           TinyGL: GLInit, GLClose and the GLA calls, and a
@@ -58,7 +58,7 @@ What is in it
   lib/cmake/              find_package(SDL2) and the satellites
   examples/               a sprite program, an SDL_GL program, a GLA one
                           and a TinyGL one (and an SDL 1.2 one, with SDL 1.2)
-  AutoDocs-OpenGPU.md     the reference: how it all works, and what's there
+  AutoDocs-GFOpenGPU.md     the reference: how it all works, and what's there
   Licences/               every notice; Licences/README says what is whose
 
 One set of libraries serves both compilers: the GCC 16 builds link with
@@ -68,14 +68,14 @@ GCC 6.5 too (the same libnix, objects and FPU calling convention).
 With a cross-compiler
 ---------------------
 
-Unpack OpenGPU-SDK-0.6.tar.gz anywhere, and put its bin/ on PATH beside the
+Unpack GFOpenGPU-SDK-0.6.tar.gz anywhere, and put its bin/ on PATH beside the
 compiler's:
 
-  export PATH=/path/to/OpenGPU-SDK-0.6/bin:$PATH
-  export PKG_CONFIG_LIBDIR=/path/to/OpenGPU-SDK-0.6/lib/pkgconfig
+  export PATH=/path/to/GFOpenGPU-SDK-0.6/bin:$PATH
+  export PKG_CONFIG_LIBDIR=/path/to/GFOpenGPU-SDK-0.6/lib/pkgconfig
   m68k-amigaos-gcc -O2 game.c -o Game $(sdl2-config --cflags --libs)
 
-On AmigaChrome, ACKitchen's stoves can carry the kit (scripts/os32_stove.py
+On AmiCradle, ACKitchen's stoves can carry the kit (scripts/os32_stove.py
 --kit): then sdl2-config is in the stove's bin/, the headers and libraries
 are in its m68k-amigaos/, so no -I or -L is needed:
 
@@ -102,10 +102,10 @@ others give their targets.
 On the Amiga
 ------------
 
-Unpack OpenGPU-SDK-0.6.lha (or install OpenUp's "OpenGPU developer files"),
+Unpack GFOpenGPU-SDK-0.6.lha (or install GFOpenUp's "GFOpenGPU developer files"),
 and point an assign at it:
 
-  Assign OpenGPU-SDK: Work:OpenGPU-SDK-0.6
+  Assign GFOpenGPU-SDK: Work:GFOpenGPU-SDK-0.6
 
 A GCC on the Amiga takes -IOpenGPU-SDK:include/SDL2 and -LOpenGPU-SDK:lib.
 
@@ -136,10 +136,10 @@ Things to know
 - A program that calls any SDL_GL_ function links libGL.a too:
   `sdl2-config --libs --gl` gives -lSDL2 -lGL (pkg-config: sdl2 gl).
   `sdl2-config --libs` alone gives no -lGL, for programs that never call one.
-- GL on AmigaChrome runs on the GPU (virgl, GL 4.3, GLES 3.1); on
+- GL on AmiCradle runs on the GPU (virgl, GL 4.3, GLES 3.1); on
   other Amigas it is softpipe on the 68k (GL 3.3, GLES 3.1). SetEnv
   SDL_OPENGPU_GL cpu picks softpipe for SDL programs.
-- SDL 1.2 programs run through sdl12-compat on OpenGPU's SDL 2, so they
+- SDL 1.2 programs run through sdl12-compat on GFOpenGPU's SDL 2, so they
   draw, play and read input through SDL2.module, like SDL 2 programs.
   sdl-config takes the same SDL2_CPU and SDL2_RUNTIME settings, and --gl.
   -lSDL is all such a program links: libSDL.a has SDL 2's link library
@@ -147,7 +147,7 @@ Things to know
   GLU, so sdl-config --cflags gives -DNO_SDL_GLU, and SDL_opengl.h leaves
   GL/glu.h out.
 - TinyGL programs run on GL.module like other GL programs. They also need
-  LIBS:tinygl.library (OpenUp installs it), which they open themselves.
+  LIBS:tinygl.library (GFOpenUp installs it), which they open themselves.
   SetEnv TinyGL/Driver CPU picks softpipe. A program that includes only
   <GL/gl.h> and uses the glA... calls adds -include proto/tinygl.h.
 - With GCC 16, run tools/fpcr_check.py (openamigartg) on what you build:

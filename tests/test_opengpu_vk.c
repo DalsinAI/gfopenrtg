@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * OpenGPU's Vulkan back end (G2) against the C core: the golden scene must
+ * GFOpenGPU's Vulkan back end (G2) against the C core: the golden scene must
  * come out with tests/golden/opengpu-g1.txt's checksum, and thousands of
  * random streams must leave video RAM, the other memory, the results and the
  * fences byte for byte as the core leaves them. Runs on any Vulkan device;
@@ -26,11 +26,11 @@
 #include <string.h>
 #include <time.h>
 #include "../host/vulkan/ogpu_vk.h"
-#include "../include/opengpu/build.h"
-#include "../include/opengpu/stream3d.h"
+#include "../include/gfopengpu/build.h"
+#include "../include/gfopengpu/stream3d.h"
 #ifdef OGPU_WITH_3D
 #include "../library/opengpu/ogpu_3d.h"
-#include "../include/opengpu/build3d.h"
+#include "../include/gfopengpu/build3d.h"
 #endif
 
 #define RAM   (1L << 20)            /* "Fast RAM": Amiga addresses 0 .. RAM */
@@ -709,7 +709,7 @@ static void test_why(void) {
 
 /* ---- a copy between two slots of one surface ------------------------------------------ */
 
-/* OpenRTG scrolls a layer's surface with a COPY whose source slot is another
+/* GFOpenRTG scrolls a layer's surface with a COPY whose source slot is another
  * slot over the same surface (the same pixels, bytes a row and format). The
  * GPU stages it, as it does a copy within one slot, and draws what the core
  * draws: up, down and sideways. */

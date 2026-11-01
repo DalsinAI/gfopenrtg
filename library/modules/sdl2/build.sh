@@ -21,7 +21,7 @@
 #       Team's changes to them)
 #   CPU="-m68020 -m68881"   another CPU (default -m68040 -m68881)
 #
-# Needs the GCC 16 stove (STOVE, default ~/AmigaChrome/stoves/os32-gcc16/prefix),
+# Needs the GCC 16 stove (STOVE, default ~/AmiCradle/stoves/os32-gcc16/prefix),
 # vasmm68k_mot on PATH (or VASM=), and the CyberGraphX and AHI developer
 # headers (SDK_HEADERS, default the OS 3.2 stove's include directory).
 # TARBALLS is where the SDL tarball is looked for before it is downloaded.
@@ -31,10 +31,10 @@ ROOT=$(CDPATH= cd -- "$HERE/../../.." && pwd)
 OUT=${1:-$ROOT/build}
 shift 2>/dev/null || true
 TARGETS=${*:-module stub static tests satellites}
-TARBALLS=${TARBALLS:-$HOME/AmigaChrome-dev/upstream-tarballs}
-SDK_HEADERS=${SDK_HEADERS:-$HOME/AmigaChrome/stoves/os32/prefix/m68k-amigaos/include}
+TARBALLS=${TARBALLS:-$HOME/AmiCradle-dev/upstream-tarballs}
+SDK_HEADERS=${SDK_HEADERS:-$HOME/AmiCradle/stoves/os32/prefix/m68k-amigaos/include}
 if [ -z "${VASM:-}" ]; then
-    VASM=$(command -v vasmm68k_mot || echo "$HOME/AmigaChrome/stoves/os32/prefix/bin/vasmm68k_mot")
+    VASM=$(command -v vasmm68k_mot || echo "$HOME/AmiCradle/stoves/os32/prefix/bin/vasmm68k_mot")
 fi
 
 pin() { python3 -c "import json,sys; print(json.load(open('$HERE/UPSTREAM.json'))[sys.argv[1]][sys.argv[2]])" "$1" "$2"; }
@@ -118,7 +118,7 @@ case " $TARGETS " in
     ;;
 esac
 # 7. GCC 16's FPCR clash (fpcr_check.py) must not be in anything built.
-STOVE=${STOVE:-$HOME/AmigaChrome/stoves/os32-gcc16/prefix}
+STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32-gcc16/prefix}
 set --
 for f in "$OUT/SDL2.module" "$OUT"/SDL2_*.module "$OUT"/libSDL2*.a; do [ -f "$f" ] && set -- "$@" "$f"; done
 [ $# -eq 0 ] || python3 "$HERE/fpcr_check.py" "$STOVE/bin/m68k-amigaos-objdump" "$@"

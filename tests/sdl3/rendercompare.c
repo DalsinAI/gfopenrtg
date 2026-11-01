@@ -7,11 +7,11 @@
  * a small tolerance (filtering and rounding differ a little between the two),
  * and the largest difference. Run on an Amiga with SDL3.module, or linked
  * statically; tests/sdl3/rendercompare_host.sh runs it on a Linux PC with
- * OpenGPU's own core as the library. Exit 0 when every scene matches.
+ * GFOpenGPU's own core as the library. Exit 0 when every scene matches.
  *
  * Where the two renderers are meant to differ, the scene says so and is
  * compared more loosely: SDL's software renderer draws SDL_SCALEMODE_PIXELART
- * as nearest, where OpenGPU (as SDL's GPU renderers) gives each texel's
+ * as nearest, where GFOpenGPU (as SDL's GPU renderers) gives each texel's
  * border one smoothed pixel; and it samples textured triangles nearest
  * whatever the scale mode. */
 #include <SDL3/SDL.h>

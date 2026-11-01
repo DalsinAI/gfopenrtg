@@ -1,8 +1,8 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * opengpu.library's module loader: OGPU_ModuleOpen and OGPU_ModuleClose
- * (include/opengpu/module.h), called from opengpu_lib.c's LVOs, and the
+ * gfopengpu.library's module loader: OGPU_ModuleOpen and OGPU_ModuleClose
+ * (include/gfopengpu/module.h), called from opengpu_lib.c's LVOs, and the
  * flush its expunge calls.
  *
  * Two kinds of module, told apart by the first code (OGPU_MODULE_IS_SHARED):
@@ -16,7 +16,7 @@
  *     open, the entry called as it is, and an UnLoadSeg at its close.
  * A shared module is found again by its file: the full name NameFromLock
  * gives (so PROGDIR:Test.module from two programs in different drawers are
- * two modules, and LIBS:OpenGPU/GL.module reached by two names is one), its
+ * two modules, and LIBS:GFOpenGPU/GL.module reached by two names is one), its
  * date and its size. The loader holds no lock on the file, so an installer
  * can replace it. A replaced file is a new module: the next open loads it,
  * programs still on the old one keep it, and the old one goes at once if
@@ -86,7 +86,7 @@ static struct OGPUModuleTable *call_entry(OGPUModuleEntry entry, struct OGPUModu
     return (struct OGPUModuleTable *)d0;
 }
 
-/* name -> path: LIBS:OpenGPU/name.module, or name itself when it holds ':' or
+/* name -> path: LIBS:GFOpenGPU/name.module, or name itself when it holds ':' or
  * '/'. 0 when it doesn't fit. */
 static int module_path(CONST_STRPTR name, char *path, int size)
 {

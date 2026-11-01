@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
-"""The OpenGPU developer kit: headers, link libraries, sdl2-config,
+"""The GFOpenGPU developer kit: headers, link libraries, sdl2-config,
 pkg-config and CMake files, examples, notices and documents for building
-programs on OpenGPU (opengpu.library, SDL2.module and GL.module) with bebbo's
+programs on GFOpenGPU (gfopengpu.library, SDL2.module and GL.module) with bebbo's
 m68k-amigaos-gcc, on the PC or on the Amiga.
 
     tools/make_sdk.py --build BUILD --gl GL_OUT [--mesa MESA_SRC] [--sdl12 SDL12_OUT] [--version 0.6] OUT_DIR [--archives]
@@ -14,12 +14,12 @@ BUILD    library/build.sh's output (the SDL 2 libraries and headers, its
 GL_OUT   library/modules/gl/module/build.sh's output (libGL.a, include/gla)
 MESA_SRC Mesa's source tree, for GL's and Khronos's headers; default: SRC
          in GL_WORK's gla-link.env (GL_WORK, default the GL module's build/)
-SDL12_OUT SDL 1.2 (sdl12-compat on OpenGPU's SDL 2): library/modules/sdl12's
+SDL12_OUT SDL 1.2 (sdl12-compat on GFOpenGPU's SDL 2): library/modules/sdl12's
          output, a folder with include/SDL/ (sdl12-compat's headers), libSDL.a
          and LICENSE.txt; default BUILD/sdl12 when it is there. Without it the
          kit has no SDL 1.2 (no SDL/, -lSDL or sdl-config).
 
-It makes OUT_DIR/OpenGPU-SDK-VERSION/ and, with --archives, its .tar.gz
+It makes OUT_DIR/GFOpenGPU-SDK-VERSION/ and, with --archives, its .tar.gz
 (for cross-compiling on the PC) and .lha (for the Amiga) beside it.
 Everything in the kit is redistributable: each third-party header is
 checked for its licence (MIT, Zlib or Khronos's) and the build stops if one
@@ -46,7 +46,7 @@ SAT_VERSIONS = {"SDL2_image": "2.8.12", "SDL2_mixer": "2.8.2", "SDL2_ttf": "2.24
 CPU = "-m68040 -m68881"
 
 # The Team's headers in include/, by directory (all MIT, AmigaChrome Team).
-OWN_INCLUDE = ("opengpu", "openrtg", "proto", "inline", "clib", "libraries", "Warp3D", "mgl", "tgl")
+OWN_INCLUDE = ("gfopengpu", "gfopenrtg", "proto", "inline", "clib", "libraries", "Warp3D", "mgl", "tgl")
 # GL's headers from Mesa: Mesa's gl.h (MIT) and Khronos's (MIT; the two
 # platform headers Apache 2.0). GLX, WGL and GLES 1 (which GLA doesn't
 # give) stay out, and so does GLES3/gl3ext.h, an empty header whose licence
@@ -56,12 +56,12 @@ MESA_HEADERS = ("GL/gl.h", "GL/glext.h", "GL/glcorearb.h",
                 "GLES3/gl3.h", "GLES3/gl31.h", "GLES3/gl32.h", "GLES3/gl3platform.h",
                 "KHR/khrplatform.h")
 # libSDL2_image.a and libSDL2_mixer.a are the stubs of SDL2_image.module and
-# SDL2_mixer.module (LIBS:OpenGPU/, the runtime); the _static ones are the
+# SDL2_mixer.module (LIBS:GFOpenGPU/, the runtime); the _static ones are the
 # same libraries inside the program.
 LIBS = ("libSDL2.a", "libSDL2_test.a", "libSDL2_image.a", "libSDL2_mixer.a",
         "libSDL2_image_static.a", "libSDL2_mixer_static.a", "libSDL2_ttf.a",
         "libSDL2_net.a", "libminigl.a", "libmgl.a", "libtinygl.a")
-# SDL 1.2: sdl12-compat (Zlib) on OpenGPU's SDL 2, when --sdl12 gives it.
+# SDL 1.2: sdl12-compat (Zlib) on GFOpenGPU's SDL 2, when --sdl12 gives it.
 SDL12_VERSION = "1.2.78"
 
 APACHE_MARK = re.compile(r"SPDX-License-Identifier:\s*Apache-2\.0")
@@ -123,7 +123,7 @@ def mesa_src(args) -> Path:
 
 
 SDL2_CONFIG = r'''#!/bin/sh
-# sdl2-config for SDL 2 on OpenGPU (AmigaOS 3.2): the OpenGPU developer kit.
+# sdl2-config for SDL 2 on GFOpenGPU (AmigaOS 3.2): the GFOpenGPU developer kit.
 # Copyright (c) 2026 AmigaChrome Team. MIT licence (Licences/OpenGPU.txt).
 # Prints the flags m68k-amigaos-gcc needs for SDL 2:
 #   m68k-amigaos-gcc game.c -o Game $(sdl2-config --cflags --libs)
@@ -180,9 +180,9 @@ echo $out
 '''
 
 SDL_CONFIG = r'''#!/bin/sh
-# sdl-config for SDL 1.2 on OpenGPU (AmigaOS 3.2): the OpenGPU developer kit.
+# sdl-config for SDL 1.2 on GFOpenGPU (AmigaOS 3.2): the GFOpenGPU developer kit.
 # Copyright (c) 2026 AmigaChrome Team. MIT licence (Licences/OpenGPU.txt).
-# SDL 1.2 here is sdl12-compat on OpenGPU's SDL 2 (SDL2.module): libSDL.a
+# SDL 1.2 here is sdl12-compat on GFOpenGPU's SDL 2 (SDL2.module): libSDL.a
 # turns SDL 1.2's calls into SDL 2's, so both draw through the same engine.
 #   m68k-amigaos-gcc game.c -o Game $(sdl-config --cflags --libs)
 # libSDL.a carries SDL 2's link library inside it, so -lSDL is all a
@@ -239,7 +239,7 @@ echo $out
 '''
 
 PC = {
-    "sdl2": ("sdl2", "Simple DirectMedia Layer 2 on OpenGPU (AmigaOS 3.2, LIBS:OpenGPU/SDL2.module)",
+    "sdl2": ("sdl2", "Simple DirectMedia Layer 2 on GFOpenGPU (AmigaOS 3.2, LIBS:GFOpenGPU/SDL2.module)",
              SDL_VERSION, "", "-L${libdir} -lSDL2 -lm", "-I${includedir}/SDL2"),
     "SDL2_image": ("SDL2_image", "Image loading for SDL 2", SAT_VERSIONS["SDL2_image"], "sdl2",
                    "-L${libdir} -lSDL2_image", "-I${includedir}/SDL2"),
@@ -249,23 +249,23 @@ PC = {
                  "-L${libdir} -lSDL2_ttf", "-I${includedir}/SDL2"),
     "SDL2_net": ("SDL2_net", "Networking for SDL 2 (bsdsocket.library)", SAT_VERSIONS["SDL2_net"], "sdl2",
                  "-L${libdir} -lSDL2_net -lsocket", "-I${includedir}/SDL2"),
-    "gl": ("gl", "OpenGL and GLA on OpenGPU (AmigaOS 3.2, LIBS:OpenGPU/GL.module)", "26.2.4", "",
+    "gl": ("gl", "OpenGL and GLA on GFOpenGPU (AmigaOS 3.2, LIBS:GFOpenGPU/GL.module)", "26.2.4", "",
            "-L${libdir} -lGL -lm", "-I${includedir}"),
-    "glesv2": ("glesv2", "OpenGL ES 2 and 3 on OpenGPU (LIBS:OpenGPU/GL.module)", "26.2.4", "",
+    "glesv2": ("glesv2", "OpenGL ES 2 and 3 on GFOpenGPU (LIBS:GFOpenGPU/GL.module)", "26.2.4", "",
                "-L${libdir} -lGL -lm", "-I${includedir}"),
-    "tinygl": ("tinygl", "TinyGL's interface on OpenGPU's GL (libtinygl.a, LIBS:OpenGPU/GL.module)", "53.1", "gl",
+    "tinygl": ("tinygl", "TinyGL's interface on GFOpenGPU's GL (libtinygl.a, LIBS:GFOpenGPU/GL.module)", "53.1", "gl",
                "-L${libdir} -ltinygl", "-I${includedir}"),
 }
 # Only with --sdl12.
 PC_SDL12 = {
-    "sdl": ("sdl", "Simple DirectMedia Layer 1.2 on OpenGPU: sdl12-compat on SDL 2", SDL12_VERSION, "",
+    "sdl": ("sdl", "Simple DirectMedia Layer 1.2 on GFOpenGPU: sdl12-compat on SDL 2", SDL12_VERSION, "",
             "-L${libdir} -lSDL -lm", "-I${includedir}/SDL -DNO_SDL_GLU"),
 }
 
 
 def pc_text(name: str) -> str:
     n, desc, ver, req, libs, cflags = PC[name] if name in PC else PC_SDL12[name]
-    return ("# OpenGPU developer kit. The kit's prefix is two levels up from this file:\n"
+    return ("# GFOpenGPU developer kit. The kit's prefix is two levels up from this file:\n"
             "# the kit's own, or a stove's prefix/m68k-amigaos.\n"
             "prefix=${pcfiledir}/../..\nexec_prefix=${prefix}\nlibdir=${prefix}/lib\nincludedir=${prefix}/include\n\n"
             f"Name: {n}\nDescription: {desc}\nVersion: {ver}\n"
@@ -274,10 +274,10 @@ def pc_text(name: str) -> str:
             + (f"Libs: {libs}\nCflags: {cflags}\n" if req else f"Libs: -noixemul {CPU} {libs}\nCflags: {cflags} -noixemul {CPU}\n"))
 
 
-CMAKE_SDL2 = r'''# SDL 2 on OpenGPU (AmigaOS 3.2) for CMake: find_package(SDL2) gives
+CMAKE_SDL2 = r'''# SDL 2 on GFOpenGPU (AmigaOS 3.2) for CMake: find_package(SDL2) gives
 # SDL2::SDL2, SDL2::SDL2main (empty: SDL needs no main of its own here),
 # SDL2::SDL2-static (the same), SDL2_INCLUDE_DIRS and SDL2_LIBRARIES.
-# OpenGPU developer kit; the kit is three levels up (lib/cmake/SDL2).
+# GFOpenGPU developer kit; the kit is three levels up (lib/cmake/SDL2).
 get_filename_component(_ogpu_prefix "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
 set(SDL2_PREFIX "${_ogpu_prefix}")
 set(SDL2_INCLUDE_DIR "${_ogpu_prefix}/include/SDL2")
@@ -303,8 +303,8 @@ if(NOT TARGET SDL2::SDL2)
 endif()
 '''
 
-CMAKE_SAT = r'''# @NAME@ for SDL 2 on OpenGPU (AmigaOS 3.2): find_package(@NAME@) gives
-# @NAME@::@NAME@ and @NAME@::@NAME@-static. OpenGPU developer kit.
+CMAKE_SAT = r'''# @NAME@ for SDL 2 on GFOpenGPU (AmigaOS 3.2): find_package(@NAME@) gives
+# @NAME@::@NAME@ and @NAME@::@NAME@-static. GFOpenGPU developer kit.
 get_filename_component(_ogpu_prefix "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
 include(CMakeFindDependencyMacro)
 find_dependency(SDL2 CONFIG PATHS "${_ogpu_prefix}/lib/cmake/SDL2" NO_DEFAULT_PATH)
@@ -329,24 +329,24 @@ def make_kit(args) -> Path:
     sdl12 = Path(args.sdl12).resolve() if args.sdl12 else None
     if not sdl12 and (build / "sdl12" / "libSDL.a").is_file():
         sdl12 = build / "sdl12"
-    kit = Path(args.out).resolve() / f"OpenGPU-SDK-{args.version}"
+    kit = Path(args.out).resolve() / f"GFOpenGPU-SDK-{args.version}"
     if kit.exists():
         die(f"{kit} is there already: choose another OUT_DIR, or move it away")
     inc, lib = kit / "include", kit / "lib"
     notices: list[tuple[str, str]] = []     # (what, licence) for Licences/README
     apache: list[str] = []                  # headers under Apache 2.0 (Khronos's platform headers)
 
-    # 1. The Team's headers: opengpu.library, OpenRTG, Warp3D, MiniGL.
+    # 1. The Team's headers: gfopengpu.library, GFOpenRTG, Warp3D, MiniGL.
     for d in OWN_INCLUDE:
         for f in sorted((ROOT / "include" / d).rglob("*.h")):
             if licence_of(f) != "MIT (AmigaChrome Team)":
                 die(f"{f}: not the Team's MIT notice")
             copy(f, inc / f.relative_to(ROOT / "include"))
     # The libraries' SFD files, for other compilers' stubs and pragmas.
-    for f in (ROOT / "library" / "opengpu" / "opengpu_lib.sfd", ROOT / "library" / "openrtg_lib.sfd",
+    for f in (ROOT / "library" / "opengpu" / "gfopengpu_lib.sfd", ROOT / "library" / "gfopenrtg_lib.sfd",
               ROOT / "library" / "warp3d" / "warp3d_lib.sfd"):
         copy(f, kit / "sfd" / f.name)
-    for f in sorted((gl / "include" / "gla").rglob("*.h")):     # GLA, OpenGPU's GL interface
+    for f in sorted((gl / "include" / "gla").rglob("*.h")):     # GLA, GFOpenGPU's GL interface
         copy(f, inc / "gla" / f.relative_to(gl / "include" / "gla"))
 
     # 2. SDL 2's headers and the satellites', all Zlib. SDL_config.h is the
@@ -435,13 +435,13 @@ def make_kit(args) -> Path:
     shutil.copytree(SDK / "examples", kit / "examples",
                     ignore=None if sdl12 else shutil.ignore_patterns("sdl12"))
     copy(SDK / "README", kit / "README")
-    copy(SDK / "AutoDocs-OpenGPU.md", kit / "AutoDocs-OpenGPU.md")
+    copy(SDK / "AutoDocs-GFOpenGPU.md", kit / "AutoDocs-GFOpenGPU.md")
 
     # 7. Notices.
     L = kit / "Licences"
     L.mkdir()
     copy(ROOT / "LICENSE", L / "OpenGPU.txt")
-    notices.append(("OpenGPU, OpenRTG, Warp3D, MiniGL, TinyGL and GLA headers; libGL.a, libminigl.a, libmgl.a, libtinygl.a; libSDL2.a's SDL2_gl.o; sdl2-config, sdl-config, the pkg-config and CMake files; the examples", "MIT, AmigaChrome Team (OpenGPU.txt)"))
+    notices.append(("GFOpenGPU, GFOpenRTG, Warp3D, MiniGL, TinyGL and GLA headers; libGL.a, libminigl.a, libmgl.a, libtinygl.a; libSDL2.a's SDL2_gl.o; sdl2-config, sdl-config, the pkg-config and CMake files; the examples", "MIT, AmigaChrome Team (OpenGPU.txt)"))
     if sdl12:
         copy(sdl12 / "LICENSE.txt", L / "sdl12-compat.txt")
         notices.append((f"sdl12-compat {SDL12_VERSION}: SDL/ headers, libSDL.a (altered by the Team for AmigaOS 3; with dr_mp3: public domain or MIT-0). libSDL.a also holds libSDL2.a's members, renamed SDL2X_; libSDL_gl.a", "Zlib (sdl12-compat.txt)"))
@@ -498,7 +498,7 @@ def make_kit(args) -> Path:
         copy(APACHE_TEXT, L / "Apache-2.0.txt")
         notices.append(("Khronos's platform headers: " + ", ".join(apache), "Apache 2.0 (Apache-2.0.txt), Copyright The Khronos Group Inc."))
     with open(L / "README", "w") as fh:
-        fh.write("What in the OpenGPU developer kit comes from where, and its licence.\n\n")
+        fh.write("What in the GFOpenGPU developer kit comes from where, and its licence.\n\n")
         for what, licence in notices:
             fh.write(f"- {what}\n    {licence}\n")
 
@@ -538,7 +538,7 @@ def main() -> int:
     ap.add_argument("--mesa")
     ap.add_argument("--sdl12", help="sdl12-compat's build (include/SDL/, libSDL.a, LICENSE.txt); default BUILD/sdl12")
     ap.add_argument("--version", default="0.6")
-    ap.add_argument("--stove", default=os.environ.get("STOVE16", str(Path.home() / "AmigaChrome/stoves/os32-gcc16/prefix")),
+    ap.add_argument("--stove", default=os.environ.get("STOVE16", str(Path.home() / "AmiCradle/stoves/os32-gcc16/prefix")),
                     help="a stove prefix, for m68k-amigaos-ar when it isn't on PATH")
     ap.add_argument("--archives", action="store_true", help="also make the .tar.gz and .lha")
     args = ap.parse_args()

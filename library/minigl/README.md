@@ -1,10 +1,10 @@
 # minigl.library 29 for AmigaOS 3
 
-OpenRTG's MiniGL is OpenGL 1.1's fixed-function pipeline for 68k programs. It uses the interface of the 2026 minigl.library 29, so programs built for that library run on this one unchanged.
+GFOpenRTG's MiniGL is OpenGL 1.1's fixed-function pipeline for 68k programs. It uses the interface of the 2026 minigl.library 29, so programs built for that library run on this one unchanged.
 
 minigl.library runs on any 68040 or 68060, LC and EC too, and uses the FPU when there is one. Its front end (every `mgl_*.c` but `mgl_lib.c`: the vertex pipeline, matrices, lighting, `mgl_math.c`) is in it twice, built for the FPU (`-m68040 -m68881`) and soft (`tools/m68k-soft-m68040.specs`, its float work through the mathieee libraries), each with its own dispatch table. The first open chooses one: the FPU table when `AttnFlags` shows an FPU, else the soft one, which opens the four mathieee libraries (closed on expunge). `ENV:MINIGL_FORCE_SOFT` (or a local variable), set to anything but `0`, takes the soft table on an FPU too; the choice holds until the library is expunged. With the FPU, MGLTest CPU ran 40.0 and 38.0 frames a second against 22.75 and 21.95 soft, with the same checksum (AC090, 17 October 2026).
 
-How it is built (`build.sh`): each half's objects and its own libgcc (and, soft, libnix's libm) get every global they define renamed, `mglF_` and `mglS_` (the tables `mgl_table_fpu` and `mgl_table_soft`), so a half only ever calls its own helpers and no float crosses between the two ABIs. `mgl_lib.c` (soft, no float work) and the OpenGPU cores (no float) are there once. The dispatch table's calls take floats on the stack and return none, so programs call either table the same way. MGLTest, MGLTestStatic and MGLGlutTest are soft float; libminigl.a and libmgl.a are stubs that call through the table, as before.
+How it is built (`build.sh`): each half's objects and its own libgcc (and, soft, libnix's libm) get every global they define renamed, `mglF_` and `mglS_` (the tables `mgl_table_fpu` and `mgl_table_soft`), so a half only ever calls its own helpers and no float crosses between the two ABIs. `mgl_lib.c` (soft, no float work) and the GFOpenGPU cores (no float) are there once. The dispatch table's calls take floats on the stack and return none, so programs call either table the same way. MGLTest, MGLTestStatic and MGLGlutTest are soft float; libminigl.a and libmgl.a are stubs that call through the table, as before.
 
 The library does the front end itself:
 
@@ -12,15 +12,15 @@ The library does the front end itself:
 - clipping, culling, points, lines and polygons;
 - textures and display lists.
 
-It sends triangles to the one library's 3D ops (`include/opengpu/stream3d.h`: TRIANGLES, RENDER3D, TEXENV, TEXTURE, DEPTH, CLEAR3D). These are the same ops Warp3D.library and SDL 2 use, and the same rasteriser draws them. It does not go through Mesa.
+It sends triangles to the one library's 3D ops (`include/gfopengpu/stream3d.h`: TRIANGLES, RENDER3D, TEXENV, TEXTURE, DEPTH, CLEAR3D). These are the same ops Warp3D.library and SDL 2 use, and the same rasteriser draws them. It does not go through Mesa.
 
 ![The MiniGL test scene through four routes](mgltest-four-ways.png)
 
 *MGLTest's first frame, 320x240, on a scratch copy of the Showcase instance (OS 3.2.3, AC090 68040), 8 October 2026. The same program is used for all four pictures.*
 
 - **First:** this library on the 68k.
-- **Second:** this library on OpenGPU. It is byte for byte the same picture.
-- **Third:** the classic minigl.library 29.1 on OpenRTG's Warp3D.library.
+- **Second:** this library on GFOpenGPU. It is byte for byte the same picture.
+- **Third:** the classic minigl.library 29.1 on GFOpenRTG's Warp3D.library.
   - Its lighting calls are stubs, so the sphere is unlit.
   - Its fog goes through Warp3D's fog, which is linear in 1/z, so the scene is foggier.
 - **Fourth:** Mesa 26.2.4's softpipe on the 68k.
@@ -31,10 +31,10 @@ It sends triangles to the one library's 3D ops (`include/opengpu/stream3d.h`: TR
 
 | Route | `ENV:MiniGL/Driver` | Where it draws |
 | --- | --- | --- |
-| OpenGPU | `OpenGPU` | Batches go to `opengpu.library`, whose back end draws them. On AmigaChrome that is `ACRTG.gpu` on the Cradle. |
-| 68k | `CPU` | The 3D core (`library/opengpu/ogpu_3d.c`) is linked into the library. It needs no `opengpu.library`. |
+| GFOpenGPU | `GFOpenGPU` | Batches go to `gfopengpu.library`, whose back end draws them. On AmiCradle that is `ACRTG.gpu` on the Cradle. |
+| 68k | `CPU` | The 3D core (`library/opengpu/ogpu_3d.c`) is linked into the library. It needs no `gfopengpu.library`. |
 
-`Auto` (the default) takes OpenGPU when its back end is not the 68k itself, and the 68k route otherwise.
+`Auto` (the default) takes GFOpenGPU when its back end is not the 68k itself, and the 68k route otherwise.
 
 A frame is one batch unless it outgrows one. `mglSwitchDisplay` runs the batch and shows the frame.
 
@@ -105,7 +105,7 @@ Not offered, as MiniGL never had them:
 
 ## Measured
 
-All runs were on a scratch copy of Instance-11 (OS 3.2.3, AC090 68040, OpenRTG) on 8 October 2026. The OpenGPU route ran on a lab runtime and `ACRTG.gpu` built with the 3D core: the PC's CPU, not yet its GPU.
+All runs were on a scratch copy of Instance-11 (OS 3.2.3, AC090 68040, GFOpenRTG) on 8 October 2026. The GFOpenGPU route ran on a lab runtime and `ACRTG.gpu` built with the 3D core: the PC's CPU, not yet its GPU.
 
 MGLTest, started plainly (its Workbench icon, or the name in a Shell), shows the scene in a Workbench window until its close gadget, Esc or Ctrl-C ends it, then frees everything and exits. `MGLTest CPU FRAMES 100` (or `SECONDS 10`, or the older `MGLTest CPU 320 240 16 100`) is the measuring run: full screen, printing the frame rate.
 
@@ -113,15 +113,15 @@ These MGLTest rows come from one boot, on a busy host. W3DTest on the 68k, run i
 
 | MGLTest, 320x240 (frames a second) | |
 | --- | --- |
-| This library, OpenGPU | 99.0 |
+| This library, GFOpenGPU | 99.0 |
 | This library, 68k | 29.9 |
-| Classic minigl.library 29.1 on Warp3D.library, OpenGPU | 12.3 |
+| Classic minigl.library 29.1 on Warp3D.library, GFOpenGPU | 12.3 |
 | Classic minigl.library 29.1 on Warp3D.library, 68k | 7.0 |
 | Mesa softpipe, 68k | 1.06 |
 
 Other GL programs through this library, 320x240:
 
-| Program | 68k | OpenGPU |
+| Program | 68k | GFOpenGPU |
 | --- | --- | --- |
 | Mesa's Open demos: boing (GL 1.x) | 17.1 | 36.9 |
 | Mesa's Open demos: chrome gears (display lists, sphere map) | 27.3 | 75.4 |

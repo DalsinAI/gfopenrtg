@@ -118,7 +118,7 @@ static int ot_open_display(struct Demo *d)
                                CYBRBIDTG_Depth, d->depth, TAG_DONE);
     }
     if (mode == (ULONG)INVALID_ID) {
-        printf("OpenTensor: no suitable OpenRTG mode\n");
+        printf("OpenTensor: no suitable GFOpenRTG mode\n");
         return 0;
     }
 
@@ -128,7 +128,7 @@ static int ot_open_display(struct Demo *d)
         SA_Type, CUSTOMSCREEN, SA_Exclusive, TRUE,
         SA_Title, (ULONG)"OpenTensor: Beyond First Light", TAG_DONE);
     if (!d->screen) {
-        printf("OpenTensor: could not open %dx%dx%d OpenRTG screen\n",
+        printf("OpenTensor: could not open %dx%dx%d GFOpenRTG screen\n",
                d->width, d->height, d->depth);
         return 0;
     }
@@ -291,7 +291,7 @@ int main(int argc, char **argv)
 
     printf("OpenTensor: %dx%dx%d %s, AHI %s, sequence %.0f seconds\n",
            d.width, d.height, d.depth,
-           d.windowed ? "windowed compatibility" : "full-screen OpenRTG direct",
+           d.windowed ? "windowed compatibility" : "full-screen GFOpenRTG direct",
            d.audio.ready ? "44.1 kHz stereo" : "off",
            OT_SEQUENCE_SECONDS);
     d.start_time = d.fps_mark = ot_now();

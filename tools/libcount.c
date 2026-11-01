@@ -1,9 +1,9 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT */
-/* LibCount: how often each function of some libraries is called, for OpenRTG
+/* LibCount: how often each function of some libraries is called, for GFOpenRTG
  *'s phase 0 (DESIGN.md): which graphics,
  * intuition, layers and RTG calls Workbench and programs really make, so
- * openrtg.library takes over the busy ones first.
+ * gfopenrtg.library takes over the busy ones first.
  *
  *   LibCount LIBS/M/A, SECONDS/N, TO/K
  *   LibCount graphics.library intuition.library layers.library SECONDS 30 TO RAM:counts
@@ -25,7 +25,7 @@
 #include <proto/dos.h>
 #include <string.h>
 
-static const char ver[] __attribute__((used)) = "$VER: LibCount 1.0 (4.10.2026) OpenRTG";
+static const char ver[] __attribute__((used)) = "$VER: LibCount 1.0 (4.10.2026) GFOpenRTG";
 
 #define MAXLIBS 12
 #define FIRST_LVO 30                 /* after Open, Close, Expunge and the reserved vector */

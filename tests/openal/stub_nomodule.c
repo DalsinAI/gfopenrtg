@@ -2,15 +2,15 @@
  * SPDX-License-Identifier: MIT
  *
  * libopenal.a (stubs/openal/openal_stub.c) on a PC: the stub's own file,
- * built against OpenAL.module's headers, with exec, dos and opengpu.library
+ * built against OpenAL.module's headers, with exec, dos and gfopengpu.library
  * answered here (tests/sdl3/host's stand-ins), as tests/sdl3/stub_nomodule.c
  * does for libSDL3.a. Run by tests/openal/run_host.sh.
  *
- * With no OpenAL.module, by either way of loading (opengpu.library's
- * OGPU_ModuleOpen, or the stub's own LoadSeg with no opengpu.library 0.5):
+ * With no OpenAL.module, by either way of loading (gfopengpu.library's
+ * OGPU_ModuleOpen, or the stub's own LoadSeg with no gfopengpu.library 0.5):
  * the first call says once that the module isn't installed; the program
  * goes on; every call returns 0 (alcOpenDevice NULL: no device);
- * no second try at loading; opengpu.library closed as often as opened.
+ * no second try at loading; gfopengpu.library closed as often as opened.
  * With a module older than the program (its table shorter): the same, and
  * the module closed again. With a module: every call reaches it with its
  * arguments, and the two GetProcAddress give the stub's own entries.
@@ -21,7 +21,7 @@
 
 #include <exec/types.h>
 
-/* No A4 on the host (include/opengpu/module.h has these for the 68k). */
+/* No A4 on the host (include/gfopengpu/module.h has these for the 68k). */
 #define OGPU_A4(a4) (void)(a4)
 static APTR ogpu_a4_get(void)
 {
@@ -32,7 +32,7 @@ static APTR ogpu_a4_get(void)
  * exit() here would end the test before its checks). */
 #include "openal_stub.c"
 
-/* exec, dos and opengpu.library, as the test sets them. */
+/* exec, dos and gfopengpu.library, as the test sets them. */
 struct ExecBase *SysBase;
 struct Library *DOSBase;
 static struct Library opengpu = { 0, 17 };
@@ -43,7 +43,7 @@ static char out[1024];
 struct Library *OpenLibrary(CONST_STRPTR name, ULONG version)
 {
     (void)version;
-    if (strcmp(name, "opengpu.library") || !have_opengpu)
+    if (strcmp(name, "gfopengpu.library") || !have_opengpu)
         return NULL;
     opens++;
     return &opengpu;
@@ -160,9 +160,9 @@ static int failed;
     } while (0)
 
 static const char missing[] =
-    "OpenAL: this program's sound needs LIBS:OpenGPU/OpenAL.module (OpenGPU), which isn't installed.\n";
+    "OpenAL: this program's sound needs LIBS:GFOpenGPU/OpenAL.module (GFOpenGPU), which isn't installed.\n";
 static const char older[] =
-    "OpenAL: LIBS:OpenGPU/OpenAL.module is older than this program. Install a newer OpenGPU.\n";
+    "OpenAL: LIBS:GFOpenGPU/OpenAL.module is older than this program. Install a newer GFOpenGPU.\n";
 
 static void reset(int with_opengpu, unsigned revision, struct OpenALModuleTable *module, int fill)
 {
@@ -195,7 +195,7 @@ static void run_missing(const char *how, int with_opengpu, const char *message)
     CHECK(alcOpenDevice(NULL) == NULL, "a call after the end answers NULL");
     CHECK(!strcmp(out, message), "the message once");
     CHECK(module_opens + loadsegs == 1, "one try at loading the module");
-    CHECK(opens == closes, "opengpu.library closed as often as opened");
+    CHECK(opens == closes, "gfopengpu.library closed as often as opened");
     if (!failed)
         printf("ok %s\n", how);
 }
@@ -209,7 +209,7 @@ static void run_older(void)
     CHECK(module_ended == 1 && module_closes == 1, "the module closed again");
     CHECK(alGetFloat(AL_SPEED_OF_SOUND) == 0.0f, "calls answer 0");
     OpenALStub_Close();
-    CHECK(module_opens == 1 && opens == closes, "one try, opengpu.library closed");
+    CHECK(module_opens == 1 && opens == closes, "one try, gfopengpu.library closed");
     if (!failed)
         printf("ok %s\n", how);
 }
@@ -233,15 +233,15 @@ static void run_present(void)
     CHECK(out[0] == 0, "nothing said");
     OpenALStub_Close();
     CHECK(module_ended == 1 && module_closes == 1, "the module's close, then OGPU_ModuleClose");
-    CHECK(module_opens == 1 && loadsegs == 0 && opens == closes, "one open, opengpu.library closed");
+    CHECK(module_opens == 1 && loadsegs == 0 && opens == closes, "one open, gfopengpu.library closed");
     if (!failed)
         printf("ok %s\n", how);
 }
 
 int main(void)
 {
-    run_missing("opengpu.library 0.17 (OGPU_ModuleOpen), no module", 1, missing);
-    run_missing("no opengpu.library (LoadSeg), no module", 0, missing);
+    run_missing("gfopengpu.library 0.17 (OGPU_ModuleOpen), no module", 1, missing);
+    run_missing("no gfopengpu.library (LoadSeg), no module", 0, missing);
     run_older();
     run_present();
     return failed;

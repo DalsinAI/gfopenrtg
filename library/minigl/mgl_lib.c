@@ -30,8 +30,8 @@
 #include <stdarg.h>
 
 #include "mgl_internal.h"
-#include "../../include/opengpu/opengpu.h"
-#include "../../include/proto/opengpu.h"
+#include "../../include/gfopengpu/gfopengpu.h"
+#include "../../include/proto/gfopengpu.h"
 
 struct ExecBase *SysBase;
 struct DosLibrary *DOSBase;
@@ -65,8 +65,8 @@ static struct MGLBase *MGLBase;
 int start(void) { return -1; }
 
 static const char lib_name[] = "minigl.library";
-static const char lib_id[] = "minigl.library 29.10 (8.10.2026) OpenRTG MiniGL, AmigaChrome Team\r\n";
-static const char lib_ver[] __attribute__((used)) = "\0$VER: minigl.library 29.10 (8.10.2026) OpenRTG MiniGL, AmigaChrome Team";
+static const char lib_id[] = "minigl.library 29.10 (8.10.2026) GFOpenRTG MiniGL, AmiCradle Team\r\n";
+static const char lib_ver[] __attribute__((used)) = "\0$VER: minigl.library 29.10 (8.10.2026) GFOpenRTG MiniGL, AmiCradle Team";
 
 static struct Library *lib_init(REG(d0, struct MGLBase *base), REG(a0, BPTR seglist), REG(a6, struct ExecBase *sys));
 static struct Library *lib_open(REG(a6, struct MGLBase *base));
@@ -120,7 +120,7 @@ static int open_libs(struct MGLBase *base)
         }
     }
     if (!OpenGPUBase) {
-        OpenGPUBase = OpenLibrary("opengpu.library", 0);
+        OpenGPUBase = OpenLibrary("gfopengpu.library", 0);
         mgl_prefs.gpu_3d = 0;
         if (OpenGPUBase) {
             ULONG a = OGPU_Query(OGPU_OP_TRIANGLES, OGPU_FMT_ARGB32);
@@ -195,7 +195,7 @@ static int choose_table(void)
 
 /* ---- preferences ---------------------------------------------------------------------- */
 
-/* ENV:MiniGL/Driver   Auto, CPU or OpenGPU (Auto: OpenGPU when its back end
+/* ENV:MiniGL/Driver   Auto, CPU or GFOpenGPU (Auto: GFOpenGPU when its back end
  *                     is not this 68k)
  * ENV:MiniGL/ZBuffer  16 or 32: bits of depth, unless the program chose
  * ENV:MiniGL/Flip     1: a screen changes buffers to show a frame instead of

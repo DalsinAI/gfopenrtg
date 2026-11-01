@@ -1,29 +1,29 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * openrtg.library 0.1: phase 2's first part (DESIGN.md, sections 4 and 10).
+ * gfopenrtg.library 0.1: phase 2's first part (DESIGN.md, sections 4 and 10).
  * It finds the ACRTG boards, one per RTG monitor (serial number = monitor),
  * and builds each monitor's mode table once (modes.c), so the display
  * database calls can be answered from it. It does not claim the boards yet:
- * Picasso96's acrtg.card still drives them until OpenRTG opens screens of
+ * Picasso96's acrtg.card still drives them until GFOpenRTG opens screens of
  * its own. Built bare by library/build.sh.
  *
  * 0.18: no data or BSS in the file (ortg_state.h), so the same file runs
- * from a ROM; `library/build.sh module` builds it as openrtg.module.
+ * from a ROM; `library/build.sh module` builds it as gfopenrtg.module.
  *
  * 0.19: a friend bitmap asked for as displayable (BMF_DISPLAYABLE) goes in
  * its friend's board's video RAM while such friends take at most half of it
- * (screens.c), so OpenGPU's GPU draws in SDL's window and textures.
+ * (screens.c), so GFOpenGPU's GPU draws in SDL's window and textures.
  *
  * 0.19.1: a $VER string, so C:Version finds the library, and a version above
- * 0.19 so OpenUp's update brings it to machines that have 0.19. The library's
+ * 0.19 so GFOpenUp's update brings it to machines that have 0.19. The library's
  * lib_Version and lib_Revision stay 0 and 19: nothing else changed.
  *
  * 0.19.2: such friends never take the room the board's largest screen needs;
  * with tags, BMATags_Displayable and BMATags_Clear count; and GetBitMapAttr's
  * BMA_FLAGS says BMF_DISPLAYABLE of a bitmap in video RAM.
  *
- * 0.19.3: a new bitmap in video RAM (every screen's) is cleared by OpenGPU's
+ * 0.19.3: a new bitmap in video RAM (every screen's) is cleared by GFOpenGPU's
  * FILL when it can, else a longword at a time, not a byte at a time
  * (screens.c, clear_new).
  *
@@ -38,8 +38,8 @@
  * and cybergraphics.library's LockBitMapTags then gives no address
  * (screens.c, card_part).
  *
- * 0.21: OpenGPU's batches left running (the compositor's step 4). A batch
- * drawing from OpenRTG bitmaps, or from sources copied at submit (glyphs,
+ * 0.21: GFOpenGPU's batches left running (the compositor's step 4). A batch
+ * drawing from GFOpenRTG bitmaps, or from sources copied at submit (glyphs,
  * patterns, pixel arrays up to 4 KiB), is not waited for; the CPU drawing
  * on or reading a bitmap, ORTG_BitMapInfo, freeing a bitmap, showing a
  * screen, a palette change and WaitTOF wait for everything still running
@@ -60,11 +60,20 @@
  * asks it about a composited screen and copies those pixels into the
  * windows there. lib_Revision is 23 (0.22 left it at 21).
  *
- * 0.24: Text on an RTG bitmap places and measures as OpenGfx's text core
+ * 0.24: Text on an RTG bitmap places and measures as GFOpenGfx's text core
  * (measured on OS 3.2), so it matches TextLength and TextExtent: the
  * kerning moves the pen, bold doesn't, CharSpace counts whenever the font
  * has it, JAM2 clears the whole box and italic is slanted (screens.c,
  * text_patch).
+ *
+ * 0.25 (1 Nov 2026, the Team's review fixes): Text draws a run of glyphs
+ * into one strip and sends one TEMPLATE per ClipRect piece, and a refused
+ * batch is drawn on the CPU (text_strip.h); the nearest pen is kept per
+ * colour, blits go a row at a time and masked blits between RTG bitmaps go
+ * to GFOpenGPU (pixconv.h); Draw and PolyDraw follow graphics.library's
+ * FRST_DOT, linpatcnt, JAM2 and INVERSVID and lock once a line
+ * (ortg_line.h); ScrollRaster moves the whole box across a layer's
+ * ClipRects as OS 3.2 does (scroll_plan.h).
  */
 #include <exec/types.h>
 #include "ortg_state.h"
@@ -80,19 +89,19 @@
 #include "displaydb.h"
 #include "screens.h"
 #include "pixels.h"
-#include "../include/openrtg/openrtg.h"
+#include "../include/gfopenrtg/gfopenrtg.h"
 
 #define REG(r, decl) register decl __asm(#r)   /* bebbo gcc: an argument in a register */
 #define LIB_VERSION 0
-#define LIB_REVISION 24
+#define LIB_REVISION 25
 
 /* The ACRTG board (amigachrome's common/protocol/acrtg.h): Zorro III,
- * AmigaChrome Team (0xDA15; 2011 before 1 October 2026), product 9 (16 MiB), product 15 (64 MiB, 0.14) or product 16
+ * AmiCradle Team (0xDA15; 2011 before 1 October 2026), product 9 (16 MiB), product 15 (64 MiB, 0.14) or product 16
  * (256 MiB, 0.19.4); the boot ROM page at +0, video RAM from +0x10000, the register page in the last 64 KiB (0xFE0000
  * bytes of video RAM on the 16 MiB board, 0x3FE0000 on the 64 MiB one, 0xFFE0000 on the 256 MiB one); pictures up to
  * 1920x1200 in 8, 16 and 32-bit. */
-#define AMIGACHROME_MFR          0xDA15
-#define AMIGACHROME_MFR_OLD      2011
+#define AMICRADLE_MFR          0xDA15
+#define AMICRADLE_MFR_OLD      2011
 #define ACRTG_PRODUCT   9
 #define ACRTG_PRODUCT_64 15
 #define ACRTG_PRODUCT_256 16
@@ -115,7 +124,7 @@
 #define R_LIMIT         0xEC
 #define R_ASK           0xF0
 /* acrtg-v6: the board's display, the size of the picture the host shows it on (width << 16 | height,
- * 0 when not known). OpenRTG names the mode of that size as the monitor's preferred one. */
+ * 0 when not known). GFOpenRTG names the mode of that size as the monitor's preferred one. */
 #define R_DISPLAY       0xF4
 
 struct OpenRTGBase {
@@ -136,10 +145,10 @@ struct OpenRTGBase {
  * in the file: build.sh keeps source order (-fno-toplevel-reorder). */
 int start(void) { return -1; }
 
-static const char lib_name[] = "openrtg.library";
-static const char lib_id[] = "openrtg.library 0.24 (24.10.2026) OpenRTG, AmigaChrome Team\r\n";
+static const char lib_name[] = "gfopenrtg.library";
+static const char lib_id[] = "gfopenrtg.library 0.25 (1.11.2026) GFOpenRTG, AmiCradle Team\r\n";
 /* For C:Version, which looks for "$VER:" in the file. */
-static const char lib_ver[] __attribute__((used)) = "\0$VER: openrtg.library 0.24 (24.10.2026) OpenRTG, AmigaChrome Team";
+static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopenrtg.library 0.25 (1.11.2026) GFOpenRTG, AmiCradle Team";
 
 static struct Library *lib_init(REG(d0, struct OpenRTGBase *base), REG(a0, BPTR seglist), REG(a6, struct ExecBase *sys));
 static struct Library *lib_open(REG(a6, struct OpenRTGBase *base));
@@ -216,7 +225,7 @@ static void board_caps(struct OpenRTGBase *base, ULONG n)
 
 static void find_boards(struct OpenRTGBase *base) {
     struct Library *ExpansionBase = OpenLibrary("expansion.library", 37);
-    static const ULONG makers[2] = { AMIGACHROME_MFR, AMIGACHROME_MFR_OLD };
+    static const ULONG makers[2] = { AMICRADLE_MFR, AMICRADLE_MFR_OLD };
     static const ULONG products[3] = { ACRTG_PRODUCT, ACRTG_PRODUCT_64, ACRTG_PRODUCT_256 };
     static const ULONG sizes[3] = { ACRTG_BOARD, ACRTG64_BOARD, ACRTG256_BOARD };
     if (!ExpansionBase) return;
@@ -279,7 +288,7 @@ static void free_tables(struct OpenRTGBase *base) {
 /* ---- the library ---------------------------------------------------------------- */
 
 /* Room for entry stubs: the 17 library calls, the display database's 5 patches and the screens' 36
- * (OpenGfx absent) take 58 register stubs; OpenGfx 1.4's 19 provider calls take 19 C stubs at each
+ * (GFOpenGfx absent) take 58 register stubs; GFOpenGfx 1.4's 19 provider calls take 19 C stubs at each
  * hand-over (screens.c tries it at switch-on and once more from late_opengpu). */
 #define STUBS_REG 80
 #define STUBS_C2 48
@@ -351,7 +360,7 @@ static BPTR lib_expunge(REG(a6, struct OpenRTGBase *base))
 }
 static ULONG lib_null(void) { return 0; }
 
-/* ---- OpenRTG's calls ------------------------------------------------------------ */
+/* ---- GFOpenRTG's calls ------------------------------------------------------------ */
 
 static struct ortg_mode_table *table_of(struct OpenRTGBase *base, ULONG monitor) {
     return monitor >= 1 && monitor <= ORTG_MAX_MONITORS ? base->table[monitor] : NULL;
@@ -359,7 +368,7 @@ static struct ortg_mode_table *table_of(struct OpenRTGBase *base, ULONG monitor)
 
 static ULONG ORTG_MonitorCount(REG(a6, struct OpenRTGBase *base))
 {
-    ortg_late_opengpu();                                /* 0.18: switched on from a ROM, opengpu.library when it can */
+    ortg_late_opengpu();                                /* 0.18: switched on from a ROM, gfopengpu.library when it can */
     return base->monitors;
 }
 
@@ -419,7 +428,7 @@ static APTR ORTG_BoardAddress(REG(d0, ULONG monitor), REG(a6, struct OpenRTGBase
     return monitor >= 1 && monitor <= ORTG_MAX_MONITORS && base->board[monitor] ? base->board[monitor]->cd_BoardAddr : NULL;
 }
 
-/* OpenRTG's answers in the display database: on (1) or off (0). Once on,
+/* GFOpenRTG's answers in the display database: on (1) or off (0). Once on,
  * the library stays in memory, since the patches point into it. */
 static LONG ORTG_DisplayDatabase(REG(d0, ULONG on), REG(a6, struct OpenRTGBase *base))
 {
@@ -428,10 +437,10 @@ static LONG ORTG_DisplayDatabase(REG(d0, ULONG on), REG(a6, struct OpenRTGBase *
     return ortg_displaydb(base->gfx, base->table, on ? 1 : 0);
 }
 
-/* OpenRTG's own screens (screens.c): a screen on an OpenRTG ModeID gets a
+/* GFOpenRTG's own screens (screens.c): a screen on an GFOpenRTG ModeID gets a
  * chunky bitmap in its board's video RAM and the board shows it, with no
  * Picasso96. The display database must be on. Once on, it stays. A second
- * ORTG_Screens(1) only looks for opengpu.library again, when it wasn't there
+ * ORTG_Screens(1) only looks for gfopengpu.library again, when it wasn't there
  * at the first (screens.c, late_opengpu). ORTG_Screens(0) switches nothing
  * off: from 0.18 it answers 1 when the screens are on, 0 when not. */
 static LONG ORTG_Screens(REG(d0, ULONG on), REG(a6, struct OpenRTGBase *base))
@@ -494,7 +503,7 @@ static LONG ORTG_PresentVirgl(REG(a1, struct RastPort *rp), REG(d0, LONG x), REG
 /* ---- the Native size (0.17, the native screen mode's step 3) ---------------------------------------- */
 
 /* What the host asks of monitor n's board: the size its window wants (0 x 0 when none), WANT_GEN, ASK
- * and the board's largest picture, so OpenBench never reads the board itself. TRUE when the board can
+ * and the board's largest picture, so GFOpenBench never reads the board itself. TRUE when the board can
  * be asked (ACRTG v5 on); FALSE, with everything 0, when it can't or there is no such monitor. The
  * Native modes are made again first, when the size has changed. */
 static BOOL ORTG_NativeSize(REG(d0, ULONG monitor), REG(a0, struct OpenRTGNativeSize *out), REG(a6, struct OpenRTGBase *base))

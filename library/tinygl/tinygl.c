@@ -1,15 +1,15 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * libtinygl.a: TinyGL's context calls on OpenGPU's GL module. A TinyGL
+ * libtinygl.a: TinyGL's context calls on GFOpenGPU's GL module. A TinyGL
  * program gets a GLContext from GLInit(), gives it a window, screen or
  * bitmap with GLAInitializeContext*, draws with GL's own calls and shows
  * each frame with GLASwapBuffers. Here each context is a GLA display,
  * context and buffer (gla/gla_core.h, in libGL.a): virgl on the GPU where
- * OpenGPU's back end has it, else Mesa's softpipe on the 68k, and its
+ * GFOpenGPU's back end has it, else Mesa's softpipe on the 68k, and its
  * frames go into the target's RastPort.
  *
- * ENV:TinyGL/Driver picks the route: CPU (softpipe), OpenGPU (the GPU, or
+ * ENV:TinyGL/Driver picks the route: CPU (softpipe), GFOpenGPU (the GPU, or
  * fail), or Auto (the default: the GPU when there is one).
  *
  * The Team wrote this from TinyGL's published interface (names and
@@ -62,7 +62,7 @@ GLContext *GLInit(void)
     return (GLContext *)calloc(1, sizeof(GLContext));
 }
 
-/* The route: 0 auto, 1 CPU, 2 OpenGPU only. */
+/* The route: 0 auto, 1 CPU, 2 GFOpenGPU only. */
 static int driver(void)
 {
     char v[16];
@@ -70,7 +70,7 @@ static int driver(void)
         return 0;
     if (!strcasecmp(v, "CPU"))
         return 1;
-    if (!strcasecmp(v, "OpenGPU"))
+    if (!strcasecmp(v, "GFOpenGPU"))
         return 2;
     return 0;
 }

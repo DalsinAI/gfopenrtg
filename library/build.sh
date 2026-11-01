@@ -1,24 +1,33 @@
 #!/bin/sh
 # Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
-# openrtg.library, cybergraphics.library and opengpu.library (bare: no startup code or C
-# library; the RomTag's stub comes first), C:OpenRTG and its monitor driver, with the os32 stove (bebbo's m68k-amigaos-gcc).
+# gfopenrtg.library, cybergraphics.library and gfopengpu.library (bare: no startup code or C
+# library; the RomTag's stub comes first), C:GFOpenRTG and its monitor driver, with the os32 stove (bebbo's m68k-amigaos-gcc);
+# gfopengpu.library and its GFOpenGfx parts with GFOpenAmigaGCC 16.2.0-open4 (OPENGPU_STOVE, below).
 #   library/build.sh [OUT_DIR]     (default build/)
 # or, with `library/build.sh module [OUT_DIR]` (OUT_DIR: $OUT, else build/), only
 # the ROM modules, in OUT_DIR/modules, built for size (OPT=, -Os by default):
-#   openrtg.library.module        openrtg.library
+#   gfopenrtg.library.module        gfopenrtg.library
 #   cybergraphics.library.module  cybergraphics.library
-#   openrtg.monitor.module        the monitor driver's job, before DOS (openrtg_monitor_rom.c)
+#   gfopenrtg.monitor.module        the monitor driver's job, before DOS (openrtg_monitor_rom.c)
 # Every build of these three fails if one keeps data or BSS: they run from a ROM.
 set -eu
 TARGET=all
 [ "${1:-}" != module ] || { TARGET=module; shift; }
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
-STOVE=${STOVE:-$HOME/AmigaChrome/stoves/os32}
+STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32}
 CC=${CC:-$STOVE/prefix/bin/m68k-amigaos-gcc}
 NM=${NM:-${CC%gcc}nm}
 if [ "$TARGET" = module ]; then OUT=${1:-${OUT:-$ROOT/build}}; else OUT=${1:-$ROOT/build}; fi
+# gfopengpu.library is built with GFOpenAmigaGCC 16.2.0-open4, and with nothing
+# else: GCC 6.5 (the os32 stove) miscompiles the CPU core's stroke walk, so
+# strokes painted with gradients or patterns came out wrong (openamigartg
+# #159; tests/amiga/vector's OpenGPUVectorCRC shows the core against the
+# host). OPENGPU_STOVE holds prefix/bin; OPENGPU_CC overrides the compiler.
+OPENGPU_GCC=16.2.0-open4
+OPENGPU_STOVE=${OPENGPU_STOVE:-$HOME/AmiCradle/stoves/os32-gcc16}
+OPENGPU_CC=${OPENGPU_CC:-$OPENGPU_STOVE/prefix/bin/m68k-amigaos-gcc}
 # -fno-delete-null-pointer-checks on every 68k compile: address 0 is memory on
 # an Amiga, and without it GCC puts TRAP #7 (Software Failure 80000027) where
 # it proves a pointer null, in place of the access.
@@ -27,7 +36,7 @@ mkdir -p "$OUT"
 # GCC takes libnix's soft libm020 and libgcc, not libm881 (FPU code, and
 # values returned in fp0 where soft-float callers read d0/d1).
 SOFT="-specs=$ROOT/tools/m68k-soft-m68040.specs"
-# openrtg.library and cybergraphics.library keep what they write in memory they
+# gfopenrtg.library and cybergraphics.library keep what they write in memory they
 # allocate, its address in A4 (library/ortg_state.h): -ffixed-a4 on all their code.
 # $1 the file, $2 the optimisation, the rest its sources
 build_ortg() {
@@ -53,57 +62,62 @@ if [ "$TARGET" = module ]; then
     ORTG_CPU=-m68020 SOFT=
     mkdir -p "$OUT/modules"
     # shellcheck disable=SC2086
-    build_ortg "$OUT/modules/openrtg.library.module" "$OPT" $ORTG_SRC
+    build_ortg "$OUT/modules/gfopenrtg.library.module" "$OPT" $ORTG_SRC
     # shellcheck disable=SC2086
     build_ortg "$OUT/modules/cybergraphics.library.module" "$OPT" $CGX_SRC
     "$CC" -m68020 $OPT -fno-delete-null-pointer-checks -fomit-frame-pointer -fno-toplevel-reorder -fno-builtin -Wall -Wextra -Werror \
-        -nostartfiles -nostdlib -I"$ROOT/include" -o "$OUT/modules/openrtg.monitor.module" "$HERE/openrtg_monitor_rom.c" -lgcc
-    echo "$OUT/modules/openrtg.monitor.module ($(wc -c < "$OUT/modules/openrtg.monitor.module") bytes)"
-    for m in openrtg.library cybergraphics.library openrtg.monitor; do rom_clean "$OUT/modules/$m.module"; done
-    python3 "$ROOT/tools/fpcr_check.py" "${CC%gcc}objdump" "$OUT/modules/openrtg.library.module" "$OUT/modules/cybergraphics.library.module" "$OUT/modules/openrtg.monitor.module"
-    sha256sum "$OUT"/modules/openrtg.library.module "$OUT"/modules/cybergraphics.library.module "$OUT"/modules/openrtg.monitor.module
+        -nostartfiles -nostdlib -I"$ROOT/include" -o "$OUT/modules/gfopenrtg.monitor.module" "$HERE/openrtg_monitor_rom.c" -lgcc
+    echo "$OUT/modules/gfopenrtg.monitor.module ($(wc -c < "$OUT/modules/gfopenrtg.monitor.module") bytes)"
+    for m in gfopenrtg.library cybergraphics.library gfopenrtg.monitor; do rom_clean "$OUT/modules/$m.module"; done
+    python3 "$ROOT/tools/fpcr_check.py" "${CC%gcc}objdump" "$OUT/modules/gfopenrtg.library.module" "$OUT/modules/cybergraphics.library.module" "$OUT/modules/gfopenrtg.monitor.module"
+    sha256sum "$OUT"/modules/gfopenrtg.library.module "$OUT"/modules/cybergraphics.library.module "$OUT"/modules/gfopenrtg.monitor.module
     exit 0
 fi
 # shellcheck disable=SC2086
-build_ortg "$OUT/openrtg.library" -O2 $ORTG_SRC
+build_ortg "$OUT/gfopenrtg.library" -O2 $ORTG_SRC
 # shellcheck disable=SC2086
 build_ortg "$OUT/cybergraphics.library" -O2 $CGX_SRC
-rom_clean "$OUT/openrtg.library"
+rom_clean "$OUT/gfopenrtg.library"
 rom_clean "$OUT/cybergraphics.library"
 # The 3D rasteriser (Warp3D's and SDL's TRIANGLES), when its files are there.
 D3= D3SRC=
 if [ -f "$HERE/opengpu/ogpu_3d.c" ]; then D3=-DOGPU_WITH_3D; D3SRC="$HERE/opengpu/ogpu_3d.c"; fi
-# OpenGfx (library/ogfx): the patches' glue and its leaves. The leaves are AC090
+# GFOpenGfx (library/ogfx): the patches' glue and its leaves. The leaves are AC090
 # magic functions: stack arguments, and no loop turned into a call (ogfx_leaves.c).
-# OpenGfx's drawing core comes from openamigagfx at a pinned commit (one copy).
+# GFOpenGfx's drawing core comes from openamigagfx at a pinned commit (one copy).
+if ! "$OPENGPU_CC" --version 2>/dev/null | head -1 | grep -q "OpenAmigaGCC $OPENGPU_GCC)"; then
+    echo "gfopengpu.library needs GFOpenAmigaGCC $OPENGPU_GCC (OPENGPU_STOVE or OPENGPU_CC); $OPENGPU_CC is:" >&2
+    "$OPENGPU_CC" --version 2>&1 | head -1 >&2 || true
+    exit 1
+fi
 sh "$ROOT/tools/fetch_ogfx_core.sh" "$OUT"
 for f in gfx_core gfx_rp; do
-    "$CC" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -fno-builtin -Wall -Wextra -Werror -Wno-unused-parameter \
+    "$OPENGPU_CC" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -fno-builtin -Wall -Wextra -Werror -Wno-unused-parameter \
         -I"$OUT/ogfx-core" -c -o "$OUT/ogfx_$f.o" "$OUT/ogfx-core/$f.c"
 done
-"$CC" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -fno-builtin -Wall -Wextra -Werror -Wno-unused-parameter \
+"$OPENGPU_CC" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -fno-builtin -Wall -Wextra -Werror -Wno-unused-parameter \
     -I"$ROOT/include" -I"$OUT/ogfx-core" -c -o "$OUT/ogfx_lib.o" "$HERE/ogfx/ogfx_lib.c"
-"$CC" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -fno-lto -fno-builtin -fno-tree-loop-distribute-patterns -Wall -Wextra -Werror \
+"$OPENGPU_CC" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -fno-lto -fno-builtin -fno-tree-loop-distribute-patterns -Wall -Wextra -Werror \
     -c -o "$OUT/ogfx_leaves.o" "$HERE/ogfx/ogfx_leaves.c"
 # -mnobitfield: GCC's bitfield instructions are slow on the AC090's JIT (opengpu_core.c's header).
-"$CC" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -fno-toplevel-reorder -fno-builtin -Wall -Wextra -Werror -Wno-unused-parameter \
+"$OPENGPU_CC" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -fno-toplevel-reorder -fno-builtin -Wall -Wextra -Werror -Wno-unused-parameter \
     -nostartfiles -nostdlib $SOFT -I"$ROOT/include" \
-    $D3 -o "$OUT/opengpu.library" "$HERE/opengpu/opengpu_lib.c" "$HERE/opengpu/ogpu_core.c" $D3SRC "$HERE/opengpu/ogpu_module.c" "$HERE/string.c" \
+    $D3 -o "$OUT/gfopengpu.library" "$HERE/opengpu/opengpu_lib.c" "$HERE/opengpu/ogpu_core.c" $D3SRC "$HERE/opengpu/ogpu_module.c" "$HERE/string.c" \
     "$OUT/ogfx_lib.o" "$OUT/ogfx_leaves.o" "$OUT/ogfx_gfx_core.o" "$OUT/ogfx_gfx_rp.o" -lgcc
-echo "$OUT/opengpu.library ($(wc -c < "$OUT/opengpu.library") bytes)"
+echo "$OUT/gfopengpu.library ($(wc -c < "$OUT/gfopengpu.library") bytes)"
 # No writable data: it may run from ROM, so everything it keeps is in its base.
-python3 "$ROOT/tools/hunk_rw_check.py" "$OUT/opengpu.library"
-"$CC" -m68040 $SOFT -O2 -fno-delete-null-pointer-checks -Wall -Werror -Wno-pointer-sign -noixemul -I"$ROOT/include" -o "$OUT/OpenRTG" "$ROOT/tools/openrtg_cmd.c"
-echo "$OUT/OpenRTG ($(wc -c < "$OUT/OpenRTG") bytes)"
-"$CC" -m68040 $SOFT -O2 -fno-delete-null-pointer-checks -Wall -Werror -Wno-pointer-sign -noixemul -I"$ROOT/include" -o "$OUT/OpenRTG-Monitor" "$ROOT/tools/openrtg_monitor.c"
-echo "$OUT/OpenRTG-Monitor ($(wc -c < "$OUT/OpenRTG-Monitor") bytes)"
+python3 "$ROOT/tools/hunk_rw_check.py" "$OUT/gfopengpu.library"
+"$CC" -m68040 $SOFT -O2 -fno-delete-null-pointer-checks -Wall -Werror -Wno-pointer-sign -noixemul -I"$ROOT/include" -o "$OUT/GFOpenRTG" "$ROOT/tools/openrtg_cmd.c"
+echo "$OUT/GFOpenRTG ($(wc -c < "$OUT/GFOpenRTG") bytes)"
+"$CC" -m68040 $SOFT -O2 -fno-delete-null-pointer-checks -Wall -Werror -Wno-pointer-sign -noixemul -I"$ROOT/include" -o "$OUT/GFOpenRTG-Monitor" "$ROOT/tools/openrtg_monitor.c"
+echo "$OUT/GFOpenRTG-Monitor ($(wc -c < "$OUT/GFOpenRTG-Monitor") bytes)"
 "$HERE/warp3d/build.sh" "$OUT"        # Warp3D.library, its tools and checks
 "$HERE/minigl/build.sh" "$OUT"        # minigl.library, libminigl.a, libmgl.a and MGLTest
 "$HERE/tinygl/build.sh" "$OUT"        # tinygl.library (the stand-in) and libtinygl.a
-[ ! -x "${SDL2_STOVE:-$HOME/AmigaChrome/stoves/os32-gcc16/prefix}/bin/m68k-amigaos-gcc" ] || STOVE="${SDL2_STOVE:-$HOME/AmigaChrome/stoves/os32-gcc16/prefix}" "$HERE/modules/sdl2/build.sh" "$OUT"   # SDL 2 (library/modules/sdl2), with the GCC 16 stove
-[ ! -x "${SDL2_STOVE:-$HOME/AmigaChrome/stoves/os32-gcc16/prefix}/bin/m68k-amigaos-gcc" ] || STOVE="${SDL2_STOVE:-$HOME/AmigaChrome/stoves/os32-gcc16/prefix}" "$HERE/modules/openal/build.sh" "$OUT"   # OpenAL (library/modules/openal), with the GCC 16 stove
+[ ! -x "${SDL2_STOVE:-$HOME/AmiCradle/stoves/os32-gcc16/prefix}/bin/m68k-amigaos-gcc" ] || STOVE="${SDL2_STOVE:-$HOME/AmiCradle/stoves/os32-gcc16/prefix}" "$HERE/modules/sdl2/build.sh" "$OUT"   # SDL 2 (library/modules/sdl2), with the GCC 16 stove
+[ ! -x "${SDL2_STOVE:-$HOME/AmiCradle/stoves/os32-gcc16/prefix}/bin/m68k-amigaos-gcc" ] || STOVE="${SDL2_STOVE:-$HOME/AmiCradle/stoves/os32-gcc16/prefix}" "$HERE/modules/openal/build.sh" "$OUT"   # OpenAL (library/modules/openal), with the GCC 16 stove
 # SDL 1.2 (library/modules/sdl12: sdl12-compat on that SDL 2), when SDL 2 was built.
-[ ! -f "$OUT/libSDL2.a" ] || STOVE16="${SDL2_STOVE:-$HOME/AmigaChrome/stoves/os32-gcc16/prefix}" "$HERE/modules/sdl12/build.sh" "$OUT"
+[ ! -f "$OUT/libSDL2.a" ] || STOVE16="${SDL2_STOVE:-$HOME/AmiCradle/stoves/os32-gcc16/prefix}" "$HERE/modules/sdl12/build.sh" "$OUT"
 # No float-to-int store through the FPCR register (tools/fpcr_check.py: GCC 16
 # at -m68040 can make one; the check runs on every build, whichever stove).
-python3 "$ROOT/tools/fpcr_check.py" "${CC%gcc}objdump" "$OUT/openrtg.library" "$OUT/cybergraphics.library" "$OUT/opengpu.library" "$OUT/OpenRTG" "$OUT/OpenRTG-Monitor" "$OUT/minigl.library" "$OUT/tinygl.library" "$OUT/libtinygl.a"
+python3 "$ROOT/tools/fpcr_check.py" "${CC%gcc}objdump" "$OUT/gfopenrtg.library" "$OUT/cybergraphics.library" "$OUT/gfopengpu.library" "$OUT/GFOpenRTG" "$OUT/GFOpenRTG-Monitor" "$OUT/minigl.library" "$OUT/tinygl.library" "$OUT/libtinygl.a"

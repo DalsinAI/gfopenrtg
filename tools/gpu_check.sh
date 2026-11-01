@@ -1,7 +1,7 @@
 #!/bin/sh
 # Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
-# OpenGPU's Vulkan back end on this machine's GPU (a Pi 5's V3DV, daletop's
+# GFOpenGPU's Vulkan back end on this machine's GPU (a Pi 5's V3DV, daletop's
 # RADV): the golden scenes (the 3D one too) and 3000 random streams against
 # the C core, first in the back end's own memory, then in memory the test
 # owns (as the runtime's board memory is), each way the GPU can reach it.

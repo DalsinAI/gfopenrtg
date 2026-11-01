@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: MIT
  *
  * SDL's calls into the program, and its threads, in SDL2.module
- * (include/opengpu/module.h, residency step 2). The module is built
+ * (include/gfopengpu/module.h, residency step 2). The module is built
  * -fbaserel32: its code reaches its globals through A4, which is the
  * program's copy of SDL's data. So:
  *   - a call into the program (an audio callback, a timer, a thread's

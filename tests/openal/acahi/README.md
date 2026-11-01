@@ -1,6 +1,6 @@
 # ACAHI's board, for the OpenAL tests
 
-These four files are the AmigaChrome runtime's own model of ACAHI, its sound
+These four files are the AmiCradle runtime's own model of ACAHI, its sound
 board for AHI, copied byte for byte from the amigachrome repository at
 e7bb202c5bf19eed0f0427763006dd9feb3c16da, at the same paths:
 

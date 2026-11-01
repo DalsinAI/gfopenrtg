@@ -1,9 +1,9 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * Building stream v1.2's 3D commands (include/opengpu/build3d.h),
+ * Building stream v1.2's 3D commands (include/gfopengpu/build3d.h),
  * byte by byte, high byte first, as ogpu_build.c does. */
-#include "../../include/opengpu/build3d.h"
+#include "../../include/gfopengpu/build3d.h"
 
 static void put(unsigned char *p, unsigned long v) {
     p[0] = (unsigned char)(v >> 24); p[1] = (unsigned char)(v >> 16);

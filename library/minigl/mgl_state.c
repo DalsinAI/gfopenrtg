@@ -96,9 +96,9 @@ GLenum GLGetError(GLcontext c)
 const GLubyte *GLGetString(GLcontext c, GLenum name)
 {
     switch (name) {
-    case GL_VENDOR: return (const GLubyte *)"AmigaChrome Team (OpenRTG)";
+    case GL_VENDOR: return (const GLubyte *)"AmiCradle Team (GFOpenRTG)";
     case GL_RENDERER:
-        return (const GLubyte *)(c && c->route == ROUTE_GPU ? "OpenRTG MiniGL on OpenGPU" : "OpenRTG MiniGL on the 68k");
+        return (const GLubyte *)(c && c->route == ROUTE_GPU ? "GFOpenRTG MiniGL on GFOpenGPU" : "GFOpenRTG MiniGL on the 68k");
     case GL_VERSION: return (const GLubyte *)"1.1 MiniGL 29.10";
     case GL_EXTENSIONS:
         return (const GLubyte *)"GL_ARB_multitexture GL_EXT_paletted_texture GL_EXT_shared_texture_palette "

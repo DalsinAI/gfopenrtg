@@ -371,7 +371,7 @@ static void ot_draw_stats(struct Demo *d)
     glVertex2f(12, 12); glVertex2f(w, 12);
     glVertex2f(w, 132 * scale); glVertex2f(12, 132 * scale);
     glEnd();
-    ot_draw_text(20, 22, scale, "MESA / AHI / OPENRTG", 0.72f, 0.86f, 1.0f, 1.0f);
+    ot_draw_text(20, 22, scale, "MESA / AHI / GFOPENRTG", 0.72f, 0.86f, 1.0f, 1.0f);
     sprintf(line, "SCENE %s", ot_scene_name(d->current_scene));
     ot_draw_text(20, 44 * scale, scale, line, 0.92f, 0.92f, 0.88f, 1.0f);
     sprintf(line, "FPS %d  AHI UNDERRUNS %lu", (int)(d->fps + 0.5f),

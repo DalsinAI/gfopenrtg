@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * SDL2_image's decoding ladder on OpenGPU (patches/sdl2_image): who decodes
+ * SDL2_image's decoding ladder on GFOpenGPU (patches/sdl2_image): who decodes
  * a picture that IMG_Load, IMG_Load_RW, IMG_LoadTyped_RW or IMG_LoadTexture*
  * is given.
  *   1. The x86 or ARM64 cores, through media.decode/1 on the services card

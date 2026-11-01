@@ -43,7 +43,7 @@
 #include "video/SDL_video_unsupported.h"
 
 #include <exec/types.h>
-#include <opengpu/module.h>
+#include <gfopengpu/module.h>
 
 #include "sdl3_module.h"
 

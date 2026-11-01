@@ -1,5 +1,5 @@
 #!/bin/sh
-# OpenGfx's leaves (library/ogfx/ogfx_leaves.c), built by an m68k cross
+# GFOpenGfx's leaves (library/ogfx/ogfx_leaves.c), built by an m68k cross
 # GCC as a library of ours would build them (-fno-lto, -fno-builtin,
 # -fno-tree-loop-distribute-patterns) at -O0 and -O2 for the 68040 (every
 # build is 68040 now): each tagged entry the 12-byte tag with its id

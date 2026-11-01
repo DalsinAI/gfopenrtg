@@ -2,21 +2,21 @@
  * SPDX-License-Identifier: MIT
  *
  * minigl.library: the batch. Triangles go into the context's batch as OGPU
- * stream v1.2 commands (include/opengpu/stream3d.h), with the state they
+ * stream v1.2 commands (include/gfopengpu/stream3d.h), with the state they
  * are drawn with in front (RENDER3D, TEXENV, TEXTURE, DEPTH, CLIP), and
  * vertices in the batch's data area. A flush puts the drawing area's
  * SURFACE and TARGET in front and runs it:
- *  - on OpenGPU: OGPU_Submit to opengpu.library, which hands it to its back
- *    end (ACRTG.gpu: the PC on AmigaChrome), and OGPU_Wait;
+ *  - on GFOpenGPU: OGPU_Submit to gfopengpu.library, which hands it to its back
+ *    end (ACRTG.gpu: the PC on AmiCradle), and OGPU_Wait;
  *  - on the 68k: the 3D core linked in here.
- * A batch carries all its state, as OpenGPU's back ends keep nothing
+ * A batch carries all its state, as GFOpenGPU's back ends keep nothing
  * between batches. A frame is one batch unless it outgrows it. */
 #include "mgl_internal.h"
 
 #ifndef MGL_HOST
 #include <proto/exec.h>
-#include "../../include/opengpu/opengpu.h"
-#include "../../include/proto/opengpu.h"
+#include "../../include/gfopengpu/gfopengpu.h"
+#include "../../include/proto/gfopengpu.h"
 extern struct Library *OpenGPUBase;
 #endif
 

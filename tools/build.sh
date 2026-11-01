@@ -1,12 +1,12 @@
 #!/bin/sh
 # Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
-# OpenRTG's tools, with the os32 stove (bebbo's m68k-amigaos-gcc, NDK 3.2).
+# GFOpenRTG's tools, with the os32 stove (bebbo's m68k-amigaos-gcc, NDK 3.2).
 #   tools/build.sh [OUT_DIR]     (default build/)
 # STOVE: the amiga-gcc install (holding prefix/bin); or CC: the compiler.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
-STOVE=${STOVE:-$HOME/AmigaChrome/stoves/os32}
+STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32}
 CC=${CC:-$STOVE/prefix/bin/m68k-amigaos-gcc}
 OUT=${1:-$HERE/../build}
 mkdir -p "$OUT"
@@ -35,4 +35,6 @@ echo "$OUT/OpenGfxCheck ($(wc -c < "$OUT/OpenGfxCheck") bytes)"
 echo "$OUT/OpenRTGWPAExact ($(wc -c < "$OUT/OpenRTGWPAExact") bytes)"
 "$CC" $CPU -O2 -fno-delete-null-pointer-checks -Wall -Werror -noixemul -I"$HERE/../include" -o "$OUT/OpenRTGScaleExact" "$HERE/ortg_scale_exact.c"
 echo "$OUT/OpenRTGScaleExact ($(wc -c < "$OUT/OpenRTGScaleExact") bytes)"
-python3 "$HERE/fpcr_check.py" "${CC%gcc}objdump" "$OUT/LibCount" "$OUT/OpenGPUCheck" "$OUT/OpenGPUBench" "$OUT/GfxBench" "$OUT/OpenRTGExact" "$OUT/OpenGfxCheck" "$OUT/OpenRTGWPAExact" "$OUT/OpenRTGScaleExact"
+"$CC" $CPU -O2 -fno-delete-null-pointer-checks -Wall -Werror -noixemul -I"$HERE/../include" -o "$OUT/OpenRTGScrollExact" "$HERE/ortg_scroll_exact.c"
+echo "$OUT/OpenRTGScrollExact ($(wc -c < "$OUT/OpenRTGScrollExact") bytes)"
+python3 "$HERE/fpcr_check.py" "${CC%gcc}objdump" "$OUT/LibCount" "$OUT/OpenGPUCheck" "$OUT/OpenGPUBench" "$OUT/GfxBench" "$OUT/OpenRTGExact" "$OUT/OpenGfxCheck" "$OUT/OpenRTGWPAExact" "$OUT/OpenRTGScaleExact" "$OUT/OpenRTGScrollExact"

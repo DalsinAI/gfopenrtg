@@ -1,13 +1,13 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * libopenal.a: OpenAL 1.1 for programs on AmigaOS 3.2, from OpenGPU's
+ * libopenal.a: OpenAL 1.1 for programs on AmigaOS 3.2, from GFOpenGPU's
  * OpenAL.module. Programs include <AL/al.h> and <AL/alc.h> as on any other
  * system and link -lopenal.
  *
  * Every AL and ALC call here jumps through a table (struct OpenALProcs,
  * openal_procs.h's order). The first call loads OpenAL.module
- * (LIBS:OpenGPU/) and asks it to fill the table with its own calls. The
+ * (LIBS:GFOpenGPU/) and asks it to fill the table with its own calls. The
  * table only grows at its end, so a program built today runs on any later
  * module. This is how libSDL3.a reaches SDL3.module (stubs/sdl3).
  *
@@ -15,7 +15,7 @@
  * gets its own copy of the module's data: the module is built -fbaserel32,
  * and every call here sets A4 to the program's copy (the table's a4) and
  * puts the program's A4 back afterwards. This file is built with
- * -ffixed-a4 for that (include/opengpu/module.h, OGPU_A4). opengpu.library
+ * -ffixed-a4 for that (include/gfopengpu/module.h, OGPU_A4). gfopengpu.library
  * (0.5 and later) loads the module with OGPU_ModuleOpen; on an older one
  * the stub LoadSegs the module itself, which is then this program's copy.
  *
@@ -37,10 +37,10 @@
 
 #include "openal_module.h"
 
-/* opengpu.library's calls through the stub's own base, so a program's
+/* gfopengpu.library's calls through the stub's own base, so a program's
    OpenGPUBase is left alone. */
 #define OPENGPU_BASE_NAME OpenALStub_OpenGPUBase
-#include <inline/opengpu.h>
+#include <inline/gfopengpu.h>
 static struct Library *OpenALStub_OpenGPUBase = NULL;
 static APTR OpenALStub_handle = NULL;
 static BPTR OpenALStub_seg = 0;
@@ -88,19 +88,19 @@ void OpenALStub_Init(void)
     if (OpenALStub_ready) {
         return;
     }
-    OpenALStub_OpenGPUBase = OpenLibrary((CONST_STRPTR) "opengpu.library", 0);
+    OpenALStub_OpenGPUBase = OpenLibrary((CONST_STRPTR) "gfopengpu.library", 0);
     if (OpenALStub_OpenGPUBase && (OpenALStub_OpenGPUBase->lib_Version > 0 ||
                                    OpenALStub_OpenGPUBase->lib_Revision >= OGPU_MODULE_LIB_REVISION)) {
         OpenALStub_handle = OGPU_ModuleOpen((CONST_STRPTR)OPENAL_MODULE_NAME, OPENAL_MODULE_OPEN_VERSION,
                                             (APTR *)&OpenALStub_module);
         if (!OpenALStub_handle && IoErr() == ERROR_OBJECT_NOT_FOUND) {
-            OpenALStub_Fail("this program's sound needs " OPENAL_MODULE_FILE " (OpenGPU), which isn't installed.");
+            OpenALStub_Fail("this program's sound needs " OPENAL_MODULE_FILE " (GFOpenGPU), which isn't installed.");
             return;
         }
     } else {
         OpenALStub_seg = LoadSeg((CONST_STRPTR)OPENAL_MODULE_FILE);
         if (!OpenALStub_seg) {
-            OpenALStub_Fail("this program's sound needs " OPENAL_MODULE_FILE " (OpenGPU), which isn't installed.");
+            OpenALStub_Fail("this program's sound needs " OPENAL_MODULE_FILE " (GFOpenGPU), which isn't installed.");
             return;
         }
         entry = (OpenALModuleEntry)((UBYTE *)BADDR(OpenALStub_seg) + 4);
@@ -111,7 +111,7 @@ void OpenALStub_Init(void)
         OpenALStub_module = (struct OpenALModuleTable *)entry(&args);
     }
     if (!OpenALStub_module) {
-        OpenALStub_Fail(OPENAL_MODULE_FILE " is older than this program, or couldn't start. Install a newer OpenGPU.");
+        OpenALStub_Fail(OPENAL_MODULE_FILE " is older than this program, or couldn't start. Install a newer GFOpenGPU.");
         return;
     }
     OpenALStub_module->head.caller_a4 = ogpu_a4_get();
@@ -121,7 +121,7 @@ void OpenALStub_Init(void)
             OGPU_A4(OpenALStub_a4);
             OpenALStub_module->close();
         }
-        OpenALStub_Fail(OPENAL_MODULE_FILE " is older than this program. Install a newer OpenGPU.");
+        OpenALStub_Fail(OPENAL_MODULE_FILE " is older than this program. Install a newer GFOpenGPU.");
         return;
     }
     OpenALStub_ready = 1;

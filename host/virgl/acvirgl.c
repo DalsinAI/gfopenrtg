@@ -7,8 +7,8 @@
  * dlsym. */
 #define _GNU_SOURCE
 #include "acvirgl.h"
-#include "../../include/opengpu/stream.h"
-#include "../../include/opengpu/virgl.h"
+#include "../../include/gfopengpu/stream.h"
+#include "../../include/gfopengpu/virgl.h"
 #include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -300,7 +300,7 @@ static int32_t av_present(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, u
     struct vr_box box;
     struct iovec iov;
     uint8_t *dst;
-    uint64_t pixels = 0;
+    uint64_t pixels = 0, span;
     if (n > ACV_PRESENT_MAX || nargs < 10 + 2 * n || (flags & ~(uint32_t)ACV_PRESENT_FLIP_Y)) return ACV_ERR_BADCMD;
     bpp = fmt == OGPU_FMT_XRGB32 || fmt == OGPU_FMT_ARGB32 ? 4 : fmt == OGPU_FMT_RGB565 ? 2 : 0;
     if (!bpp) return ACV_ERR_BADCMD;
@@ -309,7 +309,11 @@ static int32_t av_present(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, u
     if (!(res = av_res_find(v, handle)) || !av_layout(res->format, &lr, &lg, &lb, &la))
         return ACV_ERR_RENDERER;
     rw = (int)res->width; rh = (int)res->height;
-    if (!(dst = map(mu, addr, bpr * (uint32_t)(th - 1) + (uint32_t)tw * bpp))) return ACV_ERR_NOMAP;
+    /* The target's bytes, in 64 bits: bpr * (th - 1) passes 32 bits (bpr
+     * 0x01000000, th 257), and a wrapped length would map one row while the
+     * rows below it are written. Past 32 bits it is out of reach. */
+    span = (uint64_t)bpr * (uint64_t)(th - 1) + (uint64_t)tw * bpp;
+    if (span > 0xFFFFFFFFu || !(dst = map(mu, addr, (uint32_t)span))) return ACV_ERR_NOMAP;
     /* Each rectangle inside the target and over the resource; their box in the resource. */
     for (i = 0; i < n; i++) {
         uint32_t xy = av_be32(a + 40 + i * 8), rwh = av_be32(a + 44 + i * 8);

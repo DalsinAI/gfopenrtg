@@ -5,29 +5,29 @@
  * libSDL2-amigaos3's stub. Two back ends, chosen when SDL's joystick
  * subsystem starts:
  *
- * 1. OpenInput (openinput.library 1.2 or later, Design-OpenInput.md in
+ * 1. GFOpenInput (gfopeninput.library 1.2 or later, Design-OpenInput.md in
  *    openamigainput): every controller the library lists, with SDL's GUID,
  *    name, vendor and product from the library, hot-plug from its
  *    notification (SDL_JOYDEVICEADDED/REMOVED and, for game controllers,
  *    SDL_CONTROLLERDEVICEADDED/REMOVED), and rumble through OIN_Rumble.
- *    A pad's SDL joystick is OpenInput's standard layout, which is SDL's
+ *    A pad's SDL joystick is GFOpenInput's standard layout, which is SDL's
  *    GameController layout: buttons 0-20 are SDL_GameControllerButton's,
  *    axes 0-5 SDL_GameControllerAxis's (triggers, as everywhere in SDL,
  *    run -32768 released to 32767 pulled), and one hat repeats the d-pad.
  *    The driver hands SDL the mapping that says so, so SDL_GameController
  *    works with no database. The mapping that makes a pad right is
- *    OpenInput's (its built-in lines, ENVARC:OpenInput/mappings.txt,
- *    OpenPrefs' Gamepads page).
+ *    GFOpenInput's (its built-in lines, ENVARC:GFOpenInput/mappings.txt,
+ *    GFOpenPrefs' Gamepads page).
  *    A pad SDL has a mapping of its own for (SDL_GameControllerAddMapping,
  *    SDL_GameControllerAddMappingsFromFile, SDL_GAMECONTROLLERCONFIG), and
  *    wheels and flight sticks, are opened in the raw layout instead: the
  *    buttons, axes and hats as the device reports them, which is what
- *    SDL's mapping lines and OpenInput's lines both count in.
+ *    SDL's mapping lines and GFOpenInput's lines both count in.
  *    SDL opens pads with OIT_Exclusive, so a pad that also drives an Amiga
  *    port doesn't move the game's port joystick as well; the hint
  *    SDL_JOYSTICK_OPENINPUT_EXCLUSIVE=0 opens them shared.
  *
- * 2. lowlevel.library (OS 3.1 and later), when openinput.library isn't
+ * 2. lowlevel.library (OS 3.1 and later), when gfopeninput.library isn't
  *    there, is the skeleton (1.1), or the hint SDL_JOYSTICK_OPENINPUT=0
  *    asks for it: the joystick or CD32 pad in each game port. Port 2
  *    (lowlevel unit 1) is SDL joystick 0, since that is where Amiga games
@@ -55,8 +55,8 @@
 #include <proto/exec.h>
 #include <proto/lowlevel.h>
 
-/* OpenInput's frozen header (openamigainput, include/openinput here). The
- * base has a name of SDL's own, so a program that opens openinput.library
+/* GFOpenInput's frozen header (openamigainput, include/openinput here). The
+ * base has a name of SDL's own, so a program that opens gfopeninput.library
  * itself and links SDL statically has no clash over OpenInputBase. */
 #include <libraries/openinput.h>
 #define OPENINPUT_BASE_NAME SDL_OS3_OpenInputBase
@@ -77,13 +77,13 @@ extern SDL_bool SDL_PrivateGameControllerHasOwnMapping(SDL_JoystickGUID guid);
 static SDL_bool os3_openinput = SDL_FALSE;    /* which back end runs */
 
 /* ======================================================================
- * 1. OpenInput
+ * 1. GFOpenInput
  * ====================================================================== */
 
 #define OI_STD_HATS 1
 
 typedef struct {
-    ULONG id;                       /* OpenInput's ID */
+    ULONG id;                       /* GFOpenInput's ID */
     SDL_JoystickID instance_id;
     int player;                     /* -1, or the player SDL was asked for */
     struct OIControllerInfo info;
@@ -350,7 +350,7 @@ static int OI_JoystickOpen(SDL_Joystick *joy, int index)
     }
     if (!hw->handle) {
         SDL_free(hw);
-        return SDL_SetError("OpenInput couldn't open \"%s\"", dev->info.oci_Name);
+        return SDL_SetError("GFOpenInput couldn't open \"%s\"", dev->info.oci_Name);
     }
 
     hw->id = dev->id;
@@ -384,7 +384,7 @@ static int OI_JoystickRumble(SDL_Joystick *joy, Uint16 lo, Uint16 hi)
     if (rc == OIERR_UNSUPP) {
         return SDL_Unsupported();
     }
-    return rc == OIERR_OK ? 0 : SDL_SetError("OpenInput rumble failed (%ld)", (long)rc);
+    return rc == OIERR_OK ? 0 : SDL_SetError("GFOpenInput rumble failed (%ld)", (long)rc);
 }
 
 static Uint32 OI_JoystickGetCapabilities(SDL_Joystick *joy)
@@ -675,7 +675,7 @@ static void LL_JoystickQuit(void)
 }
 
 /* ======================================================================
- * The driver: OpenInput when it is there, lowlevel.library otherwise.
+ * The driver: GFOpenInput when it is there, lowlevel.library otherwise.
  * ====================================================================== */
 
 static int OS3_JoystickInit(void)

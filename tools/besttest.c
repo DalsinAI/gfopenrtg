@@ -1,6 +1,6 @@
 /* Copyright (c) 2026 AmigaChrome Team. OpenRTG, MIT licence (LICENSE).
  * BestTest: what BestModeIDA answers for the requests games and SDL make,
- * and whether a 32-bit OpenRTG screen opens with SA_Depth 32. Not shipped. */
+ * and whether a 32-bit GFOpenRTG screen opens with SA_Depth 32. Not shipped. */
 #include <exec/types.h>
 #include <graphics/modeid.h>
 #include <graphics/displayinfo.h>

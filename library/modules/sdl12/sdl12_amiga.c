@@ -3,7 +3,7 @@
  *
  * sdl12-compat's link to SDL 2 on AmigaOS 3 (library/modules/sdl12). On
  * other systems sdl12-compat opens SDL 2's shared library and looks its
- * calls up by name. Here SDL 2 is OpenGPU's SDL2.module, reached through
+ * calls up by name. Here SDL 2 is GFOpenGPU's SDL2.module, reached through
  * libSDL2.a's calls. Those calls are linked into libSDL.a under the names
  * SDL2X_ (build.sh renames them), because sdl12-compat itself defines the
  * SDL_ names with SDL 1.2's meanings. SDL12Amiga_LookupSDL20 answers

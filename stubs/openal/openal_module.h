@@ -4,7 +4,7 @@
  * OpenAL.module's interface: what its first code takes and gives back. The
  * link stub (stubs/openal, libopenal.a) and the module
  * (library/modules/openal/module) share it. It is the module ABI of
- * include/opengpu/module.h, the same as SDL2.module's and SDL3.module's: an
+ * include/gfopengpu/module.h, the same as SDL2.module's and SDL3.module's: an
  * entry taking SysBase, DOSBase, OpenGPUBase and a version, returning the
  * module's table, which starts with struct OGPUModuleTable (its version and
  * the A4 for calls into it).
@@ -20,13 +20,13 @@
 #define OPENAL_MODULE_H
 
 #include <exec/types.h>
-#include <opengpu/module.h>
+#include <gfopengpu/module.h>
 
 #include <AL/al.h>
 #include <AL/alc.h>
 
 #define OPENAL_MODULE_NAME    "OpenAL"
-#define OPENAL_MODULE_FILE    "LIBS:OpenGPU/OpenAL.module"
+#define OPENAL_MODULE_FILE    "LIBS:GFOpenGPU/OpenAL.module"
 #define OPENAL_MODULE_VERSION 2
 #define OPENAL_MODULE_OPEN_VERSION 2    /* what a stub asks for */
 

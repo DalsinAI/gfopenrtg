@@ -73,7 +73,7 @@ static void native_checks(void) {
     for (int d = 0; d < 3; d++) {
         const struct ortg_mode *m = &nat.modes[45 + d], *a = &nat_all.modes[96 + d];
         static const int depth[3] = { 8, 16, 32 };
-        static const char *const name[3] = { "OpenRTG.1: Native 8-bit", "OpenRTG.1: Native 16-bit", "OpenRTG.1: Native 32-bit" };
+        static const char *const name[3] = { "GFOpenRTG.1: Native 8-bit", "GFOpenRTG.1: Native 16-bit", "GFOpenRTG.1: Native 32-bit" };
         CHECK(m->native && m->width == 1600 && m->height == 900 && m->depth == depth[d] && m->standard);
         CHECK(m->mode_id == ortg_native_id(1, d) && a->mode_id == m->mode_id && !strcmp(m->name, name[d]));
         CHECK(ortg_find_mode(&nat, m->mode_id) == &nat.full[nat.full_count - 3 + d]);
@@ -92,7 +92,7 @@ static void native_checks(void) {
     CHECK(native_mode(&again, 32)->width == 1280 && native_mode(&again, 32)->height == 720 &&
           native_mode(&again, 32)->mode_id == native_mode(&nat, 32)->mode_id);
     CHECK(ortg_build_modes(&mon3, 3, &v5b, 0) == 48 && native_mode(&mon3, 8)->mode_id == 0x63221000u &&
-          !strcmp(native_mode(&mon3, 8)->name, "OpenRTG.3: Native 8-bit"));
+          !strcmp(native_mode(&mon3, 8)->name, "GFOpenRTG.3: Native 8-bit"));
     /* The board's largest picture still holds: a size beyond it gives no Native modes. */
     struct ortg_caps big = v5;
     big.native_w = 2560; big.native_h = 1440;
@@ -153,8 +153,8 @@ int main(void) {
     CHECK(by_size(&mon2, 640, 480, 8)->mode_id != by_size(&std16, 640, 480, 8)->mode_id);
 
     /* Names and order. */
-    CHECK(strcmp(by_size(&std16, 1920, 1080, 32)->name, "OpenRTG.1: 1920x1080 32-bit") == 0);
-    CHECK(strcmp(by_size(&mon2, 640, 480, 8)->name, "OpenRTG.2: 640x480 8-bit") == 0);
+    CHECK(strcmp(by_size(&std16, 1920, 1080, 32)->name, "GFOpenRTG.1: 1920x1080 32-bit") == 0);
+    CHECK(strcmp(by_size(&mon2, 640, 480, 8)->name, "GFOpenRTG.2: 640x480 8-bit") == 0);
     for (int i = 1; i < all16.count; i++) {
         const struct ortg_mode *a = &all16.modes[i - 1], *b = &all16.modes[i];
         CHECK(a->width < b->width || (a->width == b->width && (a->height < b->height || (a->height == b->height && a->depth < b->depth))));

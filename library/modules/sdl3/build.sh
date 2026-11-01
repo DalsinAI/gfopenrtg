@@ -17,7 +17,7 @@
 #       OUT_DIR  default build/; TARGETS default: module stub static tests
 #   CPU="-m68020 -m68881"   another CPU (default -m68040 -m68881)
 #
-# Needs the GCC 16 stove (STOVE, default ~/AmigaChrome/stoves/os32-gcc16/prefix)
+# Needs the GCC 16 stove (STOVE, default ~/AmiCradle/stoves/os32-gcc16/prefix)
 # and the AHI developer headers (SDK_HEADERS, default the OS 3.2 stove's
 # include directory). TARBALLS is where the SDL tarball is looked for before
 # it is downloaded.
@@ -27,8 +27,8 @@ ROOT=$(CDPATH= cd -- "$HERE/../../.." && pwd)
 OUT=${1:-$ROOT/build}
 shift 2>/dev/null || true
 TARGETS=${*:-module stub static tests}
-TARBALLS=${TARBALLS:-$HOME/AmigaChrome-dev/upstream-tarballs}
-SDK_HEADERS=${SDK_HEADERS:-$HOME/AmigaChrome/stoves/os32/prefix/m68k-amigaos/include}
+TARBALLS=${TARBALLS:-$HOME/AmiCradle-dev/upstream-tarballs}
+SDK_HEADERS=${SDK_HEADERS:-$HOME/AmiCradle/stoves/os32/prefix/m68k-amigaos/include}
 
 pin() { python3 -c "import json,sys; print(json.load(open('$HERE/UPSTREAM.json'))[sys.argv[1]][sys.argv[2]])" "$1" "$2"; }
 
@@ -89,7 +89,7 @@ make -f "$HERE/Makefile" -j"${JOBS:-$(nproc)}" SDL="$TREE" OUT="$OUT" WORK="$WOR
 
 # 6. GCC 16's FPCR clash (library/modules/sdl2/fpcr_check.py) must not be in
 #    anything built.
-STOVE=${STOVE:-$HOME/AmigaChrome/stoves/os32-gcc16/prefix}
+STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32-gcc16/prefix}
 set --
 for f in "$OUT/SDL3.module" "$OUT"/libSDL3*.a; do [ -f "$f" ] && set -- "$@" "$f"; done
 [ $# -eq 0 ] || python3 "$HERE/../sdl2/fpcr_check.py" "$STOVE/bin/m68k-amigaos-objdump" "$@"

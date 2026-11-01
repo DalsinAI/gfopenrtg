@@ -1,8 +1,8 @@
-SDL 3.4.14 (Zlib): the opengpu renderer for AmigaOS 3.x, SDL3.module's. AmigaChrome Team, 2026.
+SDL 3.4.14 (Zlib): the opengpu renderer for AmigaOS 3.x, SDL3.module's. AmiCradle Team, 2026.
 build.sh starts it as a copy of SDL's software renderer
 (src/render/software/SDL_render_sw.c at src/render/opengpu/SDL_render_opengpu.c);
 this patch turns that copy into the renderer, which sends SDL's drawing to
-OpenGPU (stream v1.7) where OpenGPU can do it. It puts the renderer in SDL's
+GFOpenGPU (stream v1.7) where GFOpenGPU can do it. It puts the renderer in SDL's
 list before the software one, and has it take lines as lines.
 
 --- a/src/render/opengpu/SDL_render_opengpu.c
@@ -14,8 +14,8 @@ list before the software one, and has it take lines as lines.
    Simple DirectMedia Layer
    Copyright (C) 1997-2026 Sam Lantinga <slouken@libsdl.org>
 +  Altered by the AmigaChrome Team, 2026: this is SDL's software renderer
-+  (src/render/software/SDL_render_sw.c) with its drawing sent to OpenGPU
-+  where OpenGPU can do it. It is not the original software.
++  (src/render/software/SDL_render_sw.c) with its drawing sent to GFOpenGPU
++  where GFOpenGPU can do it. It is not the original software.
  
    This software is provided 'as-is', without any express or implied
    warranty.  In no event will the authors be held liable for any damages
@@ -26,8 +26,8 @@ list before the software one, and has it take lines as lines.
 +
 +  How it draws
 +  ------------
-+  Textures and the target are surfaces in memory, described to OpenGPU as
-+  slots. SDL's commands become one OpenGPU batch per RunCommandQueue:
++  Textures and the target are surfaces in memory, described to GFOpenGPU as
++  slots. SDL's commands become one GFOpenGPU batch per RunCommandQueue:
 +
 +    clear, opaque fills           FILL
 +    fills in any blend mode       FILL_BLEND
@@ -45,7 +45,7 @@ list before the software one, and has it take lines as lines.
 +                                  surface, or YUV_SCALED straight into the
 +                                  target when that is less work
 +
-+  Stream v1.7 (opengpu.library 0.19) carries what SDL 3 has beyond SDL 2:
++  Stream v1.7 (gfopengpu.library 0.19) carries what SDL 3 has beyond SDL 2:
 +  the premultiplied blend modes, SDL_SCALEMODE_PIXELART, clamping one way,
 +  palette textures, the RGBA32 and ABGR32 byte orders, P010, and the BT.709
 +  full range and BT.2020 colour spaces. With an older library those draw on
@@ -57,10 +57,10 @@ list before the software one, and has it take lines as lines.
 +  and finished. A frame is one submit: the copy of the window's surface to
 +  the screen goes at the end of its last batch (SDL_os3gpu.h).
 +
-+  SDL chooses this renderer first when opengpu.library opens and the
-+  window's surface is in a format OpenGPU draws; otherwise it chooses the
++  SDL chooses this renderer first when gfopengpu.library opens and the
++  window's surface is in a format GFOpenGPU draws; otherwise it chooses the
 +  software renderer. SDL_RENDER_DRIVER=software picks the software one,
-+  SDL_OPENGPU=0 keeps SDL off OpenGPU altogether, and SDL_OPENGPU_STATS=1
++  SDL_OPENGPU=0 keeps SDL off GFOpenGPU altogether, and SDL_OPENGPU_STATS=1
 +  logs how many commands each path drew.
  */
  #include "SDL_internal.h"
@@ -93,14 +93,14 @@ list before the software one, and has it take lines as lines.
 +#include <proto/exec.h>
 +#include <proto/graphics.h>
 +#include "../../video/amigaos3/SDL_os3gpu.h"
-+#include <opengpu/build3d.h>
++#include <gfopengpu/build3d.h>
 +
 +#define OGPUR_STREAM_WORDS  16384 /* one batch; it is sent when full */
 +#define OGPUR_SCRATCH_WORDS 65536 /* per batch: colours, points, vertices */
 +#define OGPUR_SLOT_TARGET   0
 +#define OGPUR_SLOT_FIRST    1     /* textures and colours from here */
 +
-+/* A word OpenGPU reads from memory (points, vertices, a palette's colours)
++/* A word GFOpenGPU reads from memory (points, vertices, a palette's colours)
 +   is big-endian, as the Amiga's. */
 +#define OGPUR_WORD(v) SDL_Swap32BE((Uint32)(v))
 +
@@ -117,18 +117,18 @@ list before the software one, and has it take lines as lines.
 +} OGPUR_DrawStateCache;
 +
 +/* One of two buffers: a batch is built in one while the other may still be
-+   with OpenGPU. Scratch memory holds what the batch's commands point at
++   with GFOpenGPU. Scratch memory holds what the batch's commands point at
 +   (1x1 colours, point lists, vertices) until the batch is done. */
 +typedef struct
 +{
 +    Uint32 *stream;
 +    Uint32 *scratch;
 +    long nscratch;
-+    Uint32 fence;        /* 0 when OpenGPU is done with it */
++    Uint32 fence;        /* 0 when GFOpenGPU is done with it */
 +} OGPUR_Buffer;
  
 +/* A palette (SDL_TexturePalette's internal): SDL's own for the CPU's path,
-+   and the same colours as OpenGPU's PALETTE table reads them. */
++   and the same colours as GFOpenGPU's PALETTE table reads them. */
 +typedef struct
 +{
 +    SDL_Palette *palette;
@@ -149,11 +149,11 @@ list before the software one, and has it take lines as lines.
 +    Uint8 *y, *u, *v;    /* u is the interleaved UV plane for NV12, NV21 and P010 */
 +    int ypitch, uvpitch;
 +    bool dirty;
-+    bool cpu;            /* a colour space OpenGPU lacks: SDL converts it */
++    bool cpu;            /* a colour space GFOpenGPU lacks: SDL converts it */
 +    SDL_Colorspace colorspace;
 +} OGPUR_YUV;
 +
-+/* A texture (SDL_Texture's internal): the surface OpenGPU and SDL's code
++/* A texture (SDL_Texture's internal): the surface GFOpenGPU and SDL's code
 +   draw from, and into as a target; for YUV, its planes too. */
  typedef struct
  {
@@ -177,7 +177,7 @@ list before the software one, and has it take lines as lines.
 +
 +    bool v17;             /* stream v1.7 (SDL_os3gpu.h) */
 +    bool vsync;
-+    int target_fmt;       /* the target's OpenGPU format, 0 = CPU only */
++    int target_fmt;       /* the target's GFOpenGPU format, 0 = CPU only */
 +    bool can_fill, can_line, can_copy, can_composite;
 +    bool can_fill_blend, can_lines_blend, can_points_blend, can_affine, can_tris;
 +    bool can_yuv;         /* into ARGB32 texture surfaces */
@@ -193,7 +193,7 @@ list before the software one, and has it take lines as lines.
 +    Uint32 ops_gpu, ops_cpu; /* SDL_OPENGPU_STATS=1 logs them at the end */
 +} OGPUR_RenderData;
 +
-+/* ---- OpenGPU ----------------------------------------------------------------- */
++/* ---- GFOpenGPU ----------------------------------------------------------------- */
 +
 +/* A texture's format: INDEX8 with a palette (stream v1.7), or the 16 and
 +   32-bit formats SDL_os3gpu.h maps. */
@@ -233,7 +233,7 @@ list before the software one, and has it take lines as lines.
  }
  
 -static void SW_WindowEvent(SDL_Renderer *renderer, const SDL_WindowEvent *event)
-+/* SDL's blend mode as OpenGPU's, or -1 for a mode OpenGPU doesn't have. */
++/* SDL's blend mode as GFOpenGPU's, or -1 for a mode GFOpenGPU doesn't have. */
 +static int OGPUR_Blend(const OGPUR_RenderData *data, SDL_BlendMode blend)
  {
 -    SW_RenderData *data = (SW_RenderData *)renderer->internal;
@@ -312,7 +312,7 @@ list before the software one, and has it take lines as lines.
 +    data->started = false;
 +}
 +
-+/* Send the batch and wait until OpenGPU has drawn everything, before the
++/* Send the batch and wait until GFOpenGPU has drawn everything, before the
 +   CPU reads or writes a surface. */
 +static void OGPUR_Sync(OGPUR_RenderData *data)
 +{
@@ -400,14 +400,14 @@ list before the software one, and has it take lines as lines.
 -    if (renderer->window) {
 -        SDL_GetWindowSizeInPixels(renderer->window, w, h);
 -        return true;
-+/* A palette texture's colours for OpenGPU, NULL when it has none. */
++/* A palette texture's colours for GFOpenGPU, NULL when it has none. */
 +static const Uint32 *OGPUR_PaletteTable(SDL_Texture *texture)
 +{
 +    OGPUR_Palette *p = texture->palette ? (OGPUR_Palette *)texture->palette->internal : NULL;
 +    return p ? p->table : NULL;
 +}
 +
-+/* A texture's OpenGPU format, 0 when OpenGPU can't read it (a palette
++/* A texture's GFOpenGPU format, 0 when GFOpenGPU can't read it (a palette
 +   texture without a palette). */
 +static int OGPUR_TextureFormat(const OGPUR_RenderData *data, SDL_Texture *texture)
 +{
@@ -448,7 +448,7 @@ list before the software one, and has it take lines as lines.
  
 -    return SDL_SetError("Software renderer doesn't have an output surface");
 +/* The target changed (SetRenderTarget, a resized window): describe it in
-+   the next batch and ask what OpenGPU can do on its format. */
++   the next batch and ask what GFOpenGPU can do on its format. */
 +static void OGPUR_SetTargetSurface(OGPUR_RenderData *data, SDL_Surface *surface)
 +{
 +    int f;
@@ -511,7 +511,7 @@ list before the software one, and has it take lines as lines.
 +    OGPUR_Palette *p = (OGPUR_Palette *)palette->internal;
 +    int i;
 +
-+    /* OpenGPU reads the table as it draws: a batch may still be at it */
++    /* GFOpenGPU reads the table as it draws: a batch may still be at it */
 +    OGPUR_Sync(data);
 +    for (i = 0; i < ncolors && i < 256; i++) {
 +        p->table[i] = OGPUR_WORD(OGPUR_ARGB(colors[i].r, colors[i].g, colors[i].b, colors[i].a));
@@ -570,7 +570,7 @@ list before the software one, and has it take lines as lines.
 +    case SDL_PIXELFORMAT_UYVY: return OGPU_YUV_UYVY;
 +    case SDL_PIXELFORMAT_YVYU: return OGPU_YUV_YVYU;
 +#if SDL_BYTEORDER == SDL_BIG_ENDIAN
-+    /* P010's samples are 16-bit words in this machine's order; OpenGPU's
++    /* P010's samples are 16-bit words in this machine's order; GFOpenGPU's
 +       are big-endian */
 +    case SDL_PIXELFORMAT_P010: return data->v17 ? OGPU_YUV_P010 : 0;
 +#endif
@@ -579,7 +579,7 @@ list before the software one, and has it take lines as lines.
 -    texture->internal = surface;
 +}
 +
-+/* SDL's colour space for a YUV texture as OpenGPU's (with stream v1.7 or
++/* SDL's colour space for a YUV texture as GFOpenGPU's (with stream v1.7 or
 +   without), -1 for one it lacks: SDL_GetYCbCRtoRGBConversionMatrix's
 +   choice. Only the matrix and range are taken: BT.2020's PQ and HLG
 +   transfer (HDR) is drawn without tone mapping. */
@@ -609,7 +609,7 @@ list before the software one, and has it take lines as lines.
 +    return format == SDL_PIXELFORMAT_YUY2 || format == SDL_PIXELFORMAT_UYVY || format == SDL_PIXELFORMAT_YVYU;
 +}
 +
-+/* space < 0: a colour space OpenGPU lacks, converted by SDL on the CPU. */
++/* space < 0: a colour space GFOpenGPU lacks, converted by SDL on the CPU. */
 +static OGPUR_YUV *OGPUR_YUVCreate(unsigned long layout, int space, SDL_PixelFormat format, SDL_Colorspace colorspace, int w, int h)
 +{
 +    OGPUR_YUV *y = (OGPUR_YUV *)SDL_calloc(1, sizeof(*y));
@@ -705,7 +705,7 @@ list before the software one, and has it take lines as lines.
 +        return;
 +    }
 +    if (y->cpu) {
-+        /* SDL's own conversion, once OpenGPU is done with the surface; the
++        /* SDL's own conversion, once GFOpenGPU is done with the surface; the
 +           planes are in its layout */
 +        OGPUR_Sync(data);
 +        SDL_ConvertPixelsAndColorspace(s->w, y->th, y->format, y->colorspace, 0, y->planes, y->ypitch,
@@ -768,7 +768,7 @@ list before the software one, and has it take lines as lines.
 +    }
 +#ifdef SDL_HAVE_YUV
 +    if (OGPUR_YUVLayout(data, texture->format)) {
-+        /* drawn from an ARGB32 surface OpenGPU fills from the planes */
++        /* drawn from an ARGB32 surface GFOpenGPU fills from the planes */
 +        const int bits = (texture->format == SDL_PIXELFORMAT_P010) ? 10 : 8;
 +        const int space = OGPUR_YUVSpace(data->v17, texture->colorspace, texture->h, bits);
 +        if (space < 0 && OGPUR_YUVSpace(true, texture->colorspace, texture->h, bits) < 0) {
@@ -827,7 +827,7 @@ list before the software one, and has it take lines as lines.
 -        SDL_SetSurfaceRLE(surface, true);
 -    }
 -
-+    /* No RLE: OpenGPU reads the pixels as they are. */
++    /* No RLE: GFOpenGPU reads the pixels as they are. */
      return true;
  }
  
@@ -967,7 +967,7 @@ list before the software one, and has it take lines as lines.
 +    texture->internal = NULL;
 +}
 +
-+/* ---- the renderer (SDL's software renderer, with OpenGPU's paths) ------------- */
++/* ---- the renderer (SDL's software renderer, with GFOpenGPU's paths) ------------- */
 +
 +static SDL_Surface *OGPUR_ActivateRenderer(SDL_Renderer *renderer)
 +{
@@ -976,7 +976,7 @@ list before the software one, and has it take lines as lines.
 +
 +    if (window && (!data->window || !window->surface_valid)) {
 +        /* the window's surface is new (made, or made again at a new size):
-+           the old one's pixels go with it, so OpenGPU finishes with them */
++           the old one's pixels go with it, so GFOpenGPU finishes with them */
 +        const bool was_window = (!data->surface || data->surface == data->window);
 +        SDL_Surface *surface;
 +        OGPUR_Sync(data);
@@ -1082,7 +1082,7 @@ list before the software one, and has it take lines as lines.
      SDL_Rect srcrect;
 -    SDL_Rect dstrect;
 +    SDL_Rect dstrect;   /* whole pixels, for SDL's software path */
-+    SDL_FRect fdst;     /* as given, for OpenGPU's matrix */
++    SDL_FRect fdst;     /* as given, for GFOpenGPU's matrix */
      double angle;
      SDL_FPoint center;
      SDL_FlipMode flip;
@@ -1128,7 +1128,7 @@ list before the software one, and has it take lines as lines.
      return result;
  }
  
-+/* SDL_RenderGeometry's vertices, kept as given (scaled) for OpenGPU's
++/* SDL_RenderGeometry's vertices, kept as given (scaled) for GFOpenGPU's
 +   TRIANGLES, and turned into SDL's own form if the CPU draws them. */
 +typedef struct OGPUR_Vertex
 +{
@@ -1294,8 +1294,8 @@ list before the software one, and has it take lines as lines.
 +    // OGPUR_DrawStateCache only lives during OGPUR_RunCommandQueue, so nothing to do here!
  }
  
-+/* OpenGPU's clip follows the surface's clip rectangle. false when that is
-+   empty: nothing can be drawn, and OpenGPU's CLIP has no empty form. */
++/* GFOpenGPU's clip follows the surface's clip rectangle. false when that is
++   empty: nothing can be drawn, and GFOpenGPU's CLIP has no empty form. */
 +static bool OGPUR_FollowClip(OGPUR_RenderData *data, SDL_Surface *surface)
 +{
 +    const SDL_Rect *c = &surface->clip_rect;
@@ -1326,7 +1326,7 @@ list before the software one, and has it take lines as lines.
 +    return 0;
 +}
 +
-+/* A copy as OpenGPU commands (srcrect from the texture, dst on the target,
++/* A copy as GFOpenGPU commands (srcrect from the texture, dst on the target,
 +   viewport already added), or false for SDL's software path. */
 +static bool OGPUR_GpuCopy(OGPUR_RenderData *data, const SDL_RenderCommand *cmd, const SDL_Color *colour,
 +                          const SDL_Rect *srcrect, const SDL_Rect *dstrect, const SDL_FRect *fdst, double angle,
@@ -1616,7 +1616,7 @@ list before the software one, and has it take lines as lines.
      drawstate.color.b = 0;
      drawstate.color.a = 0;
  
-+/* Before the CPU draws: everything OpenGPU was given is finished. */
++/* Before the CPU draws: everything GFOpenGPU was given is finished. */
 +#define CPU_PATH() do { OGPUR_Sync(data); data->ops_cpu++; } while (0)
 +#define GPU_DONE() do { data->ops_gpu++; } while (0)
 +
@@ -2063,7 +2063,7 @@ list before the software one, and has it take lines as lines.
 +                   the screen): shown again on the CPU */
 +                return SDL_UpdateWindowSurface(window);
 +            }
-+            /* Not sent (OpenGPU refused it): the window is shown on the
++            /* Not sent (GFOpenGPU refused it): the window is shown on the
 +               CPU from what the earlier batches drew. */
 +            SDL_OS3_GPU_Abandon(&p);
 +            data->started = false;
@@ -2106,7 +2106,7 @@ list before the software one, and has it take lines as lines.
 +    if (data) {
 +        OGPUR_Sync(data);
 +        if (SDL_GetHintBoolean("SDL_OPENGPU_STATS", false)) {
-+            SDL_Log("opengpu renderer: %lu commands drawn by OpenGPU, %lu on the CPU",
++            SDL_Log("opengpu renderer: %lu commands drawn by GFOpenGPU, %lu on the CPU",
 +                    (unsigned long)data->ops_gpu, (unsigned long)data->ops_cpu);
 +        }
 +        SDL_free(data->buf[0].stream);
@@ -2237,7 +2237,7 @@ list before the software one, and has it take lines as lines.
 -                SDL_BITSPERPIXEL(surface->format) > 32) {
 -        return SDL_SetError("Unsupported surface format");
 +    if (!SDL_OS3_GPU_Open()) {
-+        return SDL_SetError("opengpu.library isn't installed, or SDL_OPENGPU is 0");
++        return SDL_SetError("gfopengpu.library isn't installed, or SDL_OPENGPU is 0");
      }
  
      SDL_SetupRendererColorspace(renderer, create_props);
@@ -2299,14 +2299,14 @@ list before the software one, and has it take lines as lines.
 +        SDL_OS3_GPU_Close();
 +        return false;
 +    }
-+    /* A target OpenGPU has no format for would draw everything on the CPU:
++    /* A target GFOpenGPU has no format for would draw everything on the CPU:
 +       the software renderer does that better, so let SDL pick it. */
 +    fmt = OGPUR_TargetFormat(data, surface->format);
 +    if (!fmt || !OGPUR_Can(OGPU_OP_COMPOSITE, fmt)) {
 +        SDL_free(data);
 +        SDL_DestroyWindowSurface(window);
 +        SDL_OS3_GPU_Close();
-+        return SDL_SetError("OpenGPU can't draw on a %s window", SDL_GetPixelFormatName(surface->format));
++        return SDL_SetError("GFOpenGPU can't draw on a %s window", SDL_GetPixelFormatName(surface->format));
 +    }
  
 -static bool SW_CreateRenderer(SDL_Renderer *renderer, SDL_Window *window, SDL_PropertiesID create_props)
@@ -2379,7 +2379,7 @@ list before the software one, and has it take lines as lines.
  
 -    if (!SDL_SurfaceValid(surface)) {
 -        return false;
-+    /* OpenGPU's own formats first: ARGB8888 is ARGB32 on the Amiga */
++    /* GFOpenGPU's own formats first: ARGB8888 is ARGB32 on the Amiga */
 +    SDL_AddSupportedTextureFormat(renderer, SDL_PIXELFORMAT_ARGB8888);
 +    SDL_AddSupportedTextureFormat(renderer, SDL_PIXELFORMAT_XRGB8888);
 +    if (data->v17) {
@@ -2397,7 +2397,7 @@ list before the software one, and has it take lines as lines.
 +        SDL_AddSupportedTextureFormat(renderer, SDL_PIXELFORMAT_INDEX8);
 +    }
 +#ifdef SDL_HAVE_YUV
-+    /* YUV textures, when OpenGPU converts YUV on this machine */
++    /* YUV textures, when GFOpenGPU converts YUV on this machine */
 +    if (OGPUR_Can(OGPU_OP_YUV, OGPU_FMT_ARGB32)) {
 +        static const SDL_PixelFormat yuv[] = { SDL_PIXELFORMAT_IYUV, SDL_PIXELFORMAT_YV12, SDL_PIXELFORMAT_NV12,
 +                                               SDL_PIXELFORMAT_NV21, SDL_PIXELFORMAT_YUY2, SDL_PIXELFORMAT_UYVY,
@@ -2438,7 +2438,7 @@ list before the software one, and has it take lines as lines.
          renderer->line_method = SDL_GetRenderLineMethod();
      }
 +#ifdef SDL_VIDEO_RENDER_OPENGPU
-+    /* AmigaOS 3.x (AmigaChrome Team, 2026): the opengpu renderer draws lines
++    /* AmigaOS 3.x (AmiCradle Team, 2026): the opengpu renderer draws lines
 +       by SDL's own rule (LINES_BLEND), so it takes them as lines, not as
 +       runs of rects, unless the hint asks for another method. */
 +    if (!renderer->software && SDL_strcmp(renderer->name, OPENGPU_RenderDriver.name) == 0 &&

@@ -12,6 +12,11 @@ cc -std=c99 -O2 -Wall -Wextra -Werror -o "$OUT/test_modes" "$HERE/test_modes.c" 
 # With no size asked for, the mode table is exactly 0.16's (0.17: the Native modes come only with one).
 cc -std=c99 -O2 -Wall -Wextra -Werror -o "$OUT/modes_golden" "$HERE/modes_golden.c" "$HERE/../library/modes.c"
 "$OUT/modes_golden" "$HERE/golden/modes-table.txt"
+# Draw and PolyDraw on 8-bit bitmaps (openrtg.library 0.25, library/ortg_line.h) against
+# graphics.library's (OpenGfx's core): FRST_DOT, linpatcnt, JAM2, INVERSVID, through OpenGPU's LINE too.
+cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined -I"$HERE/host-include" \
+    -o "$OUT/test_lines" "$HERE/test_lines.c" "$HERE/../library/opengpu/ogpu_core.c" "$HERE/../library/opengpu/ogpu_build.c"
+"$OUT/test_lines"
 OGPU="$HERE/../library/opengpu"
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
     -o "$OUT/test_opengpu" "$HERE/test_opengpu.c" "$HERE/golden_scenes.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_build.c"

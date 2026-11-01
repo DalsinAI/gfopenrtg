@@ -1202,6 +1202,21 @@ OP_FN op_points_blend(struct ogpu_core *c, const ogpu_u8 *a) {
  * products, as long long (libgcc's on the 68k, outside the pixel loop). */
 typedef long long ogpu_s64;
 
+/* num * 2^32 / det: an entry of an inverse matrix (num 16.16, det 32.32,
+ * the entry 16.16). GCC for the 68k (6.5 in the os32 stove, 13 in Linux's
+ * cross compiler, at -O1 and above) passes such a dividend, whose low word
+ * it knows is 0, to __divdi3 from the wrong stack slot, and the entry comes
+ * out as garbage or 0: gradients and patterns then stood still along an axis
+ * (tests/amiga/vector, run on an Amiga). The empty asm makes the dividend a
+ * value it must keep, which it passes right. num is at most 2^30 either way. */
+static ogpu_s64 inv_div(long num, ogpu_s64 det) {
+    ogpu_s64 v = (ogpu_s64)num * 4294967296LL;
+#if defined(__GNUC__)
+    __asm__ ("" : "+g"(v));
+#endif
+    return v / det;
+}
+
 OP_FN op_composite_affine(struct ogpu_core *c, const ogpu_u8 *a) {
     ogpu_u32 slot = rd32(a), sxy = rd32(a + 4), swh = rd32(a + 8), colour = rd32(a + 36), flags = rd32(a + 40);
     long m00 = (long)rd32(a + 12), m01 = (long)rd32(a + 16), m02 = (long)rd32(a + 20);
@@ -1233,8 +1248,8 @@ OP_FN op_composite_affine(struct ogpu_core *c, const ogpu_u8 *a) {
     det = (ogpu_s64)m00 * m11 - (ogpu_s64)m01 * m10;   /* 32.32 */
     if (det == 0) return OGPU_OK;                   /* flat: nothing to draw */
     /* The inverse, 16.16: target offsets to source offsets. */
-    i00 = (ogpu_s64)m11 * 4294967296LL / det; i01 = -((ogpu_s64)m01 * 4294967296LL) / det;
-    i10 = -((ogpu_s64)m10 * 4294967296LL) / det; i11 = (ogpu_s64)m00 * 4294967296LL / det;
+    i00 = inv_div(m11, det); i01 = -inv_div(m01, det);
+    i10 = -inv_div(m10, det); i11 = inv_div(m00, det);
     if (i00 >= 0x40000000LL || i00 <= -0x40000000LL || i01 >= 0x40000000LL || i01 <= -0x40000000LL
         || i10 >= 0x40000000LL || i10 <= -0x40000000LL || i11 >= 0x40000000LL || i11 <= -0x40000000LL)
         return OGPU_ERR_UNSUPPORTED;                /* shrunk below 1/16384 */
@@ -2390,10 +2405,10 @@ static int set_inv(struct paint *p, const ogpu_u8 *mw) {
     for (k = 0; k < 6; k++) m[k] = clampl(sgn32(rd32(mw + 4 * k)), 0x3FFFFFFF);
     det = (ogpu_s64)m[0] * m[4] - (ogpu_s64)m[1] * m[3];
     if (!det) return 0;
-    p->inv[0] = clampl((ogpu_s64)m[4] * 4294967296LL / det, 0x3FFFFFFF);
-    p->inv[1] = clampl(-((ogpu_s64)m[1] * 4294967296LL) / det, 0x3FFFFFFF);
-    p->inv[3] = clampl(-((ogpu_s64)m[3] * 4294967296LL) / det, 0x3FFFFFFF);
-    p->inv[4] = clampl((ogpu_s64)m[0] * 4294967296LL / det, 0x3FFFFFFF);
+    p->inv[0] = clampl(inv_div(m[4], det), 0x3FFFFFFF);
+    p->inv[1] = clampl(inv_div(-m[1], det), 0x3FFFFFFF);
+    p->inv[3] = clampl(inv_div(-m[3], det), 0x3FFFFFFF);
+    p->inv[4] = clampl(inv_div(m[0], det), 0x3FFFFFFF);
     p->inv[2] = -((p->inv[0] * m[2] + p->inv[1] * m[5]) >> 16);       /* within 2^45 */
     p->inv[5] = -((p->inv[3] * m[2] + p->inv[4] * m[5]) >> 16);
     return 1;

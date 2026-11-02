@@ -1,5 +1,5 @@
 /*
- * ACAHI, AmigaChrome's sound board for AHI (protocol acahi-v1,
+ * ACAHI, AmiCradle's sound board for AHI (protocol acahi-v1,
  * vendor/amigachrome-guest/common/protocol/acahi.h; reference
  * docs/autodocs/acahi.doc). We, 6 Oct 2026: "go on ACAHI sound
  * host", with AHI's channels mixed on the host from the start.

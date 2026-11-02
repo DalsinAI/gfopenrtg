@@ -55,13 +55,13 @@
 #include <proto/exec.h>
 #include <proto/lowlevel.h>
 
-/* GFOpenInput's frozen header (gfopeninput, include/openinput here). The
+/* GFOpenInput's frozen header (gfopeninput, include/gfopeninput here). The
  * base has a name of SDL's own, so a program that opens gfopeninput.library
  * itself and links SDL statically has no clash over OpenInputBase. */
-#include <libraries/openinput.h>
+#include <libraries/gfopeninput.h>
 #define OPENINPUT_BASE_NAME SDL_OS3_OpenInputBase
 #define NO_INLINE_STDARG
-#include <inline/openinput.h>
+#include <inline/gfopeninput.h>
 
 /* Opened here, not by the startup code, so a machine without them still runs. */
 struct Library *LowLevelBase = NULL;

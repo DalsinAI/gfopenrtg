@@ -18,7 +18,7 @@
 
 #include <exec/types.h>
 #include <exec/ports.h>
-#include "devices/openservice.h"
+#include "devices/gfopenservice.h"
 
 struct sat_svc {
     struct sat_svc *next;           /* every open one, for sat_service_close_all */

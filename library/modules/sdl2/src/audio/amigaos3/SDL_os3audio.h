@@ -28,4 +28,8 @@ struct SDL_PrivateAudioData {
 
 extern AudioBootStrap OS3AHI_bootstrap;
 
+/* AHI is installed (ahi.device in memory or DEVS:ahi.device): then SDL
+   never plays through Paula. */
+extern int SDL_OS3_AHIInstalled(void);
+
 #endif /* SDL_os3audio_h_ */

@@ -101,6 +101,11 @@ Settings, with `SetEnv` or `SDL_SetHint`:
 - `SDL_OPENGPU_VRAM=0` keeps the window surface and the textures in Fast
   RAM on an GFOpenRTG screen too.
 - `SDL_AUDIODRIVER=paula` picks Paula.
+- `SDL_THREAD_STACK_SIZE=524288` (SDL's `SDL_HINT_THREAD_STACK_SIZE`) gives
+  the threads a program starts with `SDL_CreateThread` a stack of that many
+  bytes. Without it they get 256 KB, as SDL's own audio and timer threads
+  always do (32 KB until 2 November 2026; a 68k stack has nothing to stop an
+  overrun).
 - `SDL_OPENGPU_GL=cpu` draws SDL's GL with softpipe even where the PC's
   graphics chip is there.
 - `SDL_JOYSTICK_OPENINPUT=0` reads joysticks through lowlevel.library even

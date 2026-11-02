@@ -62,6 +62,32 @@ jobs:
           assert 'device->SetWindowSize    = OS3_SetWindowSize;' in device
           PYCODE
 
+      - name: Check real full screen in patched backend
+        run: |
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          import re
+          video = Path('backend/src/video/amigaos3/SDL_os3video.c').read_text()
+          window = Path('backend/src/video/amigaos3/SDL_os3window.c').read_text()
+          def body(src, head):
+              start = src.index(head)
+              start = src.index('{', start)
+              depth = 0
+              for i in range(start, len(src)):
+                  depth += {'{': 1, '}': -1}.get(src[i], 0)
+                  if depth == 0:
+                      return src[start:i + 1]
+          # SDL's display modes open no screens: the full-screen window owns its one
+          assert 'OpenScreen' not in body(video, 'static int OS3_SetDisplayMode(_THIS, SDL_VideoDisplay *display,\n')
+          assert 'fullscreen_screen' not in video + window
+          fs = body(window, 'void OS3_SetWindowFullscreen(')
+          # the framebuffer goes through the device (the video RAM wrapper)
+          assert 'OS3_DestroyWindowFramebuffer' not in fs
+          assert '_this->DestroyWindowFramebuffer' in fs
+          assert 'SDL_GetWindowDisplayMode' in body(window, 'static void OS3_FullscreenMode(')
+          assert 'CYBRIDATTR_BPPIX' in video
+          PYCODE
+
       - name: Syntax-check SDLTextCheck
         shell: bash
         run: |

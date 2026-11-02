@@ -220,7 +220,8 @@ $(OUT)/libSDL2.a: $(STUB_DIR)/SDL2_stub.o $(STUB_DIR)/SDL2_gl.o $(STUB_DIR)/SDL2
 # standard output, and an end after SDLTEST_SECONDS), and the Team's own
 # (tests/sdl2): rendercompare checks the opengpu renderer's pictures against
 # the software renderer's, sdlcheck the back ends, padcheck joysticks and
-# game controllers, threadcheck threads. NAME is linked with
+# game controllers, threadcheck threads (stacks, joins from any task,
+# audio closed from another task). NAME is linked with
 # libSDL2_static.a, NAME.m with libSDL2.a (SDL2.module).
 TESTS = testsprite2 testrendercopyex
 OWN_TESTS = rendercompare sdlcheck padcheck threadcheck

@@ -83,7 +83,7 @@ or, with the GFOpenGPU developer kit (`tools/make_sdk.py`, `sdk/README`):
 | Video | Intuition windows and screens. RTG through the CyberGraphX API (GFOpenRTG's cybergraphics.library); AGA through c2p. A window on an RTG screen is shown by GFOpenGPU, which copies the frame into video RAM through each visible part of the window's layer; WritePixelArray does it when part of the window is covered. On a 32-bit GFOpenRTG screen the window's surface is itself in video RAM (see *In video RAM*). |
 | Renderer | `opengpu` first, then `software`. See below. |
 | Audio | AHI first (8 or 16-bit, mono or stereo, double buffered with `ahir_Link`, opened in SDL's audio thread), then Paula's audio.device. |
-| Threads, timers | Exec processes and semaphores. `SDL_Delay`, timed semaphore and condition waits use timer.device's UNIT_MICROHZ, so `SDL_Delay(1)` is a millisecond, not dos.library's 20 ms tick. |
+| Threads, timers | Exec processes and semaphores. Any task can wait for a thread (`SDL_WaitThread`), not only the one that started it, so audio opened in one thread can be closed from another. `SDL_Delay`, timed semaphore and condition waits use timer.device's UNIT_MICROHZ, so `SDL_Delay(1)` is a millisecond, not dos.library's 20 ms tick. |
 | Input | Keyboard and mouse from Intuition; relative mouse mode with IDCMP_DELTAMOVE; Ctrl-C quits. Joysticks and game controllers through GFOpenInput (gfopeninput.library), or through lowlevel.library where GFOpenInput isn't installed: see below. |
 | Clipboard | clipboard.device unit 0, IFF FTXT, converted between UTF-8 and Latin-1. On AmiCradle, ACClip carries it to the PC. |
 | OpenGL | GL.module, through the program's own libGL.a (below). |

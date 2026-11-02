@@ -78,3 +78,6 @@ jobs:
 
       - name: Exercise window-resize callback contract
         run: python3 -m unittest discover -s tests/sdl2 -p 'test_windowresize.py' -v
+
+      - name: Exercise thread join from any task (host Exec)
+        run: python3 -m unittest discover -s tests/sdl2 -p 'test_threadjoin.py' -v

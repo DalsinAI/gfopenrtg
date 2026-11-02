@@ -1,4 +1,4 @@
-/* ACAHI, AmigaChrome's sound board for AHI: the stream and the host-mixed
+/* ACAHI, AmiCradle's sound board for AHI: the stream and the host-mixed
  * voices. See acahi.c and vendor/amigachrome-guest/common/protocol/acahi.h. */
 #ifndef A1200_ACAHI_H
 #define A1200_ACAHI_H

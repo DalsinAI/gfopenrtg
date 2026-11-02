@@ -176,9 +176,9 @@ and no game controller mapping. Port 2 is joystick 0, and port 1 joystick
   standard layout's line (`a:b0,b:b1,...`), not GFOpenInput's line for the
   pad.
 
-`include/openinput/` holds a copy of GFOpenInput's frozen headers
-(`include/libraries/openinput.h` and `include/inline/openinput.h` from
-`gfopeninput` at efc932c); the header only grows, so a newer library
+`include/gfopeninput/` holds a copy of GFOpenInput's frozen headers
+(`include/libraries/gfopeninput.h` and `include/inline/gfopeninput.h` from
+`gfopeninput` at 6fc2d8b); the header only grows, so a newer library
 still answers this driver. The driver opens the library itself, with a
 base of its own name (`SDL_OS3_OpenInputBase`), so a program that uses
 gfopeninput.library too has no clash.

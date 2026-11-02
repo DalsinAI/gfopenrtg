@@ -1,6 +1,6 @@
-/* Copyright (c) 2026 AmigaChrome Team. OpenInput, MIT licence (LICENSE).
+/* Copyright (c) 2026 AmiCradle Team. GFOpenInput, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
- * Inline calls for bebbo's m68k-amigaos-gcc, from library/openinput_lib.sfd.
+ * Inline calls for bebbo's m68k-amigaos-gcc, from library/gfopeninput_lib.sfd.
  * The tag-list helpers build their list in an array (never by taking the
  * address of the first variable argument, which an inlined helper can lose). */
 #ifndef _INLINE_OPENINPUT_H
@@ -40,6 +40,13 @@
     LP3(0x66, LONG, OIN_GetLegacyPort, ULONG, port, d0, struct OILegacyPort *, legacy, a0, ULONG, size, d1, , OPENINPUT_BASE_NAME)
 #define OIN_SetLegacyPortA(port, id, tags) \
     LP3(0x6c, LONG, OIN_SetLegacyPortA, ULONG, port, d0, ULONG, id, d1, struct TagItem *, tags, a0, , OPENINPUT_BASE_NAME)
+/* revision 3 (OPENINPUT_REVISION_DRIVER) */
+#define OIN_AddDriverPad(info, infoSize) \
+    LP2(0x72, APTR, OIN_AddDriverPad, struct OIControllerInfo *, info, a0, ULONG, infoSize, d0, , OPENINPUT_BASE_NAME)
+#define OIN_DriverPadRaw(pad, raw, rawSize) \
+    LP3NR(0x78, OIN_DriverPadRaw, APTR, pad, a0, struct OIRawState *, raw, a1, ULONG, rawSize, d0, , OPENINPUT_BASE_NAME)
+#define OIN_RemDriverPad(pad) \
+    LP1NR(0x7e, OIN_RemDriverPad, APTR, pad, a0, , OPENINPUT_BASE_NAME)
 
 #ifndef NO_INLINE_STDARG
 #define OIN_OpenController(id, ...) \

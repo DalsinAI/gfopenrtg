@@ -2,7 +2,7 @@
 
 These four files are the AmiCradle runtime's own model of ACAHI, its sound
 board for AHI, copied byte for byte from the amicradle repository at
-e7bb202c5bf19eed0f0427763006dd9feb3c16da, at the same paths:
+1631b1304648db8bc6d3d103f7ffb216cd234818, at the same paths:
 
 | File | What it is |
 | --- | --- |

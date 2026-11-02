@@ -956,7 +956,7 @@ static LONG rs_present_gpu(struct OpenGPUBase *base, struct rs_handle *h, struct
         LockLayerRom(layer);
         if (layer->SuperBitMap) { UnlockLayerRom(layer); return RS_NO_GPU; }
         for (cr = layer->ClipRect; cr; cr = cr->Next) {
-            if (cr->lobs) {
+            if (cr->obscured) {
                 if (cr->BitMap) { UnlockLayerRom(layer); return RS_NO_GPU; }
                 continue;
             }
@@ -964,7 +964,7 @@ static LONG rs_present_gpu(struct OpenGPUBase *base, struct rs_handle *h, struct
         }
         if (nclips && !(clips = AllocVec((ULONG)nclips * 4 * sizeof(short), MEMF_ANY))) { UnlockLayerRom(layer); return OGPU_RS_ERR_MEMORY; }
         for (i = 0, cr = layer->ClipRect; cr && i < nclips; cr = cr->Next) {
-            if (cr->lobs) continue;
+            if (cr->obscured) continue;
             clips[i * 4] = cr->bounds.MinX;
             clips[i * 4 + 1] = cr->bounds.MinY;
             clips[i * 4 + 2] = cr->bounds.MaxX;

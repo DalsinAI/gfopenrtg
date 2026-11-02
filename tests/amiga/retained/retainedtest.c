@@ -17,9 +17,15 @@
  * On a 32-bit GFOpenRTG screen of its own (or the Workbench screen when it
  * is one). Prints PASS and FAIL lines and a summary; returns 0, 10 when a
  * check failed, 20 when it couldn't run.
- *   RetainedTest */
+ *   RetainedTest [LIB=file]
+ * LIB loads that gfopengpu.library file for this test alone (LoadSeg and
+ * InitResident, as ramlib would): for a lab whose ROM already has an older
+ * one in memory. The copy stays in memory, after the ROM's in the library
+ * list, so other programs keep the ROM's. */
 #include <exec/types.h>
 #include <exec/memory.h>
+#include <exec/resident.h>
+#include <dos/dos.h>
 #include <devices/timer.h>
 #include <intuition/intuition.h>
 #include <intuition/screens.h>
@@ -203,18 +209,43 @@ static void timing(struct RastPort *rp, ULONG format)
     OGPU_RetainedDestroy(rs);
 }
 
-int main(void)
+/* The file's RomTag, made into a library (InitResident adds it to the list). */
+static struct Library *load_lib(const char *file)
+{
+    BPTR seg = LoadSeg((CONST_STRPTR)file), s;
+    struct Library *lib = NULL;
+    if (!seg) return NULL;
+    for (s = seg; s && !lib; s = *(BPTR *)BADDR(s)) {
+        ULONG size = ((ULONG *)BADDR(s))[-1] - 8, i;
+        UWORD *p = (UWORD *)((UBYTE *)BADDR(s) + 4);
+        for (i = 0; i + sizeof(struct Resident) <= size; i += 2, p++) {
+            struct Resident *r = (struct Resident *)p;
+            if (r->rt_MatchWord == RTC_MATCHWORD && r->rt_MatchTag == r) {
+                lib = (struct Library *)InitResident(r, seg);
+                break;
+            }
+        }
+    }
+    if (!lib) { UnLoadSeg(seg); return NULL; }
+    lib->lib_OpenCnt++;     /* never expunged: the test's own */
+    return lib;
+}
+
+int main(int argc, char **argv)
 {
     struct Screen *scr = NULL, *wb = NULL, *on;
     struct Window *win = NULL;
     ULONG id = INVALID_ID;
     int rc = 0;
-    if (!(OpenGPUBase = OpenLibrary((CONST_STRPTR)"gfopengpu.library", 0))) { printf("RetainedTest: no gfopengpu.library\n"); return 20; }
+    int own = argc > 1 && !strncmp(argv[1], "LIB=", 4);
+    if (own) OpenGPUBase = load_lib(argv[1] + 4);
+    else OpenGPUBase = OpenLibrary((CONST_STRPTR)"gfopengpu.library", 0);
+    if (!OpenGPUBase) { printf("RetainedTest: no gfopengpu.library%s%s\n", own ? " in " : "", own ? argv[1] + 4 : ""); return 20; }
     printf("RetainedTest: gfopengpu.library %d.%d, back end 1: %s\n", OpenGPUBase->lib_Version, OpenGPUBase->lib_Revision,
            OGPU_BackEndName(1) ? (char *)OGPU_BackEndName(1) : "(none: the CPU only)");
     if (OpenGPUBase->lib_Version == 0 && OpenGPUBase->lib_Revision < OGPU_RETAINED_REVISION) {
         printf("RetainedTest: needs gfopengpu.library 0.%d\n", OGPU_RETAINED_REVISION);
-        CloseLibrary(OpenGPUBase);
+        if (!own) CloseLibrary(OpenGPUBase);
         return 20;
     }
     if (!(CyberGfxBase = OpenLibrary((CONST_STRPTR)"cybergraphics.library", 41))) { printf("RetainedTest: no cybergraphics.library\n"); rc = 20; goto out; }
@@ -271,6 +302,6 @@ out:
     if (grab_buf) FreeVec(grab_buf);
     if (TimerBase) CloseDevice(&treq.tr_node);
     if (CyberGfxBase) CloseLibrary(CyberGfxBase);
-    CloseLibrary(OpenGPUBase);
+    if (!own) CloseLibrary(OpenGPUBase);
     return rc;
 }

@@ -5,7 +5,7 @@
  * in which order, and what each one does. Pure C, so the host checks it
  * (tests/test_lines.c); library/screens.c draws with it (0.25).
  *
- * The reference is GFOpenGfx's core (openamigagfx library/core/gfx_rp.c,
+ * The reference is GFOpenGfx's core (gfopengfx library/core/gfx_rp.c,
  * line() and PolyDraw at 6c8b6d9), which OpenGfxCheck compares byte for
  * byte with OS 3.2's graphics.library on planar bitmaps, every DrawMode,
  * LinePtrn, linpatcnt and FRST_DOT:

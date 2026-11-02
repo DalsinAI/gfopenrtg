@@ -3,10 +3,10 @@
   textures in an GFOpenRTG board's video RAM, so GFOpenGPU's GPU draws in them.
   Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
 
-  amigachrome's docs/design/Design-OpenGPU-2D-On-The-GPU.md 5.4 B (the
+  amicradle's docs/design/Design-OpenGPU-2D-On-The-GPU.md 5.4 B (the
   user's decision, 17 October 2026). GFOpenRTG 0.19 puts a bitmap asked for
   with BMF_DISPLAYABLE, whose friend is in a board's video RAM, in that
-  board's video RAM while there is room (openamigartg #94). Everything else
+  board's video RAM while there is room (gfopenrtg #94). Everything else
   stays in Fast RAM, as before: a screen that isn't a 32-bit GFOpenRTG one, a
   board without room, a bitmap GFOpenRTG put in Fast RAM after all.
 

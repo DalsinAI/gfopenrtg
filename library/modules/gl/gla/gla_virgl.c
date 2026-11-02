@@ -15,7 +15,7 @@
  * 32 bits (floats). Everything is done by the time the block returns, so
  * nothing is ever busy and fences are already signalled.
  *
- * Written for openamigamesa's GLA core (8 October 2026), after virgl's own
+ * Written for gfopenmesa's GLA core (8 October 2026), after virgl's own
  * winsys interface (virgl_winsys.h); Mesa's vtest winsys was the reference
  * for what each call must do. */
 #include "gla_virgl.h"

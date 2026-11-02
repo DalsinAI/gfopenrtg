@@ -3,7 +3,7 @@
 The reference for the GFOpenGPU developer kit (`GFOpenGPU-SDK-0.6`): how a
 program reaches GFOpenGPU, how it links, what each part gives, and the
 settings it reads. The kit's `README` says how to install it. The design is
-openamigartg's `DESIGN.md`, section 5.
+gfopenrtg's `DESIGN.md`, section 5.
 
 ## 1. The parts
 
@@ -104,7 +104,7 @@ m68k-amigaos-gcc -O2 gl.c -o GLProgram $(pkg-config --cflags --libs gl)
   and GCC 16 (os32-gcc16): the same libnix, objects and calling convention.
   The libraries were built with GCC 16 and checked with `fpcr_check.py`.
 - **GCC 16.** It can put a float-to-int store in the wrong place at
-  `-m68040`; run `tools/fpcr_check.py` (openamigartg) on what it builds.
+  `-m68040`; run `tools/fpcr_check.py` (gfopenrtg) on what it builds.
   Programs using `_Thread_local` link `-lpthread` (libgcc's emutls).
 - **No SDL main.** SDL needs no main of its own on the Amiga: `main` is the
   program's. `libSDL2main.a` is empty, for build systems that link it.
@@ -220,7 +220,7 @@ GL:
 
 ### SDL 1.2
 
-A kit built with SDL 1.2 (openamigartg `library/modules/sdl12`, which
+A kit built with SDL 1.2 (gfopenrtg `library/modules/sdl12`, which
 `make_sdk.py` picks up) has `include/SDL/`, `libSDL.a`, `libSDL_gl.a`,
 `bin/sdl-config` and `sdl.pc`. SDL 1.2 there is sdl12-compat 1.2.78 (Zlib):
 every SDL 1.2 call becomes SDL 2 calls, so SDL 1.2 programs draw, play and
@@ -298,13 +298,13 @@ GL with one of the `GLAInitializeContext` calls and shows each frame with
 The `glA...` forms (`glASwapBuffers()` and the rest) pass the program's
 `__tglContext`. `tgl/glu.h` has `gluPerspective`, `gluLookAt`,
 `gluOrtho2D`, `gluBuild2DMipmaps` and `gluErrorString`.
-`examples/tinygl/tglspin.c` is a TinyGL program. openamigartg's
+`examples/tinygl/tglspin.c` is a TinyGL program. gfopenrtg's
 `library/tinygl/README.md` says what isn't there yet.
 
 ## 7. Warp3D, MiniGL and gfopengpu.library
 
 - **Warp3D** (`include/Warp3D/`, `proto/Warp3D.h`): Warp3D's API, drawn by
-  GFOpenGPU's 3D (openamigartg `DESIGN.md`, section 6).
+  GFOpenGPU's 3D (gfopenrtg `DESIGN.md`, section 6).
 - **MiniGL** (`include/mgl/`, `libraries/minigl.h`, `proto/minigl.h`):
   OpenGL 1.1 on the same 3D. `libminigl.a` holds its stubs, `libmgl.a` the
   GLUT-style helpers.

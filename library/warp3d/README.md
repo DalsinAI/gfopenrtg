@@ -80,7 +80,7 @@ No program found so far needs Wazp3D's `soft3d.library`, so there is no stand-in
 All runs are on a scratch copy of Instance-11 (OS 3.2.3, AC090 68040, hyper pace, GFOpenRTG), 8 October 2026.
 
 - W3D_OpenGPU ran on a lab runtime built with the 3D core and a lab `ACRTG.gpu` that answers for it. The ring runs the C core on the PC, not yet the PC's GPU.
-- The GFOpenGPU core was openamigartg#27's.
+- The GFOpenGPU core was gfopenrtg#27's.
 
 W3DTest, started plainly (its Workbench icon, or the name in a Shell), runs until Esc, a mouse button or Ctrl-C, then frees everything and exits. For the measurements below, `W3DTest CPU FRAMES 100` or `W3DTest GPU SECONDS 10` draws that many frames, or for that long, and prints the frame rate; `SNAP file` alone keeps the run of 100 frames.
 

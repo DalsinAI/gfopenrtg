@@ -447,9 +447,9 @@ static void drivers_load(struct OpenGPUBase *base)
     if (me->tc_Node.ln_Type != NT_PROCESS) return;
     ObtainSemaphore(&base->drv_lock);
     if (base->drv_tried) { ReleaseSemaphore(&base->drv_lock); return; }
-    /* 0.16: a known driver in the ROM first (a resident of its name, amigachrome-guest's
+    /* 0.16: a known driver in the ROM first (a resident of its name, amicradle-guest's
      * ACRTG.gpu.module). OpenLibrary of the name alone finds it: in memory, or made by ramlib, which
-     * looks for a resident of the name before LIBS: (amigachrome-guest common/openramlib). */
+     * looks for a resident of the name before LIBS: (amicradle-guest common/openramlib). */
     for (k = 0; drv_first[k] && !base->drv; k++)
         if (FindResident((CONST_STRPTR)drv_first[k])) driver_try(base, drv_first[k], 1);
     dos_open(base);

@@ -1507,7 +1507,7 @@ int ortg_pieces(struct RastPort *rp, LONG x0, LONG y0, LONG x1, LONG y1, ortg_pi
  * The frame's visible pieces become ACV_PRESENT commands, one for each
  * bitmap they land in, in one ACVirgl block: the host writes the pixels.
  * The block goes, and its fence passes, before the layer is unlocked
- * (docs/design/Design-OpenGPU-Virgl-Direct-Present.md in DalsinAI/amigachrome). */
+ * (docs/design/Design-OpenGPU-Virgl-Direct-Present.md in DalsinAI/amicradle). */
 
 #define VP_FIXED    12                                  /* header, result and ten arguments */
 #define VP_WORDS    (4 * (VP_FIXED + 2 * ACV_PRESENT_MAX))  /* four commands a block */
@@ -2736,7 +2736,7 @@ static struct BitMap *allocbm_patch(REG(d0, WORD w), REG(d1, WORD h), REG(d2, UL
              * board's video RAM, as Picasso96 keeps displayable bitmaps on its
              * card, while such friends take at most half of it: SDL's window
              * and textures ask so, and GFOpenGPU's GPU then draws in them
-             * (amigachrome's Design-OpenGPU-2D-On-The-GPU 5.4 B). Every other
+             * (amicradle's Design-OpenGPU-2D-On-The-GPU 5.4 B). Every other
              * friend stays in fast RAM, as before. */
             /* 0.20: one for the card part (ORTG_BMA_CARD) goes there first, not counted in the share */
             int to_card = card && displayable && f->monitor && card_at[f->monitor];

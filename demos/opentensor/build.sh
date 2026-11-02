@@ -20,7 +20,7 @@ PACKAGE="OpenTensor-Beyond-First-Light-$VERSION.zip"
 ICON_WRITER=${AMIGAICON_WRITER:-}
 if [ -z "$ICON_WRITER" ]; then
     for candidate in \
-        "$ROOT/../amigachrome-guest/tools/icons/amigaicon.py" \
+        "$ROOT/../amicradle-guest/tools/icons/amigaicon.py" \
         "$HOME/AmiCradleGuest/tools/icons/amigaicon.py" \
         "$HOME/AmiCradle/tools/icons/amigaicon.py"
     do

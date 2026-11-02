@@ -25,7 +25,7 @@ NM=${NM:-${CC%gcc}nm}
 if [ "$TARGET" = module ]; then OUT=${1:-${OUT:-$ROOT/build}}; else OUT=${1:-$ROOT/build}; fi
 # gfopengpu.library is built with GFOpenAmigaGCC 16.2.0-open4, and with nothing
 # else: GCC 6.5 (the os32 stove) miscompiles the CPU core's stroke walk, so
-# strokes painted with gradients or patterns came out wrong (openamigartg
+# strokes painted with gradients or patterns came out wrong (gfopenrtg
 # #159; tests/amiga/vector's OpenGPUVectorCRC shows the core against the
 # host). OPENGPU_STOVE holds prefix/bin; OPENGPU_CC overrides the compiler.
 OPENGPU_GCC=16.2.0-open4
@@ -87,7 +87,7 @@ D3= D3SRC=
 if [ -f "$HERE/opengpu/ogpu_3d.c" ]; then D3=-DOGPU_WITH_3D; D3SRC="$HERE/opengpu/ogpu_3d.c"; fi
 # GFOpenGfx (library/ogfx): the patches' glue and its leaves. The leaves are AC090
 # magic functions: stack arguments, and no loop turned into a call (ogfx_leaves.c).
-# GFOpenGfx's drawing core comes from openamigagfx at a pinned commit (one copy).
+# GFOpenGfx's drawing core comes from gfopengfx at a pinned commit (one copy).
 if ! "$OPENGPU_CC" --version 2>/dev/null | head -1 | grep -q "OpenAmigaGCC $OPENGPU_GCC)"; then
     echo "gfopengpu.library needs GFOpenAmigaGCC $OPENGPU_GCC (OPENGPU_STOVE or OPENGPU_CC); $OPENGPU_CC is:" >&2
     "$OPENGPU_CC" --version 2>&1 | head -1 >&2 || true

@@ -8,7 +8,7 @@
  * screens on them drawn by GFOpenRTG, and LIBS:GFOpenRTG/cybergraphics.library
  * opened once. With Picasso96 running, or no ACRTG board, it does nothing.
  *
- * 0.8: a ROM with GFOpenRTG in it (openamigartg library/build.sh module) has
+ * 0.8: a ROM with GFOpenRTG in it (gfopenrtg library/build.sh module) has
  * done all that before DOS (library/openrtg_monitor_rom.c). Then
  * ORTG_Screens(0) answers 1, and this registers nothing a second time: it
  * only asks for the screens again (ORTG_Screens(1)), which opens

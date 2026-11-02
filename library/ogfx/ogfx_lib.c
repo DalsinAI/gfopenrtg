@@ -3,7 +3,7 @@
  *
  * GFOpenGfx inside gfopengpu.library: graphics.library's drawing and text.
  *
- * This is gfopengfx.library 1.1 (amigachrome-guest libraries/opengfx, commit
+ * This is gfopengfx.library 1.1 (amicradle-guest libraries/opengfx, commit
  * 90aa66f), brought into gfopengpu.library on 8 October 2026 so one library
  * does all the drawing (FORK.md records what changed on the way).
  *
@@ -55,14 +55,14 @@
 #include "ogfx.h"
 #include "ogfx_leaves.h"
 #ifndef OGPU_ROM_NO_OGFX
-#include "gfx_rp.h"     /* GFOpenGfx's core, from openamigagfx (tools/fetch_ogfx_core.sh) */
+#include "gfx_rp.h"     /* GFOpenGfx's core, from gfopengfx (tools/fetch_ogfx_core.sh) */
 #endif
 #include <graphics/gfxdispatch.h>   /* graphics.library 47.101's dispatch (a copy of gfopengfx's SDK header) */
 #include "ogfx_gfxdispatch.h"       /* its six calls (a copy of gfopengfx's inline/gfxdispatch.h) */
 
 #define REG OGFX_REG
 
-/* Zorro manufacturer of AmiCradle's own boards (amigachrome-guest
+/* Zorro manufacturer of AmiCradle's own boards (amicradle-guest
  * common/protocol/amigachrome_zorro.h). The old id, 2011, is shared with UAE and
  * home-made boards, so it is not taken as proof. */
 #define OGFX_AMICRADLE_MANUFACTURER 0xDA15
@@ -571,7 +571,7 @@ static int has_dispatch(struct ogfx_state *st)
 }
 
 #ifndef OGPU_ROM_NO_OGFX
-/* Whether GFOpenGfx's own core (openamigagfx library/core, measured byte for
+/* Whether GFOpenGfx's own core (gfopengfx library/core, measured byte for
  * byte against OS 3.2's graphics.library) draws a call on this RastPort,
  * and if so with its layer locked (core_end unlocks it). It does when every
  * bitmap the call may touch is a standard, non-interleaved planar bitmap of
@@ -1073,7 +1073,7 @@ OGFX_CALL LONG do_array(struct ogfx_state *st, struct GfxBase *gfx, int p, struc
 /* ---- 0.14: area fills, DrawEllipse and EraseRect through the core -------------
  * No provider takes these yet. AreaMove, AreaDraw and AreaEllipse only add
  * to the AreaInfo table, which the core keeps byte for byte as OS 3.2 does
- * (openamigagfx's AREAPROBE2 and AREAPROBE4), so graphics.library's
+ * (gfopengfx's AREAPROBE2 and AREAPROBE4), so graphics.library's
  * AreaEnd takes a table the core built, and the core's AreaEnd one it
  * built. AreaEnd builds its mask in the RastPort's TmpRas with the CPU:
  * a blit still using it ends first. */

@@ -13,7 +13,7 @@
 set -eu
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 TOP=$(CDPATH= cd -- "$HERE/.." && pwd)
-REPO=$(CDPATH= cd -- "$TOP/../../.." && pwd)          # openamigartg: include/gfopengpu, host/virgl
+REPO=$(CDPATH= cd -- "$TOP/../../.." && pwd)          # gfopenrtg: include/gfopengpu, host/virgl
 WORK=${1:-${GL_WORK:-$TOP/build}}
 J=$(sed -n 's/.*"\([a-z0-9]*\)": "\(.*\)".*/\1=\2/p' "$HERE/UPSTREAM.json")
 VERSION=$(echo "$J" | sed -n 's/^version=//p')

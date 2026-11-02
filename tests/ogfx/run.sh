@@ -1,7 +1,7 @@
 #!/bin/sh
 # Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
-# GFOpenGfx's tests, brought from amigachrome-guest (tests/m68k) with GFOpenGfx:
+# GFOpenGfx's tests, brought from amicradle-guest (tests/m68k) with GFOpenGfx:
 #  1. the leaves and the compositing reference on the host, 32-bit (addresses
 #     are longs, as on the Amiga), at -O0 and -O2, under UBSan;
 #  2. the same under qemu-m68k with a Linux m68k GCC, when there is one

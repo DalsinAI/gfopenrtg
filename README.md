@@ -115,7 +115,7 @@ checks that (`tools/hunk_rw_check.py` and `nm`).
   small stub in the block that loads A4 and puts the caller's back
   (`library/ortg_stub.c`).
 - **`library/build.sh module`** builds three modules for an GFOpenKick ROM
-  (amigachrome-guest `tools/openkickrom/trial-1m`, `RTG=`):
+  (amicradle-guest `tools/openkickrom/trial-1m`, `RTG=`):
 
 | Module | What | RomTag |
 | --- | --- | --- |
@@ -132,7 +132,7 @@ modules by priority, highest first. In the 1M trial ROM's map:
 
 - **After** romboot (105), which configures the boards, so the ACRTG board
   is in expansion's list; graphics (65); intuition (10); and syscheck (-35).
-- **Before** amigachrome-guest's gfopenrtg.boot (-40), which loads its own copy
+- **Before** amicradle-guest's gfopenrtg.boot (-40), which loads its own copy
   of gfopenrtg.library into RAM unless one is in memory. With both in a ROM,
   gfopenrtg.boot finds this one's library and steps aside.
 - **Before** bootmenu (-50), the first module after it that may open a
@@ -151,7 +151,7 @@ only what is in memory) and does what the monitor driver does.
 
 - **The ROM's copy is found first.** Its library is in memory before DOS, so
   `OpenLibrary("gfopenrtg.library")` gets it, and `LIBS:GFOpenRTG/cybergraphics.library`
-  is found in memory by its file part (amigachrome-guest `common/openramlib`).
+  is found in memory by its file part (amicradle-guest `common/openramlib`).
 - **`DEVS:Monitors/GFOpenRTG` 0.8 registers nothing a second time.** It asks
   `ORTG_Screens(0)`, which from 0.18 answers 1 when the screens are on. Then
   it calls `ORTG_Screens(1)` only, which registers nothing and opens
@@ -162,7 +162,7 @@ only what is in memory) and does what the monitor driver does.
   `LIBS:` is assigned (IPrefs' Workbench), opens it and hands the drawing to
   GFOpenGfx (`late_opengpu` in `library/screens.c`).
 - **gfopengpu.library 0.16 looks for a driver in the ROM first**: a resident
-  named `ACRTG.gpu` (amigachrome-guest `libraries/acrtg.gpu`,
+  named `ACRTG.gpu` (amicradle-guest `libraries/acrtg.gpu`,
   `build.sh module`) is opened by name, before `LIBS:GFOpenGPU/`.
 - **gfopengpu.library 0.17 copies Fast RAM with MOVE16** on a 68040 or 68060:
   a COPY whose rows line up on 16 bytes, between memory lists marked Fast

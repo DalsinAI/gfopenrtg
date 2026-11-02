@@ -61,7 +61,7 @@ cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanit
 # The GL module's OS 3.2 present (library/modules/gl/gla/os3/gla_present_os3.c) on a fake
 # GFOpenGPU: every frame reaches the screen whole and in order, and a screen's present neither
 # waits with the bitmap locked nor, with a back buffer, for the batch it has just sent
-# (gfopengpu.library 0.19: it waits as before). Pairs with openamigamesa #23.
+# (gfopengpu.library 0.19: it waits as before). Pairs with gfopenmesa #23.
 cc -std=gnu99 -O1 -g -Wall -Wextra -Werror -Wno-unused-parameter -fsanitize=address,undefined -fno-sanitize-recover=undefined \
     -I"$HERE/gla_present-include" -I"$HERE/../include" -I"$HERE/../library/modules/gl" \
     -o "$OUT/test_gla_present" "$HERE/test_gla_present.c" "$HERE/../library/modules/gl/gla/os3/gla_present_os3.c" -lpthread
@@ -120,7 +120,7 @@ else
     echo "no Vulkan headers or loader; the GPU run is skipped"
 fi
 # ACVirgl's host side against virglrenderer, when ACVIRGL_LIB names a libvirglrenderer.so.1
-# and VIRGL_SRC its source's src/ (for virgl_protocol.h): the release amigachrome's
+# and VIRGL_SRC its source's src/ (for virgl_protocol.h): the release amicradle's
 # scripts/build_virglrenderer.sh builds (1.3.0).
 if [ -n "${ACVIRGL_LIB:-}" ] && [ -f "${VIRGL_SRC:-/nonexistent}/virgl_protocol.h" ]; then
     cc -std=gnu11 -O1 -g -Wall -Wextra -Werror -I"$VIRGL_SRC" -o "$OUT/test_acvirgl" "$HERE/test_acvirgl.c" \

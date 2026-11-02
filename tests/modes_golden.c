@@ -10,7 +10,7 @@
  * the board shows, then BestModeIDA's answers to a grid of requests. A
  * ModeID that doesn't look up to its own mode is written too.
  * tests/golden/modes-table.txt holds the FNV-1a of that text as
- * gfopenrtg.library 0.16.0's modes.c (openamigartg f47794c) wrote it, and its
+ * gfopenrtg.library 0.16.0's modes.c (gfopenrtg f47794c) wrote it, and its
  * line count.
  *   modes_golden GOLDEN_FILE    compares; 0 when the same
  *   modes_golden --dump         writes the text, to compare by eye with an

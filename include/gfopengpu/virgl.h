@@ -69,7 +69,7 @@
 #define ACV_HOST_GLES       2   /* ... through GLES */
 #define ACV_HOST_PRESENT    4   /* ACV_PRESENT is there */
 
-/* ACV_PRESENT (DalsinAI/amigachrome docs/design/Design-OpenGPU-Virgl-Direct-
+/* ACV_PRESENT (DalsinAI/amicradle docs/design/Design-OpenGPU-Virgl-Direct-
  * Present.md). Target pixel (x, y) comes from resource pixel (x - sx, y - sy),
  * or from row (height - 1 - (y - sy)) with FLIP_Y. The target's format is
  * an OGPU_FMT_: XRGB32 (the top byte written 0), ARGB32 (the resource's

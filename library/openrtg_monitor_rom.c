@@ -8,12 +8,12 @@
  *
  * Its RomTag is RTF_COLDSTART at priority -38. exec's InitCode runs the
  * COLDSTART modules by priority, highest first (the priorities below are
- * those in amigachrome-guest's 1M trial ROM map), so it runs:
+ * those in amicradle-guest's 1M trial ROM map), so it runs:
  *   - after romboot (105), which configures the boards: the ACRTG board is
  *     in expansion's list;
  *   - after graphics (65) and intuition (10), the last of what it uses, and
  *     syscheck (-35);
- *   - before amigachrome-guest's gfopenrtg.boot (-40), which loads its own
+ *   - before amicradle-guest's gfopenrtg.boot (-40), which loads its own
  *     copy of gfopenrtg.library into RAM unless one is in memory: with this
  *     module in the same ROM it finds this one's and steps aside;
  *   - before bootmenu (-50), the first module that may open a screen, strap

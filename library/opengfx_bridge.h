@@ -4,7 +4,7 @@
  *
  * Source of truth: include/gfopengpu/gfx.h. GFOpenGfx lives in gfopengpu.library
  * from 0.6 (its calls are LVOs from 66); before that it was gfopengfx.library
- * (amigachrome-guest libraries/opengfx), which is now a stub forwarding to
+ * (amicradle-guest libraries/opengfx), which is now a stub forwarding to
  * gfopengpu.library. GFOpenRTG registers with gfopengpu.library when it carries
  * GFOpenGfx, else with gfopengfx.library.
  *

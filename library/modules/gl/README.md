@@ -40,9 +40,9 @@ deals with byte order in these places:
 - **Version:** Mesa 26.2.4, pinned by SHA-256 in `mesa/UPSTREAM.json` and
   fetched at build time. It is MIT, and its notices are kept.
 - **The Team's changes:** the patches in `mesa/patches/`.
-  - 0001-0006 are the AmigaOS port. It was openamigamesa's until
+  - 0001-0006 are the AmigaOS port. It was gfopenmesa's until
     8 October 2026; it moved here with the one-library design, and
-    openamigamesa keeps GFOpenDemos.
+    gfopenmesa keeps GFOpenDemos.
   - 0007-0010 are for virgl.
 
 ## GL.module and libGL.a
@@ -115,7 +115,7 @@ ACVIRGL_LIB=/path/libvirglrenderer.so.1 sh tests/run.sh
 
 `GL_WORK` chooses the work directory, which defaults to `build/` here (about
 1 GB). A program for OS 3.2 compiles with Mesa's `include/` and
-`OUT_DIR/include` and links `-L OUT_DIR -lGL`; GFOpenDemos (openamigamesa)
+`OUT_DIR/include` and links `-L OUT_DIR -lGL`; GFOpenDemos (gfopenmesa)
 does.
 
 ## Measured, 8 October 2026
@@ -126,7 +126,7 @@ virglrenderer 1.3.0 on the PC's graphics chip):
 - **test_gla:** softpipe gives its stored pictures. virgl gives GL 4.3, the
   same pictures as virgl on the x86 host (c3c62778, 34e0c2fd, 1a30012c),
   and 100% of softpipe's within the allowance.
-- **GFOpenDemos at 320x240** (openamigamesa), linked with libGL.a (100 KB
+- **GFOpenDemos at 320x240** (gfopenmesa), linked with libGL.a (100 KB
   rather than 20 MB), GL from GL.module, softpipe → virgl:
   - Boing: 4.0 → 357 fps
   - Chrome Gears: 1.5 → 427 fps
@@ -147,7 +147,7 @@ first 10 seconds (start-up, display lists and shaders are left out) over
 30 to 70 seconds. GL.module was built with each set of flags, and the
 6 October build of Mesa was relinked into a static GFOpenDemos.
 
-| Build | Runtime of 8 Oct | JIT of amigachrome #293 |
+| Build | Runtime of 8 Oct | JIT of amicradle #293 |
 | --- | --- | --- |
 | 6 October (`-m68040`, bit fields) | 6.5, 2.4, 0.24 | 16.1, 7.1, 0.41 |
 | `-m68040 -mnobitfield` (until now) | 4.1, 1.6, 0.33 | 16.3 to 17.8, 7.2 to 7.6, 0.44 |

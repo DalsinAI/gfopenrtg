@@ -337,7 +337,7 @@ void line() {
     }
 }
 
-// OP_LIST (docs/design/Design-OpenGPU-2D-On-The-GPU.md 5.3, in amigachrome):
+// OP_LIST (docs/design/Design-OpenGPU-2D-On-The-GPU.md 5.3, in amicradle):
 // many commands on one target in one dispatch. The push constants give the
 // target, the list's bounding box (A_X, A_Y, A_W, A_H), the tile table's
 // word in the arena (A_FIRST) and the tiles across (A_SW). The table holds

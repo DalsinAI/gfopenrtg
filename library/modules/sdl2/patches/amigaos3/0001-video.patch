@@ -341,7 +341,7 @@ diff -ruN a/src/video/amigaos3/SDL_os3framebuffer.c b/src/video/amigaos3/SDL_os3
 +
 +#if SDL_VIDEO_RENDER_OPENGPU
 +/* The window surface in an GFOpenRTG board's video RAM (Open, 18 Oct 2026;
-+ * SDL_os3vram.c, amigachrome's Design-OpenGPU-2D-On-The-GPU 5.4 B). On a
++ * SDL_os3vram.c, amicradle's Design-OpenGPU-2D-On-The-GPU 5.4 B). On a
 + * 32-bit GFOpenRTG screen, a window that needs no scaling gets its surface in
 + * a displayable friend of the screen's bitmap, so GFOpenGPU's GPU draws in it
 + * and shows it from there. Any other window, or one whose bitmap GFOpenRTG

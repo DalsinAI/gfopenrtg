@@ -99,7 +99,7 @@ It answers the batch's first error. `flags` is 0 for now.
      means.
 2. **Telling the compositor.** layers.library's composited mode finds out
    what was drawn through its thunks on graphics.library, cybergraphics.library
-   and gfopenrtg.library calls (openamigagfx `docs/design/compositing.md`,
+   and gfopenrtg.library calls (gfopengfx `docs/design/compositing.md`,
    "The marks"). A batch drawn
    straight into a surface goes through none of them, so it would not show
    until something else is drawn there. The options:

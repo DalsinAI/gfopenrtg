@@ -436,13 +436,13 @@ to put its patches in.
   paths use, and the keyed compose GFOpenLayers builds from them), by
   `tests/test_opengpu_vk.c`, whose random streams and golden scene write
   ARGB32 with alpha into ARGB32 and must match the core byte for byte on
-  the Vulkan back end, and, on a running system, by amigachrome-guest's
+  the Vulkan back end, and, on a running system, by amicradle-guest's
   `BarOpacityTest RAW` (an off-screen friend bitmap and a window's layer).
   A COPY of such a surface onto the screen (an opaque layer) carries the
   byte into the screen's bitmap, where the display, which reads it as
   XRGB32, and `ortg_decode` drop it.
 - **Native modes (0.17, 12 October 2026; the native screen mode's step 3,
-  amigachrome `Design-Native-Screen-Mode`):** on an ACRTG board of protocol
+  amicradle `Design-Native-Screen-Mode`):** on an ACRTG board of protocol
   v5 or later, the host's window can ask for the Amiga screen's size
   (`WANT_W`, `WANT_H`, `WANT_GEN`, `LIMIT`, `ASK`). While a size is asked
   for, each RTG monitor lists three more modes, last: "GFOpenRTG.n: Native
@@ -580,7 +580,7 @@ Workbench and every program speed up without the CPU emulating drawing loops.
   (Team, 4 October 2026: SDL 2, SDL 3 and Mesa "that lean into our open
   capabilities"). Mesa runs on GFOpenGPU too: on AmiCradle its `virgl`
   driver's stream goes through GFOpenGPU's ring to the host's GPU. So GFOpenGPU
-  stays the one acceleration layer under every 3D API (amigachrome
+  stays the one acceleration layer under every 3D API (amicradle
   `docs/architecture/OPEN_SDL_MESA_DESIGN.md`).
 - **It doesn't replace the Picasso96 drivers.** `ACRTG.card` and
   `ACRTG.chip` still serve Picasso96 and OS 4. `ACRTG.chip` and `ACRTG.gpu`
@@ -669,7 +669,7 @@ uses the host's driver through Vulkan:
   V3DV on the Pi 5), keeping what was there, or else imports the runtime's
   (`VK_EXT_external_memory_host`: RADV, lavapipe). Mapping comes first since
   17 October 2026: on daletop's RX 460 a GPU round trip takes about 90 µs
-  mapped against 340 µs imported (amigachrome #548). `tools/gpu_check.sh`
+  mapped against 340 µs imported (amicradle #548). `tools/gpu_check.sh`
   runs the golden scenes each way on a machine's own GPU and installs nothing.
 - **3D on the back end's core, for now** (17 October 2026): the compute
   shader draws the 2D commands. Stream v1.2's 3D range (TRIANGLES,
@@ -682,7 +682,7 @@ uses the host's driver through Vulkan:
   for the GPU APIs' range (OGPU_OP_VIRGL) it is FULL when the caller gave
   the back end an `ext`, which the run hands those commands to.
   Before this, they were OGPU_ERR_BADOP under Vulkan.
-- **Each command where it is faster** (17 October 2026; amigachrome's
+- **Each command where it is faster** (17 October 2026; amicradle's
   `docs/design/Design-OpenGPU-2D-On-The-GPU.md` 5.2, the user's decision 6).
   On a card in a PCIe slot, plain 2D is faster on the host's CPU than on a
   GPU drawing into host memory, and a GPU round trip costs 100 µs or more,
@@ -717,7 +717,7 @@ uses the host's driver through Vulkan:
   row in 32, and the host leaves anything that could overflow to the core)
   and YUV, each as `ogpu_core.c` does it. LINES_BLEND and POINTS_BLEND stay
   on the core.
-- **Stream v1.6: vectors on the core** (23 October 2026; openamigabrowser
+- **Stream v1.6: vectors on the core** (23 October 2026; gfopenbrowser
   PLAN.md step 6, "Drawing is GFOpenGfx and GFOpenGPU": gfopengpu.library is the
   one home for a browser's pixel work). PATH_FILL (non-zero and even-odd)
   and PATH_STROKE (caps, joins, miter limit, dashes) with GFOpenFont's area
@@ -819,7 +819,7 @@ and Warp3D.library becomes a stub over it. Then: "resident core, shared big
 parts". The layout below was agreed that day; three helpers add files to it
 without editing each other's.
 
-**GFOpenGfx, merged (8 October 2026).** `library/ogfx/` holds amigachrome-guest
+**GFOpenGfx, merged (8 October 2026).** `library/ogfx/` holds amicradle-guest
 `libraries/opengfx` as of 90aa66f (gfopengfx.library 1.1: the eight
 graphics.library drawing and text patches, the leaves, the premultiplied
 composite reference), merged into gfopengpu.library 0.6 once the GFOpenGfx work's
@@ -883,7 +883,7 @@ has put them in (Picasso96 without the GFOpenRTG part).
 
 Warp3D and SDL need no LVOs of their own. They build stream batches (0x0030–0x0035 and the rest) and pass them to `OGPU_Submit`.
 
-#### 3. Directories (openamigartg)
+#### 3. Directories (gfopenrtg)
 
 ##### include/: the one include tree for programs
 
@@ -901,15 +901,15 @@ Warp3D and SDL need no LVOs of their own. They build stream batches (0x0030–0x
 - `opengpu/`, the core (library owner): `opengpu_lib.c` (the LVO table, the driver loader and the module loader), `ogpu_core.c/.h` and `ogpu_build.c`.
   - Exception: `ogpu_3d.c/.h`, the CPU rasteriser, belongs to the Warp3D helper. The owner wires 0x0030–0x0035 into `ogpu_core_run` with one call, `ogpu_3d_run(core, op, cmd, words)`.
   - The same files also compile into the runtime's host core, so `ogpu_3d.c` stays integer-only and free of the C library.
-- `ogfx/`, GFOpenGfx (library owner): amigachrome-guest `libraries/opengfx` as of 90aa66f, merged into gfopengpu.library 0.6, with `FORK.md` recording the commit and every change. gfopengfx.library 1.1 is kept, archived, in amigachrome-guest; `gfopengfx.library` 1.2 there is a stub that forwards to gfopengpu.library.
+- `ogfx/`, GFOpenGfx (library owner): amicradle-guest `libraries/opengfx` as of 90aa66f, merged into gfopengpu.library 0.6, with `FORK.md` recording the commit and every change. gfopengfx.library 1.1 is kept, archived, in amicradle-guest; `gfopengfx.library` 1.2 there is a stub that forwards to gfopengpu.library.
 - `warp3d/` (Warp3D helper): Warp3D.library, the 92-LVO stub, with its own `build.sh`.
-- `modules/gl/` (library owner): GL.module, holding Mesa's port moved from openamigamesa:
+- `modules/gl/` (library owner): GL.module, holding Mesa's port moved from gfopenmesa:
   - `mesa/UPSTREAM.json` pin, `mesa/patches/`, the POSIX shim;
   - the `gla/` core and the OS 3 presenter;
   - the virgl winsys over `OGPU_OP_VIRGL`.
   - It builds softpipe and virgl. virgl is used when `OGPU_Query(OGPU_OP_VIRGL)` answers "full", softpipe otherwise.
-  - **The direct present** (12 October 2026, design: amigachrome `docs/design/Design-OpenGPU-Virgl-Direct-Present.md`, approved by Dale). A finished virgl frame is no longer read back into Fast RAM and written again. When HELLO's flags carry `ACV_HOST_PRESENT`, the present hook hands gfopenrtg.library 0.15's `ORTG_PresentVirgl` the resource; gfopenrtg.library walks the RastPort's visible pieces under the layer's lock, and sends one ACVirgl block of `ACV_PRESENT` commands (one per target bitmap: the screen, or a smart-refresh backing bitmap) and a fence. The host writes the pixels into each rectangle. A CLUT or planar screen, an older library or an older runtime returns −1, and the frame is read back and shown as before. GLA counts its frames both ways (`gla_get_stats`); gfopenrtg.library counts the pieces under `ORTG_STAT_VIRGL` ("virgl" in `C:GFOpenRTG STATS`).
-  - openamigamesa keeps GFOpenDemos only, built against `libGL.a`.
+  - **The direct present** (12 October 2026, design: amicradle `docs/design/Design-OpenGPU-Virgl-Direct-Present.md`, approved by Dale). A finished virgl frame is no longer read back into Fast RAM and written again. When HELLO's flags carry `ACV_HOST_PRESENT`, the present hook hands gfopenrtg.library 0.15's `ORTG_PresentVirgl` the resource; gfopenrtg.library walks the RastPort's visible pieces under the layer's lock, and sends one ACVirgl block of `ACV_PRESENT` commands (one per target bitmap: the screen, or a smart-refresh backing bitmap) and a fence. The host writes the pixels into each rectangle. A CLUT or planar screen, an older library or an older runtime returns −1, and the frame is read back and shown as before. GLA counts its frames both ways (`gla_get_stats`); gfopenrtg.library counts the pieces under `ORTG_STAT_VIRGL` ("virgl" in `C:GFOpenRTG STATS`).
+  - gfopenmesa keeps GFOpenDemos only, built against `libGL.a`.
 - `modules/common/` (library owner): what a module has in place of libnix's startup (`module_start.S`, `module_rt.c`).
 - `modules/sdl2/` (SDL 2 helper): SDL2.module, with the backends (video on openrtg, render on opengpu, audio on AHI, input, threads) and the SDL build (source fetched pinned).
 - `stubs/sdl2/` (SDL 2 helper: libSDL2.a, the dynapi stub plus the ModuleOpen glue) and `stubs/gl/` (library owner: libGL.a, generated).
@@ -918,7 +918,7 @@ Warp3D and SDL need no LVOs of their own. They build stream batches (0x0030–0x
 ##### host/
 
 - `vulkan/`: as now.
-- `virgl/acvirgl.c` (library owner): the host side of `OGPU_OP_VIRGL`. amigachrome vendors it like `ogpu_vk.c`.
+- `virgl/acvirgl.c` (library owner): the host side of `OGPU_OP_VIRGL`. amicradle vendors it like `ogpu_vk.c`.
 
 ##### tests/
 
@@ -1087,7 +1087,7 @@ dragging and compositing are board work, not CPU copies.
 ## 8. The window look
 
 **Moved to GFOpenGadTools** (Team, 4 October 2026, "yes opengadtools"). The
-look patch and its prefs page now live in `DalsinAI/opengadtools`, because
+look patch and its prefs page now live in `DalsinAI/gfopengadtools`, because
 they work on any screen, AGA included. GFOpenRTG keeps only what needs RTG:
 smooth true-colour gradients, and with compositing (section 7) drop shadows
 and transparency, which GFOpenGadTools' look asks GFOpenRTG for when the screen

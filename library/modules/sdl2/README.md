@@ -113,7 +113,7 @@ Settings, with `SetEnv` or `SDL_SetHint`:
 `src/joystick/amigaos3/SDL_sysjoystick.c` has two back ends, chosen when
 SDL's joystick subsystem starts.
 
-**GFOpenInput** (gfopeninput.library 1.2 or later; `openamigainput`,
+**GFOpenInput** (gfopeninput.library 1.2 or later; `gfopeninput`,
 Design-OpenInput.md). Version 1.1 is GFOpenInput's skeleton, which lists
 nothing, so SDL treats it as missing.
 
@@ -178,7 +178,7 @@ and no game controller mapping. Port 2 is joystick 0, and port 1 joystick
 
 `include/openinput/` holds a copy of GFOpenInput's frozen headers
 (`include/libraries/openinput.h` and `include/inline/openinput.h` from
-`openamigainput` at efc932c); the header only grows, so a newer library
+`gfopeninput` at efc932c); the header only grows, so a newer library
 still answers this driver. The driver opens the library itself, with a
 base of its own name (`SDL_OS3_OpenInputBase`), so a program that uses
 gfopeninput.library too has no clash.
@@ -256,7 +256,7 @@ compares them.
 On a 32-bit GFOpenRTG screen, SDL's window surface and the opengpu renderer's
 ARGB8888 and RGB888 textures (YUV textures' XRGB surfaces among them) are in
 the video RAM of the board that shows the screen, so GFOpenGPU's GPU back end
-draws in them (amigachrome's `docs/design/Design-OpenGPU-2D-On-The-GPU.md`
+draws in them (amicradle's `docs/design/Design-OpenGPU-2D-On-The-GPU.md`
 5.4 B; `src/video/amigaos3/SDL_os3vram.c`).
 
 - Each is a bitmap asked for as
@@ -280,7 +280,7 @@ draws in them (amigachrome's `docs/design/Design-OpenGPU-2D-On-The-GPU.md`
 
 ## SDL2_image and SDL2_mixer: modules, decoding on the cores
 
-The design is amigachrome's `docs/design/Design-OpenGPU-SDL2-Satellites.md`.
+The design is amicradle's `docs/design/Design-OpenGPU-SDL2-Satellites.md`.
 In short:
 
 - `SDL2_image.module` and `SDL2_mixer.module` are shared modules like

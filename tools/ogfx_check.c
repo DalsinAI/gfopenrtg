@@ -14,7 +14,7 @@
  * BltBitMap (every minterm, plane masks, overlapping copies within one
  * bitmap and copies between two), ScrollRaster, BltTemplate and the four
  * text calls, on 1 to 8 planes. From gfopengpu.library 0.10, the calls
- * GFOpenGfx's core (openamigagfx library/core) draws: Draw, PolyDraw,
+ * GFOpenGfx's core (gfopengfx library/core) draws: Draw, PolyDraw,
  * WritePixel, ReadPixel, SetRast, BltPattern, WritePixelArray8,
  * ReadPixelArray8 and WriteChunkyPixels, every DrawMode; these have no
  * LVO, so they go through the patches (graphics.library's pixels are

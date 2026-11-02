@@ -9,8 +9,9 @@ Team, 4 October 2026: "Build our own rtg library drivers and preferences app.
 Support for warp3d and multi monitors as standard." His decisions the same
 day:
 
-- The product is **GFOpenRTG** (Our naming: products drop "Amiga", repos
-  carry it, so the repository is `DalsinAI/openamigartg`); the library is
+- The product is **GFOpenRTG** (the repository was `DalsinAI/openamigartg`
+  until the AmiCradle rename of 1–2 November 2026, and is now
+  `DalsinAI/gfopenrtg`); the library is
   **`gfopenrtg.library`**, its own
   name, so it can sit beside an installed Picasso96. One of the two is active
   at a time.

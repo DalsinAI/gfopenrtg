@@ -32,6 +32,7 @@
 #include <proto/intuition.h>
 #include <intuition/intuitionbase.h>
 #include <intuition/screens.h>
+#include <intuition/intuition.h>
 
 static int failures = 0;
 
@@ -61,9 +62,14 @@ static int screens(const char *when, int *front_w, int *front_h)
             if (front_h) *front_h = s->Height;
         }
         if (len < (int)sizeof(line) - 64) {
-            len += SDL_snprintf(line + len, sizeof(line) - len, "%s%dx%d \"%s\"",
+            struct Window *w;
+            int nw = 0;
+            for (w = s->FirstWindow; w; w = w->NextWindow) {
+                nw++;
+            }
+            len += SDL_snprintf(line + len, sizeof(line) - len, "%s%dx%d \"%.12s\" (%d windows)",
                                 n ? ", " : "", s->Width, s->Height,
-                                s->Title ? (const char *)s->Title : "");
+                                s->Title ? (const char *)s->Title : "", nw);
         }
         n++;
     }

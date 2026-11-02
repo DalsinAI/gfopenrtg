@@ -156,7 +156,12 @@ struct ortg_ogfx_provider_all {
  * include/graphics/gfxdispatch.h) dispatches the drawing itself and keeps the provider:
  * GFX_DispatchVersion -1062, GFX_RegisterProvider -1068 (a0), GFX_UnregisterProvider
  * -1074 (a0), each as gfopengpu.library's OGFX_ call of the same job. Ask
- * ORTG_GFX_DISPATCH_AVAILABLE first (a jump table that reaches -1092, and 47.101 or later). */
+ * ORTG_GFX_DISPATCH_AVAILABLE first (a jump table that reaches -1092, and 47.101 or later).
+ * From 47.102 it keeps a chain of providers in order of priority:
+ * GFX_RegisterProviderPri -1098 (a0, d0); ask ORTG_GFX_DISPATCH_CHAIN_AVAILABLE (a table
+ * that reaches -1098, 47.102 or later) and GFX_DispatchVersion() >= 1.6. GFOpenRTG goes in
+ * at ORTG_GFXDISPATCH_PRI_RTG (gfxdispatch.h's GFXDISPATCH_PRI_RTG), before gfopengpu's
+ * planar fast paths. */
 #define ORTG_GFXDISPATCH_LIB_VERSION 47
 #define ORTG_GFXDISPATCH_LIB_REVISION 101
 #define ORTG_GFXDISPATCH_NEGSIZE 1092
@@ -168,5 +173,15 @@ struct ortg_ogfx_provider_all {
 #define ORTG_GFX_DispatchVersion(base)     LP0(0x426, ULONG, GFX_DispatchVersion, , base)
 #define ORTG_GFX_RegisterProvider(base,provider)     LP1(0x42c, LONG, GFX_RegisterProvider, struct ortg_ogfx_provider_v1 *, provider, a0, , base)
 #define ORTG_GFX_UnregisterProvider(base,owner)     LP1(0x432, LONG, GFX_UnregisterProvider, APTR, owner, a0, , base)
+#define ORTG_GFXDISPATCH_CHAIN_LIB_REVISION 102
+#define ORTG_GFXDISPATCH_CHAIN_NEGSIZE 1098
+#define ORTG_GFXDISPATCH_CHAIN_INTERFACE ((1UL << 16) | 6)
+#define ORTG_GFXDISPATCH_PRI_RTG 20
+#define ORTG_GFX_DISPATCH_CHAIN_AVAILABLE(gfx) \
+    ((gfx) && ((struct Library *)(gfx))->lib_NegSize >= ORTG_GFXDISPATCH_CHAIN_NEGSIZE && \
+     (((struct Library *)(gfx))->lib_Version > ORTG_GFXDISPATCH_LIB_VERSION || \
+      (((struct Library *)(gfx))->lib_Version == ORTG_GFXDISPATCH_LIB_VERSION && \
+       ((struct Library *)(gfx))->lib_Revision >= ORTG_GFXDISPATCH_CHAIN_LIB_REVISION)))
+#define ORTG_GFX_RegisterProviderPri(base,provider,pri)     LP2(0x44a, LONG, GFX_RegisterProviderPri, struct ortg_ogfx_provider_v1 *, provider, a0, LONG, pri, d0, , base)
 
 #endif

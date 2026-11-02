@@ -31,9 +31,15 @@
  * a graphics.library (has_dispatch) nothing here patches: the registry calls
  * forward to graphics.library's, OGFX_InstallPatches and OGFX_SetEnabled do
  * nothing, the drawing LVOs call graphics.library's vectors, and the planar
- * fast paths are offered as graphics.library's provider when no provider is
- * there (a later one, GFOpenRTG's, takes their place). On any other
- * graphics.library everything works as before. The ROM build
+ * fast paths are offered as graphics.library's provider. From 47.102
+ * graphics.library keeps a chain of providers in order of priority, and
+ * the fast paths always go in, low (GFXDISPATCH_PRI_FAST), so they are
+ * asked for what GFOpenRTG's provider (GFXDISPATCH_PRI_RTG) declines; a
+ * provider a program registers through OGFX_RegisterProvider goes in at
+ * the default priority, between the two. 47.101 keeps one provider: there
+ * the fast paths go in only when no provider is there, and a later one,
+ * GFOpenRTG's, takes their place. On any other graphics.library everything
+ * works as before. The ROM build
  * (OGPU_ROM_NO_OGFX, library/build.sh with OGPU_ROM=1) leaves out the
  * patches and the drawing core: it is only for the GF ROM.
  *
@@ -58,7 +64,7 @@
 #include "gfx_rp.h"     /* GFOpenGfx's core, from gfopengfx (tools/fetch_ogfx_core.sh) */
 #endif
 #include <graphics/gfxdispatch.h>   /* graphics.library 47.101's dispatch (a copy of gfopengfx's SDK header) */
-#include "ogfx_gfxdispatch.h"       /* its six calls (a copy of gfopengfx's inline/gfxdispatch.h) */
+#include "ogfx_gfxdispatch.h"       /* its seven calls (a copy of gfopengfx's inline/gfxdispatch.h) */
 
 #define REG OGFX_REG
 
@@ -475,10 +481,14 @@ static LONG try_planar_rect(struct ogfx_state *st, struct GfxBase *GfxBase,
 /* ---- the planar fast paths as graphics.library's provider ---------------------
  * With graphics.library's dispatch (47.101) nothing is patched: the leaves
  * above are offered to graphics.library as a provider of RectFill, BltBitMap
- * and ScrollRaster, and only when no provider is in (offer_fast_paths). A
- * provider registered later, GFOpenRTG's, takes the place of this one
- * (graphics.library keeps one), so RTG's goes first. The arguments come as
- * graphics.library read them from the registers. */
+ * and ScrollRaster (offer_fast_paths). From 47.102 graphics.library keeps a
+ * chain of providers: the fast paths always go in, at GFXDISPATCH_PRI_FAST,
+ * after GFOpenRTG's (GFXDISPATCH_PRI_RTG), which declines what is not its
+ * own, so a planar bitmap's RectFill is clipped and drawn here as it was
+ * with the patches. 47.101 keeps one provider: there they go in only when
+ * no provider is in, and a provider registered later, GFOpenRTG's, takes
+ * their place, so RTG's goes first. The arguments come as graphics.library
+ * read them from the registers. */
 static LONG fast_rectfill(APTR u, struct OGFXRectFillRequest *r)
 {
     struct ogfx_state *st = (struct ogfx_state *)u;
@@ -503,15 +513,17 @@ static LONG fast_scroll(APTR u, struct OGFXScrollRasterRequest *r)
     return st->enabled && st->gfx && try_planar_scroll(st, st->gfx, r->rp, r->dx, r->dy, r->x0, r->y0, r->x1, r->y1);
 }
 
-/* The planar fast paths in graphics.library's dispatch, when no provider is
- * in there. Called with graphics.library open (st->gfx) and the dispatch
- * known to be there. The record is copied, so it may live here. */
+/* The planar fast paths in graphics.library's dispatch: in the chain at
+ * GFXDISPATCH_PRI_FAST (47.102 and later, st->chain), or, on 47.101, when
+ * no provider is in there. Called with graphics.library open (st->gfx) and
+ * the dispatch known to be there. The record is copied, so it may live
+ * here. */
 static void offer_fast_paths(struct ogfx_state *st)
 {
     struct OGFXProviderV1 p;
     UBYTE *b = (UBYTE *)&p;
     ULONG i;
-    if (__gfxdispatch_GFX_DispatchStatus(st->gfx) & OGFX_STATUS_PROVIDER)
+    if (!st->chain && (__gfxdispatch_GFX_DispatchStatus(st->gfx) & OGFX_STATUS_PROVIDER))
         return;
     for (i = 0; i < sizeof p; i++) b[i] = 0;
     p.size = sizeof p;
@@ -521,7 +533,8 @@ static void offer_fast_paths(struct ogfx_state *st)
     p.rectfill = fast_rectfill;
     p.bltbitmap = fast_bltbitmap;
     p.scrollraster = fast_scroll;
-    if (__gfxdispatch_GFX_RegisterProvider(st->gfx, &p))
+    if (st->chain ? __gfxdispatch_GFX_RegisterProviderPri(st->gfx, &p, GFXDISPATCH_PRI_FAST)
+                  : __gfxdispatch_GFX_RegisterProvider(st->gfx, &p))
         st->fast_in = 1;
 }
 
@@ -545,8 +558,10 @@ static void find_board(struct ogfx_state *st)
  * go to graphics.library's, and its drawing LVOs call graphics.library's
  * vectors. Asked once, the first time it matters (graphics.library may not
  * be up yet when the library starts from ROM); the first answer yes also
- * looks for the board and offers the fast paths. Any other graphics.library
- * (OS 3.2.3's, or ours before 47.101): GFOpenGfx works as it always has. */
+ * looks for the board, learns whether graphics.library keeps a chain of
+ * providers (47.102 and later, GFX_DISPATCH_CHAIN_AVAILABLE) and offers the
+ * fast paths. Any other graphics.library (OS 3.2.3's, or ours before
+ * 47.101): GFOpenGfx works as it always has. */
 static int has_dispatch(struct ogfx_state *st)
 {
     struct ExecBase *SysBase;
@@ -560,6 +575,8 @@ static int has_dispatch(struct ogfx_state *st)
     if (!st->dispatch) {
         if (GFX_DISPATCH_AVAILABLE(g)) {
             if (!st->board_known) find_board(st);
+            st->chain = GFX_DISPATCH_CHAIN_AVAILABLE(g) &&
+                        __gfxdispatch_GFX_DispatchVersion(g) >= GFXDISPATCH_CHAIN_INTERFACE;
             offer_fast_paths(st);
             st->dispatch = OGFX_DISPATCH_YES;
         } else {
@@ -1333,8 +1350,9 @@ void ogfx_init(struct ogfx_state *st, struct ExecBase *sys)
     int gfx_up;
     st->sys = sys;
     st->enabled = 1;
-    /* graphics.library with the dispatch: the fast paths go in now, while no
-     * provider is there (GFOpenRTG's, when it comes, takes their place).
+    /* graphics.library with the dispatch: the fast paths go in now (47.101:
+     * while no provider is there; GFOpenRTG's, when it comes, takes their
+     * place. 47.102 and later: in the chain, after GFOpenRTG's).
      * Only if graphics.library is up already: from ROM this may start
      * first, and then the first OGFX_ call asks (has_dispatch). */
     Forbid();
@@ -1443,6 +1461,10 @@ ULONG OGFX_Status(REG(a6, struct Library *base))
     return status;
 }
 
+/* With the dispatch: graphics.library's GFX_RegisterProvider. From 47.102
+ * that puts the provider in the chain at GFXDISPATCH_PRI_DEFAULT (0): after
+ * GFOpenRTG's, before the planar fast paths, and beside them, not in their
+ * place. On 47.101 it takes the one place, as before. */
 LONG OGFX_RegisterProvider(REG(a0, struct OGFXProviderV1 *provider), REG(a6, struct Library *base))
 {
     struct ogfx_state *st = state_of(base);
@@ -1481,10 +1503,11 @@ LONG OGFX_UnregisterProvider(REG(a0, APTR owner), REG(a6, struct Library *base))
     struct ExecBase *SysBase = st->sys;
     LONG removed = 0;
     if (has_dispatch(st)) {
-        /* another's provider out: the fast paths go back in, if none is there */
+        /* another's provider out: on 47.101 the fast paths go back in, if
+         * none is there; in a chain (47.102) they never left */
         Forbid();
         removed = __gfxdispatch_GFX_UnregisterProvider(st->gfx, owner);
-        if (removed && owner != (APTR)st && st->fast_in)
+        if (removed && owner != (APTR)st && st->fast_in && !st->chain)
             offer_fast_paths(st);
         Permit();
         return removed;

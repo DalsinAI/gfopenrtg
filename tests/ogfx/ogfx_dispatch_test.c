@@ -2,21 +2,27 @@
  * SPDX-License-Identifier: MIT
  *
  * GFOpenGfx (library/ogfx/ogfx_lib.c) with and without graphics.library
- * 47.101's drawing dispatch, under qemu-m68k (test_ogfx_dispatch.sh builds
+ * 47.101's drawing dispatch and 47.102's provider chain, under qemu-m68k (test_ogfx_dispatch.sh builds
  * it with a Linux m68k GCC, once as the disk build and once as the ROM build,
  * -DOGPU_ROM_NO_OGFX).
  *
  * exec, graphics.library and expansion.library are stand-ins: a jump table
  * whose every slot is JSR fake_entry, so a call through any LVO lands in
  * fake_call with the registers as they came (and, for a plain C call through
- * a vector, its arguments on the stack). graphics.library is 47.101 with a
- * jump table to -1092 (the dispatch), 47.100, or 47.101 with a table that
- * stops at -1056 (no dispatch); the dispatch's six calls answer as
+ * a vector, its arguments on the stack). graphics.library is 47.102 with a
+ * jump table to -1098 (the dispatch with its provider chain), 47.101 with a
+ * jump table to -1092 (the dispatch, one provider), 47.100, or 47.101 with a
+ * table that stops at -1056 (no dispatch); the dispatch's calls answer as
  * gfopengfx's library/graphics/gfx_dispatch.c does.
  *
- * With the dispatch: the planar fast paths are offered to graphics.library
- * at the library's start (only when no provider is in, and only with
- * graphics.library up), OGFX_Version, Status, Register/UnregisterProvider
+ * With the chain (47.102): the planar fast paths always go in at the
+ * library's start, with GFX_RegisterProviderPri at GFXDISPATCH_PRI_FAST,
+ * after a provider already in (GFOpenRTG's, at GFXDISPATCH_PRI_RTG); a
+ * program's OGFX_RegisterProvider goes in at the default priority beside
+ * them, and taking it out leaves them as they were.
+ * With the dispatch of 47.101: the planar fast paths are offered to
+ * graphics.library at the library's start (only when no provider is in, and
+ * only with graphics.library up), OGFX_Version, Status, Register/UnregisterProvider
  * and Register/UnregisterLook go to -1062 ... -1092 with their argument in
  * A0, InstallPatches patches nothing and answers 1, SetEnabled answers 1 and
  * changes nothing, the drawing LVOs call graphics.library's own vectors, and
@@ -36,6 +42,7 @@
 #include <sys/mman.h>
 
 #include "../../library/ogfx/ogfx.h"
+#include <graphics/gfxdispatch.h>
 
 /* ---- the stand-in libraries ------------------------------------------------- */
 
@@ -72,6 +79,31 @@ static int gfx_present, gfx_up, board_present;
 static UWORD gfx_version, gfx_revision, gfx_negsize;
 static int gp_have;                    /* graphics.library's dispatch: a provider in */
 static struct OGFXProviderAll gp;      /* ... its record, as gfx_dispatch.c copies it */
+/* 47.102's chain: the records in order, highest priority first, equals as they came */
+static struct { struct OGFXProviderAll rec; LONG pri; } gch[4];
+static int gn;
+
+static ULONG chain_reg(struct OGFXProviderV1 *p, LONG pri)
+{
+    ULONG size, k;
+    int i, at;
+    if (!p || p->abi != OGFX_PROVIDER_ABI_V1 || p->size < OGFX_PROVIDER_V1_0_SIZE || !p->owner) return 0;
+    pri = (BYTE)pri;
+    for (i = 0; i < gn; i++)
+        if (gch[i].rec.v1.owner == p->owner) {          /* its own entry: out, then in again */
+            memmove(&gch[i], &gch[i + 1], sizeof gch[0] * (size_t)(gn - i - 1));
+            gn--;
+            break;
+        }
+    if (gn == 4) return 0;
+    for (at = 0; at < gn && gch[at].pri >= pri; at++) ;
+    memmove(&gch[at + 1], &gch[at], sizeof gch[0] * (size_t)(gn - at));
+    size = p->size < sizeof gch[0].rec ? p->size : sizeof gch[0].rec;
+    for (k = 0; k < sizeof gch[0].rec; k++) ((UBYTE *)&gch[at].rec)[k] = k < size ? ((UBYTE *)p)[k] : 0;
+    gch[at].pri = pri;
+    gn++;
+    return 1;
+}
 static ULONG fast_ram[64];             /* where TypeOfMem says Fast RAM */
 
 static void fake_lib(int id, UWORD version, UWORD revision, UWORD negsize)
@@ -127,10 +159,13 @@ ULONG fake_call(ULONG *r)
     if (id == L_EXP)
         return lvo == -72 && board_present ? (ULONG)fast_ram : 0;   /* FindConfigDev */
     switch (lvo) {                     /* graphics.library */
-    case -1062: return 0x00010005;     /* GFX_DispatchVersion */
+    case -1062: return gfx_revision >= 102 ? 0x00010006 : 0x00010005;   /* GFX_DispatchVersion */
+    case -1098:                        /* GFX_RegisterProviderPri(a0, d0), 47.102 */
+        return gfx_revision >= 102 ? chain_reg((struct OGFXProviderV1 *)r[8], (LONG)r[0]) : 77;
     case -1068: {                      /* GFX_RegisterProvider(a0) */
         struct OGFXProviderV1 *p = (struct OGFXProviderV1 *)r[8];
         ULONG size, k;
+        if (gfx_revision >= 102) return chain_reg(p, 0);
         if (!p || p->abi != OGFX_PROVIDER_ABI_V1 || p->size < OGFX_PROVIDER_V1_0_SIZE || !p->owner) return 0;
         size = p->size < sizeof gp ? p->size : sizeof gp;
         for (k = 0; k < sizeof gp; k++) ((UBYTE *)&gp)[k] = k < size ? ((UBYTE *)p)[k] : 0;
@@ -138,12 +173,21 @@ ULONG fake_call(ULONG *r)
         return 1;
     }
     case -1074:                        /* GFX_UnregisterProvider(a0) */
+        if (gfx_revision >= 102) {
+            for (i = 0; i < gn; i++)
+                if (r[8] && gch[i].rec.v1.owner == (APTR)r[8]) {
+                    memmove(&gch[i], &gch[i + 1], sizeof gch[0] * (size_t)(gn - i - 1));
+                    gn--;
+                    return 1;
+                }
+            return 0;
+        }
         if (gp_have && r[8] && gp.v1.owner == (APTR)r[8]) { memset(&gp, 0, sizeof gp); gp_have = 0; return 1; }
         return 0;
     case -1080: return 1;              /* GFX_RegisterLook(a0) */
     case -1086: return 1;              /* GFX_UnregisterLook(a0) */
     case -1092:                        /* GFX_DispatchStatus */
-        return OGFX_STATUS_PATCHED | OGFX_STATUS_ENABLED | (gp_have ? OGFX_STATUS_PROVIDER : 0);
+        return OGFX_STATUS_PATCHED | OGFX_STATUS_ENABLED | (gp_have || gn ? OGFX_STATUS_PROVIDER : 0);
     case -960: {                       /* GetBitMapAttr(a0, d1) */
         struct BitMap *bm = (struct BitMap *)r[8];
         switch (r[1]) {
@@ -177,6 +221,7 @@ static void scene(int present, int up, UWORD version, UWORD revision, UWORD negs
     gfx_present = present; gfx_up = up; board_present = board;
     gfx_version = version; gfx_revision = revision; gfx_negsize = negsize;
     gp_have = 0; memset(&gp, 0, sizeof gp);
+    gn = 0; memset(gch, 0, sizeof gch);
     memset(&gpu, 0, sizeof gpu);
     ncalls = 0;
 }
@@ -198,7 +243,7 @@ static struct call *last(int lib, LONG lvo)
 static int dispatch_calls(void)
 {
     return count(L_GFX, -1062) + count(L_GFX, -1068) + count(L_GFX, -1074) +
-           count(L_GFX, -1080) + count(L_GFX, -1086) + count(L_GFX, -1092);
+           count(L_GFX, -1080) + count(L_GFX, -1086) + count(L_GFX, -1092) + count(L_GFX, -1098);
 }
 
 static LONG rtg_rectfill(APTR u, struct OGFXRectFillRequest *r) { (void)u; (void)r; return 0; }
@@ -247,6 +292,7 @@ static void with_dispatch(void)
     /* at the start: the board looked for, the fast paths offered */
     CHECK(count(L_EXP, -72) == 1 && ST->amicradle, "the board not looked for at the start");
     CHECK(count(L_GFX, -1092) == 1 && count(L_GFX, -1068) == 1 && ST->fast_in, "the fast paths not offered at the start");
+    CHECK(!ST->chain && count(L_GFX, -1098) == 0, "47.101 taken for a chain");
     CHECK(gp_have && gp.v1.owner == (APTR)ST && gp.v1.userdata == (APTR)ST && gp.v1.size == sizeof(struct OGFXProviderV1) &&
           gp.v1.rectfill && gp.v1.bltbitmap && gp.v1.scrollraster && !gp.v1.text && !gp.v1.blttemplate && !gp.bltpattern,
           "the fast paths' record: owner %p size %lu", gp.v1.owner, (unsigned long)gp.v1.size);
@@ -320,6 +366,53 @@ static void dispatch_provider_first(void)
     CHECK(OGFX_Status(B) == (OGFX_STATUS_PATCHED | OGFX_STATUS_ENABLED | OGFX_STATUS_PROVIDER), "Status without a board");
 }
 
+/* 47.102, the provider chain: the fast paths go in at the start with
+ * GFX_RegisterProviderPri at GFXDISPATCH_PRI_FAST, whatever is in already;
+ * GFOpenRTG's provider (GFXDISPATCH_PRI_RTG) is asked before them; a
+ * program's provider through OGFX_RegisterProvider goes in beside them at
+ * the default priority, and out again without touching them. */
+static void with_chain(int rtg_first)
+{
+    struct OGFXProviderAll rtg, prog;
+    struct call *c;
+    const char *how = rtg_first ? "chain, GFOpenRTG first" : "chain";
+    memset(&rtg, 0, sizeof rtg);
+    rtg.v1.size = sizeof rtg; rtg.v1.abi = OGFX_PROVIDER_ABI_V1; rtg.v1.owner = &rtg; rtg.v1.rectfill = rtg_rectfill;
+    memset(&prog, 0, sizeof prog);
+    prog.v1.size = sizeof prog.v1; prog.v1.abi = OGFX_PROVIDER_ABI_V1; prog.v1.owner = &prog; prog.v1.rectfill = rtg_rectfill;
+    scene(1, 1, 47, 102, 1098, 1);
+    if (rtg_first) chain_reg(&rtg.v1, GFXDISPATCH_PRI_RTG);
+    ogfx_init(ST, &libs[L_EXEC].u.exec);
+    c = last(L_GFX, -1098);
+    CHECK(ST->dispatch == OGFX_DISPATCH_YES && ST->chain && ST->fast_in, "%s: the chain not seen", how);
+    CHECK(c && count(L_GFX, -1098) == 1 && count(L_GFX, -1068) == 0 && (LONG)c->d0 == GFXDISPATCH_PRI_FAST,
+          "%s: the fast paths not in with GFX_RegisterProviderPri(a0, d0 %d)", how, GFXDISPATCH_PRI_FAST);
+    CHECK(gn == 1 + rtg_first && gch[gn - 1].rec.v1.owner == (APTR)ST && gch[gn - 1].rec.v1.rectfill &&
+          gch[gn - 1].rec.v1.bltbitmap && gch[gn - 1].rec.v1.scrollraster && !gch[gn - 1].rec.v1.text,
+          "%s: the fast paths not last in the chain (%d in)", how, gn);
+    CHECK(!ogfx_may_expunge(ST), "%s: may expunge with the fast paths in graphics.library", how);
+    CHECK(OGFX_Version(B) == 0x00010006, "%s: Version not GFX_DispatchVersion's 1.6", how);
+    /* GFOpenRTG registers with graphics.library itself, before the fast paths */
+    if (!rtg_first) CHECK(chain_reg(&rtg.v1, GFXDISPATCH_PRI_RTG) == 1, "%s: GFOpenRTG refused", how);
+    CHECK(gn == 2 && gch[0].rec.v1.owner == &rtg && gch[1].rec.v1.owner == (APTR)ST, "%s: GFOpenRTG not first", how);
+    /* a program's provider through gfopengpu.library: beside them, between */
+    ncalls = 0;
+    CHECK(OGFX_RegisterProvider(&prog.v1, B) == 1 && (c = last(L_GFX, -1068)) && c->a0 == (ULONG)&prog,
+          "%s: RegisterProvider not GFX_RegisterProvider(a0)", how);
+    CHECK(gn == 3 && gch[0].rec.v1.owner == &rtg && gch[1].rec.v1.owner == &prog && gch[2].rec.v1.owner == (APTR)ST,
+          "%s: the program's provider not between GFOpenRTG's and the fast paths", how);
+    CHECK(OGFX_Status(B) == (OGFX_STATUS_PATCHED | OGFX_STATUS_ENABLED | OGFX_STATUS_PROVIDER | OGFX_STATUS_AMICRADLE),
+          "%s: Status", how);
+    ncalls = 0;
+    CHECK(OGFX_UnregisterProvider(&prog, B) == 1 && (c = last(L_GFX, -1074)) && c->a0 == (ULONG)&prog,
+          "%s: UnregisterProvider not GFX_UnregisterProvider(a0)", how);
+    CHECK(count(L_GFX, -1068) == 0 && count(L_GFX, -1098) == 0 && count(L_GFX, -1092) == 0,
+          "%s: the fast paths offered again after another's provider went", how);
+    CHECK(gn == 2 && gch[0].rec.v1.owner == &rtg && gch[1].rec.v1.owner == (APTR)ST, "%s: the others changed", how);
+    CHECK(OGFX_InstallPatches(B) == 1 && count(L_EXEC, -420) == 0, "%s: InstallPatches patched", how);
+    drawing_lvos_forward(how);
+}
+
 /* graphics.library not up yet at the start (from ROM): asked at the first call. */
 static void dispatch_later(void)
 {
@@ -376,8 +469,11 @@ int main(void)
     with_dispatch();
     dispatch_provider_first();
     dispatch_later();
+    with_chain(0);
+    with_chain(1);
     without_dispatch(47, 100, 1092);
     without_dispatch(47, 101, 1056);
+    without_dispatch(47, 102, 1056);
     without_dispatch(40, 68, 1056);
     if (fails) { printf("%d of %d checks failed\n", fails, checks); return 1; }
 #ifdef OGPU_ROM_NO_OGFX

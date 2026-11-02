@@ -3452,12 +3452,18 @@ static void ogfx_fill_all(void)
  * gfopengpu.library's GFOpenGfx (not at the switch-on, not in late_opengpu): one
  * provider, asked once a call. 1 when graphics.library took it. Any other
  * graphics.library (OS 3.2.3's, ours before 47.101), or a dispatch older than 1.4:
- * 0, and the hand-off and patches below go on as before. */
+ * 0, and the hand-off and patches below go on as before.
+ * From 47.102 graphics.library keeps a chain of providers: GFOpenRTG goes in first, at
+ * ORTG_GFXDISPATCH_PRI_RTG, and declines what is not its own, which then goes to the
+ * providers after it (gfopengpu.library's planar fast paths) and graphics.library's own
+ * code. On 47.101 it takes the one place, as before. */
 static int try_gfx_dispatch(struct Library *gfx)
 {
     if (!ORTG_GFX_DISPATCH_AVAILABLE(gfx) || ORTG_GFX_DispatchVersion(gfx) < ORTG_OGFX_ALL_INTERFACE)
         return 0;
     ogfx_fill_all();
+    if (ORTG_GFX_DISPATCH_CHAIN_AVAILABLE(gfx) && ORTG_GFX_DispatchVersion(gfx) >= ORTG_GFXDISPATCH_CHAIN_INTERFACE)
+        return ORTG_GFX_RegisterProviderPri(gfx, &ogfx_provider, ORTG_GFXDISPATCH_PRI_RTG) != 0;
     return ORTG_GFX_RegisterProvider(gfx, &ogfx_provider) != 0;
 }
 

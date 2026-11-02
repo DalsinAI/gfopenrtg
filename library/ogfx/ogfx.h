@@ -59,7 +59,7 @@ struct ogfx_state {
     UBYTE dispatch;                    /* 0 not known yet, OGFX_DISPATCH_YES or OGFX_DISPATCH_NO */
     UBYTE fast_in;                     /* the planar fast paths were registered as graphics.library's provider */
     UBYTE board_known;                 /* amicradle has been looked for */
-    UBYTE pad_dispatch;
+    UBYTE chain;                       /* graphics.library 47.102 and later: a chain of providers (GFX_RegisterProviderPri) */
 };
 #define OGFX_DISPATCH_YES 1
 #define OGFX_DISPATCH_NO 2

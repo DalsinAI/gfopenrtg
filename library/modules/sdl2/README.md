@@ -83,7 +83,7 @@ or, with the GFOpenGPU developer kit (`tools/make_sdk.py`, `sdk/README`):
 | Video | Intuition windows and screens. RTG through the CyberGraphX API (GFOpenRTG's cybergraphics.library); AGA through c2p. A window on an RTG screen is shown by GFOpenGPU, which copies the frame into video RAM through each visible part of the window's layer; WritePixelArray does it when part of the window is covered. On a 32-bit GFOpenRTG screen the window's surface is itself in video RAM (see *In video RAM*). A full-screen window has one screen of its own, in the display mode SDL picks: the mode closest to the window for `SDL_WINDOW_FULLSCREEN`, the desktop mode for `SDL_WINDOW_FULLSCREEN_DESKTOP`; the screen closes when the window leaves full screen, and the window comes back at its own size. A board's 32-bit modes are ARGB8888 display modes. |
 | Renderer | `opengpu` first, then `software`. See below. |
 | Audio | AHI first (8 or 16-bit, mono or stereo, double buffered with `ahir_Link`, opened in SDL's audio thread), then Paula's audio.device. |
-| Threads, timers | Exec processes and semaphores. `SDL_Delay`, timed semaphore and condition waits use timer.device's UNIT_MICROHZ, so `SDL_Delay(1)` is a millisecond, not dos.library's 20 ms tick. |
+| Threads, timers | Exec processes and semaphores. Any task can wait for a thread (`SDL_WaitThread`), not only the one that started it, so audio opened in one thread can be closed from another. `SDL_Delay`, timed semaphore and condition waits use timer.device's UNIT_MICROHZ, so `SDL_Delay(1)` is a millisecond, not dos.library's 20 ms tick. |
 | Input | Keyboard and mouse from Intuition; relative mouse mode with IDCMP_DELTAMOVE; Ctrl-C quits. Joysticks and game controllers through GFOpenInput (gfopeninput.library), or through lowlevel.library where GFOpenInput isn't installed: see below. |
 | Clipboard | clipboard.device unit 0, IFF FTXT, converted between UTF-8 and Latin-1. On AmiCradle, ACClip carries it to the PC. |
 | OpenGL | GL.module, through the program's own libGL.a (below). |
@@ -101,6 +101,11 @@ Settings, with `SetEnv` or `SDL_SetHint`:
 - `SDL_OPENGPU_VRAM=0` keeps the window surface and the textures in Fast
   RAM on an GFOpenRTG screen too.
 - `SDL_AUDIODRIVER=paula` picks Paula.
+- `SDL_THREAD_STACK_SIZE=524288` (SDL's `SDL_HINT_THREAD_STACK_SIZE`) gives
+  the threads a program starts with `SDL_CreateThread` a stack of that many
+  bytes. Without it they get 256 KB, as SDL's own audio and timer threads
+  always do (32 KB until 2 November 2026; a 68k stack has nothing to stop an
+  overrun).
 - `SDL_OPENGPU_GL=cpu` draws SDL's GL with softpipe even where the PC's
   graphics chip is there.
 - `SDL_JOYSTICK_OPENINPUT=0` reads joysticks through lowlevel.library even

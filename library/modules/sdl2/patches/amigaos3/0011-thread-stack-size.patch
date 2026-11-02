@@ -1,0 +1,22 @@
+diff -ruN a/src/thread/amigaos3/SDL_systhread.c b/src/thread/amigaos3/SDL_systhread.c
+--- a/src/thread/amigaos3/SDL_systhread.c
++++ b/src/thread/amigaos3/SDL_systhread.c
+@@ -141,7 +141,17 @@
+     }
+     tags[nt].ti_Tag = NP_Entry;         tags[nt++].ti_Data = (ULONG)OS3_ThreadEntry;
+     tags[nt].ti_Tag = NP_Name;          tags[nt++].ti_Data = (ULONG)name;
+-    tags[nt].ti_Tag = NP_StackSize;     tags[nt++].ti_Data = (ULONG)(thread->stacksize ? thread->stacksize : 32768);
++    /* Open (2026): a thread given no size (SDL_CreateThread without
++       SDL_HINT_THREAD_STACK_SIZE, and SDL's own audio and timer threads,
++       which never read the hint) gets 256 KB; it was 32 KB. A 68k stack
++       has nothing below it to stop an overrun: a thread that needs more
++       writes over whatever memory is there. UQM's conversation loader
++       needs 34 KB and froze; an audio callback that decodes (stb_vorbis in
++       SDL_mixer takes its work space with alloca) and a game's own threads
++       need more than 32 KB as well. SDL's other platforms give a thread
++       1 MB (Windows) to 8 MB (Linux). A size SDL is given, from the hint or
++       SDL_CreateThreadWithStackSize, is used as it is. */
++    tags[nt].ti_Tag = NP_StackSize;     tags[nt++].ti_Data = (ULONG)(thread->stacksize ? thread->stacksize : 256 * 1024);
+     tags[nt].ti_Tag = NP_Priority;      tags[nt++].ti_Data = 0;
+     tags[nt].ti_Tag = NP_Input;         tags[nt++].ti_Data = 0;     /* No I/O for threads */
+     tags[nt].ti_Tag = NP_Output;        tags[nt++].ti_Data = 0;

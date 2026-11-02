@@ -78,6 +78,16 @@ gla_present "0 23 screen" waits_locked waits_own_in_present  # one buffer: waits
 gla_present "1 23 window"                                   # WritePixelArray
 gla_present "1 19 screen"                                   # gfopengpu.library 0.19: as before
 gla_present "1 23 mixed" waits_locked waits_own             # virgl's frames between: kept in order
+# The retained surface (gfopengpu.library 0.25, library/opengpu/ogpu_retained.c): the 32x32
+# tiles' hashes and dirty map, marked rectangles, and the present's batch through the CPU core.
+cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
+    -o "$OUT/test_retained" "$HERE/test_retained.c" "$OGPU/ogpu_retained.c" "$OGPU/ogpu_core.c"
+"$OUT/test_retained"
+if command -v m68k-linux-gnu-gcc >/dev/null && command -v qemu-m68k >/dev/null; then   # big-endian, 32-bit long
+    m68k-linux-gnu-gcc -std=c99 -O2 -fno-delete-null-pointer-checks -m68040 -static -Wall -Wextra -Werror \
+        -o "$OUT/test_retained-m68k" "$HERE/test_retained.c" "$OGPU/ogpu_retained.c" "$OGPU/ogpu_core.c"
+    qemu-m68k -cpu m68040 "$OUT/test_retained-m68k"
+fi
 # Stream v1.8 (OGPU_PATH_ALIASED) against its exact reference, and against cairo's
 # CAIRO_ANTIALIAS_NONE when cairo's headers are there (the browser's reference).
 ALIASED_CAIRO=""

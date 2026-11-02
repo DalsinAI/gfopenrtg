@@ -59,4 +59,21 @@
     LP1(0x96, LONG, OGFX_RegisterLook, struct OGFXLookV1 *, look, a0, , OPENGPU_BASE_NAME)
 #define OGFX_UnregisterLook(owner) \
     LP1(0x9c, LONG, OGFX_UnregisterLook, APTR, owner, a0, , OPENGPU_BASE_NAME)
+/* 0.25: retained surfaces (gfopengpu/retained.h) */
+#define OGPU_RetainedCreate(width, height, format, flags) \
+    LP4(0xa2, struct OGPURetained *, OGPU_RetainedCreate, ULONG, width, d0, ULONG, height, d1, ULONG, format, d2, ULONG, flags, d3, \
+        , OPENGPU_BASE_NAME)
+#define OGPU_RetainedPalette(rs, first, count, argb) \
+    LP4NR(0xa8, OGPU_RetainedPalette, struct OGPURetained *, rs, a0, ULONG, first, d0, ULONG, count, d1, const ULONG *, argb, a1, \
+          , OPENGPU_BASE_NAME)
+#define OGPU_RetainedMark(rs, x, y, width, height) \
+    LP5NR(0xae, OGPU_RetainedMark, struct OGPURetained *, rs, a0, LONG, x, d0, LONG, y, d1, LONG, width, d2, LONG, height, d3, \
+          , OPENGPU_BASE_NAME)
+#define OGPU_RetainedPresent(rs, rp, x, y, width, height) \
+    LP6(0xb4, LONG, OGPU_RetainedPresent, struct OGPURetained *, rs, a0, struct RastPort *, rp, a1, LONG, x, d0, LONG, y, d1, \
+        LONG, width, d2, LONG, height, d3, , OPENGPU_BASE_NAME)
+#define OGPU_RetainedStats(rs, stats) \
+    LP2(0xba, ULONG, OGPU_RetainedStats, struct OGPURetained *, rs, a0, struct OGPURetainedStats *, stats, a1, , OPENGPU_BASE_NAME)
+#define OGPU_RetainedDestroy(rs) \
+    LP1NR(0xc0, OGPU_RetainedDestroy, struct OGPURetained *, rs, a0, , OPENGPU_BASE_NAME)
 #endif

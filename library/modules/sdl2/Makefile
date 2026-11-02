@@ -228,6 +228,11 @@ STATIC_TESTS = $(addprefix $(TEST_DIR)/,$(TESTS) $(OWN_TESTS))
 MODULE_TESTS = $(addsuffix .m,$(STATIC_TESTS))
 tests: $(STATIC_TESTS) $(MODULE_TESTS)
 
+# fullscreen: SDL's real full-screen mode, a screen of the program's own
+# (tests/sdl2/fullscreen.c)
+OWN_TESTS += fullscreen
+tests: $(TEST_DIR)/fullscreen $(TEST_DIR)/fullscreen.m
+
 SDLTEST_OBJS = $(addprefix $(TEST_DIR)/obj/,$(addsuffix .o,$(TESTS)))
 OWNTEST_OBJS = $(addprefix $(TEST_DIR)/obj/,$(addsuffix .o,$(OWN_TESTS)))
 TEST_RUN = $(TEST_DIR)/obj/testutils.o $(TEST_DIR)/obj/sdltest_run.o

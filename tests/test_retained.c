@@ -84,8 +84,12 @@ static long present(struct surf *s, int dw, int dh, int x, int y, int w, int h, 
     p.fence = 7;
     words = ogpu_rs_build_present(&s->rs, &p, arena + BUF, (ARENA - BUF) / 4);
     CHECK(words > 0 && words <= ogpu_rs_present_words(&s->rs, nclips), "batch words %ld", words);
+    memset(&c, 0, sizeof c);
     ogpu_core_init(&c);
     c.map = map;
+    c.fence = 0;
+    c.ext = 0;
+    c.user = 0;
     ogpu_core_run(&c, arena + BUF, words);
     if (c.last_error != OGPU_OK) { printf("core error %d at word %ld\n", c.last_error, c.error_word); ogpu_rs_fail(&s->rs); return -1; }
     ogpu_rs_done(&s->rs);

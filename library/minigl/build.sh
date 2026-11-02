@@ -65,6 +65,11 @@ build_half() {
 # The archives each half takes: as the specs file and -m68881 pick them.
 GCCDIR=$(dirname "$("$CC" -print-libgcc-file-name)")
 NIXDIR=$(dirname "$("$CC" -noixemul -print-file-name=libm.a)")
+# A compiler whose default is -m68040 (the ROM build's stove040 wrapper, or
+# GFOpenAmigaGCC 16.2.0-open4 with it) names the libm020 multilib's own file:
+# the archives below are named from the top of each tree, so that part goes.
+GCCDIR=${GCCDIR%/libm020}
+NIXDIR=${NIXDIR%/libm020}
 for a in "$GCCDIR/libm020/libm881/libgcc.a" "$GCCDIR/libm020/libgcc.a" "$NIXDIR/libm020/libm.a"; do
     [ -f "$a" ] || { echo "no $a" >&2; exit 1; }
 done

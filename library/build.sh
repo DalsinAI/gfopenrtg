@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 # gfopenrtg.library, cybergraphics.library and gfopengpu.library (bare: no startup code or C
 # library; the RomTag's stub comes first), C:GFOpenRTG and its monitor driver, with the os32 stove (bebbo's m68k-amigaos-gcc);
-# gfopengpu.library and its GFOpenGfx parts with GFOpenAmigaGCC 16.2.0-open4 (OPENGPU_STOVE, below).
+# gfopengpu.library and its GFOpenGfx parts with GFOpenAmigaGCC 16.2.0-open4 or -open5 (OPENGPU_STOVE, below).
 #   library/build.sh [OUT_DIR]     (default build/)
 # (gfopengpu.library twice: OUT_DIR/gfopengpu.library for the disk, OUT_DIR/rom/gfopengpu.library
 # for the GF ROM, without GFOpenGfx's patches and core; OGPU_ROM=1 makes OUT_DIR/gfopengpu.library
@@ -23,12 +23,13 @@ STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32}
 CC=${CC:-$STOVE/prefix/bin/m68k-amigaos-gcc}
 NM=${NM:-${CC%gcc}nm}
 if [ "$TARGET" = module ]; then OUT=${1:-${OUT:-$ROOT/build}}; else OUT=${1:-$ROOT/build}; fi
-# gfopengpu.library is built with GFOpenAmigaGCC 16.2.0-open4, and with nothing
+# gfopengpu.library is built with GFOpenAmigaGCC 16.2.0-open4 or -open5 (open5
+# changed only libpthread and the names, not the compiler), and with nothing
 # else: GCC 6.5 (the os32 stove) miscompiles the CPU core's stroke walk, so
 # strokes painted with gradients or patterns came out wrong (gfopenrtg
 # #159; tests/amiga/vector's OpenGPUVectorCRC shows the core against the
 # host). OPENGPU_STOVE holds prefix/bin; OPENGPU_CC overrides the compiler.
-OPENGPU_GCC=16.2.0-open4
+OPENGPU_GCC="16.2.0-open5 16.2.0-open4"   # any of these
 OPENGPU_STOVE=${OPENGPU_STOVE:-$HOME/AmiCradle/stoves/os32-gcc16}
 OPENGPU_CC=${OPENGPU_CC:-$OPENGPU_STOVE/prefix/bin/m68k-amigaos-gcc}
 # -fno-delete-null-pointer-checks on every 68k compile: address 0 is memory on
@@ -88,7 +89,8 @@ if [ -f "$HERE/opengpu/ogpu_3d.c" ]; then D3=-DOGPU_WITH_3D; D3SRC="$HERE/opengp
 # GFOpenGfx (library/ogfx): the patches' glue and its leaves. The leaves are AC090
 # magic functions: stack arguments, and no loop turned into a call (ogfx_leaves.c).
 # GFOpenGfx's drawing core comes from gfopengfx at a pinned commit (one copy).
-if ! "$OPENGPU_CC" --version 2>/dev/null | head -1 | grep -q "OpenAmigaGCC $OPENGPU_GCC)"; then
+opengpu_gcc_ok() { v=$("$OPENGPU_CC" --version 2>/dev/null | head -1); for g in $OPENGPU_GCC; do case "$v" in *"OpenAmigaGCC $g)"*) return 0 ;; esac; done; return 1; }
+if ! opengpu_gcc_ok; then
     echo "gfopengpu.library needs GFOpenAmigaGCC $OPENGPU_GCC (OPENGPU_STOVE or OPENGPU_CC); $OPENGPU_CC is:" >&2
     "$OPENGPU_CC" --version 2>&1 | head -1 >&2 || true
     exit 1

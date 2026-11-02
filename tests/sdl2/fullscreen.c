@@ -35,6 +35,7 @@
 #include <intuition/intuition.h>
 
 static int failures = 0;
+static int verbose = 0;  /* SetEnv FULLSCREEN_VERBOSE 1: the front screen's windows */
 
 static void report(const char *what, int ok, const char *detail)
 {
@@ -66,6 +67,13 @@ static int screens(const char *when, int *front_w, int *front_h)
             int nw = 0;
             for (w = s->FirstWindow; w; w = w->NextWindow) {
                 nw++;
+            }
+            if (verbose && n == 0) {
+                for (w = s->FirstWindow; w; w = w->NextWindow) {
+                    printf("    front screen's window \"%.30s\" %dx%d%s\n",
+                           w->Title ? (const char *)w->Title : "", w->Width, w->Height,
+                           w == IntuitionBase->ActiveWindow ? " (active)" : "");
+                }
             }
             len += SDL_snprintf(line + len, sizeof(line) - len, "%s%dx%d \"%.12s\" (%d windows)",
                                 n ? ", " : "", s->Width, s->Height,
@@ -202,6 +210,7 @@ int main(int argc, char *argv[])
     char line[160];
     SDL_Window *win;
 
+    verbose = SDL_getenv("FULLSCREEN_VERBOSE") != NULL;
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         printf("SDL_Init: %s\n", SDL_GetError());
         return 20;
@@ -217,6 +226,7 @@ int main(int argc, char *argv[])
             return 20;
         }
         describe(win, "created");
+        screens("created", NULL, NULL);
         show_surface(win, ms, &ow, &oh);
         describe(win, "shown");
         check_front("surface", win, ow, oh);

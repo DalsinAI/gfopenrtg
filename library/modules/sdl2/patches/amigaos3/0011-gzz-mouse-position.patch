@@ -1,0 +1,46 @@
+--- a/src/video/amigaos3/SDL_os3events.c
++++ b/src/video/amigaos3/SDL_os3events.c
+@@ -286,6 +286,21 @@
+     }
+ }
+ 
++/* An IntuiMessage gives the mouse relative to the window's outer corner,
++ * a GimmeZeroZero window's too (OS 3.2.3, and OpenIntuition since 26 Oct
++ * 2026); its GZZMouseX and GZZMouseY, not its messages, are inside the
++ * borders. SDL's windows on the Workbench are GimmeZeroZero and draw inside
++ * the borders, so the borders come off here. Before, every click landed the
++ * title bar's height below the pointer (Freeciv's buttons at the foot of
++ * its window could not be pressed, 2 Nov 2026). */
++static void OS3_InnerMouse(const struct Window *iwin, WORD *x, WORD *y)
++{
++    if (iwin->Flags & WFLG_GIMMEZEROZERO) {
++        *x -= iwin->BorderLeft;
++        *y -= iwin->BorderTop;
++    }
++}
++
+ /* Translate IDCMP_MOUSEBUTTONS code to SDL mouse button event. */
+ static void OS3_HandleMouseButton(SDL_Window *sdlwin, UWORD code)
+ {
+@@ -415,6 +430,12 @@
+                 break;
+ 
+             case IDCMP_MOUSEBUTTONS:
++                /* SDL puts a click where the last move was: say where this
++                 * one is first (SDL drops a move to where it already is). */
++                if (!SDL_GetMouse()->relative_mode) {
++                    OS3_InnerMouse(intuiwin, &mousex, &mousey);
++                    SDL_SendMouseMotion(sdlwin, 0, 0, (int)mousex, (int)mousey);
++                }
+                 OS3_HandleMouseButton(sdlwin, code);
+                 break;
+ 
+@@ -425,7 +446,7 @@
+                         SDL_SendMouseMotion(sdlwin, 0, 1, (int)mousex, (int)mousey);
+                     }
+                 } else {
+-                    /* WA_GimmeZeroZero: coordinates are relative to inner area */
++                    OS3_InnerMouse(intuiwin, &mousex, &mousey);
+                     SDL_SendMouseMotion(sdlwin, 0, 0, (int)mousex, (int)mousey);
+                 }
+                 break;

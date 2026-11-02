@@ -194,6 +194,15 @@ only what is in memory) and does what the monitor driver does.
   (`OGPU_QUERY_FLAG` through `OGPU_Query`): a driver answers for the flags
   it carries out, such as `OGPU_PATH_ALIASED`, and gets the batches that use
   them; older libraries and drivers answer no, safely.
+- **gfopengpu.library 0.25 keeps retained surfaces** (`gfopengpu/retained.h`,
+  LVOs 162 to 192): a program's picture stays in CPU memory, a texture the
+  back end keeps caches it, and a present uploads only the 32x32 tiles that
+  changed (hashed, or as the program marked them) and draws the whole
+  texture once into the screen, which is never read back. 8-bit surfaces go
+  up as indexes with a 256-colour palette, so a palette change uploads no
+  tile. With no GPU the same calls copy the changed tiles into the RastPort.
+  `tests/test_retained.c` runs the tiles and the batch on the host;
+  `tests/amiga/retained` (RetainedTest) on an Amiga.
 
 ## Contributors
 

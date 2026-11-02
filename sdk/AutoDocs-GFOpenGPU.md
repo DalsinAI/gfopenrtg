@@ -391,6 +391,37 @@ The `glA...` forms (`glASwapBuffers()` and the rest) pass the program's
   answer the form in `supports()` for each flag you carry out;
   gfopengpu.library 0.24 runs the commands with a flag a driver doesn't take
   on its CPU core.
+- **Retained surfaces (gfopengpu.library 0.25, `gfopengpu/retained.h`).**
+  A picture the program keeps in CPU memory and draws into with the CPU,
+  shown through a texture the GPU keeps. Check `lib_Revision >=
+  OGPU_RETAINED_REVISION` (25) first. LVOs, after `OGFX_UnregisterLook`:
+  - -162 `rs = OGPU_RetainedCreate(width, height, format, flags)`
+    (d0/d1/d2/d3): `OGPU_FMT_INDEX8` (or 8), `OGPU_FMT_XRGB32` (or 32) or
+    `OGPU_FMT_ARGB32` (drawn opaque); up to 16383 a side. Draw into
+    `rs->rs_Pixels`, `rs->rs_BytesPerRow` a row. Flags:
+    `OGPU_RSF_SOFTWARE` (never the GPU), `OGPU_RSF_BILINEAR` (filtered
+    scaling); `OGPU_RSF_TEXTURE_AUTH` is reserved and refused (NULL).
+  - -168 `OGPU_RetainedPalette(rs, first, count, argb)` (a0/d0/d1/a1): an
+    INDEX8 surface's colours (ARGB32; grey until set). On the GPU path a
+    palette change uploads the palette alone, no tile.
+  - -174 `OGPU_RetainedMark(rs, x, y, width, height)` (a0/d0-d3): what the
+    program changed. With marks since the last present, that present
+    uploads the tiles they touch and hashes nothing; without, it hashes each
+    32x32 tile and uploads those that differ. Width or height below 0: the
+    whole surface.
+  - -180 `n = OGPU_RetainedPresent(rs, rp, x, y, width, height)`
+    (a0/a1/d0-d3): the changed tiles up, then the whole texture drawn once
+    at x, y of the RastPort (a window's: only its visible parts), scaled to
+    width x height (0: the surface's size). Returns the tiles uploaded, or
+    an `OGPU_RS_ERR_` code. It waits for its batch, so the program may draw
+    again at once. Nothing is read back from the screen. With no GPU driver
+    (or `OGPU_RSF_SOFTWARE`) the changed tiles are copied into the RastPort
+    with `WriteLUTPixelArray`, `WritePixelArray` or `WriteChunkyPixels`,
+    1:1; after a refresh, mark the whole surface before presenting.
+  - -186 `OGPU_RetainedStats(rs, stats)` (a0/a1): frames, tiles uploaded,
+    readbacks (always 0), tiles hashed, palette uploads, GPU and software
+    frames; set `stats->size` first.
+  - -192 `OGPU_RetainedDestroy(rs)` (a0).
 - **SFD files** (`sfd/`) for gfopengpu.library, gfopenrtg.library and
   Warp3D.library, for other compilers' stubs and pragmas.
 

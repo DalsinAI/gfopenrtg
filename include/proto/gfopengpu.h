@@ -6,6 +6,7 @@
 #include <gfopengpu/gfopengpu.h>
 #include <gfopengpu/module.h>
 #include <gfopengpu/gfx.h>
+#include <gfopengpu/retained.h>
 extern struct Library *OpenGPUBase;
 #include <inline/gfopengpu.h>
 #endif

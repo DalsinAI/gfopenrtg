@@ -70,6 +70,16 @@
  * core takes every flag stream.h defines; a driver says so in its
  * supports(), and the batches with a flag it doesn't take run here. A
  * library before 0.24, and a driver that predates the form, answer NONE.
+ * 0.25: retained surfaces (include/gfopengpu/retained.h, LVOs 162 to 192): a
+ * program's picture stays in CPU memory and is shown through a texture the
+ * back end keeps; a present uploads only the 32x32 tiles that changed (found
+ * by hashing each tile, or from the rectangles the program marked) and draws
+ * the whole texture once into the RastPort's bitmap, which is never read
+ * back. 8-bit surfaces go up as indexes with a 256-colour palette, so a
+ * palette change uploads no tile. With no driver the same calls copy the
+ * changed tiles into the RastPort with graphics.library or
+ * cybergraphics.library. The tiles and the batch are ogpu_retained.c's,
+ * plain C (tests/test_retained.c); the glue is at the end of this file.
  * Built bare by library/build.sh.
  */
 #include <exec/types.h>
@@ -79,9 +89,17 @@
 #include <exec/libraries.h>
 #include <exec/execbase.h>
 #include <exec/semaphores.h>
+#include <graphics/gfx.h>
+#include <graphics/rastport.h>
+#include <graphics/clip.h>
+#include <graphics/layers.h>
+#include <graphics/gfxbase.h>
+#include <cybergraphx/cybergraphics.h>
 #include "../../include/oa_protos_begin.h"   /* the protos' unused varargs wrappers dropped */
 #include <proto/exec.h>
 #include <proto/dos.h>
+#include <proto/graphics.h>
+#include <proto/cybergraphics.h>
 #include "../../include/oa_protos_end.h"
 
 #include <exec/memory.h>
@@ -94,12 +112,14 @@
 #include "../../include/gfopengpu/driver.h"
 #include "../../include/gfopengpu/module.h"
 #include "ogpu_module.h"
+#include "ogpu_retained.h"
+#include "../../include/gfopengpu/retained.h"
 #include "../ogfx/ogfx.h"
 #include <stddef.h>
 
 #define REG(r, decl) register decl __asm(#r)   /* bebbo gcc: an argument in a register */
 #define LIB_VERSION 0
-#define LIB_REVISION 24
+#define LIB_REVISION 25
 #define RESULTS 16                              /* the last batches' results, by fence */
 #define MAX_DRIVERS 8                           /* files looked at in LIBS:GFOpenGPU/ */
 #define ON_CPU 0                                /* dfence[] for a batch the CPU ran */
@@ -131,6 +151,11 @@ struct OpenGPUBase {
      * board's memory is in the system. fast_state 0 not yet, 1 done. */
     UBYTE fast_state, nfast;
     ULONG fast_lo[OGPU_CORE_FAST], fast_hi[OGPU_CORE_FAST];
+    /* 0.25: the retained surfaces' libraries, opened by the first process
+     * that presents one (rs_libs) and kept until the expunge */
+    struct Library *rs_gfx;                     /* graphics.library 39 or later */
+    struct Library *rs_cgx;                     /* cybergraphics.library 41 or later, or NULL */
+    UBYTE rs_tried;
 };
 
 /* No writable globals (the library may run from ROM): each function takes
@@ -148,9 +173,9 @@ int start(void) { return -1; }
 const ULONG ogpu_ogfx_at = offsetof(struct OpenGPUBase, ogfx);
 
 static const char lib_name[] = "gfopengpu.library";
-static const char lib_id[] = "gfopengpu.library 0.24 (1.11.2026) GFOpenGPU, AmiCradle Team\r\n";
+static const char lib_id[] = "gfopengpu.library 0.25 (2.11.2026) GFOpenGPU, AmiCradle Team\r\n";
 /* For C:Version, which looks for "$VER:" in the file. */
-static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopengpu.library 0.24 (1.11.2026) GFOpenGPU, AmiCradle Team";
+static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopengpu.library 0.25 (2.11.2026) GFOpenGPU, AmiCradle Team";
 static const char cpu_name[] = "CPU";
 static const char dos_name[] = "dos.library";
 static const char drv_dir[] = "LIBS:GFOpenGPU";
@@ -169,6 +194,17 @@ static LONG OGPU_Wait(REG(d0, ULONG fence), REG(a6, struct OpenGPUBase *base));
 static APTR OGPU_ModuleOpen(REG(a0, CONST_STRPTR name), REG(d0, ULONG version), REG(a1, APTR *table), REG(a6, struct OpenGPUBase *base));
 static void OGPU_ModuleClose(REG(a0, APTR handle), REG(a6, struct OpenGPUBase *base));
 static void drivers_close(struct OpenGPUBase *base);
+static struct OGPURetained *OGPU_RetainedCreate(REG(d0, ULONG width), REG(d1, ULONG height), REG(d2, ULONG format), REG(d3, ULONG flags),
+                                                REG(a6, struct OpenGPUBase *base));
+static void OGPU_RetainedPalette(REG(a0, struct OGPURetained *rs), REG(d0, ULONG first), REG(d1, ULONG count), REG(a1, const ULONG *argb),
+                                 REG(a6, struct OpenGPUBase *base));
+static void OGPU_RetainedMark(REG(a0, struct OGPURetained *rs), REG(d0, LONG x), REG(d1, LONG y), REG(d2, LONG width), REG(d3, LONG height),
+                              REG(a6, struct OpenGPUBase *base));
+static LONG OGPU_RetainedPresent(REG(a0, struct OGPURetained *rs), REG(a1, struct RastPort *rp), REG(d0, LONG x), REG(d1, LONG y),
+                                 REG(d2, LONG width), REG(d3, LONG height), REG(a6, struct OpenGPUBase *base));
+static ULONG OGPU_RetainedStats(REG(a0, struct OGPURetained *rs), REG(a1, struct OGPURetainedStats *stats), REG(a6, struct OpenGPUBase *base));
+static void OGPU_RetainedDestroy(REG(a0, struct OGPURetained *rs), REG(a6, struct OpenGPUBase *base));
+static void rs_libs_close(struct OpenGPUBase *base);
 static LONG low_memory(REG(a0, struct MemHandlerData *mhd), REG(a1, struct OpenGPUBase *base), REG(a6, struct ExecBase *sys));
 
 static const APTR lib_vectors[] = {
@@ -182,6 +218,9 @@ static const APTR lib_vectors[] = {
     (APTR)OGFX_RectFill, (APTR)OGFX_BltBitMap, (APTR)OGFX_BltTemplate, (APTR)OGFX_ScrollRaster,
     /* 0.7: GFOpenGfx's look hook, 150 and 156 */
     (APTR)OGFX_RegisterLook, (APTR)OGFX_UnregisterLook,
+    /* 0.25: retained surfaces, 162 to 192 (gfopengpu/retained.h) */
+    (APTR)OGPU_RetainedCreate, (APTR)OGPU_RetainedPalette, (APTR)OGPU_RetainedMark,
+    (APTR)OGPU_RetainedPresent, (APTR)OGPU_RetainedStats, (APTR)OGPU_RetainedDestroy,
     (APTR)-1,
 };
 static const struct { ULONG size; const APTR *vectors; APTR data; APTR init; } lib_inittable = {
@@ -243,6 +282,7 @@ static BPTR lib_expunge(REG(a6, struct OpenGPUBase *base))
     BPTR seglist = base->seglist;
     if (base->low_mem_on) RemMemHandler(&base->low_mem);
     drivers_close(base);
+    rs_libs_close(base);
     ogfx_expunge(&base->ogfx);
     Remove(&base->lib.lib_Node);
     FreeMem((UBYTE *)base - base->lib.lib_NegSize, base->lib.lib_NegSize + base->lib.lib_PosSize);
@@ -732,4 +772,351 @@ static APTR OGPU_ModuleOpen(REG(a0, CONST_STRPTR name), REG(d0, ULONG version), 
 static void OGPU_ModuleClose(REG(a0, APTR handle), REG(a6, struct OpenGPUBase *base))
 {
     ogpu_module_close(&base->modules, base->sys, base->dos, handle);
+}
+
+/* ---- retained surfaces (0.25: include/gfopengpu/retained.h, ogpu_retained.c) ------- */
+
+/* A surface: what the program sees, then the library's own. One block holds
+ * it, the palette, the tiles' state and the pixels; the texture is a block
+ * of its own, made at the first present on the GPU path. */
+struct rs_handle {
+    struct OGPURetained pub;
+    struct ogpu_rs core;                        /* the tiles (ogpu_retained.c) */
+    UBYTE *tex;                                 /* the texture, or NULL */
+    UBYTE tex_valid;                            /* the texture holds every tile as last uploaded */
+    UBYTE pal_changed;                          /* OGPU_RetainedPalette since the last present */
+    UBYTE path;                                 /* the last present's: RS_NONE, RS_GPU or RS_CPU */
+    struct RastPort *last_rp;                   /* the software path's last target: the tiles are there */
+    struct BitMap *last_bm;
+    LONG last_x, last_y, last_w, last_h;
+    struct OGPURetainedStats st;
+};
+#define RS_NONE 0
+#define RS_GPU 1
+#define RS_CPU 2
+#define RS_NO_GPU (-100)                        /* rs_present_gpu: not this way, try the software path */
+#define RS_MAX 16383                            /* a side, at most (a 32-bit row in WritePixelArray's UWORD) */
+
+static const char gfx_name[] = "graphics.library";
+static const char cgx_name[] = "cybergraphics.library";
+
+/* graphics.library and cybergraphics.library. Only a process may load
+ * cybergraphics.library from disk, and it is looked for there once; later,
+ * and from a task, it is taken when it is in memory (GFOpenRTG starts after
+ * the first program may have asked). */
+static void rs_libs(struct OpenGPUBase *base)
+{
+    EXEC(base);
+    int process = FindTask(NULL)->tc_Node.ln_Type == NT_PROCESS, in_memory;
+    if (base->rs_gfx && base->rs_cgx) return;
+    ObtainSemaphore(&base->drv_lock);
+    if (!base->rs_gfx) base->rs_gfx = OpenLibrary((CONST_STRPTR)gfx_name, 39);
+    if (!base->rs_cgx) {
+        Forbid();
+        in_memory = FindName(&SysBase->LibList, (CONST_STRPTR)cgx_name) != NULL;
+        Permit();
+        if (in_memory || (process && !base->rs_tried)) {
+            base->rs_cgx = OpenLibrary((CONST_STRPTR)cgx_name, 41);
+            if (process) base->rs_tried = 1;
+        }
+    }
+    ReleaseSemaphore(&base->drv_lock);
+}
+
+static void rs_libs_close(struct OpenGPUBase *base)
+{
+    EXEC(base);
+    if (base->rs_cgx) CloseLibrary(base->rs_cgx);
+    if (base->rs_gfx) CloseLibrary(base->rs_gfx);
+    base->rs_cgx = base->rs_gfx = NULL;
+}
+
+static struct OGPURetained *OGPU_RetainedCreate(REG(d0, ULONG width), REG(d1, ULONG height), REG(d2, ULONG format), REG(d3, ULONG flags),
+                                                REG(a6, struct OpenGPUBase *base))
+{
+    EXEC(base);
+    struct rs_handle *h;
+    ULONG bpp, bpr, pal, tiles, size, i;
+    UBYTE *p;
+    if (flags & OGPU_RSF_TEXTURE_AUTH) return NULL;     /* reserved, not there yet */
+    if (!width || !height || width > RS_MAX || height > RS_MAX) return NULL;
+    if (format == OGPU_FMT_INDEX8 || format == OGPU_FMT_CLUT8 || format == OGPU_RETAINED_DEPTH8) format = OGPU_FMT_INDEX8;
+    else if (format == OGPU_FMT_XRGB32 || format == OGPU_RETAINED_DEPTH32) format = OGPU_FMT_XRGB32;
+    else if (format != OGPU_FMT_ARGB32) return NULL;
+    bpp = format == OGPU_FMT_INDEX8 ? 1 : 4;
+    bpr = (width * bpp + 15) & ~15UL;           /* MOVE16 lines up rows on 16 bytes */
+    pal = format == OGPU_FMT_INDEX8 ? 256 * 4 : 0;
+    tiles = ((ogpu_rs_mem((int)width, (int)height)) + 3) & ~3UL;
+    size = ((sizeof *h + 15) & ~15UL) + pal + tiles + 16 + bpr * height;
+    if (!(h = AllocVec(size, MEMF_ANY | MEMF_CLEAR))) return NULL;
+    p = (UBYTE *)h + ((sizeof *h + 15) & ~15UL);
+    if (pal) {
+        h->pub.rs_Palette = (ULONG *)p;
+        for (i = 0; i < 256; i++) h->pub.rs_Palette[i] = 0xFF000000UL | i * 0x010101UL;   /* grey until set */
+        p += pal;
+    }
+    ogpu_rs_init(&h->core, NULL, (long)bpr, (int)width, (int)height, (int)bpp, p);
+    p += tiles;
+    p = (UBYTE *)(((ULONG)p + 15) & ~15UL);
+    h->core.pixels = p;
+    h->pub.rs_Pixels = p;
+    h->pub.rs_BytesPerRow = bpr;
+    h->pub.rs_Width = (UWORD)width;
+    h->pub.rs_Height = (UWORD)height;
+    h->pub.rs_Format = format;
+    h->pub.rs_Flags = flags;
+    h->pal_changed = pal != 0;
+    h->st.tiles = (ULONG)h->core.ntiles;
+    return &h->pub;
+}
+
+static void OGPU_RetainedPalette(REG(a0, struct OGPURetained *rs), REG(d0, ULONG first), REG(d1, ULONG count), REG(a1, const ULONG *argb),
+                                 REG(a6, struct OpenGPUBase *base))
+{
+    struct rs_handle *h = (struct rs_handle *)rs;
+    ULONG i;
+    if (!h || !h->pub.rs_Palette || !argb) return;
+    for (i = 0; i < count && first + i < 256; i++) h->pub.rs_Palette[first + i] = argb[i];
+    h->pal_changed = 1;
+}
+
+static void OGPU_RetainedMark(REG(a0, struct OGPURetained *rs), REG(d0, LONG x), REG(d1, LONG y), REG(d2, LONG width), REG(d3, LONG height),
+                              REG(a6, struct OpenGPUBase *base))
+{
+    if (rs) ogpu_rs_mark(&((struct rs_handle *)rs)->core, x, y, width, height);
+}
+
+static void rs_count(struct rs_handle *h, long n, int path)
+{
+    h->st.frames++;
+    h->st.tiles_uploaded += (ULONG)n;
+    h->st.last_tiles = (ULONG)n;
+    h->st.tiles_hashed = h->core.hashed;
+    if (path == RS_GPU) h->st.gpu_frames++;
+    else h->st.cpu_frames++;
+    if (h->pal_changed && h->pub.rs_Palette) h->st.palette_uploads++;
+    h->pal_changed = 0;
+    h->path = (UBYTE)path;
+}
+
+/* A bitmap's pixel format as a target of the batch, or 0. */
+static int rs_target_format(struct OpenGPUBase *base, ULONG pixfmt)
+{
+    switch (pixfmt) {
+    case PIXFMT_ARGB32:     /* GFOpenRTG's 32-bit pixels have alpha 0: XRGB32 (v1.3) keeps it so */
+        return base->drv_fmt[OGPU_FMT_XRGB32] ? OGPU_FMT_XRGB32 : OGPU_FMT_ARGB32;
+    case PIXFMT_BGRA32: return OGPU_FMT_BGRA32;
+    case PIXFMT_RGBA32: return OGPU_FMT_RGBA32;
+    case PIXFMT_RGB16: return OGPU_FMT_RGB565;
+    case PIXFMT_RGB16PC: return OGPU_FMT_RGB565PC;
+    case PIXFMT_RGB15: return OGPU_FMT_RGB555;
+    case PIXFMT_RGB15PC: return OGPU_FMT_RGB555PC;
+    }
+    return 0;
+}
+
+/* The GPU path: the changed tiles into the texture, the texture into the
+ * bitmap, one batch, waited for (the uploads read rs_Pixels, which the
+ * program may change once this returns). RS_NO_GPU when there is no driver,
+ * or it can't draw these formats, or the RastPort needs the software path. */
+static LONG rs_present_gpu(struct OpenGPUBase *base, struct rs_handle *h, struct RastPort *rp, LONG x, LONG y, LONG w, LONG ht)
+{
+    EXEC(base);
+    struct Library *CyberGfxBase = base->rs_cgx;
+    struct GfxBase *GfxBase = (struct GfxBase *)base->rs_gfx;
+    struct BitMap *bm = rp->BitMap;
+    struct Layer *layer = rp->Layer;
+    struct ClipRect *cr;
+    struct ogpu_rs_present p;
+    ULONG addr = 0, bpr = 0, fence = 0, words;
+    int fmt = (int)h->pub.rs_Format, dfmt, ok, nclips = 0, i;
+    short *clips = NULL;
+    UBYTE *buf;
+    APTR lock;
+    LONG r, n;
+    if ((h->pub.rs_Flags & OGPU_RSF_SOFTWARE) || !CyberGfxBase || !GfxBase || !bm) return RS_NO_GPU;
+    drivers_load(base);
+    if (!base->drv || !GetCyberMapAttr(bm, CYBRMATTR_ISCYBERGFX)) return RS_NO_GPU;
+    ObtainSemaphore(&base->drv_lock);
+    dfmt = base->drv ? rs_target_format(base, GetCyberMapAttr(bm, CYBRMATTR_PIXFMT)) : 0;
+    ok = dfmt && base->drv_fmt[fmt] && base->drv_fmt[dfmt] && base->drv_ok[OGPU_OP_COPY] && base->drv_ok[OGPU_OP_COMPOSITE]
+         && (fmt != OGPU_FMT_INDEX8 || base->drv_ok[OGPU_OP_PALETTE])
+         && OGPU_ANSWER(base->drv->supports(OGPU_OP_COPY, fmt, (unsigned long)h->pub.rs_Pixels)) != OGPU_NONE
+         && OGPU_ANSWER(base->drv->supports(OGPU_OP_COMPOSITE, dfmt, 0)) != OGPU_NONE;
+    ReleaseSemaphore(&base->drv_lock);
+    if (!ok) return RS_NO_GPU;
+    if (!h->tex) {
+        if (!(h->tex = AllocVec(h->pub.rs_BytesPerRow * h->pub.rs_Height, MEMF_ANY))) return OGPU_RS_ERR_MEMORY;
+        h->tex_valid = 0;
+    }
+    /* In a window: its visible parts, in the bitmap's pixels. A smart
+     * refresh window's hidden parts (kept in the layer's own bitmaps) and a
+     * super bitmap are the software path's: layers draws those. */
+    if (layer) {
+        LockLayerRom(layer);
+        if (layer->SuperBitMap) { UnlockLayerRom(layer); return RS_NO_GPU; }
+        for (cr = layer->ClipRect; cr; cr = cr->Next) {
+            if (cr->obscured) {
+                if (cr->BitMap) { UnlockLayerRom(layer); return RS_NO_GPU; }
+                continue;
+            }
+            nclips++;
+        }
+        if (nclips && !(clips = AllocVec((ULONG)nclips * 4 * sizeof(short), MEMF_ANY))) { UnlockLayerRom(layer); return OGPU_RS_ERR_MEMORY; }
+        for (i = 0, cr = layer->ClipRect; cr && i < nclips; cr = cr->Next) {
+            if (cr->obscured) continue;
+            clips[i * 4] = cr->bounds.MinX;
+            clips[i * 4 + 1] = cr->bounds.MinY;
+            clips[i * 4 + 2] = cr->bounds.MaxX;
+            clips[i * 4 + 3] = cr->bounds.MaxY;
+            i++;
+        }
+        if (!nclips) nclips = -1;               /* nothing shows: the tiles go up, nothing is drawn */
+        x += layer->bounds.MinX;
+        y += layer->bounds.MinY;
+    }
+    if (!h->tex_valid || h->path != RS_GPU) ogpu_rs_all(&h->core);
+    n = ogpu_rs_collect(&h->core);
+    words = (ULONG)ogpu_rs_present_words(&h->core, nclips);
+    if (!(buf = AllocVec(words * 4, MEMF_ANY))) {
+        ogpu_rs_fail(&h->core);
+        if (clips) FreeVec(clips);
+        if (layer) UnlockLayerRom(layer);
+        return OGPU_RS_ERR_MEMORY;
+    }
+    r = OGPU_RS_ERR_GPU;
+    lock = LockBitMapTags(bm, LBMI_BASEADDRESS, (ULONG)&addr, LBMI_BYTESPERROW, (ULONG)&bpr, TAG_DONE);
+    if (lock) {
+        p.src = (unsigned long)h->pub.rs_Pixels;
+        p.tex = (unsigned long)h->tex;
+        p.tex_bpr = h->pub.rs_BytesPerRow;
+        p.palette = (unsigned long)h->pub.rs_Palette;
+        p.format = fmt;
+        p.dst = addr;
+        p.dst_bpr = bpr;
+        p.dst_w = (int)GetCyberMapAttr(bm, CYBRMATTR_WIDTH);
+        p.dst_h = (int)GetCyberMapAttr(bm, CYBRMATTR_HEIGHT);
+        p.dst_format = dfmt;
+        p.x = (int)x;
+        p.y = (int)y;
+        p.w = (int)w;
+        p.h = (int)ht;
+        p.clips = clips;
+        p.nclips = nclips;
+        p.comp_flags = h->pub.rs_Flags & OGPU_RSF_BILINEAR ? OGPU_COMP_BILINEAR : 0;
+        p.fence = 0x52530000UL;                 /* 'RS' */
+        long built = ogpu_rs_build_present(&h->core, &p, buf, (long)words);
+        if (built > 0) {
+            r = OGPU_Submit(buf, (ULONG)built, &fence, base);
+            if (r == OGPU_OK) r = OGPU_Wait(fence, base);
+            r = r == OGPU_OK ? OGPU_OK : OGPU_RS_ERR_GPU;
+        }
+        UnLockBitMap(lock);
+    }
+    if (layer) UnlockLayerRom(layer);
+    FreeVec(buf);
+    if (clips) FreeVec(clips);
+    if (r != OGPU_OK) {
+        ogpu_rs_fail(&h->core);
+        h->tex_valid = 0;
+        return r;
+    }
+    ogpu_rs_done(&h->core);
+    h->tex_valid = 1;
+    rs_count(h, n, RS_GPU);
+    return n;
+}
+
+/* The software path: the changed tiles straight into the RastPort, 1:1
+ * (the rectangle crops), through graphics.library and cybergraphics.library,
+ * which clip to the layers. The screen keeps the tiles: no texture. */
+static LONG rs_present_cpu(struct OpenGPUBase *base, struct rs_handle *h, struct RastPort *rp, LONG x, LONG y, LONG w, LONG ht)
+{
+    struct Library *CyberGfxBase = base->rs_cgx;
+    struct GfxBase *GfxBase = (struct GfxBase *)base->rs_gfx;
+    struct BitMap *bm = rp->BitMap;
+    int index8 = h->pub.rs_Format == OGPU_FMT_INDEX8, lut = 0, chunky = 0;
+    long at = 0, n;
+    int rx, ry, rw, rh;
+    UBYTE *pixels = (UBYTE *)h->pub.rs_Pixels;
+    ULONG bpr = h->pub.rs_BytesPerRow;
+    if (!GfxBase) return OGPU_RS_ERR_UNSUPPORTED;
+    if (index8) {
+        /* colours through the palette on a true-colour bitmap; on a CLUT
+         * one the indexes are its pens (the screen's colours are the program's) */
+        lut = CyberGfxBase && bm && GetCyberMapAttr(bm, CYBRMATTR_ISCYBERGFX) && GetCyberMapAttr(bm, CYBRMATTR_PIXFMT) != PIXFMT_LUT8;
+        chunky = !lut && GfxBase->LibNode.lib_Version >= 40;
+        if (!lut && !chunky) return OGPU_RS_ERR_UNSUPPORTED;
+    } else if (!CyberGfxBase) {
+        return OGPU_RS_ERR_UNSUPPORTED;
+    }
+    if (h->path != RS_CPU || h->last_rp != rp || h->last_bm != bm || h->last_x != x || h->last_y != y || h->last_w != w
+        || h->last_h != ht || (lut && h->pal_changed))
+        ogpu_rs_all(&h->core);
+    n = ogpu_rs_collect(&h->core);
+    while (ogpu_rs_next_run(&h->core, &at, &rx, &ry, &rw, &rh)) {
+        if (rx + rw > w) rw = (int)w - rx;
+        if (ry + rh > ht) rh = (int)ht - ry;
+        if (rw <= 0 || rh <= 0) continue;
+        if (lut)
+            WriteLUTPixelArray(pixels, (UWORD)rx, (UWORD)ry, (UWORD)bpr, rp, h->pub.rs_Palette, (UWORD)(x + rx), (UWORD)(y + ry),
+                               (UWORD)rw, (UWORD)rh, CTABFMT_XRGB8);
+        else if (chunky)
+            WriteChunkyPixels(rp, (ULONG)(x + rx), (ULONG)(y + ry), (ULONG)(x + rx + rw - 1), (ULONG)(y + ry + rh - 1),
+                              pixels + (ULONG)ry * bpr + (ULONG)rx, (LONG)bpr);
+        else
+            WritePixelArray(pixels, (UWORD)rx, (UWORD)ry, (UWORD)bpr, rp, (UWORD)(x + rx), (UWORD)(y + ry), (UWORD)rw, (UWORD)rh,
+                            RECTFMT_ARGB);
+    }
+    ogpu_rs_done(&h->core);
+    h->tex_valid = 0;                           /* the texture, if there is one, missed these */
+    h->last_rp = rp;
+    h->last_bm = bm;
+    h->last_x = x;
+    h->last_y = y;
+    h->last_w = w;
+    h->last_h = ht;
+    rs_count(h, n, RS_CPU);
+    return n;
+}
+
+static LONG OGPU_RetainedPresent(REG(a0, struct OGPURetained *rs), REG(a1, struct RastPort *rp), REG(d0, LONG x), REG(d1, LONG y),
+                                 REG(d2, LONG width), REG(d3, LONG height), REG(a6, struct OpenGPUBase *base))
+{
+    struct rs_handle *h = (struct rs_handle *)rs;
+    LONG r;
+    if (!h || !rp || width < 0 || height < 0) return OGPU_RS_ERR_ARGS;
+    if (!width) width = h->pub.rs_Width;        /* 0: the surface's own size */
+    if (!height) height = h->pub.rs_Height;
+    if (width > RS_MAX || height > RS_MAX) return OGPU_RS_ERR_ARGS;
+    rs_libs(base);
+    r = rs_present_gpu(base, h, rp, x, y, width, height);
+    if (r != RS_NO_GPU) return r;
+    return rs_present_cpu(base, h, rp, x, y, width, height);
+}
+
+static ULONG OGPU_RetainedStats(REG(a0, struct OGPURetained *rs), REG(a1, struct OGPURetainedStats *stats), REG(a6, struct OpenGPUBase *base))
+{
+    struct rs_handle *h = (struct rs_handle *)rs;
+    const UBYTE *from;
+    UBYTE *to;
+    ULONG size, i;
+    if (!h || !stats || stats->size < sizeof(ULONG)) return 0;
+    size = stats->size < sizeof h->st ? stats->size : sizeof h->st;
+    h->st.size = size;
+    h->st.readbacks = 0;                        /* nothing is ever read back from the screen */
+    h->st.tiles_hashed = h->core.hashed;
+    from = (const UBYTE *)&h->st;
+    to = (UBYTE *)stats;
+    for (i = 0; i < size; i++) to[i] = from[i];
+    return size;
+}
+
+static void OGPU_RetainedDestroy(REG(a0, struct OGPURetained *rs), REG(a6, struct OpenGPUBase *base))
+{
+    EXEC(base);
+    struct rs_handle *h = (struct rs_handle *)rs;
+    if (!h) return;
+    if (h->tex) FreeVec(h->tex);
+    FreeVec(h);
 }

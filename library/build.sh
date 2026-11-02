@@ -108,7 +108,7 @@ link_gpu() {
     # shellcheck disable=SC2086
     "$OPENGPU_CC" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -fno-toplevel-reorder -fno-builtin -Wall -Wextra -Werror -Wno-unused-parameter \
         -nostartfiles -nostdlib $SOFT -I"$ROOT/include" \
-        $D3 -o "$lib" "$HERE/opengpu/opengpu_lib.c" "$HERE/opengpu/ogpu_core.c" $D3SRC "$HERE/opengpu/ogpu_module.c" "$HERE/string.c" \
+        $D3 -o "$lib" "$HERE/opengpu/opengpu_lib.c" "$HERE/opengpu/ogpu_core.c" $D3SRC "$HERE/opengpu/ogpu_module.c" "$HERE/opengpu/ogpu_retained.c" "$HERE/string.c" \
         "$lib.ogfx_lib.o" "$OUT/ogfx_leaves.o" "$@" -lgcc
     rm -f "$lib.ogfx_lib.o"
 }

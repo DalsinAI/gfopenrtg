@@ -1,4 +1,4 @@
-==id $Id: gfopengpu_lib.sfd 0.7 (8.10.2026) $
+==id $Id: gfopengpu_lib.sfd 0.25 (2.11.2026) $
 * "gfopengpu.library"
 ==base _OpenGPUBase
 ==basetype struct Library *
@@ -9,6 +9,7 @@
 ==include <gfopengpu/gfopengpu.h>
 ==include <gfopengpu/module.h>
 ==include <gfopengpu/gfx.h>
+==include <gfopengpu/retained.h>
 ULONG OGPU_Query(ULONG op, ULONG format)(d0,d1)
 STRPTR OGPU_BackEndName(ULONG index)(d0)
 LONG OGPU_Submit(APTR stream, ULONG words, ULONG *fence)(a0,d0,a1)
@@ -34,4 +35,11 @@ VOID OGFX_ScrollRaster(struct RastPort *rp, LONG dx, LONG dy, LONG x0, LONG y0, 
 * 0.7: GFOpenGfx's look hook (gfopengpu/gfx.h)
 LONG OGFX_RegisterLook(struct OGFXLookV1 *look)(a0)
 LONG OGFX_UnregisterLook(APTR owner)(a0)
+* 0.25: retained surfaces (gfopengpu/retained.h)
+struct OGPURetained *OGPU_RetainedCreate(ULONG width, ULONG height, ULONG format, ULONG flags)(d0,d1,d2,d3)
+VOID OGPU_RetainedPalette(struct OGPURetained *rs, ULONG first, ULONG count, CONST ULONG *argb)(a0,d0,d1,a1)
+VOID OGPU_RetainedMark(struct OGPURetained *rs, LONG x, LONG y, LONG width, LONG height)(a0,d0,d1,d2,d3)
+LONG OGPU_RetainedPresent(struct OGPURetained *rs, struct RastPort *rp, LONG x, LONG y, LONG width, LONG height)(a0,a1,d0,d1,d2,d3)
+ULONG OGPU_RetainedStats(struct OGPURetained *rs, struct OGPURetainedStats *stats)(a0,a1)
+VOID OGPU_RetainedDestroy(struct OGPURetained *rs)(a0)
 ==end

@@ -1,0 +1,41 @@
+diff -ruN a/src/video/amigaos3/SDL_os3video.c b/src/video/amigaos3/SDL_os3video.c
+--- a/src/video/amigaos3/SDL_os3video.c
++++ b/src/video/amigaos3/SDL_os3video.c
+@@ -67,6 +67,19 @@
+     }
+ }
+ 
++/* A CyberGraphX mode's format (Open, 2026). CYBRIDATTR_DEPTH says 24 for a
++   board's 32-bit modes as well as its 24-bit ones; their pixels are 4 bytes
++   (CYBRIDATTR_BPPIX), and the window surface SDL gives on such a screen is
++   ARGB8888. Reported as RGB24, a program that sized its pixels by the
++   display mode drew 3-byte pixels into the 4-byte surface (Powermanga). */
++static Uint32 OS3_CyberModeFormat(ULONG modeid, ULONG depth)
++{
++    if (depth == 24 && GetCyberIDAttr(CYBRIDATTR_BPPIX, modeid) == 4) {
++        return SDL_PIXELFORMAT_ARGB8888;
++    }
++    return OS3_DepthToFormat(depth);
++}
++
+ static SDL_VideoDevice *OS3_CreateDevice(void)
+ {
+     SDL_VideoDevice *device;
+@@ -236,7 +249,7 @@
+                         bpp = dim.MaxDepth;
+                     }
+                 }
+-                fmt = OS3_DepthToFormat((int)bpp);
++                fmt = is_cyber ? OS3_CyberModeFormat(nextid, bpp) : OS3_DepthToFormat((int)bpp);
+ 
+                 if (fmt != SDL_PIXELFORMAT_UNKNOWN && (int)bpp >= 16) {
+                     if (!found_any) {
+@@ -369,7 +382,7 @@
+             ULONG w   = GetCyberIDAttr(CYBRIDATTR_WIDTH,  nextid);
+             ULONG h   = GetCyberIDAttr(CYBRIDATTR_HEIGHT, nextid);
+             ULONG bpp = GetCyberIDAttr(CYBRIDATTR_DEPTH,  nextid);
+-            Uint32 fmt = OS3_DepthToFormat((int)bpp);
++            Uint32 fmt = OS3_CyberModeFormat(nextid, bpp);
+ 
+             if (fmt != SDL_PIXELFORMAT_UNKNOWN) {
+                 SDL_DisplayMode mode;

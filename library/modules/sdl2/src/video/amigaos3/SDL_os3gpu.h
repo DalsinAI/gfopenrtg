@@ -24,6 +24,7 @@
 /* SDL's own base, so a program that opens gfopengpu.library keeps its own. */
 extern struct Library *SDL_OS3_OpenGPUBase;
 #define OPENGPU_BASE_NAME SDL_OS3_OpenGPUBase
+#define GFOPENGPU_BASE_NAME SDL_OS3_OpenGPUBase   /* the SDK's inline/gfopengpu.h (sfdc) reads this name */
 #include <inline/gfopengpu.h>
 
 /* Opens gfopengpu.library (counted). SDL_FALSE when it isn't installed or

@@ -44,7 +44,8 @@ for f in ogpu_core ogpu_3d ogpu_build ogpu_build3d; do
 done
 "$CC" $FLAGS -fno-toplevel-reorder -fno-builtin -nostartfiles -nostdlib -o "$OUT/Warp3D.library" \
     "$HERE/w3d_lib.c" "$HERE/w3d_ctx.c" "$HERE/w3d_batch.c" "$HERE/w3d_draw.c" "$HERE/w3d_texture.c" "$HERE/w3d_query.c" \
-    "$OUT/w3d-obj/ogpu_core.o" "$OUT/w3d-obj/ogpu_3d.o" "$OUT/w3d-obj/ogpu_build.o" "$OUT/w3d-obj/ogpu_build3d.o" -noixemul -lm -lgcc
+    "$OUT/w3d-obj/ogpu_core.o" "$OUT/w3d-obj/ogpu_3d.o" "$OUT/w3d-obj/ogpu_build.o" "$OUT/w3d-obj/ogpu_build3d.o" \
+    "$ROOT/library/string.c" -noixemul -lm -lgcc
 echo "$OUT/Warp3D.library ($(wc -c < "$OUT/Warp3D.library") bytes)"
 "$CC" $FLAGS -noixemul -o "$OUT/W3DTest" "$ROOT/tools/w3dtest.c" -lm
 echo "$OUT/W3DTest ($(wc -c < "$OUT/W3DTest") bytes)"

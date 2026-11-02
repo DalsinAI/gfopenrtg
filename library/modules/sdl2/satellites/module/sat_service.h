@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: MIT
  *
  * Work for the x86 or ARM64 cores, from SDL's satellites: a named service
- * ("media.decode/1", DalsinAI/openamigaservice docs/MEDIA_DECODE.md) through
+ * ("media.decode/1", DalsinAI/gfopenservice docs/MEDIA_DECODE.md) through
  * gfopenservice.device, which takes it to the services card (AmiCradle) or
  * a paired Cradle on the LAN. When neither offers the service,
  * sat_service_open fails and the caller does the work on this CPU.

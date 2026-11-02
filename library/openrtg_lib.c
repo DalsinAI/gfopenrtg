@@ -95,7 +95,7 @@
 #define LIB_VERSION 0
 #define LIB_REVISION 25
 
-/* The ACRTG board (amigachrome's common/protocol/acrtg.h): Zorro III,
+/* The ACRTG board (amicradle's common/protocol/acrtg.h): Zorro III,
  * AmiCradle Team (0xDA15; 2011 before 1 October 2026), product 9 (16 MiB), product 15 (64 MiB, 0.14) or product 16
  * (256 MiB, 0.19.4); the boot ROM page at +0, video RAM from +0x10000, the register page in the last 64 KiB (0xFE0000
  * bytes of video RAM on the 16 MiB board, 0x3FE0000 on the 64 MiB one, 0xFFE0000 on the 256 MiB one); pictures up to

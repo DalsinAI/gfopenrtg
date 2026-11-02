@@ -4,7 +4,7 @@
  * ACVirgl's host side: the request blocks of OGPU_OP_VIRGL
  * (include/gfopengpu/virgl.h) carried out with virglrenderer, so Mesa's virgl
  * driver on the Amiga draws GL and GLES on the host's graphics chip. The
- * Cradle's runtime calls it from its ring (amigachrome's acrtg.c, as its
+ * Cradle's runtime calls it from its ring (amicradle's acrtg.c, as its
  * `virgl` hook), in ring order.
  *
  * virglrenderer (MIT) is opened with dlopen, so a runtime without it still

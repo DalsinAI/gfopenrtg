@@ -81,7 +81,7 @@ struct ogfx_planar_blit {
 };
 
 /* A rectangle copied N times the size, nearest neighbour (old apps scaled
- * whole, amigachrome-guest docs/design/old-apps-scale.md): source pixel
+ * whole, amicradle-guest docs/design/old-apps-scale.md): source pixel
  * (sx + i, sy + j) fills the N x N block at (dx + i*N, dy + j*N). Only the
  * part of the copy inside the destination clip (inclusive) is written, so a
  * caller can cut it by a layer's ClipRects. Chunky (bytes_per_pixel 1 to 4)

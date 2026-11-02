@@ -1,7 +1,7 @@
 # GFOpenGPU SDL Keyboard Text Input Fix
 
 **Description:** `opengpu-sdl-keyboard-fix`  
-**Repository:** `DalsinAI/openamigartg`  
+**Repository:** `DalsinAI/gfopenrtg`  
 **Status:** Ready for implementation  
 **Scope:** GFOpenGPU SDL2 AmigaOS 3.x keyboard backend  
 **Primary proving application:** AstroMenace profile naming

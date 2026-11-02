@@ -31,7 +31,7 @@
  * are refused by the GPU path's checks below and drawn by the core;
  * TRIANGLES with them likewise (ogpu3d_rec.c's o3r_can).
  *
- * Routing (docs/design/Design-OpenGPU-2D-On-The-GPU.md 5.2, in amigachrome):
+ * Routing (docs/design/Design-OpenGPU-2D-On-The-GPU.md 5.2, in amicradle):
  * a command the GPU path takes is drawn there only where that is faster,
  * its wait included (config's route, route_gpu below).
  *
@@ -1256,7 +1256,7 @@ static int gpu_yuv(struct ogpu_vk *vk, const ogpu_u8 *a) {
  * COPY, which are bound by memory) on the core and on the GPU, and the
  * microseconds a dispatch adds once others are recorded in the same
  * command buffer. Measured on daletop's AMD RX 460 (RADV, video RAM mapped)
- * and its host by amigachrome's tests/gpu/test_opengpu_2d_bench.sh, 17
+ * and its host by amicradle's tests/gpu/test_opengpu_2d_bench.sh, 17
  * October 2026; a Pi 5 (V3DV) gets its own figures with GPU-5. */
 enum { K_FILL, K_COPY, K_BITS, K_PIXELS, K_COMP, K_COMPV, K_BLEND, K_BILINEAR, K_YUV, K_LINE, K_PATTERN, K_COUNT };
 typedef char k_count_is_ogpu_vk_cost_kinds[K_COUNT == OGPU_VK_COST_KINDS ? 1 : -1];

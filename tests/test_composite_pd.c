@@ -5,7 +5,7 @@
  * from stream.h's description: every operator, solid and slot sources and
  * masks, repeat, sources and masks partly outside, the clip, and each
  * format (ARGB32, XRGB32, RGB565, A8) as source, mask and target.
- * pixman.library's own test (openamigapixman tests/pixmantest.c) also
+ * pixman.library's own test (gfopenpixman tests/pixmantest.c) also
  * checks the same command against upstream Pixman. */
 #include <stdio.h>
 #include <stdlib.h>

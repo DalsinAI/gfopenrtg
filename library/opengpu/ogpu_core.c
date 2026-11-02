@@ -1832,7 +1832,7 @@ OP_FN op_composite_pd(struct ogpu_core *c, const ogpu_u8 *a) {
 
 /* ---- v1.6: anti-aliased paths ------------------------------------------------------ */
 
-/* GFOpenFont's rasteriser (openamigafont src/of_raster.c, of_raster_a8),
+/* GFOpenFont's rasteriser (gfopenfont src/of_raster.c, of_raster_a8),
  * moved here: exact area coverage in integers. Each line adds, to every
  * cell it crosses, how far it climbs there (cover) and that climb times
  * twice its mean place across the cell (area); one sweep along each row

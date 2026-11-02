@@ -3,7 +3,7 @@
  *
  * Draw and PolyDraw on GFOpenRTG's 8-bit bitmaps (library/ortg_line.h, 0.25)
  * against graphics.library's, on the host. The reference is GFOpenGfx's core
- * (openamigagfx library/core/gfx_rp.c, line(), Draw, PolyDraw and Move at
+ * (gfopengfx library/core/gfx_rp.c, line(), Draw, PolyDraw and Move at
  * 6c8b6d9), which OpenGfxCheck compares byte for byte with OS 3.2's
  * graphics.library on planar bitmaps; it is copied here onto a byte per
  * pixel. The other side is library/screens.c's lines(), line_gpu() and

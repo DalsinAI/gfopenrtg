@@ -8,7 +8,7 @@ GFOpenRTG (gfopenrtg.library, several monitors, Standard and All screen modes) a
 
 ## Where it stands
 
-The Vulkan back end draws in the runtime's own video RAM (#15, 25274ad) and carries OGPU_OP_VIRGL for Mesa. On the home PC's RX 460, tools/gpu_check.sh passes all four video RAM modes in about a second each. gfopengpu.library 0.2 (stream v1.1) ships in GFOpenUp. The runtime side (ACRTG v3 ring) is amigachrome #213, still open.
+The Vulkan back end draws in the runtime's own video RAM (#15, 25274ad) and carries OGPU_OP_VIRGL for Mesa. On the home PC's RX 460, tools/gpu_check.sh passes all four video RAM modes in about a second each. gfopengpu.library 0.2 (stream v1.1) ships in GFOpenUp. The runtime side (ACRTG v3 ring) is amicradle #213, still open.
 
 ## Merged lately
 
@@ -25,9 +25,9 @@ The Vulkan back end draws in the runtime's own video RAM (#15, 25274ad) and carr
 
 ## Next step
 
-1. Merge amigachrome #213, then write ACRTG.gpu in amigachrome-guest.
+1. Merge amicradle #213, then write ACRTG.gpu in amicradle-guest.
 2. Run gpu_check on the Pi 5.
-3. Then gl.library and SDL_GL in openamigasdl.
+3. Then gl.library and SDL_GL in gfopensdl.
 
 ## Waiting on @SacredTrees
 
@@ -39,9 +39,9 @@ Open apps queue (GFOpenGPU); Main Discourse (GFOpenRTG builds).
 
 ## Capsules
 
-Restart capsules for this repo's workstreams, in amigachrome's `capjumps/` shelf:
+Restart capsules for this repo's workstreams, in amicradle's `capjumps/` shelf:
 
-- [`20261006_AmigaChrome_OpenGPU_Mesa_GPU_Restart_Capsule.zip`](https://github.com/DalsinAI/amigachrome/tree/main/capjumps)
-- [`20261006_AmigaChrome_OpenApps_Queue_Restart_Capsule.zip`](https://github.com/DalsinAI/amigachrome/tree/main/capjumps)
+- [`20261006_AmigaChrome_OpenGPU_Mesa_GPU_Restart_Capsule.zip`](https://github.com/DalsinAI/amicradle/tree/main/capjumps)
+- [`20261006_AmigaChrome_OpenApps_Queue_Restart_Capsule.zip`](https://github.com/DalsinAI/amicradle/tree/main/capjumps)
 
 Team rules that still hold: commits as SacredTrees with no co-author lines; third-party code only on "yes with review" (licence checked, commit and sha256 pinned, fetched at build, never committed); deploys with deploy_dev.py only, on a typed line.

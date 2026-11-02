@@ -6,7 +6,7 @@
  * subsystem starts:
  *
  * 1. GFOpenInput (gfopeninput.library 1.2 or later, Design-OpenInput.md in
- *    openamigainput): every controller the library lists, with SDL's GUID,
+ *    gfopeninput): every controller the library lists, with SDL's GUID,
  *    name, vendor and product from the library, hot-plug from its
  *    notification (SDL_JOYDEVICEADDED/REMOVED and, for game controllers,
  *    SDL_CONTROLLERDEVICEADDED/REMOVED), and rumble through OIN_Rumble.
@@ -55,7 +55,7 @@
 #include <proto/exec.h>
 #include <proto/lowlevel.h>
 
-/* GFOpenInput's frozen header (openamigainput, include/openinput here). The
+/* GFOpenInput's frozen header (gfopeninput, include/openinput here). The
  * base has a name of SDL's own, so a program that opens gfopeninput.library
  * itself and links SDL statically has no clash over OpenInputBase. */
 #include <libraries/openinput.h>

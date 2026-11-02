@@ -3,7 +3,7 @@
  *
  * SDL2_mixer's decoders on the x86 or ARM64 cores: Ogg Vorbis, MP3, FLAC
  * and tracker modules (MOD, XM, S3M, IT...) decoded by media.decode/1
- * (DalsinAI/openamigaservice docs/MEDIA_DECODE.md: FFmpeg, and libopenmpt
+ * (DalsinAI/gfopenservice docs/MEDIA_DECODE.md: FFmpeg, and libopenmpt
  * for modules) on the services card or a paired Cradle, and mixed into
  * SDL's audio device here like any other music. patches/sdl2_mixer puts
  * these four interfaces before SDL2_mixer's own, so a music, and a chunk

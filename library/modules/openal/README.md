@@ -14,7 +14,7 @@ other AHI program. The Team's OpenAL design of 24 October 2026: the core,
 the headers, the module and Mix (P1); Voices, where the ACAHI board mixes
 each source on a voice of its own (P2); the lab's programs (P4). P3, the
 broker that shares the board among programs, is acaudio.audio 6.1 in the
-amigachrome repository.
+amicradle repository.
 
 ## What it has
 

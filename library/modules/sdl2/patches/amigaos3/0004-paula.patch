@@ -1,6 +1,6 @@
 diff -ruN a/src/audio/amigaos3/SDL_os3paula.c b/src/audio/amigaos3/SDL_os3paula.c
---- a/src/audio/amigaos3/SDL_os3paula.c	2026-10-08 05:33:48.367847777 +0100
-+++ b/src/audio/amigaos3/SDL_os3paula.c	2026-10-08 05:33:48.370280827 +0100
+--- a/src/audio/amigaos3/SDL_os3paula.c	2026-11-02 12:20:00.000000000 +0000
++++ b/src/audio/amigaos3/SDL_os3paula.c	2026-11-02 12:20:00.000000000 +0000
 @@ -38,6 +38,7 @@
  #include <proto/graphics.h>
  #include <graphics/gfxbase.h>
@@ -9,7 +9,18 @@ diff -ruN a/src/audio/amigaos3/SDL_os3paula.c b/src/audio/amigaos3/SDL_os3paula.
  #include <exec/memory.h>
  #ifdef WARPUP
  #pragma pop
-@@ -115,9 +116,8 @@
+@@ -45,6 +46,10 @@
+ 
+ #define OS3PAULA_DRIVER_NAME "paula"
+ 
++#if SDL_AUDIO_DRIVER_AHI
++extern int SDL_OS3_AHIInstalled(void); /* SDL_os3audio.c */
++#endif
++
+ /* Channel allocation: any single channel for mono playback */
+ static UBYTE paula_channels[] = { 1, 2, 4, 8 };
+ 
+@@ -115,9 +120,8 @@
  {
      struct Process *me;
      APTR oldwin;
@@ -20,7 +31,7 @@ diff -ruN a/src/audio/amigaos3/SDL_os3paula.c b/src/audio/amigaos3/SDL_os3paula.
  
      data->port = CreateMsgPort();
      if (!data->port) {
-@@ -182,11 +182,10 @@
+@@ -182,11 +186,10 @@
  static int OS3PAULA_OpenDevice(_THIS, const char *devname)
  {
      struct OS3PaulaData *data = NULL;
@@ -33,3 +44,18 @@ diff -ruN a/src/audio/amigaos3/SDL_os3paula.c b/src/audio/amigaos3/SDL_os3paula.
  
      data = (struct OS3PaulaData *)SDL_malloc(sizeof(struct OS3PaulaData));
      if (!data) return SDL_OutOfMemory();
+@@ -375,6 +378,14 @@
+     /* Lighthouse: confirm debug logging works */
+     DLOG("=== Paula Init starting ===");
+ 
++#if SDL_AUDIO_DRIVER_AHI
++    /* With AHI installed, all sound goes through AHI's mixer and its card's
++       clock: never Paula, SDL_AUDIODRIVER=paula included (Dale, 2 Nov 2026). */
++    if (SDL_OS3_AHIInstalled()) {
++        SDL_SetError("Paula: AHI is installed, so SDL plays through AHI only");
++        return SDL_FALSE;
++    }
++#endif
+     if (!OS3PAULA_Available())
+         return SDL_FALSE;
+ 

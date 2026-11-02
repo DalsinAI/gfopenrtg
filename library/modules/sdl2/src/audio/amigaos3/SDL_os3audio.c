@@ -1,8 +1,12 @@
 /*
   SDL 2 audio for AmigaOS 3.x through AHI (ahi.device, unit AHI_DEFAULT_UNIT).
   Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
-  Replaces libSDL2-amigaos3's AHI driver; its Paula driver stays as the
-  fallback when ahi.device can't be opened.
+  Replaces libSDL2-amigaos3's AHI driver. Its Paula driver is only for an
+  Amiga without AHI: when AHI is installed (ahi.device in memory, or
+  DEVS:ahi.device on disk) SDL never plays through Paula, even when AHI
+  won't open or SDL_AUDIODRIVER says "paula". All sound then goes through
+  AHI's mixer and its card's clock (Dale, 2 Nov 2026). An open that fails is
+  logged, and the program plays silence rather than going round AHI.
 
   - 8 or 16-bit, mono or stereo, at the rate the program asks (AHI
     resamples to its mode). Other formats are converted by SDL.
@@ -31,9 +35,42 @@
 #include <proto/dos.h>
 #include <exec/memory.h>
 #include <dos/dosextens.h>
+#include <exec/execbase.h>
 #include <clib/alib_protos.h>
 
 #define OS3AHI_DRIVER_NAME "ahi"
+
+/* AHI is installed: ahi.device is in exec's device list (the ROM's, or one
+   opened already), or DEVS:ahi.device is on disk. Not whether it opens now:
+   a unit with no mode, or one held by another program, still means AHI.
+   No requester for a missing DEVS: assign. Also used by the Paula driver. */
+int SDL_OS3_AHIInstalled(void)
+{
+    struct Process *me = (struct Process *)FindTask(NULL);
+    int proc = me && me->pr_Task.tc_Node.ln_Type == NT_PROCESS;
+    APTR oldwin = proc ? me->pr_WindowPtr : NULL;
+    BPTR lock;
+    int found;
+
+    Forbid();
+    found = FindName(&SysBase->DeviceList, (CONST_STRPTR)AHINAME) != NULL;
+    Permit();
+    if (found) {
+        return 1;
+    }
+    if (proc) {
+        me->pr_WindowPtr = (APTR)-1L;
+    }
+    lock = Lock((CONST_STRPTR)"DEVS:ahi.device", ACCESS_READ);
+    if (proc) {
+        me->pr_WindowPtr = oldwin;
+    }
+    if (lock) {
+        UnLock(lock);
+        return 1;
+    }
+    return 0;
+}
 
 static void OS3AHI_DetectDevices(void)
 {
@@ -118,6 +155,9 @@ static void OS3AHI_ThreadInit(_THIS)
     hidden->req[0]->ahir_Version = 4;
     me->pr_WindowPtr = (APTR)-1L;
     if (OpenDevice((CONST_STRPTR)AHINAME, AHI_DEFAULT_UNIT, (struct IORequest *)hidden->req[0], 0) != 0) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "AHI: ahi.device unit %d did not open (error %d): no sound; "
+                    "SDL does not play through Paula while AHI is installed", AHI_DEFAULT_UNIT,
+                    (int)hidden->req[0]->ahir_Std.io_Error);
         me->pr_WindowPtr = oldwin;
         DeleteIORequest((struct IORequest *)hidden->req[0]);
         hidden->req[0] = NULL;
@@ -234,7 +274,7 @@ static void OS3AHI_CloseDevice(_THIS)
     _this->hidden = NULL;
 }
 
-/* Whether ahi.device opens at all; if not, SDL tries Paula next. */
+/* Whether ahi.device opens at all. */
 static int OS3AHI_Available(void)
 {
     struct MsgPort *p;
@@ -265,7 +305,13 @@ static int OS3AHI_Available(void)
 static SDL_bool OS3AHI_Init(SDL_AudioDriverImpl *impl)
 {
     if (!OS3AHI_Available()) {
-        return SDL_FALSE;
+        if (!SDL_OS3_AHIInstalled()) {
+            return SDL_FALSE;               /* no AHI: SDL tries Paula next */
+        }
+        /* Installed but it won't open: still this driver, so SDL doesn't
+           fall to Paula; the open logs why and plays silence. */
+        SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "AHI: ahi.device is installed but won't open; "
+                    "SDL keeps to AHI and plays no sound rather than going round it to Paula");
     }
     impl->DetectDevices = OS3AHI_DetectDevices;
     impl->OpenDevice = OS3AHI_OpenDevice;

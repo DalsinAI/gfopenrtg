@@ -107,7 +107,7 @@ and point an assign at it:
 
   Assign GFOpenGPU-SDK: Work:GFOpenGPU-SDK-0.6
 
-A GCC on the Amiga takes -IOpenGPU-SDK:include/SDL2 and -LOpenGPU-SDK:lib.
+A GCC on the Amiga takes -IGFOpenGPU-SDK:include/SDL2 and -LGFOpenGPU-SDK:lib.
 
 
 Building the examples

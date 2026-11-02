@@ -22,6 +22,7 @@
 #include <stdlib.h>
 
 #define OPENGPU_BASE_NAME sat_OpenGPUBase
+#define GFOPENGPU_BASE_NAME sat_OpenGPUBase   /* the SDK's inline/gfopengpu.h (sfdc) reads this name */
 #include <exec/libraries.h>
 #include <inline/gfopengpu.h>
 

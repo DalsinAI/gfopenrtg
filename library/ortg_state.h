@@ -49,6 +49,7 @@ register struct ortg_state *ortg_S __asm__("a4");
 #define INTUITION_BASE_NAME (ortg_S->intuition)
 #define UTILITY_BASE_NAME   (ortg_S->utility)
 #define OPENGPU_BASE_NAME   (ortg_S->opengpu)
+#define GFOPENGPU_BASE_NAME   (ortg_S->opengpu)   /* the SDK's inline/gfopengpu.h (sfdc) reads this name */
 
 /* The sizes of each file's part, for lib_init. */
 ULONG ortg_displaydb_size(void);

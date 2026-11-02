@@ -40,6 +40,7 @@
 /* gfopengpu.library's calls through the stub's own base, so a program's
    OpenGPUBase is left alone. */
 #define OPENGPU_BASE_NAME OpenALStub_OpenGPUBase
+#define GFOPENGPU_BASE_NAME OpenALStub_OpenGPUBase   /* the SDK's inline/gfopengpu.h (sfdc) reads this name */
 #include <inline/gfopengpu.h>
 static struct Library *OpenALStub_OpenGPUBase = NULL;
 static APTR OpenALStub_handle = NULL;

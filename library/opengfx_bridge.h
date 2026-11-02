@@ -152,4 +152,21 @@ struct ortg_ogfx_provider_all {
 #define ORTG_OGPU_OGFX_RegisterProvider(base,provider)     LP1(0x5a, LONG, OGFX_RegisterProvider, struct ortg_ogfx_provider_v1 *, provider, a0, , base)
 #define ORTG_OGPU_OGFX_UnregisterProvider(base,owner)     LP1(0x60, LONG, OGFX_UnregisterProvider, APTR, owner, a0, , base)
 
+/* One graphics stack: graphics.library 47.101 and later (GFOpenGfx's, DalsinAI/gfopengfx
+ * include/graphics/gfxdispatch.h) dispatches the drawing itself and keeps the provider:
+ * GFX_DispatchVersion -1062, GFX_RegisterProvider -1068 (a0), GFX_UnregisterProvider
+ * -1074 (a0), each as gfopengpu.library's OGFX_ call of the same job. Ask
+ * ORTG_GFX_DISPATCH_AVAILABLE first (a jump table that reaches -1092, and 47.101 or later). */
+#define ORTG_GFXDISPATCH_LIB_VERSION 47
+#define ORTG_GFXDISPATCH_LIB_REVISION 101
+#define ORTG_GFXDISPATCH_NEGSIZE 1092
+#define ORTG_GFX_DISPATCH_AVAILABLE(gfx) \
+    ((gfx) && ((struct Library *)(gfx))->lib_NegSize >= ORTG_GFXDISPATCH_NEGSIZE && \
+     (((struct Library *)(gfx))->lib_Version > ORTG_GFXDISPATCH_LIB_VERSION || \
+      (((struct Library *)(gfx))->lib_Version == ORTG_GFXDISPATCH_LIB_VERSION && \
+       ((struct Library *)(gfx))->lib_Revision >= ORTG_GFXDISPATCH_LIB_REVISION)))
+#define ORTG_GFX_DispatchVersion(base)     LP0(0x426, ULONG, GFX_DispatchVersion, , base)
+#define ORTG_GFX_RegisterProvider(base,provider)     LP1(0x42c, LONG, GFX_RegisterProvider, struct ortg_ogfx_provider_v1 *, provider, a0, , base)
+#define ORTG_GFX_UnregisterProvider(base,owner)     LP1(0x432, LONG, GFX_UnregisterProvider, APTR, owner, a0, , base)
+
 #endif

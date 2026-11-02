@@ -228,6 +228,7 @@ struct scr_g {
     struct Library *OpenGfxBase;
     int ogfx_handoff;
     int ogfx_all;               /* GFOpenGfx 1.4: it patches every drawing call, and GFOpenRTG provides all of them */
+    int gfx_dispatch;           /* graphics.library 47.101's dispatch keeps GFOpenRTG's provider: nothing patched for drawing */
     UBYTE *board[ORTG_MAX_MONITORS + 1];                /* each monitor's board, or NULL */
     struct ortg_mode_table **tables;
     /* Each board's size sets where its video RAM ends and its register page lies (the page at its end). */
@@ -304,6 +305,7 @@ ULONG ortg_screens_size(void) { return sizeof(struct scr_g); }
 #define OpenGfxBase (SC->OpenGfxBase)
 #define ogfx_handoff (SC->ogfx_handoff)
 #define ogfx_all (SC->ogfx_all)
+#define gfx_dispatch (SC->gfx_dispatch)
 #define board (SC->board)
 #define tables (SC->tables)
 #define board_size (SC->board_size)
@@ -3405,10 +3407,9 @@ static LONG ogfx_rpl8_provider(APTR u, struct ortg_ogfx_array *r)
 
 #define ogfx_provider (ogfx_all_provider.v1)
 
-static int try_opengfx_handoff(void)
+/* The v1 record's eight calls (GFOpenGfx 1.1 and later). */
+static void ogfx_fill_v1(void)
 {
-    int registered = 0;
-
     ogfx_provider.size = sizeof ogfx_provider;
     ogfx_provider.abi = ORTG_OGFX_PROVIDER_ABI_V1;
     ogfx_provider.owner = (APTR)&ogfx_provider;
@@ -3421,6 +3422,50 @@ static int try_opengfx_handoff(void)
     ogfx_provider.textextent = NULL;
     ogfx_provider.textfit = NULL;
     ogfx_provider.blttemplate = ortg_entry_c2(ogfx_blttemplate_provider);
+}
+
+/* The 1.4 record: the v1 one and the fourteen other drawing calls. */
+static void ogfx_fill_all(void)
+{
+    struct ortg_ogfx_provider_all *a = &ogfx_all_provider;
+    ogfx_fill_v1();
+    a->bltpattern = ortg_entry_c2(ogfx_bltpattern_provider);
+    a->setrast = ortg_entry_c2(ogfx_setrast_provider);
+    a->draw = ortg_entry_c2(ogfx_draw_provider);
+    a->polydraw = ortg_entry_c2(ogfx_polydraw_provider);
+    a->writepixel = ortg_entry_c2(ogfx_writepixel_provider);
+    a->readpixel = ortg_entry_c2(ogfx_readpixel_provider);
+    a->bltbitmaprastport = ortg_entry_c2(ogfx_bltbmrp_provider);
+    a->bltmaskbitmaprastport = ortg_entry_c2(ogfx_bltmaskbmrp_provider);
+    a->clipblit = ortg_entry_c2(ogfx_clipblit_provider);
+    a->writechunkypixels = ortg_entry_c2(ogfx_wcp_provider);
+    a->writepixelarray8 = ortg_entry_c2(ogfx_wpa8_provider);
+    a->writepixelline8 = ortg_entry_c2(ogfx_wpl8_provider);
+    a->readpixelline8 = ortg_entry_c2(ogfx_rpl8_provider);
+    a->readpixelarray8 = ortg_entry_c2(ogfx_rpa8_provider);
+    ogfx_provider.size = sizeof *a;
+}
+
+/* One graphics stack, stage 2: graphics.library 47.101 and later (GFOpenGfx's, in the GF
+ * ROM) asks a provider on all 22 drawing calls itself, with no SetFunction. GFOpenRTG
+ * registers its whole record there and patches none of them, and hands nothing to
+ * gfopengpu.library's GFOpenGfx (not at the switch-on, not in late_opengpu): one
+ * provider, asked once a call. 1 when graphics.library took it. Any other
+ * graphics.library (OS 3.2.3's, ours before 47.101), or a dispatch older than 1.4:
+ * 0, and the hand-off and patches below go on as before. */
+static int try_gfx_dispatch(struct Library *gfx)
+{
+    if (!ORTG_GFX_DISPATCH_AVAILABLE(gfx) || ORTG_GFX_DispatchVersion(gfx) < ORTG_OGFX_ALL_INTERFACE)
+        return 0;
+    ogfx_fill_all();
+    return ORTG_GFX_RegisterProvider(gfx, &ogfx_provider) != 0;
+}
+
+static int try_opengfx_handoff(void)
+{
+    int registered = 0;
+
+    ogfx_fill_v1();
 
     /* gfopengpu.library 0.6 and later carries GFOpenGfx itself: the one library
      * that does all the drawing. GFOpenRTG registers there, and doesn't look
@@ -3429,22 +3474,7 @@ static int try_opengfx_handoff(void)
      * the whole record and patches none of them itself. */
     if (ortg_S->opengpu && (ortg_S->opengpu->lib_Version > 0 || ortg_S->opengpu->lib_Revision >= ORTG_OPENGPU_OGFX_REVISION)) {
         if (ORTG_OGPU_OGFX_Version(ortg_S->opengpu) >= ORTG_OGFX_ALL_INTERFACE) {
-            struct ortg_ogfx_provider_all *a = &ogfx_all_provider;
-            a->bltpattern = ortg_entry_c2(ogfx_bltpattern_provider);
-            a->setrast = ortg_entry_c2(ogfx_setrast_provider);
-            a->draw = ortg_entry_c2(ogfx_draw_provider);
-            a->polydraw = ortg_entry_c2(ogfx_polydraw_provider);
-            a->writepixel = ortg_entry_c2(ogfx_writepixel_provider);
-            a->readpixel = ortg_entry_c2(ogfx_readpixel_provider);
-            a->bltbitmaprastport = ortg_entry_c2(ogfx_bltbmrp_provider);
-            a->bltmaskbitmaprastport = ortg_entry_c2(ogfx_bltmaskbmrp_provider);
-            a->clipblit = ortg_entry_c2(ogfx_clipblit_provider);
-            a->writechunkypixels = ortg_entry_c2(ogfx_wcp_provider);
-            a->writepixelarray8 = ortg_entry_c2(ogfx_wpa8_provider);
-            a->writepixelline8 = ortg_entry_c2(ogfx_wpl8_provider);
-            a->readpixelline8 = ortg_entry_c2(ogfx_rpl8_provider);
-            a->readpixelarray8 = ortg_entry_c2(ogfx_rpa8_provider);
-            ogfx_provider.size = sizeof *a;
+            ogfx_fill_all();
             ogfx_all = 1;
         }
         if (!ORTG_OGPU_OGFX_RegisterProvider(ortg_S->opengpu, &ogfx_provider)) { ogfx_all = 0; return 0; }
@@ -3503,7 +3533,8 @@ static void late_opengpu(int asked)
     gpu_tried = 1;
     if (!(ortg_S->opengpu = OpenLibrary((CONST_STRPTR)OPENGPU_NAME, OPENGPU_VERSION))) return;
     (void)OGPU_Query(OGPU_OP_FILL, OGPU_FMT_CLUT8);
-    if (!ogfx_handoff) ogfx_handoff = try_opengfx_handoff();
+    /* graphics.library's dispatch has GFOpenRTG's provider: no hand-off, no second patch */
+    if (!gfx_dispatch && !ogfx_handoff) ogfx_handoff = try_opengfx_handoff();
 }
 
 /* For openrtg_lib.c's calls programs make from their own process (ORTG_MonitorCount, ORTG_NextMode's
@@ -3554,8 +3585,16 @@ int ortg_screens_on(struct Library *gfx, struct ortg_mode_table **t, APTR *board
      * GFOpenGfx is absent, retain the old standalone GFOpenRTG patch path.
      * GFOpenGfx 1.4 (gfopengpu.library 0.8) owns the fourteen other drawing
      * calls too (ogfx_all); GFOpenRTG keeps the bitmap, display, palette,
-     * sprite and screen calls, which aren't drawing. */
-    ogfx_handoff = try_opengfx_handoff();
+     * sprite and screen calls, which aren't drawing.
+     * graphics.library 47.101 and later dispatches the drawing itself
+     * (try_gfx_dispatch): GFOpenRTG registers there, patches none of the 19
+     * drawing calls below and hands nothing to GFOpenGfx. */
+    if ((gfx_dispatch = try_gfx_dispatch(gfx)) != 0) {
+        ogfx_handoff = 1;       /* graphics.library has the v1 calls... */
+        ogfx_all = 1;           /* ...and the fourteen others */
+    } else {
+        ogfx_handoff = try_opengfx_handoff();
+    }
 
     Forbid();
     if (!ogfx_handoff) old_rectfill = (rectfill_fn)SetFunction(gfx, -306, ortg_entry(rectfill_patch));
@@ -3572,6 +3611,10 @@ int ortg_screens_on(struct Library *gfx, struct ortg_mode_table **t, APTR *board
     if (!ogfx_all) old_bltmaskbmrp = (bltmaskbmrp_fn)SetFunction(gfx, -636, ortg_entry(bltmaskbmrp_patch));
     if (!ogfx_all) old_clipblit = (clipblit_fn)SetFunction(gfx, -552, ortg_entry(clipblit_patch));
     if (!ogfx_handoff) old_scroll = (scroll_fn)SetFunction(gfx, -396, ortg_entry(scroll_patch));
+    /* Not drawing: bitmaps, the display, colours, sprites and WaitTOF here, and
+     * intuition's screen calls below, stay SetFunction patches for now, with
+     * graphics.library's dispatch too. Turning them into graphics.library and
+     * intuition.library hooks is a later stage of the one graphics stack. */
     old_allocbm = (allocbm_fn)SetFunction(gfx, -918, ortg_entry(allocbm_patch));
     old_freebm = (freebm_fn)SetFunction(gfx, -924, ortg_entry(freebm_patch));
     old_bmattr = (bmattr_fn)SetFunction(gfx, -960, ortg_entry(bmattr_patch));

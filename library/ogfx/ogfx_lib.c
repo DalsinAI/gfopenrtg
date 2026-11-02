@@ -25,6 +25,18 @@
  * OGFX_InstallPatches has pointed its eight vectors here, or through
  * gfopengpu.library's own LVOs (include/gfopengpu/gfx.h).
  *
+ * One graphics stack: from graphics.library 47.101 (GFOpenGfx's own, in the
+ * GF ROM) graphics.library dispatches the drawing itself, look then provider
+ * then its own code, with no SetFunction (graphics/gfxdispatch.h). On such
+ * a graphics.library (has_dispatch) nothing here patches: the registry calls
+ * forward to graphics.library's, OGFX_InstallPatches and OGFX_SetEnabled do
+ * nothing, the drawing LVOs call graphics.library's vectors, and the planar
+ * fast paths are offered as graphics.library's provider when no provider is
+ * there (a later one, GFOpenRTG's, takes their place). On any other
+ * graphics.library everything works as before. The ROM build
+ * (OGPU_ROM_NO_OGFX, library/build.sh with OGPU_ROM=1) leaves out the
+ * patches and the drawing core: it is only for the GF ROM.
+ *
  * No writable globals: the state is in gfopengpu.library's base (ogfx.h).
  */
 #include <exec/types.h>
@@ -42,7 +54,11 @@
 
 #include "ogfx.h"
 #include "ogfx_leaves.h"
+#ifndef OGPU_ROM_NO_OGFX
 #include "gfx_rp.h"     /* GFOpenGfx's core, from gfopengfx (tools/fetch_ogfx_core.sh) */
+#endif
+#include <graphics/gfxdispatch.h>   /* graphics.library 47.101's dispatch (a copy of gfopengfx's SDK header) */
+#include "ogfx_gfxdispatch.h"       /* its six calls (a copy of gfopengfx's inline/gfxdispatch.h) */
 
 #define REG OGFX_REG
 
@@ -456,6 +472,105 @@ static LONG try_planar_rect(struct ogfx_state *st, struct GfxBase *GfxBase,
     return 1;
 }
 
+/* ---- the planar fast paths as graphics.library's provider ---------------------
+ * With graphics.library's dispatch (47.101) nothing is patched: the leaves
+ * above are offered to graphics.library as a provider of RectFill, BltBitMap
+ * and ScrollRaster, and only when no provider is in (offer_fast_paths). A
+ * provider registered later, GFOpenRTG's, takes the place of this one
+ * (graphics.library keeps one), so RTG's goes first. The arguments come as
+ * graphics.library read them from the registers. */
+static LONG fast_rectfill(APTR u, struct OGFXRectFillRequest *r)
+{
+    struct ogfx_state *st = (struct ogfx_state *)u;
+    return st->enabled && st->gfx && try_planar_rect(st, st->gfx, r->rp, r->x0, r->y0, r->x1, r->y1);
+}
+
+static LONG fast_bltbitmap(APTR u, struct OGFXBltBitMapRequest *r)
+{
+    struct ogfx_state *st = (struct ogfx_state *)u;
+    LONG result;
+    if (!st->enabled || !st->gfx ||
+        !try_planar_bltbitmap(st, st->gfx, r->src, r->sx, r->sy, r->dst, r->dx, r->dy,
+                              r->width, r->height, r->minterm, r->mask, &result))
+        return 0;
+    r->result = result;
+    return 1;
+}
+
+static LONG fast_scroll(APTR u, struct OGFXScrollRasterRequest *r)
+{
+    struct ogfx_state *st = (struct ogfx_state *)u;
+    return st->enabled && st->gfx && try_planar_scroll(st, st->gfx, r->rp, r->dx, r->dy, r->x0, r->y0, r->x1, r->y1);
+}
+
+/* The planar fast paths in graphics.library's dispatch, when no provider is
+ * in there. Called with graphics.library open (st->gfx) and the dispatch
+ * known to be there. The record is copied, so it may live here. */
+static void offer_fast_paths(struct ogfx_state *st)
+{
+    struct OGFXProviderV1 p;
+    UBYTE *b = (UBYTE *)&p;
+    ULONG i;
+    if (__gfxdispatch_GFX_DispatchStatus(st->gfx) & OGFX_STATUS_PROVIDER)
+        return;
+    for (i = 0; i < sizeof p; i++) b[i] = 0;
+    p.size = sizeof p;
+    p.abi = OGFX_PROVIDER_ABI_V1;
+    p.owner = (APTR)st;
+    p.userdata = (APTR)st;
+    p.rectfill = fast_rectfill;
+    p.bltbitmap = fast_bltbitmap;
+    p.scrollraster = fast_scroll;
+    if (__gfxdispatch_GFX_RegisterProvider(st->gfx, &p))
+        st->fast_in = 1;
+}
+
+/* AmiCradle: boards with the AmiCradle Team's own id (0xDA15) are there and nowhere
+ * else. The old id, 2011, is shared with UAE and home-made boards, so it
+ * is not taken as proof: a runtime from before 1 Oct 2026 just keeps
+ * Chip RAM on the blitter. */
+static void find_board(struct ogfx_state *st)
+{
+    struct ExecBase *SysBase = st->sys;
+    struct Library *ExpansionBase = OpenLibrary((CONST_STRPTR)expansion_name, 37);
+    if (ExpansionBase) {
+        st->amicradle = FindConfigDev(NULL, OGFX_AMICRADLE_MANUFACTURER, -1) != NULL;
+        CloseLibrary(ExpansionBase);
+    }
+    st->board_known = 1;
+}
+
+/* Whether graphics.library dispatches the drawing itself (47.101 and later,
+ * GFX_DISPATCH_AVAILABLE): then GFOpenGfx patches nothing, its registry calls
+ * go to graphics.library's, and its drawing LVOs call graphics.library's
+ * vectors. Asked once, the first time it matters (graphics.library may not
+ * be up yet when the library starts from ROM); the first answer yes also
+ * looks for the board and offers the fast paths. Any other graphics.library
+ * (OS 3.2.3's, or ours before 47.101): GFOpenGfx works as it always has. */
+static int has_dispatch(struct ogfx_state *st)
+{
+    struct ExecBase *SysBase;
+    struct GfxBase *g;
+    if (st->dispatch)
+        return st->dispatch == OGFX_DISPATCH_YES;
+    if (!(g = gfx_of(st)))
+        return 0;                      /* no answer yet: asked again next time */
+    SysBase = st->sys;
+    Forbid();
+    if (!st->dispatch) {
+        if (GFX_DISPATCH_AVAILABLE(g)) {
+            if (!st->board_known) find_board(st);
+            offer_fast_paths(st);
+            st->dispatch = OGFX_DISPATCH_YES;
+        } else {
+            st->dispatch = OGFX_DISPATCH_NO;
+        }
+    }
+    Permit();
+    return st->dispatch == OGFX_DISPATCH_YES;
+}
+
+#ifndef OGPU_ROM_NO_OGFX
 /* Whether GFOpenGfx's own core (gfopengfx library/core, measured byte for
  * byte against OS 3.2's graphics.library) draws a call on this RastPort,
  * and if so with its layer locked (core_end unlocks it). It does when every
@@ -1208,18 +1323,33 @@ static const APTR patch_entry[OGFX_P_COUNT] = {
     (APTR)areamove_patch, (APTR)areadraw_patch, (APTR)areaellipse_patch, (APTR)areaend_patch,
     (APTR)drawellipse_patch, (APTR)eraserect_patch,
 };
+#endif /* !OGPU_ROM_NO_OGFX */
 
 /* ---- set-up ------------------------------------------------------------------- */
 
 void ogfx_init(struct ogfx_state *st, struct ExecBase *sys)
 {
+    struct ExecBase *SysBase = sys;
+    int gfx_up;
     st->sys = sys;
     st->enabled = 1;
+    /* graphics.library with the dispatch: the fast paths go in now, while no
+     * provider is there (GFOpenRTG's, when it comes, takes their place).
+     * Only if graphics.library is up already: from ROM this may start
+     * first, and then the first OGFX_ call asks (has_dispatch). */
+    Forbid();
+    gfx_up = FindName(&sys->LibList, (CONST_STRPTR)gfx_name) != NULL;
+    Permit();
+    if (gfx_up)
+        (void)has_dispatch(st);
 }
 
+/* 0 while the patches are in, or the fast paths were given to
+ * graphics.library's dispatch: graphics.library may call this code, so the
+ * library must stay. */
 int ogfx_may_expunge(struct ogfx_state *st)
 {
-    return !st->patched;
+    return !st->patched && !st->fast_in;
 }
 
 void ogfx_expunge(struct ogfx_state *st)
@@ -1231,37 +1361,44 @@ void ogfx_expunge(struct ogfx_state *st)
     }
 }
 
-/* ---- the LVOs ------------------------------------------------------------------ */
+/* ---- the LVOs ------------------------------------------------------------------
+ * With graphics.library's dispatch (has_dispatch) each forwards to
+ * graphics.library's call of the same job, and the drawing LVOs call
+ * graphics.library's vectors, which dispatch. Otherwise (and never in the
+ * ROM build, OGPU_ROM_NO_OGFX, which has no patches and no core: on a
+ * graphics.library without the dispatch its registry refuses, so GFOpenRTG
+ * patches as it did before GFOpenGfx) GFOpenGfx's own. */
 
 ULONG OGFX_Version(REG(a6, struct Library *base))
 {
-    (void)base;
+    struct ogfx_state *st = state_of(base);
+    if (has_dispatch(st))
+        return __gfxdispatch_GFX_DispatchVersion(st->gfx);
     return ((ULONG)OGFX_INTERFACE_VERSION << 16) | OGFX_INTERFACE_REVISION;
 }
 
+/* With the dispatch: nothing to install (graphics.library asks the look and
+ * the provider itself; patches over it would ask the look twice), so 1. */
 LONG OGFX_InstallPatches(REG(a6, struct Library *base))
 {
     struct ogfx_state *st = state_of(base);
+#ifndef OGPU_ROM_NO_OGFX
     struct ExecBase *SysBase = st->sys;
     struct Library *gfx;
     int p;
+#endif
 
+    if (has_dispatch(st))
+        return 1;
+#ifdef OGPU_ROM_NO_OGFX
+    return 0;
+#else
     if (st->patched)
         return 1;
     if (!(gfx = (struct Library *)gfx_of(st)))
         return 0;
 
-    /* AmiCradle: boards with the AmiCradle Team's own id (0xDA15) are there and nowhere
-     * else. The old id, 2011, is shared with UAE and home-made boards, so it
-     * is not taken as proof: a runtime from before 1 Oct 2026 just keeps
-     * Chip RAM on the blitter. */
-    {
-        struct Library *ExpansionBase = OpenLibrary((CONST_STRPTR)expansion_name, 37);
-        if (ExpansionBase) {
-            st->amicradle = FindConfigDev(NULL, OGFX_AMICRADLE_MANUFACTURER, -1) != NULL;
-            CloseLibrary(ExpansionBase);
-        }
-    }
+    find_board(st);
 
     Forbid();
     if (!st->patched) {
@@ -1275,12 +1412,18 @@ LONG OGFX_InstallPatches(REG(a6, struct Library *base))
     }
     Permit();
     return 1;
+#endif
 }
 
+/* With the dispatch graphics.library's own drawing is always on: nothing to
+ * switch, and the answer is the old state, on (1). */
 LONG OGFX_SetEnabled(REG(d0, ULONG enabled), REG(a6, struct Library *base))
 {
     struct ogfx_state *st = state_of(base);
-    LONG old = st->enabled ? 1 : 0;
+    LONG old;
+    if (has_dispatch(st))
+        return 1;
+    old = st->enabled ? 1 : 0;
     st->enabled = enabled ? 1 : 0;
     return old;
 }
@@ -1289,6 +1432,8 @@ ULONG OGFX_Status(REG(a6, struct Library *base))
 {
     struct ogfx_state *st = state_of(base);
     ULONG status = 0;
+    if (has_dispatch(st))
+        return __gfxdispatch_GFX_DispatchStatus(st->gfx) | (st->amicradle ? OGFX_STATUS_AMICRADLE : 0);
     if (st->patched) status |= OGFX_STATUS_PATCHED;
     if (st->enabled) status |= OGFX_STATUS_ENABLED;
     if (st->have_provider) status |= OGFX_STATUS_PROVIDER;
@@ -1301,8 +1446,16 @@ ULONG OGFX_Status(REG(a6, struct Library *base))
 LONG OGFX_RegisterProvider(REG(a0, struct OGFXProviderV1 *provider), REG(a6, struct Library *base))
 {
     struct ogfx_state *st = state_of(base);
+#ifndef OGPU_ROM_NO_OGFX
     struct ExecBase *SysBase = st->sys;
     ULONG size, i;
+#endif
+    if (has_dispatch(st))
+        return __gfxdispatch_GFX_RegisterProvider(st->gfx, provider);
+#ifdef OGPU_ROM_NO_OGFX
+    (void)provider;
+    return 0;
+#else
     if (!provider || provider->abi != OGFX_PROVIDER_ABI_V1 ||
         provider->size < OGFX_PROVIDER_V1_0_SIZE || !provider->owner)
         return 0;
@@ -1319,6 +1472,7 @@ LONG OGFX_RegisterProvider(REG(a0, struct OGFXProviderV1 *provider), REG(a6, str
     st->have_provider = 1;
     Permit();
     return 1;
+#endif
 }
 
 LONG OGFX_UnregisterProvider(REG(a0, APTR owner), REG(a6, struct Library *base))
@@ -1326,6 +1480,16 @@ LONG OGFX_UnregisterProvider(REG(a0, APTR owner), REG(a6, struct Library *base))
     struct ogfx_state *st = state_of(base);
     struct ExecBase *SysBase = st->sys;
     LONG removed = 0;
+    if (has_dispatch(st)) {
+        /* another's provider out: the fast paths go back in, if none is there */
+        Forbid();
+        removed = __gfxdispatch_GFX_UnregisterProvider(st->gfx, owner);
+        if (removed && owner != (APTR)st && st->fast_in)
+            offer_fast_paths(st);
+        Permit();
+        return removed;
+    }
+#ifndef OGPU_ROM_NO_OGFX
     Forbid();
     if (st->have_provider && owner && st->provider.v1.owner == owner) {
         UBYTE *p = (UBYTE *)&st->provider;
@@ -1335,6 +1499,7 @@ LONG OGFX_UnregisterProvider(REG(a0, APTR owner), REG(a6, struct Library *base))
         removed = 1;
     }
     Permit();
+#endif
     return removed;
 }
 
@@ -1344,8 +1509,13 @@ LONG OGFX_UnregisterProvider(REG(a0, APTR owner), REG(a6, struct Library *base))
 LONG OGFX_RegisterLook(REG(a0, struct OGFXLookV1 *look), REG(a6, struct Library *base))
 {
     struct ogfx_state *st = state_of(base);
+#ifndef OGPU_ROM_NO_OGFX
     struct ExecBase *SysBase = st->sys;
+#endif
     LONG ok = 0;
+    if (has_dispatch(st))
+        return __gfxdispatch_GFX_RegisterLook(st->gfx, look);
+#ifndef OGPU_ROM_NO_OGFX
     if (!look || look->abi != OGFX_LOOK_ABI_V1 || look->size < sizeof(struct OGFXLookV1) || !look->owner)
         return 0;
     Forbid();
@@ -1360,32 +1530,48 @@ LONG OGFX_RegisterLook(REG(a0, struct OGFXLookV1 *look), REG(a6, struct Library 
         ok = 1;
     }
     Permit();
+#else
+    (void)look;
+#endif
     return ok;
 }
 
 LONG OGFX_UnregisterLook(REG(a0, APTR owner), REG(a6, struct Library *base))
 {
     struct ogfx_state *st = state_of(base);
+#ifndef OGPU_ROM_NO_OGFX
     struct ExecBase *SysBase = st->sys;
+#endif
     LONG removed = 0;
+    if (has_dispatch(st))
+        return __gfxdispatch_GFX_UnregisterLook(st->gfx, owner);
+#ifndef OGPU_ROM_NO_OGFX
     Forbid();
     if (st->have_look && owner && st->look.owner == owner) {
         st->have_look = 0;
         removed = 1;
     }
     Permit();
+#else
+    (void)owner;
+#endif
     return removed;
 }
 
 /* The drawing LVOs: the same code as the patches, for programs that call
- * gfopengpu.library directly. Without graphics.library they do nothing. */
-
+ * gfopengpu.library directly; with the dispatch (and in the ROM build),
+ * graphics.library's vector of the call, which draws as graphics.library
+ * does for any program. Without graphics.library they do nothing. */
 LONG OGFX_Text(REG(a1, struct RastPort *rp), REG(a0, STRPTR text), REG(d0, ULONG length),
                REG(a6, struct Library *base))
 {
     struct ogfx_state *st = state_of(base);
     struct GfxBase *gfx = gfx_of(st);
-    return gfx ? do_text(st, gfx, rp, text, length) : 0;
+    if (!gfx) return 0;
+#ifndef OGPU_ROM_NO_OGFX
+    if (!has_dispatch(st)) return do_text(st, gfx, rp, text, length);
+#endif
+    return ((text_fn)original(st, gfx, OGFX_P_TEXT))(rp, text, length, gfx);
 }
 
 WORD OGFX_TextLength(REG(a1, struct RastPort *rp), REG(a0, STRPTR text), REG(d0, ULONG length),
@@ -1393,7 +1579,11 @@ WORD OGFX_TextLength(REG(a1, struct RastPort *rp), REG(a0, STRPTR text), REG(d0,
 {
     struct ogfx_state *st = state_of(base);
     struct GfxBase *gfx = gfx_of(st);
-    return gfx ? do_textlength(st, gfx, rp, text, length) : 0;
+    if (!gfx) return 0;
+#ifndef OGPU_ROM_NO_OGFX
+    if (!has_dispatch(st)) return do_textlength(st, gfx, rp, text, length);
+#endif
+    return ((textlength_fn)original(st, gfx, OGFX_P_TEXTLENGTH))(rp, text, length, gfx);
 }
 
 void OGFX_TextExtent(REG(a1, struct RastPort *rp), REG(a0, STRPTR text), REG(d0, ULONG length),
@@ -1401,7 +1591,11 @@ void OGFX_TextExtent(REG(a1, struct RastPort *rp), REG(a0, STRPTR text), REG(d0,
 {
     struct ogfx_state *st = state_of(base);
     struct GfxBase *gfx = gfx_of(st);
-    if (gfx) do_textextent(st, gfx, rp, text, length, extent);
+    if (!gfx) return;
+#ifndef OGPU_ROM_NO_OGFX
+    if (!has_dispatch(st)) { do_textextent(st, gfx, rp, text, length, extent); return; }
+#endif
+    ((textextent_fn)original(st, gfx, OGFX_P_TEXTEXTENT))(rp, text, length, extent, gfx);
 }
 
 ULONG OGFX_TextFit(REG(a1, struct RastPort *rp), REG(a0, STRPTR text), REG(d0, ULONG length),
@@ -1411,7 +1605,12 @@ ULONG OGFX_TextFit(REG(a1, struct RastPort *rp), REG(a0, STRPTR text), REG(d0, U
 {
     struct ogfx_state *st = state_of(base);
     struct GfxBase *gfx = gfx_of(st);
-    return gfx ? do_textfit(st, gfx, rp, text, length, extent, constraining, direction, bit_width, bit_height) : 0;
+    if (!gfx) return 0;
+#ifndef OGPU_ROM_NO_OGFX
+    if (!has_dispatch(st)) return do_textfit(st, gfx, rp, text, length, extent, constraining, direction, bit_width, bit_height);
+#endif
+    return ((textfit_fn)original(st, gfx, OGFX_P_TEXTFIT))(rp, text, length, extent, constraining,
+                                                           direction, bit_width, bit_height, gfx);
 }
 
 void OGFX_RectFill(REG(a1, struct RastPort *rp), REG(d0, LONG x0), REG(d1, LONG y0),
@@ -1419,7 +1618,11 @@ void OGFX_RectFill(REG(a1, struct RastPort *rp), REG(d0, LONG x0), REG(d1, LONG 
 {
     struct ogfx_state *st = state_of(base);
     struct GfxBase *gfx = gfx_of(st);
-    if (gfx) do_rectfill(st, gfx, rp, x0, y0, x1, y1);
+    if (!gfx) return;
+#ifndef OGPU_ROM_NO_OGFX
+    if (!has_dispatch(st)) { do_rectfill(st, gfx, rp, x0, y0, x1, y1); return; }
+#endif
+    ((rectfill_fn)original(st, gfx, OGFX_P_RECTFILL))(rp, x0, y0, x1, y1, gfx);
 }
 
 LONG OGFX_BltBitMap(REG(a0, struct BitMap *src), REG(d0, LONG sx), REG(d1, LONG sy),
@@ -1429,7 +1632,12 @@ LONG OGFX_BltBitMap(REG(a0, struct BitMap *src), REG(d0, LONG sx), REG(d1, LONG 
 {
     struct ogfx_state *st = state_of(base);
     struct GfxBase *gfx = gfx_of(st);
-    return gfx ? do_bltbitmap(st, gfx, src, sx, sy, dst, dx, dy, width, height, minterm, mask, temp) : 0;
+    if (!gfx) return 0;
+#ifndef OGPU_ROM_NO_OGFX
+    if (!has_dispatch(st)) return do_bltbitmap(st, gfx, src, sx, sy, dst, dx, dy, width, height, minterm, mask, temp);
+#endif
+    return ((bltbitmap_fn)original(st, gfx, OGFX_P_BLTBITMAP))(src, sx, sy, dst, dx, dy, width, height,
+                                                               minterm, mask, temp, gfx);
 }
 
 void OGFX_BltTemplate(REG(a0, PLANEPTR source), REG(d0, LONG sx), REG(d1, LONG modulo),
@@ -1438,7 +1646,11 @@ void OGFX_BltTemplate(REG(a0, PLANEPTR source), REG(d0, LONG sx), REG(d1, LONG m
 {
     struct ogfx_state *st = state_of(base);
     struct GfxBase *gfx = gfx_of(st);
-    if (gfx) do_blttemplate(st, gfx, source, sx, modulo, rp, dx, dy, width, height);
+    if (!gfx) return;
+#ifndef OGPU_ROM_NO_OGFX
+    if (!has_dispatch(st)) { do_blttemplate(st, gfx, source, sx, modulo, rp, dx, dy, width, height); return; }
+#endif
+    ((blttemplate_fn)original(st, gfx, OGFX_P_BLTTEMPLATE))(source, sx, modulo, rp, dx, dy, width, height, gfx);
 }
 
 void OGFX_ScrollRaster(REG(a1, struct RastPort *rp), REG(d0, LONG dx), REG(d1, LONG dy),
@@ -1447,5 +1659,9 @@ void OGFX_ScrollRaster(REG(a1, struct RastPort *rp), REG(d0, LONG dx), REG(d1, L
 {
     struct ogfx_state *st = state_of(base);
     struct GfxBase *gfx = gfx_of(st);
-    if (gfx) do_scroll(st, gfx, rp, dx, dy, x0, y0, x1, y1);
+    if (!gfx) return;
+#ifndef OGPU_ROM_NO_OGFX
+    if (!has_dispatch(st)) { do_scroll(st, gfx, rp, dx, dy, x0, y0, x1, y1); return; }
+#endif
+    ((scroll_fn)original(st, gfx, OGFX_P_SCROLLRASTER))(rp, dx, dy, x0, y0, x1, y1, gfx);
 }

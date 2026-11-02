@@ -18,7 +18,9 @@
 #include <graphics/gfxbase.h>
 #include "../../include/gfopengpu/gfx.h"
 
+#ifndef OGFX_REG        /* tests/ogfx/test_ogfx_dispatch.sh: plain C arguments on Linux m68k */
 #define OGFX_REG(r, decl) register decl __asm(#r)
+#endif
 
 /* graphics.library's calls GFOpenGfx owns, in this order everywhere: 1.1's
  * eight, the fourteen of 0.8 (gfx.h), then 0.14's six. */
@@ -51,7 +53,16 @@ struct ogfx_state {
     UBYTE pad_look;
     volatile UWORD look_busy;          /* calls inside the look now */
     struct OGFXLookV1 look;            /* kept when taken out, for calls still inside it */
+    /* One graphics stack: graphics.library 47.101 and later dispatches the
+     * drawing itself (graphics/gfxdispatch.h), and GFOpenGfx forwards its
+     * registry there instead of patching (ogfx_lib.c, has_dispatch). */
+    UBYTE dispatch;                    /* 0 not known yet, OGFX_DISPATCH_YES or OGFX_DISPATCH_NO */
+    UBYTE fast_in;                     /* the planar fast paths were registered as graphics.library's provider */
+    UBYTE board_known;                 /* amicradle has been looked for */
+    UBYTE pad_dispatch;
 };
+#define OGFX_DISPATCH_YES 1
+#define OGFX_DISPATCH_NO 2
 
 /* Where the state sits in gfopengpu.library's base (opengpu_lib.c). */
 extern const ULONG ogpu_ogfx_at;

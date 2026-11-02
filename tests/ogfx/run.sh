@@ -5,10 +5,13 @@
 #  1. the leaves and the compositing reference on the host, 32-bit (addresses
 #     are longs, as on the Amiga), at -O0 and -O2, under UBSan;
 #  2. the same under qemu-m68k with a Linux m68k GCC, when there is one
-#     (test_ogfx_leaves.sh, test_ogfx_composite.sh);
+#     (test_ogfx_leaves.sh, test_ogfx_composite.sh), and GFOpenGfx with and
+#     without graphics.library 47.101's dispatch, disk and ROM builds
+#     (test_ogfx_dispatch.sh);
 #  3. with the os32 stove: the leaves' tags and that they call nothing, as
 #     library/build.sh builds them, and that GFOpenGfx in gfopengpu.library keeps
-#     no writable data (it may run from ROM);
+#     no writable data (it may run from ROM), in the disk build and the ROM
+#     build (-DOGPU_ROM_NO_OGFX);
 #  4. a patch entry (ogfx_tramp.h), disassembled.
 # OpenGfxCheck (tools/ogfx_check.c) checks the rest on an Amiga.
 #   tests/ogfx/run.sh      (STOVE or CC68K as in tests/run.sh)
@@ -36,6 +39,7 @@ fi
 # 2. big-endian under qemu-m68k (each script skips itself without its compiler)
 sh "$HERE/test_ogfx_leaves.sh" || fail=1
 sh "$HERE/test_ogfx_composite.sh" || fail=1
+sh "$HERE/test_ogfx_dispatch.sh" || fail=1
 
 # 3. the os32 stove
 STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32}
@@ -51,6 +55,10 @@ if [ -x "$CC68K" ]; then
     done
     "$CC68K" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -fno-builtin -Wall -Wextra -Werror -Wno-unused-parameter \
         -I"$HERE/../../include" -I"$OUT/ogfx-core" -c -o "$OUT/ogfx_lib.o" "$GFX/ogfx_lib.c"
+    "$CC68K" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -fno-builtin -Wall -Wextra -Werror -Wno-unused-parameter \
+        -DOGPU_ROM_NO_OGFX -I"$HERE/../../include" -c -o "$OUT/ogfx_lib_rom.o" "$GFX/ogfx_lib.c"
+    und=$("${P}nm" -u "$OUT/ogfx_lib_rom.o" | awk '{print $2}' | grep -E '^_ogfx_rp_' | tr '\n' ' ' || true)
+    [ -z "$und" ] || { echo "FAIL os32: the ROM build calls the core: $und"; fail=1; }
     und=$("${P}nm" -u "$OUT/ogfx_leaves.o" | awk '{print $2}' | grep -v '^___mulsi3$' | tr '\n' ' ' || true)
     [ -z "$und" ] || { echo "FAIL os32: the leaves call $und"; fail=1; }
     for f in "ogfx_planar_rect 00010100" "ogfx_chunky_rect 00010101" "ogfx_chunky_copy 00010102" "ogfx_planar_blit 00010103"; do
@@ -66,14 +74,18 @@ if [ -x "$CC68K" ]; then
             *) echo "FAIL os32: $1's tag is $bytes"; fail=1 ;; esac
     done
     # No writable data: everything GFOpenGfx keeps is in gfopengpu.library's base.
-    for o in "$OUT/ogfx_leaves.o" "$OUT/ogfx_lib.o" "$OUT/ogfx_gfx_core.o" "$OUT/ogfx_gfx_rp.o"; do
+    for o in "$OUT/ogfx_leaves.o" "$OUT/ogfx_lib.o" "$OUT/ogfx_lib_rom.o" "$OUT/ogfx_gfx_core.o" "$OUT/ogfx_gfx_rp.o"; do
         rw=$("${P}objdump" -h "$o" | awk '$2 ~ /^\.(data|bss)/ && $3 != "00000000" { print $2 " " $3 }')
         [ -z "$rw" ] || { echo "FAIL os32: $(basename "$o") has writable data: $rw"; fail=1; }
     done
     echo "os32: the leaves' four tags, no calls out, no writable data in GFOpenGfx"
     # graphics.library is reached at negative offsets only: a JSR or LEA at a
-    # positive offset from A6 is GCC 6.5's lost sign (ogfx_lib.c, original()).
-    pos=$("${P}objdump" -d "$OUT/ogfx_lib.o" | grep -E '(jsr|lea) a6@\([0-9]' || true)
+    # positive offset from A6 that is one of the LVOs GFOpenGfx calls (lvo_of,
+    # and the dispatch's -1062 to -1092) is GCC 6.5's lost sign (ogfx_lib.c,
+    # original()). Other positive offsets from A6 are fields of a struct GCC
+    # keeps in A6 there (a BitMap's Planes, exec's LibList).
+    lvos='30|36|54|60|180|186|234|246|252|258|264|306|312|318|324|336|396|552|606|636|690|696|768|774|780|786|810|1056|1062|1068|1074|1080|1086|1092'
+    pos=$("${P}objdump" -d "$OUT/ogfx_lib.o" "$OUT/ogfx_lib_rom.o" | grep -E "(jsr|lea) a6@\(($lvos)\)" || true)
     [ -z "$pos" ] || { echo "FAIL os32: a call at a positive offset from A6: $pos"; fail=1; }
 
     # 4. a patch entry

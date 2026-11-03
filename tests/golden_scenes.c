@@ -3,7 +3,7 @@
  *
  * GFOpenGPU's golden scenes (golden/opengpu-g1.txt, golden/opengpu-v11.txt),
  * built once for the host test (test_opengpu.c, the C core) and for
- * OpenGPUCheck on an Amiga (tools/ogpu_check.c, through gfopengpu.library and
+ * GFOpenGPUCheck on an Amiga (tools/ogpu_check.c, through gfopengpu.library and
  * its driver). test_opengpu_vk.c keeps its own copy, which draws parts of
  * the scene from the board's video RAM. The
  * scene's memory is one arena; e->addr is the address the back end knows

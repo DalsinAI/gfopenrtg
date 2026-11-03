@@ -1,13 +1,13 @@
 /* Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * OpenGPUCheck: is GFOpenGPU on this Amiga drawing what it should, and how
+ * GFOpenGPUCheck: is GFOpenGPU on this Amiga drawing what it should, and how
  * fast? It names the back ends gfopengpu.library found, draws the golden
  * scenes (tests/golden_scenes.c) through the library, so through its driver
  * when there is one (ACRTG.gpu on the Cradle), and again on this 68k with
  * the C core linked in, and checks both against the golden checksums every
  * back end must give. Then it times the same batches both ways.
- *   OpenGPUCheck [QUICK]
+ *   GFOpenGPUCheck [QUICK]
  * Returns 0 when everything matches, 10 when something doesn't, 20 when
  * gfopengpu.library is missing. */
 #include <exec/types.h>
@@ -98,7 +98,7 @@ int main(int argc, char **argv)
     int bad = 0, i, quick = argc > 1;
     STRPTR name;
     if (!(OpenGPUBase = OpenLibrary((CONST_STRPTR)OPENGPU_NAME, 0))) {
-        printf("OpenGPUCheck: gfopengpu.library is not installed\n");
+        printf("GFOpenGPUCheck: gfopengpu.library is not installed\n");
         return 20;
     }
     printf("gfopengpu.library %d.%d\n", OpenGPUBase->lib_Version, OpenGPUBase->lib_Revision);
@@ -145,6 +145,6 @@ int main(int argc, char **argv)
     }
     FreeVec(arena);
     CloseLibrary(OpenGPUBase);
-    printf(bad ? "OpenGPUCheck: something is WRONG\n" : "OpenGPUCheck: all right\n");
+    printf(bad ? "GFOpenGPUCheck: something is WRONG\n" : "GFOpenGPUCheck: all right\n");
     return bad ? 10 : 0;
 }

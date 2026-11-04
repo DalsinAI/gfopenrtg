@@ -23,13 +23,14 @@ STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32}
 CC=${CC:-$STOVE/prefix/bin/m68k-amigaos-gcc}
 NM=${NM:-${CC%gcc}nm}
 if [ "$TARGET" = module ]; then OUT=${1:-${OUT:-$ROOT/build}}; else OUT=${1:-$ROOT/build}; fi
-# gfopengpu.library is built with GFOpenAmigaGCC 16.2.0-open4 or -open5 (open5
-# changed only libpthread and the names, not the compiler), and with nothing
+# gfopengpu.library is built with GFOpenAmigaGCC 16.2.0-open4, -open5 or -open6
+# (open5 changed only libpthread and the names, not the compiler; open6's
+# m68k-amigaos code is open5's, it adds the m68k-aros target), and with nothing
 # else: GCC 6.5 (the os32 stove) miscompiles the CPU core's stroke walk, so
 # strokes painted with gradients or patterns came out wrong (gfopenrtg
 # #159; tests/amiga/vector's OpenGPUVectorCRC shows the core against the
 # host). OPENGPU_STOVE holds prefix/bin; OPENGPU_CC overrides the compiler.
-OPENGPU_GCC="16.2.0-open5 16.2.0-open4"   # any of these
+OPENGPU_GCC="16.2.0-open6 16.2.0-open5 16.2.0-open4"   # any of these
 OPENGPU_STOVE=${OPENGPU_STOVE:-$HOME/AmiCradle/stoves/os32-gcc16}
 OPENGPU_CC=${OPENGPU_CC:-$OPENGPU_STOVE/prefix/bin/m68k-amigaos-gcc}
 # -fno-delete-null-pointer-checks on every 68k compile: address 0 is memory on

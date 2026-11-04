@@ -2,7 +2,7 @@
 # Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
 # For the Cradle's stove_build (STOVE= and OUT= set, target tools): the
-# tools as tools/build.sh builds them (OpenGPUCheck, OpenGPUBench, LibCount
+# tools as tools/build.sh builds them (GFOpenGPUCheck, OpenGPUBench, LibCount
 # and the rest), with the stove's compiler.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)

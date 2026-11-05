@@ -6,6 +6,7 @@
 ==bias 30
 ==public
 ==include <exec/types.h>
+==include <graphics/rastport.h>
 ==include <gfopenrtg/gfopenrtg.h>
 ULONG ORTG_MonitorCount()()
 ULONG ORTG_NextMode(ULONG monitor, ULONG previous)(d0,d1)

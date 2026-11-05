@@ -62,3 +62,8 @@ Amiga build: stove os32-gcc16 library/opengpu job j20261105T205950-c80201
 at bb7460f: green; libs/gfopengpu.library 260604 bytes,
 sha256 b19c191dcb5e5433481ef46cada77e08ee0d7e81f3068baf970d7e193188b3b3,
 hunk_rw_check clean.
+
+Merged 5 November 2026: gfopenrtg #177 squash 5af78d8 (library/opengpu job
+j20261105T214248-23f56f at 5af78d8: green, gfopengpu.library byte-identical
+to the bb7460f build); The Open SDK gathers it at gfopensdk #44 squash
+007965a; GFAmigaRDP #2 squash 4a3d842 pins gfopensdk 007965a.

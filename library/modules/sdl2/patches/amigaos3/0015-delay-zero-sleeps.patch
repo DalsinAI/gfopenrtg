@@ -1,0 +1,34 @@
+diff --git a/src/timer/amigaos3/SDL_systimer.c b/src/timer/amigaos3/SDL_systimer.c
+index b3aadd5..3d8e647 100644
+--- a/src/timer/amigaos3/SDL_systimer.c
++++ b/src/timer/amigaos3/SDL_systimer.c
+@@ -243,19 +243,18 @@ Uint32 SDL_OS3_WaitSignals(Uint32 sigmask, Uint32 ms)
+ 
+ void SDL_Delay(Uint32 ms)
+ {
+-    /* Delay(0) gives up the rest of the time slice: SDL_AtomicLock's spin
+-       loop calls SDL_Delay(0), and without a real yield the waiting task
+-       would starve the one holding the lock.
+-
+-       Open (2026): other delays wait on timer.device's UNIT_MICROHZ, so
++    /* Open (2026): every delay waits on timer.device's UNIT_MICROHZ, so
+        SDL_Delay(1) is about a millisecond. Upstream used dos.library's
+        Delay(), whose 1/50 s ticks made every delay a multiple of 20 ms
+-       and held frame-capped games at 25 or 50 frames a second. */
+-    if (ms == 0) {
+-        Delay(0UL);
+-    } else {
+-        SDL_OS3_WaitSignals(0, ms);
+-    }
++       and held frame-capped games at 25 or 50 frames a second.
++
++       SDL_Delay(0), "give up the time slice", sleeps for a millisecond
++       too. Upstream's Delay(0) returned at once without sleeping, and Exec
++       never runs a task of lower priority while a higher one is ready: a
++       thread at priority 10 (SDL's audio thread) that called SDL_Delay(0)
++       in a loop, waiting for something a task at 0 had to do, kept every
++       task at 5 or below (the file systems too) from running at all. */
++    SDL_OS3_WaitSignals(0, ms ? ms : 1);
+ }
+ 
+ #endif /* SDL_TIMER_AMIGAOS3 */

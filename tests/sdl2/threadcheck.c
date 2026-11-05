@@ -13,12 +13,19 @@
  *   detach    threads detached before and after they end
  *   many      64 threads alive at once, then joined
  *   audio     the audio device opened in one thread and closed from main()
+ *   priority  a thread at SDL's audio priority (10) spinning on SDL's
+ *             atomics and SDL_Delay(0) while main() at 0 uses the same
+ *             atomics and the file system (which runs below 10): main()
+ *             must finish, and the thread must see it
+ *   signals   the signal bits main() holds after SDL_Quit() are the ones
+ *             it held before SDL_Init() (a Shell runs program after
+ *             program in one process: a bit kept is lost to it)
  *
  * A wait that does not end within 10 seconds is reported as FAIL (and the
  * program then goes on waiting: a thread SDL still runs can't be left).
  * Run on an Amiga with SDL2.module (threadcheck.m), or linked statically
  * (threadcheck). Arguments name the groups to run (stack join detach many
- * audio); none runs them all. Exit 0 when every check passes.
+ * audio priority signals); none runs them all. Exit 0 when every check passes.
  * SDL_AUDIODRIVER=paula runs the audio checks on Paula. */
 #include "SDL.h"
 #include <stdio.h>
@@ -246,6 +253,25 @@ static int SDLCALL many_fn(void *data)
 
 /* ---- audio ---- */
 
+/* priority: the thread runs at SDL_THREAD_PRIORITY_TIME_CRITICAL (Exec
+ * priority 10, SDL's audio thread's) and hammers one SDL_atomic_t, as SDL's
+ * audio thread polls its device's flags, until main() says it is done. */
+static SDL_atomic_t prio_counter;
+static SDL_atomic_t prio_done;
+static SDL_atomic_t prio_spins;
+
+static int SDLCALL prio_fn(void *data)
+{
+    (void)data;
+    SDL_SetThreadPriority(SDL_THREAD_PRIORITY_TIME_CRITICAL);
+    while (!SDL_AtomicGet(&prio_done)) {
+        SDL_AtomicAdd(&prio_counter, 1);
+        SDL_AtomicIncRef(&prio_spins);
+        SDL_Delay(0);
+    }
+    return 0;
+}
+
 static int SDLCALL audio_open_fn(void *data)
 {
     return open_audio((SDL_AudioDeviceID *)data);
@@ -256,6 +282,8 @@ int main(int argc, char *argv[])
     char line[200];
     unsigned long got = 0;
     int i, rc;
+
+    ULONG sigs_before = FindTask(NULL)->tc_SigAlloc;
 
     group_argc = argc;
     group_argv = argv;
@@ -394,7 +422,48 @@ int main(int argc, char *argv[])
         }
     }
 
+    /* ---- priority ---- */
+    if (wanted("priority")) {
+        SDL_Thread *t, *watch;
+        Watch w;
+        int files = 0;
+        SDL_AtomicSet(&prio_counter, 0);
+        SDL_AtomicSet(&prio_done, 0);
+        SDL_AtomicSet(&prio_spins, 0);
+        watch = watch_start(&w, "priority");
+        SetTaskPri(FindTask(NULL), 0);
+        t = SDL_CreateThread(prio_fn, "prio", NULL);
+        for (i = 0; i < 2000; i++) {
+            SDL_AtomicAdd(&prio_counter, 1);
+            if (i % 100 == 0) {
+                /* The file system's task runs at 5 or 10: this needs it. */
+                FILE *f = fopen("T:threadcheck.tmp", "w");
+                if (f) {
+                    fputs("x", f);
+                    fclose(f);
+                    files++;
+                }
+            }
+        }
+        remove("T:threadcheck.tmp");
+        SDL_AtomicSet(&prio_done, 1);
+        SDL_WaitThread(t, NULL);
+        if (watch_end(&w, watch)) {
+            SDL_snprintf(line, sizeof(line),
+                         "main() at 0 ran beside a thread at 10 (%d files written, %d spins, counter %d)",
+                         files, SDL_AtomicGet(&prio_spins), SDL_AtomicGet(&prio_counter));
+            report("priority", files == 20 &&
+                   SDL_AtomicGet(&prio_counter) == 2000 + SDL_AtomicGet(&prio_spins), line);
+        }
+    }
+
     SDL_Quit();
+    if (wanted("signals")) {
+        ULONG sigs_after = FindTask(NULL)->tc_SigAlloc;
+        SDL_snprintf(line, sizeof(line), "main()'s signal bits 0x%08lx before SDL_Init, 0x%08lx after SDL_Quit",
+                     (unsigned long)sigs_before, (unsigned long)sigs_after);
+        report("signals", sigs_after == sigs_before, line);
+    }
     printf("threadcheck: %s\n", failures ? "FAILED" : "all passed");
     return failures ? 10 : 0;
 }

@@ -1,0 +1,55 @@
+AmigaOS 3.x: SDL's emulated atomics run inside Forbid(), and SDL_AtomicLock sleeps while it waits, so a task of high priority can't spin for ever on a lock one of lower priority holds.
+
+diff --git a/src/atomic/SDL_atomic.c b/src/atomic/SDL_atomic.c
+index ea65796..64fe99b 100644
+--- a/src/atomic/SDL_atomic.c
++++ b/src/atomic/SDL_atomic.c
+@@ -106,7 +106,28 @@ extern __inline int _SDL_xadd_watcom(volatile int *a, int v);
+ #define EMULATE_CAS
+ #endif
+ 
+-#ifdef EMULATE_CAS
++#if defined(EMULATE_CAS) && defined(__AMIGAOS3__)
++/* AmigaOS 3.x: one CPU, so an operation inside Forbid() can't be raced by
++   another task (interrupts don't touch SDL_atomic_t). SDL's table of spin
++   locks livelocked here: a task of high priority (SDL's audio thread runs
++   at 10) that found a lock held by one of lower priority (the program at 0)
++   spun for ever, because Exec never runs a lower priority task while a
++   higher one is ready, so the holder never let go, and every task at 5 or
++   below (the file systems among them) stopped with it. */
++#include <proto/exec.h>
++
++static SDL_INLINE void enterLock(void *a)
++{
++    (void)a;
++    Forbid();
++}
++
++static SDL_INLINE void leaveLock(void *a)
++{
++    (void)a;
++    Permit();
++}
++#elif defined(EMULATE_CAS)
+ static SDL_SpinLock locks[32];
+ 
+ static SDL_INLINE void enterLock(void *a)
+diff --git a/src/atomic/SDL_spinlock.c b/src/atomic/SDL_spinlock.c
+index 2e459e0..b9b2420 100644
+--- a/src/atomic/SDL_spinlock.c
++++ b/src/atomic/SDL_spinlock.c
+@@ -196,7 +196,14 @@ void SDL_AtomicLock(SDL_SpinLock *lock)
+             SDL_CPUPauseInstruction();
+         } else {
+             /* !!! FIXME: this doesn't definitely give up the current timeslice, it does different things on various platforms. */
++#ifdef __AMIGAOS3__
++            /* AmigaOS 3.x: sleep, so the holder runs even when its
++               priority is lower than this task's (Exec only ever runs
++               the highest priority task that is ready). */
++            SDL_Delay(1);
++#else
+             SDL_Delay(0);
++#endif
+         }
+     }
+ }

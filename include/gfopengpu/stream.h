@@ -59,6 +59,27 @@
  * the lifting equations; ACRTG/PiStorm may answer OGPU_ONGPU later. A
  * back end that answers DWT_INV in OGPU_Query takes all of v1.9.
  *
+ * v1.10 (5 November 2026) moves the rest of RemoteFX Progressive's compute
+ * into OpenGPU, so a client only parses PDUs and keeps tile state:
+ * OGPU_OP_RLGR_DEC (the RLGR1 entropy decode of [MS-RDPRFX] 3.1.8.1.7.3,
+ * with the LL3 delta sum of [MS-RDPEGFX] 3.3.8.2.1.1 on request),
+ * OGPU_OP_RFX_TILE (dequantize three components of 4096 int16 coefficients
+ * and run DWT_INV on each: 64x64 Y, Cb, Cr) and OGPU_OP_RFX_YCBCR (one
+ * rectangle of a tile's Y, Cb, Cr to ARGB32 with the 16.16 matrix of
+ * [MS-RDPRFX] 3.1.8.2.5). All three are compute ops (no TARGET). Their
+ * buffers, and DWT_INV's from v1.10 / library 0.27, are in the Amiga's order
+ * (big-endian int16 / int32 / ARGB32 words), so a back end on a little-endian
+ * host reads the same memory the 68k does. Mixing a 0.27 library with an
+ * ACRTG runtime still built from 0.26 leaves DWT_INV on the old host-order
+ * `long` path: keep library and runtime at the same tip. The CPU core
+ * answers OGPU_FULL without OGPU_ONGPU_BIT; a client that only wants a real
+ * GPU driver should gate on OGPU_ONGPU(Query), and keep its own CPU path when
+ * that bit is clear (same maths, no Submit overhead on a bare 68040). The
+ * CPU back end is bit-exact with the equations (and GFAmigaRDP's rdp_prog_*
+ * CPU path). A malformed RLGR stream, or a quant factor over 15, is
+ * OGPU_ERR_DATA. A back end that answers RFX_TILE in OGPU_Query takes all of
+ * v1.10.
+ *
  * A stream is 32-bit words, big-endian (the Amiga's order) wherever it is
  * read. Each command starts with a header word: the opcode in the top 16
  * bits and the command's length in words, header included, in the bottom 16.
@@ -79,7 +100,7 @@
 #define OPENGPU_STREAM_H
 
 #define OGPU_STREAM_VERSION 1
-#define OGPU_STREAM_MINOR   9      /* v1.9: OGPU_OP_DWT_INV (MS-RDPRFX idwt); gfopengpu.library 0.26 */
+#define OGPU_STREAM_MINOR   10     /* v1.10: RLGR_DEC, RFX_TILE, RFX_YCBCR (RemoteFX Progressive); gfopengpu.library 0.27 */
 
 #define OGPU_HDR(op, words)     (((unsigned long)(op) << 16) | ((unsigned long)(words) & 0xFFFFUL))
 #define OGPU_HDR_OP(w)          ((unsigned)((w) >> 16))
@@ -167,6 +188,15 @@
 #define OGPU_OP_DWT_INV         0x0029  /* v1.9: in address (4096 int32, RFX band order),
                                            out address (0 = overwrite in), flags,
                                            work address, work bytes                     6  */
+#define OGPU_OP_RLGR_DEC        0x002A  /* v1.10: source address, source bytes, out address
+                                           (count int16), count, flags (OGPU_RLGR_*)    6  */
+#define OGPU_OP_RFX_TILE        0x002B  /* v1.10: coefficient address (3 x 4096 int16),
+                                           quant address (3 x 10 bytes), flags, out
+                                           address (3 x 4096 int32: Y, Cb, Cr), work
+                                           address, work bytes                          7  */
+#define OGPU_OP_RFX_YCBCR       0x002C  /* v1.10: Y/Cb/Cr address (3 x 4096 int32), xy in
+                                           the tile, wh, out address (the ARGB32 pixel
+                                           at xy), out bytes per row                    6  */
 /* 0x0030-0x003F: 3D (TRIANGLES, RENDER3D, TEXENV, TEXTURE, DEPTH, CLEAR3D):
  * include/gfopengpu/stream3d.h. */
 #define OGPU_OP_FENCE           0x00F0  /* id: reported when everything before is done   2  */
@@ -477,8 +507,9 @@
 
 
 /* v1.9: OGPU_OP_DWT_INV flags and work size. Coefficients and the optional
- * out buffer are 4096 native signed 32-bit ints (Amiga big-endian words on
- * the machine; the host test arena uses the host's endian). Band order is
+ * out buffer are 4096 signed 32-bit ints in the Amiga's order (big-endian;
+ * from v1.10 / library 0.27 a little-endian host core swaps; before 0.27 it
+ * read them as host `long`, wrong on 64-bit LE). Band order is
  * [MS-RDPRFX] 3.1.8.1.6: HL1, LH1, HH1, HL2, LH2, HH2, HL3, LH3, HH3, LL3.
  * With OGPU_DWT_RFX_RE the Reduce-Extrapolate sizes (33/31, 17/16, 9/8) are
  * used; without it, 32/32, 16/16, 8/8. The CPU result matches the lifting
@@ -487,6 +518,37 @@
 #define OGPU_DWT_RFX_COEFS          4096
 #define OGPU_DWT_RFX_WORK_INTS      (33*33 + 2*33*64 + 2*66 + 64*64)
 #define OGPU_DWT_RFX_WORK_BYTES     ((unsigned long)(OGPU_DWT_RFX_WORK_INTS) * 4UL)
+
+/* v1.10: RemoteFX Progressive ops. OGPU_RFX_RE is the Reduce-Extrapolate
+ * band layout, the same bit as OGPU_DWT_RFX_RE.
+ *
+ * RLGR_DEC: decodes `count` values (at most 4096) of RLGR1 from the source
+ * bytes into big-endian int16s. Running out of bits before `count` values is
+ * OGPU_ERR_DATA (the out buffer is then partly written). With
+ * OGPU_RLGR_LL3_DELTA the LL3 band (the last 81 values with OGPU_RFX_RE,
+ * else the last 64, of a 4096-value tile) is summed as deltas, in int16.
+ * OGPU_RLGR_MODE3 (RLGR3) is reserved: UNSUPPORTED today. Other bits must
+ * be 0.
+ *
+ * RFX_TILE: for each component c (Y, Cb, Cr) the 4096 int16 coefficients
+ * at coef + c * 8192 bytes, in band order, are dequantized with the 10
+ * factors at quant + c * 10 (one byte per band, in band order HL1..LL3,
+ * each 0..15: coefficient << (q - 6), or >> (6 - q) arithmetic when q < 6)
+ * and DWT_INV'd into the 4096 int32s at out + c * 16384 bytes (row-major
+ * 64x64). Work: OGPU_DWT_RFX_WORK_BYTES.
+ *
+ * RFX_YCBCR: the w x h rectangle at (x, y) of a tile (x + w and y + h at
+ * most 64) from the RFX_TILE out planes to opaque ARGB32: Y + 128, then
+ * R = Y + ((Cr * 91916 + 32768) >> 16), G = Y - ((Cb * 22527 + Cr * 46819
+ * + 32768) >> 16), B = Y + ((Cb * 115993 + 32768) >> 16), each clamped to
+ * 0..255, in 32-bit wrapping arithmetic. Out is the first pixel's address;
+ * rows are out bytes per row apart. */
+#define OGPU_RFX_RE                 1
+#define OGPU_RLGR_LL3_DELTA         2
+#define OGPU_RLGR_MODE3             4
+#define OGPU_RFX_COMPONENT_BYTES16  ((unsigned long)OGPU_DWT_RFX_COEFS * 2UL)
+#define OGPU_RFX_COMPONENT_BYTES32  ((unsigned long)OGPU_DWT_RFX_COEFS * 4UL)
+#define OGPU_RFX_TILE_WORK_BYTES    OGPU_DWT_RFX_WORK_BYTES
 
 #define OGPU_MAX_SLOTS          16
 #define OGPU_MAX_SIZE           16384   /* widths and heights */
@@ -500,6 +562,7 @@
 #define OGPU_ERR_UNSUPPORTED    -5  /* a format pair the command can't do */
 #define OGPU_ERR_DEVICE         -6  /* the GPU failed: the batch may be partly drawn (later ones run on the CPU) */
 #define OGPU_ERR_EXPIRED        -7  /* OGPU_Wait: the fence is done, but too old for its result to be kept */
+#define OGPU_ERR_DATA           -8  /* v1.10: a compute op's input is malformed (RLGR past its bytes, quant > 15) */
 
 /* v1.8 (gfopengpu.library 0.24): whether a back end takes one flag of a
  * command's first word, asked through OGPU_Query as an operation: bit is the

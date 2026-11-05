@@ -104,5 +104,13 @@ void ogpu_palette(struct OGPUBatch *b, int slot, unsigned long table);
  * OGPU_DWT_RFX_RE; work_bytes >= OGPU_DWT_RFX_WORK_BYTES. */
 void ogpu_dwt_inv(struct OGPUBatch *b, unsigned long in_address, unsigned long out_address,
                   unsigned long flags, unsigned long work_address, unsigned long work_bytes);
+/* v1.10: RemoteFX Progressive (stream.h's OGPU_RFX_* notes). */
+void ogpu_rlgr_dec(struct OGPUBatch *b, unsigned long src_address, unsigned long src_bytes,
+                   unsigned long out_address, unsigned long count, unsigned long flags);
+void ogpu_rfx_tile(struct OGPUBatch *b, unsigned long coef_address, unsigned long quant_address,
+                   unsigned long flags, unsigned long out_address, unsigned long work_address,
+                   unsigned long work_bytes);
+void ogpu_rfx_ycbcr(struct OGPUBatch *b, unsigned long ycc_address, int x, int y, int w, int h,
+                    unsigned long out_address, unsigned long out_bpr);
 
 #endif

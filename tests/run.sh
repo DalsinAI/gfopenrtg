@@ -51,6 +51,11 @@ cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanit
     -I"$HERE/../include" -I"$OGPU" \
     -o "$OUT/test_dwt" "$HERE/test_dwt.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c" "$OGPU/ogpu_build.c"
 "$OUT/test_dwt"
+# v1.10's RemoteFX Progressive ops (RLGR_DEC, RFX_TILE, RFX_YCBCR) bit-exact with GFAmigaRDP's CPU path.
+cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined -I"$HERE/host-include" \
+    -I"$HERE/../include" -I"$OGPU" \
+    -o "$OUT/test_rfx" "$HERE/test_rfx.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c" "$OGPU/ogpu_build.c"
+"$OUT/test_rfx" 1200
 # Text's strip (library/text_strip.h): the same pixels as 0.24's glyph-at-a-time Text.
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined -I"$HERE/host-include" \
     -o "$OUT/test_text_strip" "$HERE/test_text_strip.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c" "$OGPU/ogpu_build.c"

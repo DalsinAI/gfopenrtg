@@ -70,6 +70,14 @@
  * core takes every flag stream.h defines; a driver says so in its
  * supports(), and the batches with a flag it doesn't take run here. A
  * library before 0.24, and a driver that predates the form, answer NONE.
+ * 0.27: stream v1.10, RemoteFX Progressive's compute: OGPU_OP_RLGR_DEC
+ * (RLGR1 + the LL3 delta sum), OGPU_OP_RFX_TILE (dequantize + DWT_INV of
+ * Y, Cb, Cr) and OGPU_OP_RFX_YCBCR (the 16.16 matrix to ARGB32), all
+ * compute ops on big-endian buffers, bit-exact with GFAmigaRDP's CPU path;
+ * DWT_INV's buffers are big-endian on every host from here (they were the
+ * host's order, wrong on a little-endian driver). A malformed input is the
+ * new OGPU_ERR_DATA. Drivers that don't answer these keep falling through
+ * to this core. Ask OGPU_Query(OGPU_OP_RFX_TILE, OGPU_FMT_ARGB32).
  * 0.26: stream v1.9, OGPU_OP_DWT_INV — MS-RDPRFX 64x64 3-level inverse 5/3
  * DWT on int32 coefficient tiles (Reduce-Extrapolate flag). CPU back end
  * first (bit-exact with the lifting equations); drivers that do not answer
@@ -124,7 +132,7 @@
 
 #define REG(r, decl) register decl __asm(#r)   /* bebbo gcc: an argument in a register */
 #define LIB_VERSION 0
-#define LIB_REVISION 26
+#define LIB_REVISION 27
 #define RESULTS 16                              /* the last batches' results, by fence */
 #define MAX_DRIVERS 8                           /* files looked at in LIBS:GFOpenGPU/ */
 #define ON_CPU 0                                /* dfence[] for a batch the CPU ran */
@@ -178,9 +186,9 @@ int start(void) { return -1; }
 const ULONG ogpu_ogfx_at = offsetof(struct OpenGPUBase, ogfx);
 
 static const char lib_name[] = "gfopengpu.library";
-static const char lib_id[] = "gfopengpu.library 0.26 (2.11.2026) GFOpenGPU, AmiCradle Team\r\n";
+static const char lib_id[] = "gfopengpu.library 0.27 (5.11.2026) GFOpenGPU, AmiCradle Team\r\n";
 /* For C:Version, which looks for "$VER:" in the file. */
-static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopengpu.library 0.26 (2.11.2026) GFOpenGPU, AmiCradle Team";
+static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopengpu.library 0.27 (5.11.2026) GFOpenGPU, AmiCradle Team";
 static const char cpu_name[] = "CPU";
 static const char dos_name[] = "dos.library";
 static const char drv_dir[] = "LIBS:GFOpenGPU";

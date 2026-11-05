@@ -19,3 +19,10 @@ compute shader / NEON matching the same int32 band layout.
 gfopengpu.library 0.26.
 
 Shipped: tip 73a68a6; stove os32-gcc16 green (hunk_rw_check clean).
+
+v1.10 (0.27): DWT_INV's buffers are big-endian on every host (int32, not
+long); RLGR_DEC, RFX_TILE and RFX_YCBCR join it: docs/STATUS-rfx-progressive.txt.
+
+v1.10 skeptic: ogpu_dwt.c #errors when the host byte order is unknown
+(unless RFX_FORCE_LE / RFX_FORCE_BE). DWT_INV endian contract is library
+0.27 code; do not mix with a 0.26 ACRTG runtime.

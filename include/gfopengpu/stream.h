@@ -67,12 +67,18 @@
  * and run DWT_INV on each: 64x64 Y, Cb, Cr) and OGPU_OP_RFX_YCBCR (one
  * rectangle of a tile's Y, Cb, Cr to ARGB32 with the 16.16 matrix of
  * [MS-RDPRFX] 3.1.8.2.5). All three are compute ops (no TARGET). Their
- * buffers, and DWT_INV's from v1.10, are in the Amiga's order (big-endian
- * int16 / int32 / ARGB32 words), so a back end on a little-endian host reads
- * the same memory the 68k does. The CPU back end is bit-exact with the
- * equations (and GFAmigaRDP's rdp_prog_* CPU path). A malformed RLGR
- * stream, or a quant factor over 15, is OGPU_ERR_DATA. A back end that
- * answers RFX_TILE in OGPU_Query takes all of v1.10.
+ * buffers, and DWT_INV's from v1.10 / library 0.27, are in the Amiga's order
+ * (big-endian int16 / int32 / ARGB32 words), so a back end on a little-endian
+ * host reads the same memory the 68k does. Mixing a 0.27 library with an
+ * ACRTG runtime still built from 0.26 leaves DWT_INV on the old host-order
+ * `long` path: keep library and runtime at the same tip. The CPU core
+ * answers OGPU_FULL without OGPU_ONGPU_BIT; a client that only wants a real
+ * GPU driver should gate on OGPU_ONGPU(Query), and keep its own CPU path when
+ * that bit is clear (same maths, no Submit overhead on a bare 68040). The
+ * CPU back end is bit-exact with the equations (and GFAmigaRDP's rdp_prog_*
+ * CPU path). A malformed RLGR stream, or a quant factor over 15, is
+ * OGPU_ERR_DATA. A back end that answers RFX_TILE in OGPU_Query takes all of
+ * v1.10.
  *
  * A stream is 32-bit words, big-endian (the Amiga's order) wherever it is
  * read. Each command starts with a header word: the opcode in the top 16
@@ -502,8 +508,8 @@
 
 /* v1.9: OGPU_OP_DWT_INV flags and work size. Coefficients and the optional
  * out buffer are 4096 signed 32-bit ints in the Amiga's order (big-endian;
- * from v1.10 a little-endian host core swaps, before 0.27 it read them in
- * its own order). Band order is
+ * from v1.10 / library 0.27 a little-endian host core swaps; before 0.27 it
+ * read them as host `long`, wrong on 64-bit LE). Band order is
  * [MS-RDPRFX] 3.1.8.1.6: HL1, LH1, HH1, HL2, LH2, HH2, HL3, LH3, HH3, LL3.
  * With OGPU_DWT_RFX_RE the Reduce-Extrapolate sizes (33/31, 17/16, 9/8) are
  * used; without it, 32/32, 16/16, 8/8. The CPU result matches the lifting

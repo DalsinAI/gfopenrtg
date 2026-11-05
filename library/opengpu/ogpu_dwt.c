@@ -120,11 +120,24 @@ void ogpu_rfx_idwt(ogpu_rfx_s32 *buf, int re, ogpu_rfx_s32 *tmp)
 
 /* The buffers v1.10's ops read and write are big-endian, as the 68k keeps
  * them; a little-endian host core (the Cradle's runtime, the PiStorm's ARM)
- * swaps at the edges, and the 68k reads them as they are. */
-#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+ * swaps at the edges, and the 68k reads them as they are. Compilers that
+ * do not say the byte order (MSVC, vbcc, SAS/C without a define) must not
+ * silently assume big-endian on a little-endian host: refuse the build, or
+ * set RFX_FORCE_LE / RFX_FORCE_BE. */
+#if defined(RFX_FORCE_LE)
 #define RFX_LE 1
-#else
+#elif defined(RFX_FORCE_BE)
 #define RFX_LE 0
+#elif defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#define RFX_LE 1
+#elif defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#define RFX_LE 0
+#elif defined(__LITTLE_ENDIAN__) && !defined(__BIG_ENDIAN__)
+#define RFX_LE 1
+#elif defined(__BIG_ENDIAN__) && !defined(__LITTLE_ENDIAN__)
+#define RFX_LE 0
+#else
+#error "ogpu_dwt.c: unknown host byte order; define RFX_FORCE_LE or RFX_FORCE_BE"
 #endif
 
 static ogpu_rfx_s32 ld32(const unsigned char *p)

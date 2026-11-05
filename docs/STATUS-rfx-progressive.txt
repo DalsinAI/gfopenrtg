@@ -1,5 +1,5 @@
-RemoteFX Progressive in OpenGPU (stream v1.10) — 2026-11-05
-==========================================================
+RemoteFX Progressive in OpenGPU (stream v1.10) — 2026-11-05, skeptic pass
+=======================================================================
 
 Goal: Progressive's compute lives in OpenGPU; GFAmigaRDP parses PDUs, keeps
 tile state and Query+Submits. The CPU back end in gfopengpu.library is the
@@ -19,13 +19,19 @@ Ops (include/gfopengpu/stream.h, builders in include/gfopengpu/build.h)
           UNSUPPORTED: short work, misaligned (int16: 2, int32: 4), reserved
           flags, x+w or y+h > 64, bpr < w*4. NOMAP: unmapped buffer.
   Query: OGPU_Query(OGPU_OP_RFX_TILE / RLGR_DEC / RFX_YCBCR, OGPU_FMT_ARGB32)
-         -> FULL on the CPU core (any format: compute ops, no TARGET).
+         -> FULL on the CPU core (any format: compute ops, no TARGET),
+         without OGPU_ONGPU_BIT. Clients that only want a GPU driver should
+         gate on OGPU_ONGPU(Query); GFAmigaRDP does.
 
 Byte order: every buffer of these ops (and DWT_INV's, from 0.27) is in the
 Amiga's order (big-endian). The 68k reads them as they are; a little-endian
 host core swaps at the edges (ogpu_rfx_order32 / ld16 / st32). Before 0.27
 DWT_INV read host-order `long`s: wrong on a 64-bit little-endian driver core
 (ACRTG's ogpu_vk_supports answers as the core does). Now int32 everywhere.
+Mixing a 0.27 library with a 0.26 ACRTG runtime still hits the old long path:
+keep library and runtime at the same tip.
+Compilers that do not define the host byte order (#error in ogpu_dwt.c unless
+RFX_FORCE_LE / RFX_FORCE_BE is set): no silent big-endian assumption.
 
 Code
   library/opengpu/ogpu_dwt.c  the kernels (DWT, RLGR1, dequant, YCbCr). The
@@ -41,9 +47,8 @@ Tests
   (copied from progressive.c d8ee7cd) on random RLGR streams (1200), random
   tiles + rectangles (300, both layouts, quant 0..15) and DWT_INV out of
   place; error cases. tests/test_dwt.c now writes big-endian.
-  GFAmigaRDP tools/test_prog_ogpu.sh: whole Progressive frames (simple,
-  first, upgrade passes, clip + paint) through these ops vs the CPU path,
-  pixel-exact.
+  GFAmigaRDP tools/test_prog_ogpu.sh: whole Progressive frames + ERR_DATA /
+  follow-on batch fail / >32 rects / clipped-skip paths.
 
 Not yet
   - ACRTG.gpu / PiStorm.gpu: no ONGPU path; a driver answering via
@@ -51,5 +56,6 @@ Not yet
   - RLGR3 (classic RemoteFX), SRL/raw upgrade passes (stay in GFAmigaRDP:
     they touch per-tile sign state). GFAmigaRDP's I420 YUV pilot (never
     bit-exact) is replaced by RFX_YCBCR; OGPU_OP_YUV itself is unchanged.
-  - No 68k timing yet: on the CPU back end the win is architecture (one
-    place for the kernels, a driver can take them), not 68040 speed.
+  - No 68k timing of Submit-vs-in-tree (GFAmigaRDP gates on ONGPU).
+
+Amiga build: stove os32-gcc16 job ids in the PR / ship note.

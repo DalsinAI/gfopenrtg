@@ -58,4 +58,7 @@ Not yet
     bit-exact) is replaced by RFX_YCBCR; OGPU_OP_YUV itself is unchanged.
   - No 68k timing of Submit-vs-in-tree (GFAmigaRDP gates on ONGPU).
 
-Amiga build: stove os32-gcc16 job ids in the PR / ship note.
+Amiga build: stove os32-gcc16 library/opengpu job j20261105T205950-c80201
+at bb7460f: green; libs/gfopengpu.library 260604 bytes,
+sha256 b19c191dcb5e5433481ef46cada77e08ee0d7e81f3068baf970d7e193188b3b3,
+hunk_rw_check clean.

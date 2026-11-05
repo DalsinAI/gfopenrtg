@@ -5,7 +5,7 @@
  * The 68k runs it as the CPU back end, the Cradle's runtime runs it behind
  * ACRTG.gpu, and a PiStorm's spare ARM core runs it behind PiStorm.gpu;
  * tests/test_opengpu.c checks it against simple per-pixel references and
- * keeps golden checksums every build must match. Stream v1.9 (DWT_INV in its own op): the 2D
+ * keeps golden checksums every build must match. Stream v1.10 (DWT_INV, RLGR_DEC, RFX_TILE, RFX_YCBCR: ogpu_dwt.c): the 2D
  * commands here (v1.6's paths, gradients, blur and blend modes in their
  * own section below, tested by tests/test_vector.c; v1.7's SDL 3 additions
  * through the commands, tested by tests/test_sdl3.c); the 3D range
@@ -3178,31 +3178,88 @@ void ogpu_core_init(struct ogpu_core *c) {
 /* Words each opcode needs after its header (-1: not a command of the core;
  * -2: the 3D range, whose lengths ogpu_3d.c checks). */
 
-/* v1.9: MS-RDPRFX inverse DWT on a 64x64 tile. No TARGET; maps in/out/work. */
+/* v1.9: MS-RDPRFX inverse DWT on a 64x64 tile. No TARGET; maps in/out/work.
+ * From v1.10 (0.27) in and out are big-endian on every host: a
+ * little-endian host core swaps in place around the transform. */
 OP_FN op_dwt_inv(struct ogpu_core *c, const ogpu_u8 *a) {
     ogpu_u32 in_a = rd32(a), out_a = rd32(a + 4), flags = rd32(a + 8);
     ogpu_u32 work_a = rd32(a + 12), work_bytes = rd32(a + 16);
     ogpu_u32 coef_bytes = (ogpu_u32)OGPU_DWT_RFX_COEFS * 4UL;
     ogpu_u8 *in_p, *out_p, *work_p;
-    long *dst, *work;
+    ogpu_rfx_s32 *dst, *work;
     int re = (flags & OGPU_DWT_RFX_RE) != 0, i;
-    if (work_bytes < (ogpu_u32)OGPU_DWT_RFX_WORK_BYTES)
+    if (work_bytes < (ogpu_u32)OGPU_DWT_RFX_WORK_BYTES || ((in_a | out_a | work_a) & 3))
         return OGPU_ERR_UNSUPPORTED;
     if (!(in_p = c->map(c->user, in_a, coef_bytes)))
         return OGPU_ERR_NOMAP;
     if (!(work_p = c->map(c->user, work_a, work_bytes)))
         return OGPU_ERR_NOMAP;
-    work = (long *)(void *)work_p;
+    work = (ogpu_rfx_s32 *)(void *)work_p;
     if (out_a == 0 || out_a == in_a) {
-        ogpu_rfx_idwt((long *)(void *)in_p, re, work);
-        return OGPU_OK;
+        dst = (ogpu_rfx_s32 *)(void *)in_p;
+    } else {
+        if (!(out_p = c->map(c->user, out_a, coef_bytes)))
+            return OGPU_ERR_NOMAP;
+        dst = (ogpu_rfx_s32 *)(void *)out_p;
+        for (i = 0; i < OGPU_DWT_RFX_COEFS; i++)
+            dst[i] = ((const ogpu_rfx_s32 *)(const void *)in_p)[i];
     }
-    if (!(out_p = c->map(c->user, out_a, coef_bytes)))
-        return OGPU_ERR_NOMAP;
-    dst = (long *)(void *)out_p;
-    for (i = 0; i < OGPU_DWT_RFX_COEFS; i++)
-        dst[i] = ((long *)(void *)in_p)[i];
+    ogpu_rfx_order32(dst, OGPU_DWT_RFX_COEFS);
     ogpu_rfx_idwt(dst, re, work);
+    ogpu_rfx_order32(dst, OGPU_DWT_RFX_COEFS);
+    return OGPU_OK;
+}
+
+/* v1.10: RLGR1 into big-endian int16s (ogpu_dwt.c). */
+OP_FN op_rlgr_dec(struct ogpu_core *c, const ogpu_u8 *a) {
+    ogpu_u32 src_a = rd32(a), src_len = rd32(a + 4), out_a = rd32(a + 8), count = rd32(a + 12), flags = rd32(a + 16);
+    ogpu_u8 *src, *out;
+    if (flags & ~(ogpu_u32)(OGPU_RFX_RE | OGPU_RLGR_LL3_DELTA))
+        return OGPU_ERR_UNSUPPORTED;    /* RLGR3 and the reserved bits */
+    if (count > (ogpu_u32)OGPU_DWT_RFX_COEFS || (out_a & 1))
+        return OGPU_ERR_UNSUPPORTED;
+    if (!count)
+        return OGPU_OK;
+    if (!(out = c->map(c->user, out_a, count * 2UL)))
+        return OGPU_ERR_NOMAP;
+    src = src_len ? c->map(c->user, src_a, src_len) : out;   /* no bytes: all zeros past the end */
+    if (!src)
+        return OGPU_ERR_NOMAP;
+    return ogpu_rfxk_rlgr1(src, src_len, out, (int)count, (int)flags) < 0 ? OGPU_ERR_DATA : OGPU_OK;
+}
+
+/* v1.10: dequantize + DWT_INV three components. */
+OP_FN op_rfx_tile(struct ogpu_core *c, const ogpu_u8 *a) {
+    ogpu_u32 coef_a = rd32(a), quant_a = rd32(a + 4), flags = rd32(a + 8);
+    ogpu_u32 out_a = rd32(a + 12), work_a = rd32(a + 16), work_bytes = rd32(a + 20);
+    ogpu_u8 *coef, *quant, *out, *work;
+    if (work_bytes < (ogpu_u32)OGPU_RFX_TILE_WORK_BYTES || (coef_a & 1) || ((out_a | work_a) & 3)
+        || (flags & ~(ogpu_u32)OGPU_RFX_RE))
+        return OGPU_ERR_UNSUPPORTED;
+    if (!(coef = c->map(c->user, coef_a, 3UL * OGPU_RFX_COMPONENT_BYTES16))
+        || !(quant = c->map(c->user, quant_a, 30))
+        || !(out = c->map(c->user, out_a, 3UL * OGPU_RFX_COMPONENT_BYTES32))
+        || !(work = c->map(c->user, work_a, work_bytes)))
+        return OGPU_ERR_NOMAP;
+    return ogpu_rfxk_tile(coef, quant, (flags & OGPU_RFX_RE) != 0, out, (ogpu_rfx_s32 *)(void *)work) < 0
+        ? OGPU_ERR_DATA : OGPU_OK;
+}
+
+/* v1.10: one rectangle of a tile's Y, Cb, Cr to ARGB32. */
+OP_FN op_rfx_ycbcr(struct ogpu_core *c, const ogpu_u8 *a) {
+    ogpu_u32 ycc_a = rd32(a), xy = rd32(a + 4), wh = rd32(a + 8), out_a = rd32(a + 12), bpr = rd32(a + 16);
+    int x = hi_u(xy), y = lo_u(xy), w = hi_u(wh), h = lo_u(wh);
+    ogpu_u8 *ycc, *out;
+    if (x + w > 64 || y + h > 64 || (ycc_a & 3))
+        return OGPU_ERR_UNSUPPORTED;
+    if (!w || !h)
+        return OGPU_OK;
+    if (bpr < (ogpu_u32)w * 4UL || bpr > 0x7FFFFFFFUL / 64UL)
+        return OGPU_ERR_UNSUPPORTED;
+    if (!(ycc = c->map(c->user, ycc_a, 3UL * OGPU_RFX_COMPONENT_BYTES32))
+        || !(out = c->map(c->user, out_a, (ogpu_u32)(h - 1) * bpr + (ogpu_u32)w * 4UL)))
+        return OGPU_ERR_NOMAP;
+    ogpu_rfxk_ycbcr(ycc, x, y, w, h, out, (long)bpr);
     return OGPU_OK;
 }
 
@@ -3230,6 +3287,9 @@ static int args_for(int op) {
     case OGPU_OP_BLUR: return 5;
     case OGPU_OP_PALETTE: return 2;
     case OGPU_OP_DWT_INV: return 5;
+    case OGPU_OP_RLGR_DEC: return 5;
+    case OGPU_OP_RFX_TILE: return 6;
+    case OGPU_OP_RFX_YCBCR: return 5;
     case OGPU_OP_FENCE: return 1;
     }
 #ifdef OGPU_WITH_3D
@@ -3262,7 +3322,7 @@ long ogpu_core_run(struct ogpu_core *c, const ogpu_u8 *stream, long words) {
         else if (need == -2)
             r = c->d3 ? ogpu_3d_run(c, op, stream + at * 4, len) : OGPU_ERR_BADOP;
 #endif
-        else if (op >= OGPU_OP_FILL && op < OGPU_OP_FENCE && op != OGPU_OP_PALETTE && op != OGPU_OP_DWT_INV && (c->target < 0 || !c->slot[c->target].pixels))
+        else if (op >= OGPU_OP_FILL && op < OGPU_OP_FENCE && op != OGPU_OP_PALETTE && !(op >= OGPU_OP_DWT_INV && op <= OGPU_OP_RFX_YCBCR) && (c->target < 0 || !c->slot[c->target].pixels))
             r = OGPU_ERR_NOSURFACE;
         else switch (op) {
         case OGPU_OP_SURFACE: r = op_surface(c, a); break;
@@ -3301,6 +3361,9 @@ long ogpu_core_run(struct ogpu_core *c, const ogpu_u8 *stream, long words) {
         case OGPU_OP_BLUR: r = op_blur(c, a); break;
         case OGPU_OP_PALETTE: r = op_palette(c, a); break;
         case OGPU_OP_DWT_INV: r = op_dwt_inv(c, a); break;
+        case OGPU_OP_RLGR_DEC: r = op_rlgr_dec(c, a); break;
+        case OGPU_OP_RFX_TILE: r = op_rfx_tile(c, a); break;
+        case OGPU_OP_RFX_YCBCR: r = op_rfx_ycbcr(c, a); break;
         case OGPU_OP_FENCE: if (c->fence) c->fence(c->user, rd32(a)); break;
         }
         if (r != OGPU_OK && c->last_error == OGPU_OK) { c->last_error = r; c->error_word = at; }
@@ -3334,6 +3397,7 @@ int ogpu_core_supports(int op, int format) {
     case OGPU_OP_NOP: case OGPU_OP_SURFACE: case OGPU_OP_TARGET: case OGPU_OP_CLIP: case OGPU_OP_FENCE:
     case OGPU_OP_FILL: case OGPU_OP_INVERT: case OGPU_OP_COPY: case OGPU_OP_TEMPLATE:
     case OGPU_OP_PATTERN: case OGPU_OP_LINE: case OGPU_OP_PALETTE: case OGPU_OP_DWT_INV:
+    case OGPU_OP_RLGR_DEC: case OGPU_OP_RFX_TILE: case OGPU_OP_RFX_YCBCR:
         return OGPU_FULL;
     case OGPU_OP_PIXELS:    /* pens only on CLUT8, coverage only on A8 */
         return format == OGPU_FMT_CLUT8 || format == OGPU_FMT_A8 ? OGPU_PARTIAL : OGPU_FULL;

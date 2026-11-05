@@ -4,7 +4,8 @@
  * Host test for OGPU_OP_DWT_INV: forward 5/3 DWT (lifting from
  * [MS-RDPRFX] 3.1.8.1.4) then inverse through the core; bit-exact match
  * of the reconstructed tile within the same tolerance as GFAmigaRDP's
- * progressive host test (max abs error <= 8 from integer lifting). */
+ * progressive host test (max abs error <= 8 from integer lifting).
+ * tests/test_rfx.c checks bit-exactness against GFAmigaRDP's CPU path. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -88,7 +89,6 @@ static int test_roundtrip(int re) {
     unsigned char sbuf[256];
     struct OGPUBatch B;
     struct ogpu_core C;
-    long *mapped;
 
     band_off(re, off);
     for (i = 0; i < 64 * 64; i++)
@@ -98,7 +98,12 @@ static int test_roundtrip(int re) {
     fwd2(ll1, n1, n2, h2, ll2, buf + off[B_HL2], buf + off[B_LH2], buf + off[B_HH2]);
     fwd2(ll2, n2, n3, h3, buf + off[B_LL3], buf + off[B_HL3], buf + off[B_LH3], buf + off[B_HH3]);
 
-    memcpy(arena + IN_A, buf, sizeof buf);
+    /* v1.10: the op's buffers are in the Amiga's order on every host */
+    for (i = 0; i < 4096; i++) {
+        unsigned long v = (unsigned long)buf[i];
+        arena[IN_A + i * 4] = (ogpu_u8)(v >> 24); arena[IN_A + i * 4 + 1] = (ogpu_u8)(v >> 16);
+        arena[IN_A + i * 4 + 2] = (ogpu_u8)(v >> 8); arena[IN_A + i * 4 + 3] = (ogpu_u8)v;
+    }
     memset(arena + WORK_A, 0, OGPU_DWT_RFX_WORK_BYTES);
 
     ogpu_batch_init(&B, sbuf, sizeof sbuf / 4);
@@ -108,9 +113,10 @@ static int test_roundtrip(int re) {
     CHECK(ogpu_core_run(&C, sbuf, B.words) == 1, "run commands");
     CHECK(C.last_error == OGPU_OK, "last_error %d", C.last_error);
 
-    mapped = (long *)(void *)(arena + IN_A);
     for (i = 0; i < 64 * 64; i++) {
-        long e = mapped[i] - img[i];
+        const ogpu_u8 *q = arena + IN_A + i * 4;
+        long v = (long)(int)(((unsigned)q[0] << 24) | ((unsigned)q[1] << 16) | ((unsigned)q[2] << 8) | q[3]);
+        long e = v - img[i];
         if (e < 0) e = -e;
         if (e > maxerr) maxerr = (int)e;
     }

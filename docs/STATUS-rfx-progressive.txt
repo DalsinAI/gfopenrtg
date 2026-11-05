@@ -1,0 +1,55 @@
+RemoteFX Progressive in OpenGPU (stream v1.10) — 2026-11-05
+==========================================================
+
+Goal: Progressive's compute lives in OpenGPU; GFAmigaRDP parses PDUs, keeps
+tile state and Query+Submits. The CPU back end in gfopengpu.library is the
+always-there software path; ACRTG/PiStorm can answer the same ops later.
+
+Ops (include/gfopengpu/stream.h, builders in include/gfopengpu/build.h)
+  0x0029 DWT_INV    (v1.9)  in, out(0=in place), flags, work, work bytes      6 words
+  0x002A RLGR_DEC   (v1.10) src, src bytes, out (int16), count<=4096, flags   6
+                            flags: OGPU_RFX_RE(1) | OGPU_RLGR_LL3_DELTA(2);
+                            OGPU_RLGR_MODE3(4, RLGR3) reserved -> UNSUPPORTED
+  0x002B RFX_TILE   (v1.10) coef (3x4096 int16), quant (3x10 bytes, band
+                            order HL1..LL3, 0..15), flags (RE), out (3x4096
+                            int32 Y,Cb,Cr), work, work bytes                  7
+  0x002C RFX_YCBCR  (v1.10) ycc (RFX_TILE's out), xy in tile, wh, out (ARGB32
+                            pixel at xy), out bytes per row                   6
+  Errors: OGPU_ERR_DATA (-8, new): RLGR ran out of bits / quant > 15.
+          UNSUPPORTED: short work, misaligned (int16: 2, int32: 4), reserved
+          flags, x+w or y+h > 64, bpr < w*4. NOMAP: unmapped buffer.
+  Query: OGPU_Query(OGPU_OP_RFX_TILE / RLGR_DEC / RFX_YCBCR, OGPU_FMT_ARGB32)
+         -> FULL on the CPU core (any format: compute ops, no TARGET).
+
+Byte order: every buffer of these ops (and DWT_INV's, from 0.27) is in the
+Amiga's order (big-endian). The 68k reads them as they are; a little-endian
+host core swaps at the edges (ogpu_rfx_order32 / ld16 / st32). Before 0.27
+DWT_INV read host-order `long`s: wrong on a 64-bit little-endian driver core
+(ACRTG's ogpu_vk_supports answers as the core does). Now int32 everywhere.
+
+Code
+  library/opengpu/ogpu_dwt.c  the kernels (DWT, RLGR1, dequant, YCbCr). The
+                              file keeps its v1.9 name so every build list and
+                              the Cradle runtime (which builds ogpu_core.c
+                              with it) pick the new ops up unchanged.
+  library/opengpu/ogpu_core.c op_rlgr_dec / op_rfx_tile / op_rfx_ycbcr, args,
+                              dispatch, supports; no writable statics.
+  gfopengpu.library 0.27.
+
+Tests
+  tests/test_rfx.c (in tests/run.sh): bit-exact vs GFAmigaRDP's CPU kernels
+  (copied from progressive.c d8ee7cd) on random RLGR streams (1200), random
+  tiles + rectangles (300, both layouts, quant 0..15) and DWT_INV out of
+  place; error cases. tests/test_dwt.c now writes big-endian.
+  GFAmigaRDP tools/test_prog_ogpu.sh: whole Progressive frames (simple,
+  first, upgrade passes, clip + paint) through these ops vs the CPU path,
+  pixel-exact.
+
+Not yet
+  - ACRTG.gpu / PiStorm.gpu: no ONGPU path; a driver answering via
+    ogpu_core_supports runs the same C on the host (now byte-order safe).
+  - RLGR3 (classic RemoteFX), SRL/raw upgrade passes (stay in GFAmigaRDP:
+    they touch per-tile sign state). GFAmigaRDP's I420 YUV pilot (never
+    bit-exact) is replaced by RFX_YCBCR; OGPU_OP_YUV itself is unchanged.
+  - No 68k timing yet: on the CPU back end the win is architecture (one
+    place for the kernels, a driver can take them), not 68040 speed.

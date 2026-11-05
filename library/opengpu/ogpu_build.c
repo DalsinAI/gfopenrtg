@@ -288,3 +288,25 @@ void ogpu_dwt_inv(struct OGPUBatch *b, unsigned long in_address, unsigned long o
     cmd(b, OGPU_OP_DWT_INV, 5, a);
 }
 
+void ogpu_rlgr_dec(struct OGPUBatch *b, unsigned long src_address, unsigned long src_bytes,
+                   unsigned long out_address, unsigned long count, unsigned long flags) {
+    unsigned long a[5];
+    a[0] = src_address; a[1] = src_bytes; a[2] = out_address; a[3] = count; a[4] = flags;
+    cmd(b, OGPU_OP_RLGR_DEC, 5, a);
+}
+
+void ogpu_rfx_tile(struct OGPUBatch *b, unsigned long coef_address, unsigned long quant_address,
+                   unsigned long flags, unsigned long out_address, unsigned long work_address,
+                   unsigned long work_bytes) {
+    unsigned long a[6];
+    a[0] = coef_address; a[1] = quant_address; a[2] = flags; a[3] = out_address;
+    a[4] = work_address; a[5] = work_bytes;
+    cmd(b, OGPU_OP_RFX_TILE, 6, a);
+}
+
+void ogpu_rfx_ycbcr(struct OGPUBatch *b, unsigned long ycc_address, int x, int y, int w, int h,
+                    unsigned long out_address, unsigned long out_bpr) {
+    unsigned long a[5];
+    a[0] = ycc_address; a[1] = OGPU_XY(x, y); a[2] = OGPU_XY(w, h); a[3] = out_address; a[4] = out_bpr;
+    cmd(b, OGPU_OP_RFX_YCBCR, 5, a);
+}

@@ -17,3 +17,5 @@ supports() keep using this CPU core via the library split path. Future work:
 compute shader / NEON matching the same int32 band layout.
 
 gfopengpu.library 0.26.
+
+Shipped: tip 73a68a6; stove os32-gcc16 green (hunk_rw_check clean).

@@ -3,8 +3,8 @@
  *
  * MS-RDPRFX inverse 5/3 DWT for OGPU_OP_DWT_INV (stream v1.9). Clean-room
  * from [MS-RDPRFX] 3.1.8.2.4 / 3.1.8.1.6 and the AmigaChrome OpenGPU
- * patterns; no FreeRDP. Plain C, no libc, no float — same file builds for
- * the 68k CPU back end, Cradle host, and PiStorm ARM. */
+ * patterns; no FreeRDP. Plain C, no libc, no float, no writable statics
+ * (gfopengpu.library is ROM-clean: hunk_rw_check). */
 #include "ogpu_dwt.h"
 
 enum {
@@ -13,39 +13,28 @@ enum {
 
 static void level_sizes(int re, int level, int *nl, int *nh)
 {
+	/* const tables only — reside in the code hunk. */
 	static const unsigned char lo_re[3] = { 33, 17, 9 }, hi_re[3] = { 31, 16, 8 };
 	static const unsigned char lo[3] = { 32, 16, 8 }, hi[3] = { 32, 16, 8 };
 	*nl = re ? lo_re[level - 1] : lo[level - 1];
 	*nh = re ? hi_re[level - 1] : hi[level - 1];
 }
 
-/* Band offset/w/h for both layouts; filled once. */
-static struct { short off, w, h; } s_band[2][NBANDS];
-static unsigned char s_band_ready;
-
-static void band_init(void)
+static void band_offs(int re, int off[NBANDS])
 {
-	int re, band;
-	if (s_band_ready)
-		return;
-	for (re = 0; re < 2; re++) {
-		int o = 0;
-		for (band = 0; band < NBANDS; band++) {
-			int level = band == B_LL3 ? 3 : band / 3 + 1, nl, nh, bw, bh;
-			level_sizes(re, level, &nl, &nh);
-			switch (band == B_LL3 ? 3 : band % 3) {
-			case 0: bw = nh; bh = nl; break;
-			case 1: bw = nl; bh = nh; break;
-			case 2: bw = nh; bh = nh; break;
-			default: bw = nl; bh = nl; break;
-			}
-			s_band[re][band].off = (short)o;
-			s_band[re][band].w = (short)bw;
-			s_band[re][band].h = (short)bh;
-			o += bw * bh;
+	int band, o = 0;
+	for (band = 0; band < NBANDS; band++) {
+		int level = band == B_LL3 ? 3 : band / 3 + 1, nl, nh, bw, bh;
+		level_sizes(re, level, &nl, &nh);
+		switch (band == B_LL3 ? 3 : band % 3) {
+		case 0: bw = nh; bh = nl; break;
+		case 1: bw = nl; bh = nh; break;
+		case 2: bw = nh; bh = nh; break;
+		default: bw = nl; bh = nl; break;
 		}
+		off[band] = o;
+		o += bw * bh;
 	}
-	s_band_ready = 1;
 }
 
 /* nl low, nh high; high band padded with zeros to nhe. */
@@ -88,11 +77,8 @@ static void idwt2(const long *LL, int las, const long *HL, const long *LH, const
 void ogpu_rfx_idwt(long *buf, int re, long *tmp)
 {
 	long *ll = tmp, *lp = ll + 33 * 33, *hp = lp + 33 * 64, *t = hp + 33 * 64, *mid = t + 2 * 66;
-	int off[NBANDS], i, l3, h3, l2, h2, l1, h1, n2, n1, rr;
-	band_init();
-	rr = re ? 1 : 0;
-	for (i = 0; i < NBANDS; i++)
-		off[i] = s_band[rr][i].off;
+	int off[NBANDS], i, l3, h3, l2, h2, l1, h1, n2, n1;
+	band_offs(re ? 1 : 0, off);
 	level_sizes(re, 3, &l3, &h3);
 	level_sizes(re, 2, &l2, &h2);
 	level_sizes(re, 1, &l1, &h1);

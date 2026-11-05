@@ -77,7 +77,7 @@ static void idwt2(const long *LL, int las, const long *HL, const long *LH, const
 void ogpu_rfx_idwt(long *buf, int re, long *tmp)
 {
 	long *ll = tmp, *lp = ll + 33 * 33, *hp = lp + 33 * 64, *t = hp + 33 * 64, *mid = t + 2 * 66;
-	int off[NBANDS], i, l3, h3, l2, h2, l1, h1, n2, n1;
+	int off[NBANDS], l3, h3, l2, h2, l1, h1, n2, n1;
 	band_offs(re ? 1 : 0, off);
 	level_sizes(re, 3, &l3, &h3);
 	level_sizes(re, 2, &l2, &h2);

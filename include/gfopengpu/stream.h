@@ -50,6 +50,15 @@
  * bit and draws the path anti-aliased; 0.23 and later send such a path to a
  * driver only when it answers the form.
  *
+ * v1.9 (5 November 2026) adds OGPU_OP_DWT_INV: the inverse 5/3 DWT of
+ * [MS-RDPRFX] 3.1.8.2.4 on one 64x64 tile of int32 coefficients in RFX
+ * band order (HL1..LL3), with the Reduce-Extrapolate layout when the RE
+ * flag is set. It is a compute op (no TARGET): in/out are Amiga
+ * addresses of 4096 native int32s; a work buffer of
+ * OGPU_DWT_RFX_WORK_BYTES is required. The CPU back end is bit-exact with
+ * the lifting equations; ACRTG/PiStorm may answer OGPU_ONGPU later. A
+ * back end that answers DWT_INV in OGPU_Query takes all of v1.9.
+ *
  * A stream is 32-bit words, big-endian (the Amiga's order) wherever it is
  * read. Each command starts with a header word: the opcode in the top 16
  * bits and the command's length in words, header included, in the bottom 16.
@@ -70,7 +79,7 @@
 #define OPENGPU_STREAM_H
 
 #define OGPU_STREAM_VERSION 1
-#define OGPU_STREAM_MINOR   8      /* v1.8: OGPU_PATH_ALIASED; from gfopengpu.library 0.24, OGPU_QUERY_FLAG */
+#define OGPU_STREAM_MINOR   9      /* v1.9: OGPU_OP_DWT_INV (MS-RDPRFX idwt); gfopengpu.library 0.26 */
 
 #define OGPU_HDR(op, words)     (((unsigned long)(op) << 16) | ((unsigned long)(words) & 0xFFFFUL))
 #define OGPU_HDR_OP(w)          ((unsigned)((w) >> 16))
@@ -155,6 +164,9 @@
 #define OGPU_OP_BLUR            0x0027  /* v1.6: xy, wh, radii, work address, work bytes 6  */
 #define OGPU_OP_PALETTE         0x0028  /* v1.7: slot, table address (256 ARGB32 words):
                                            an INDEX8 slot's colours; 0 forgets them      3  */
+#define OGPU_OP_DWT_INV         0x0029  /* v1.9: in address (4096 int32, RFX band order),
+                                           out address (0 = overwrite in), flags,
+                                           work address, work bytes                     6  */
 /* 0x0030-0x003F: 3D (TRIANGLES, RENDER3D, TEXENV, TEXTURE, DEPTH, CLEAR3D):
  * include/gfopengpu/stream3d.h. */
 #define OGPU_OP_FENCE           0x00F0  /* id: reported when everything before is done   2  */
@@ -462,6 +474,19 @@
 #define OGPU_YUV_BT2020         4   /* video range */
 #define OGPU_YUV_BT2020_FULL    5   /* full range */
 #define OGPU_YUV_FORMAT(layout, space) ((unsigned long)(layout) | ((unsigned long)(space) << 8))
+
+
+/* v1.9: OGPU_OP_DWT_INV flags and work size. Coefficients and the optional
+ * out buffer are 4096 native signed 32-bit ints (Amiga big-endian words on
+ * the machine; the host test arena uses the host's endian). Band order is
+ * [MS-RDPRFX] 3.1.8.1.6: HL1, LH1, HH1, HL2, LH2, HH2, HL3, LH3, HH3, LL3.
+ * With OGPU_DWT_RFX_RE the Reduce-Extrapolate sizes (33/31, 17/16, 9/8) are
+ * used; without it, 32/32, 16/16, 8/8. The CPU result matches the lifting
+ * equations in 3.1.8.2.4 (and GFAmigaRDP's rdp_prog_idwt). */
+#define OGPU_DWT_RFX_RE             1   /* Reduce-Extrapolate (Progressive / GNOME RD) */
+#define OGPU_DWT_RFX_COEFS          4096
+#define OGPU_DWT_RFX_WORK_INTS      (33*33 + 2*33*64 + 2*66 + 64*64)
+#define OGPU_DWT_RFX_WORK_BYTES     ((unsigned long)(OGPU_DWT_RFX_WORK_INTS) * 4UL)
 
 #define OGPU_MAX_SLOTS          16
 #define OGPU_MAX_SIZE           16384   /* widths and heights */

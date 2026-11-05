@@ -33,30 +33,35 @@ fi
 # Draw and PolyDraw on 8-bit bitmaps (gfopenrtg.library 0.25, library/ortg_line.h) against
 # graphics.library's (GFOpenGfx's core): FRST_DOT, linpatcnt, JAM2, INVERSVID, through GFOpenGPU's LINE too.
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined -I"$HERE/host-include" \
-    -o "$OUT/test_lines" "$HERE/test_lines.c" "$HERE/../library/opengpu/ogpu_core.c" "$HERE/../library/opengpu/ogpu_build.c"
+    -o "$OUT/test_lines" "$HERE/test_lines.c" "$HERE/../library/opengpu/ogpu_core.c" "$HERE/../library/opengpu/ogpu_dwt.c" "$HERE/../library/opengpu/ogpu_build.c"
 "$OUT/test_lines"
 # ... and big-endian on a 68040, when a Linux m68k compiler and qemu are installed.
 if command -v m68k-linux-gnu-gcc >/dev/null && command -v qemu-m68k >/dev/null; then
     m68k-linux-gnu-gcc -std=c99 -O2 -fno-delete-null-pointer-checks -m68040 -static -Wall -Wextra -Werror -I"$HERE/host-include" \
-        -o "$OUT/test_lines-m68k" "$HERE/test_lines.c" "$HERE/../library/opengpu/ogpu_core.c" "$HERE/../library/opengpu/ogpu_build.c"
+        -o "$OUT/test_lines-m68k" "$HERE/test_lines.c" "$HERE/../library/opengpu/ogpu_core.c" "$HERE/../library/opengpu/ogpu_dwt.c" "$HERE/../library/opengpu/ogpu_build.c"
     qemu-m68k -cpu m68040 "$OUT/test_lines-m68k" >"$OUT/test_lines-m68k.txt"
     tail -1 "$OUT/test_lines-m68k.txt"
 fi
 OGPU="$HERE/../library/opengpu"
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
-    -o "$OUT/test_opengpu" "$HERE/test_opengpu.c" "$HERE/golden_scenes.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_build.c"
+    -o "$OUT/test_opengpu" "$HERE/test_opengpu.c" "$HERE/golden_scenes.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c" "$OGPU/ogpu_build.c"
 "$OUT/test_opengpu" "$HERE/golden/opengpu-g1.txt" "$HERE/golden/opengpu-v11.txt" "$HERE/golden/opengpu-v12.txt"
+
+cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined -I"$HERE/host-include" \
+    -I"$HERE/../include" -I"$OGPU" \
+    -o "$OUT/test_dwt" "$HERE/test_dwt.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c" "$OGPU/ogpu_build.c"
+"$OUT/test_dwt"
 # Text's strip (library/text_strip.h): the same pixels as 0.24's glyph-at-a-time Text.
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined -I"$HERE/host-include" \
-    -o "$OUT/test_text_strip" "$HERE/test_text_strip.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_build.c"
+    -o "$OUT/test_text_strip" "$HERE/test_text_strip.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c" "$OGPU/ogpu_build.c"
 "$OUT/test_text_strip"
 # COMPOSITE_PD (v1.4, pixman.library's composites) against its per-pixel reference.
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
-    -o "$OUT/test_composite_pd" "$HERE/test_composite_pd.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_build.c"
+    -o "$OUT/test_composite_pd" "$HERE/test_composite_pd.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c" "$OGPU/ogpu_build.c"
 "$OUT/test_composite_pd"
 # Stream v1.6 (paths, strokes, gradients, patterns, blur, blend modes) against its references.
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
-    -o "$OUT/test_vector" "$HERE/test_vector.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_build.c" -lm
+    -o "$OUT/test_vector" "$HERE/test_vector.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c" "$OGPU/ogpu_build.c" -lm
 "$OUT/test_vector"
 # The GL module's OS 3.2 present (library/modules/gl/gla/os3/gla_present_os3.c) on a fake
 # GFOpenGPU: every frame reaches the screen whole and in order, and a screen's present neither
@@ -81,11 +86,11 @@ gla_present "1 23 mixed" waits_locked waits_own             # virgl's frames bet
 # The retained surface (gfopengpu.library 0.25, library/opengpu/ogpu_retained.c): the 32x32
 # tiles' hashes and dirty map, marked rectangles, and the present's batch through the CPU core.
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
-    -o "$OUT/test_retained" "$HERE/test_retained.c" "$OGPU/ogpu_retained.c" "$OGPU/ogpu_core.c"
+    -o "$OUT/test_retained" "$HERE/test_retained.c" "$OGPU/ogpu_retained.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c"
 "$OUT/test_retained"
 if command -v m68k-linux-gnu-gcc >/dev/null && command -v qemu-m68k >/dev/null; then   # big-endian, 32-bit long
     m68k-linux-gnu-gcc -std=c99 -O2 -fno-delete-null-pointer-checks -m68040 -static -Wall -Wextra -Werror \
-        -o "$OUT/test_retained-m68k" "$HERE/test_retained.c" "$OGPU/ogpu_retained.c" "$OGPU/ogpu_core.c"
+        -o "$OUT/test_retained-m68k" "$HERE/test_retained.c" "$OGPU/ogpu_retained.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c"
     qemu-m68k -cpu m68040 "$OUT/test_retained-m68k"
 fi
 # Stream v1.8 (OGPU_PATH_ALIASED) against its exact reference, and against cairo's
@@ -93,14 +98,14 @@ fi
 ALIASED_CAIRO=""
 if pkg-config --exists cairo 2>/dev/null; then ALIASED_CAIRO="-DWITH_CAIRO $(pkg-config --cflags cairo)"; fi
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined $ALIASED_CAIRO \
-    -o "$OUT/test_vector_aliased" "$HERE/test_vector_aliased.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_build.c" \
+    -o "$OUT/test_vector_aliased" "$HERE/test_vector_aliased.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c" "$OGPU/ogpu_build.c" \
     $(if [ -n "$ALIASED_CAIRO" ]; then pkg-config --libs cairo; fi) -lm
 "$OUT/test_vector_aliased"
 # Stream v1.7 (SDL 3's blend modes, PIXELART, clamping one way, PALETTE, RGBA32 and ABGR32,
 # P010 and the new YUV spaces; the library's variant check) against its references, with
 # the 3D rasteriser for TRIANGLES' SDL form.
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined -DOGPU_WITH_3D \
-    -o "$OUT/test_sdl3" "$HERE/test_sdl3.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_3d.c" "$OGPU/ogpu_build.c" "$OGPU/ogpu_build3d.c" -lm
+    -o "$OUT/test_sdl3" "$HERE/test_sdl3.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c" "$OGPU/ogpu_3d.c" "$OGPU/ogpu_build.c" "$OGPU/ogpu_build3d.c" -lm
 "$OUT/test_sdl3"
 # The Vulkan back end against the core, when Vulkan's loader and headers are there
 # (it skips itself when no device is found; lavapipe will do). Built with the 3D
@@ -110,7 +115,7 @@ cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanit
 if [ -e /usr/include/vulkan/vulkan.h ] && { ldconfig -p 2>/dev/null | grep -q libvulkan.so.1; }; then
     cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined -DOGPU_WITH_3D \
         -o "$OUT/test_opengpu_vk" "$HERE/test_opengpu_vk.c" "$HERE/golden_scene_3d.c" "$HERE/scenes3d.c" "$HERE/../host/vulkan/ogpu_vk.c" \
-        "$OGPU/ogpu_core.c" "$OGPU/ogpu_3d.c" "$OGPU/ogpu_build.c" "$OGPU/ogpu_build3d.c" -lvulkan -lm
+        "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c" "$OGPU/ogpu_3d.c" "$OGPU/ogpu_build.c" "$OGPU/ogpu_build3d.c" -lvulkan -lm
     ASAN_OPTIONS=detect_leaks=0 "$OUT/test_opengpu_vk" "$HERE/golden/opengpu-g1.txt" 3000 "$HERE/golden/opengpu-v11.txt" \
         "$HERE/golden/opengpu-3d.txt"
     # Again in video RAM the test owns, as the runtime's board memory is.
@@ -124,7 +129,7 @@ if [ -e /usr/include/vulkan/vulkan.h ] && { ldconfig -p 2>/dev/null | grep -q li
     OGPU_VK_HOST=1 OGPU_VK_HOSTMEM=map OGPU_VK_CARD_AT=0x80000 OGPU_VK_CARD_END=0xC0000 ASAN_OPTIONS=detect_leaks=0 "$OUT/test_opengpu_vk" \
         "$HERE/golden/opengpu-g1.txt" 200 "$HERE/golden/opengpu-v11.txt" "$HERE/golden/opengpu-3d.txt"
     cc -std=c99 -O1 -g -Wall -Wextra -Werror -o "$OUT/test_opengpu_vk-no3d" "$HERE/test_opengpu_vk.c" "$HERE/../host/vulkan/ogpu_vk.c" \
-        "$OGPU/ogpu_core.c" "$OGPU/ogpu_build.c" -lvulkan
+        "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c" "$OGPU/ogpu_build.c" -lvulkan
     "$OUT/test_opengpu_vk-no3d" "$HERE/golden/opengpu-g1.txt" 200 "$HERE/golden/opengpu-v11.txt"
 else
     echo "no Vulkan headers or loader; the GPU run is skipped"
@@ -158,10 +163,10 @@ sh "$HERE/openal/run_host.sh" "$OUT/openal"
 # The same tests big-endian on a 68040, when a Linux m68k compiler and qemu are installed.
 if command -v m68k-linux-gnu-gcc >/dev/null && command -v qemu-m68k >/dev/null; then
     m68k-linux-gnu-gcc -std=c99 -O2 -fno-delete-null-pointer-checks -m68040 -static -Wall -Wextra -Werror \
-        -o "$OUT/test_opengpu-m68k" "$HERE/test_opengpu.c" "$HERE/golden_scenes.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_build.c"
+        -o "$OUT/test_opengpu-m68k" "$HERE/test_opengpu.c" "$HERE/golden_scenes.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c" "$OGPU/ogpu_build.c"
     qemu-m68k -cpu m68040 "$OUT/test_opengpu-m68k" "$HERE/golden/opengpu-g1.txt" "$HERE/golden/opengpu-v11.txt" "$HERE/golden/opengpu-v12.txt"
     m68k-linux-gnu-gcc -std=c99 -O2 -fno-delete-null-pointer-checks -m68040 -static -Wall -Wextra -Werror -I"$HERE/host-include" \
-        -o "$OUT/test_text_strip-m68k" "$HERE/test_text_strip.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_build.c"
+        -o "$OUT/test_text_strip-m68k" "$HERE/test_text_strip.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c" "$OGPU/ogpu_build.c"
     qemu-m68k -cpu m68040 "$OUT/test_text_strip-m68k"
 else
     echo "no m68k-linux-gnu-gcc or qemu-m68k; the big-endian run is skipped"
@@ -171,7 +176,8 @@ CC68K=${CC68K:-$STOVE/prefix/bin/m68k-amigaos-gcc}
 if [ -x "$CC68K" ]; then
     "$CC68K" -m68040 -O2 -fno-delete-null-pointer-checks -Wall -Wextra -Werror -c -o "$OUT/modes-m68k.o" "$HERE/../library/modes.c"
     "$CC68K" -m68040 -O2 -fno-delete-null-pointer-checks -Wall -Wextra -Werror -fno-builtin -c -o "$OUT/ogpu_core-m68k.o" "$HERE/../library/opengpu/ogpu_core.c"
-    echo "library/modes.c and library/opengpu/ogpu_core.c build for the 68k"
+    "$CC68K" -m68040 -O2 -fno-delete-null-pointer-checks -Wall -Wextra -Werror -fno-builtin -c -o "$OUT/ogpu_dwt-m68k.o" "$HERE/../library/opengpu/ogpu_dwt.c"
+    echo "library/modes.c and library/opengpu/ogpu_core.c (+ ogpu_dwt.c) build for the 68k"
 else
     echo "no m68k compiler; the 68k check is skipped"
 fi

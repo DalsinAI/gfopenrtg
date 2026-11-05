@@ -1,0 +1,19 @@
+OGPU_OP_DWT_INV (stream v1.9) — 2026-11-05
+==========================================
+
+Inverse 5/3 DWT for RemoteFX Progressive tiles ([MS-RDPRFX] 3.1.8.2.4).
+
+API (include/gfopengpu/stream.h)
+  OGPU_OP_DWT_INV 0x0029
+  in, out(0=inplace), flags, work, work_bytes   (6 words incl. header)
+  OGPU_DWT_RFX_RE, OGPU_DWT_RFX_COEFS=4096, OGPU_DWT_RFX_WORK_*
+
+CPU back end: library/opengpu/ogpu_dwt.c — bit-exact with the lifting
+equations (host test tests/test_dwt.c: max abs error ≤ 8 vs forward roundtrip,
+same bound as GFAmigaRDP progressive tests).
+
+ACRTG / PiStorm: not accelerated yet. Drivers that omit DWT_INV from
+supports() keep using this CPU core via the library split path. Future work:
+compute shader / NEON matching the same int32 band layout.
+
+gfopengpu.library 0.26.

@@ -70,6 +70,11 @@
  * core takes every flag stream.h defines; a driver says so in its
  * supports(), and the batches with a flag it doesn't take run here. A
  * library before 0.24, and a driver that predates the form, answer NONE.
+ * 0.26: stream v1.9, OGPU_OP_DWT_INV — MS-RDPRFX 64x64 3-level inverse 5/3
+ * DWT on int32 coefficient tiles (Reduce-Extrapolate flag). CPU back end
+ * first (bit-exact with the lifting equations); drivers that do not answer
+ * DWT_INV in supports() keep falling through to this core. Ask
+ * OGPU_Query(OGPU_OP_DWT_INV, OGPU_FMT_ARGB32) before use.
  * 0.25: retained surfaces (include/gfopengpu/retained.h, LVOs 162 to 192): a
  * program's picture stays in CPU memory and is shown through a texture the
  * back end keeps; a present uploads only the 32x32 tiles that changed (found
@@ -119,7 +124,7 @@
 
 #define REG(r, decl) register decl __asm(#r)   /* bebbo gcc: an argument in a register */
 #define LIB_VERSION 0
-#define LIB_REVISION 25
+#define LIB_REVISION 26
 #define RESULTS 16                              /* the last batches' results, by fence */
 #define MAX_DRIVERS 8                           /* files looked at in LIBS:GFOpenGPU/ */
 #define ON_CPU 0                                /* dfence[] for a batch the CPU ran */
@@ -173,9 +178,9 @@ int start(void) { return -1; }
 const ULONG ogpu_ogfx_at = offsetof(struct OpenGPUBase, ogfx);
 
 static const char lib_name[] = "gfopengpu.library";
-static const char lib_id[] = "gfopengpu.library 0.25 (2.11.2026) GFOpenGPU, AmiCradle Team\r\n";
+static const char lib_id[] = "gfopengpu.library 0.26 (2.11.2026) GFOpenGPU, AmiCradle Team\r\n";
 /* For C:Version, which looks for "$VER:" in the file. */
-static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopengpu.library 0.25 (2.11.2026) GFOpenGPU, AmiCradle Team";
+static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopengpu.library 0.26 (2.11.2026) GFOpenGPU, AmiCradle Team";
 static const char cpu_name[] = "CPU";
 static const char dos_name[] = "dos.library";
 static const char drv_dir[] = "LIBS:GFOpenGPU";

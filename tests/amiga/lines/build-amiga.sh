@@ -21,7 +21,7 @@ mkdir -p "$OUT/c"
     -I"$ROOT/include" -o "$OUT/c/OpenRTGLineCheck" "$HERE/line_check.c"
 "$CC" -m68040 -specs="$ROOT/tools/m68k-soft-m68040.specs" -mnobitfield -O2 -fno-delete-null-pointer-checks -Wall -Werror -noixemul \
     -I"$ROOT/include" -o "$OUT/c/OpenRTGLineModel" "$ROOT/tests/test_lines.c" \
-    "$ROOT/library/opengpu/ogpu_core.c" "$ROOT/library/opengpu/ogpu_build.c" -lm
+    "$ROOT/library/opengpu/ogpu_core.c" "$ROOT/library/opengpu/ogpu_dwt.c" "$ROOT/library/opengpu/ogpu_build.c" -lm
 "$CC" -m68040 -specs="$ROOT/tools/m68k-soft-m68040.specs" -O2 -fno-delete-null-pointer-checks -Wall -Werror -noixemul \
     -I"$ROOT/include" -o "$OUT/c/OpenRTGLineTime" "$HERE/line_time.c"
 for t in OpenRTGLineCheck OpenRTGLineModel OpenRTGLineTime; do

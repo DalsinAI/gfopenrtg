@@ -31,6 +31,10 @@ for v in "$@"; do
     # shellcheck disable=SC2086
     "$CC" $CF -Dogpu_core_init=vb_${name}_init -Dogpu_core_run=vb_${name}_run -Dogpu_core_supports=vb_${name}_supports \
         -c -o "$OUT/$name/ogpu_core.o" "$OUT/$name/library/opengpu/ogpu_core.c"
+    if [ -f "$OUT/$name/library/opengpu/ogpu_dwt.c" ]; then
+        "$CC" $CF -c -o "$OUT/$name/ogpu_dwt.o" "$OUT/$name/library/opengpu/ogpu_dwt.c"
+        objs="$objs $OUT/$name/ogpu_dwt.o"
+    fi
     echo "VB_CORE(\"$name\", vb_${name}_init, vb_${name}_run)" >> "$OUT/vb_cores.h"
     objs="$objs $OUT/$name/ogpu_core.o"
     if [ "$ref" = . ]; then echo "$name: the working tree"; else echo "$name: $(git -C "$ROOT" rev-parse --short "$ref")"; fi

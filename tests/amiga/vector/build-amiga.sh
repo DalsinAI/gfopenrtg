@@ -19,7 +19,7 @@ mkdir -p "$OUT/c"
 "$CC" --version | head -1
 CORE="-m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -Wall -Werror"
 SOFT="-specs=$ROOT/tools/m68k-soft-m68040.specs"
-"$CC" $CORE $SOFT -c -o "$OUT/ogpu_core.o" "$ROOT/library/opengpu/ogpu_core.c"
+"$CC" $CORE $SOFT -c -o "$OUT/ogpu_core.o" "$ROOT/library/opengpu/ogpu_core.c" "$ROOT/library/opengpu/ogpu_dwt.c"
 "$CC" $CORE $SOFT -c -o "$OUT/ogpu_build.o" "$ROOT/library/opengpu/ogpu_build.c"
 "$CC" -m68040 $SOFT -O2 -fno-delete-null-pointer-checks -w -noixemul -o "$OUT/c/OpenGPUVectorModel" \
     "$ROOT/tests/test_vector.c" "$OUT/ogpu_core.o" "$OUT/ogpu_build.o" -lm

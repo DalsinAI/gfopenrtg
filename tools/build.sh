@@ -20,10 +20,10 @@ CPU="-m68040 -specs=$HERE/m68k-soft-m68040.specs"
 "$CC" $CPU -O2 -fno-delete-null-pointer-checks -Wall -Werror -noixemul -o "$OUT/LibCount" "$HERE/libcount.c"
 echo "$OUT/LibCount ($(wc -c < "$OUT/LibCount") bytes)"
 "$CC" $CPU -mnobitfield -O2 -fno-delete-null-pointer-checks -Wall -Werror -noixemul -I"$HERE/../include" -o "$OUT/GFOpenGPUCheck" "$HERE/ogpu_check.c" \
-    "$HERE/../tests/golden_scenes.c" "$HERE/../library/opengpu/ogpu_core.c" "$HERE/../library/opengpu/ogpu_build.c" -lm
+    "$HERE/../tests/golden_scenes.c" "$HERE/../library/opengpu/ogpu_core.c" "$HERE/../library/opengpu/ogpu_dwt.c" "$HERE/../library/opengpu/ogpu_build.c" -lm
 echo "$OUT/GFOpenGPUCheck ($(wc -c < "$OUT/GFOpenGPUCheck") bytes)"
 "$CC" $CPU -mnobitfield -O2 -fno-delete-null-pointer-checks -Wall -Werror -noixemul -I"$HERE/../include" -o "$OUT/OpenGPUBench" "$HERE/ogpu_bench.c" \
-    "$HERE/../library/opengpu/ogpu_core.c" "$HERE/../library/opengpu/ogpu_build.c" -lm
+    "$HERE/../library/opengpu/ogpu_core.c" "$HERE/../library/opengpu/ogpu_dwt.c" "$HERE/../library/opengpu/ogpu_build.c" -lm
 echo "$OUT/OpenGPUBench ($(wc -c < "$OUT/OpenGPUBench") bytes)"
 "$CC" $CPU -O2 -fno-delete-null-pointer-checks -Wall -Werror -noixemul -I"$HERE/../include" -o "$OUT/GfxBench" "$HERE/gfx_bench.c" -lm
 echo "$OUT/GfxBench ($(wc -c < "$OUT/GfxBench") bytes)"

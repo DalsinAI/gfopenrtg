@@ -16,5 +16,5 @@ cc -m32 -std=gnu99 -DMGL_HOST -I"$HERE/host-include" -I"$ROOT/include" -g -O1 -W
     -fsanitize=address,undefined -fno-sanitize-recover=undefined -o "$OUT/test_minigl" "$HERE/test_minigl.c" \
     "$M/mgl_math.c" "$M/mgl_state.c" "$M/mgl_matrix.c" "$M/mgl_vertex.c" "$M/mgl_pipe.c" "$M/mgl_texture.c" \
     "$M/mgl_out.c" "$M/mgl_list.c" "$M/mgl_glu.c" "$M/mgl_glut.c" "$M/mgl_table.c" "$M/mgl_static.c" \
-    "$O/ogpu_core.c" "$O/ogpu_3d.c" "$O/ogpu_build.c" "$O/ogpu_build3d.c" -lm
+    "$O/ogpu_core.c" "$O/ogpu_dwt.c" "$O/ogpu_3d.c" "$O/ogpu_build.c" "$O/ogpu_build3d.c" -lm
 "$OUT/test_minigl" "$HERE/golden/minigl-scene.txt" ${1:-} -o "$OUT/minigl-scene.ppm"

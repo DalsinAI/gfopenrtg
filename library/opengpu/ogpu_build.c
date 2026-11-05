@@ -280,3 +280,11 @@ void ogpu_image_paint(struct OGPUBatch *g, int slot, unsigned long flags, int sx
     w[10] = (unsigned long)alpha & 255;
     words(g, OGPU_PATTERN_WORDS, w);
 }
+
+void ogpu_dwt_inv(struct OGPUBatch *b, unsigned long in_address, unsigned long out_address,
+                  unsigned long flags, unsigned long work_address, unsigned long work_bytes) {
+    unsigned long a[5];
+    a[0] = in_address; a[1] = out_address; a[2] = flags; a[3] = work_address; a[4] = work_bytes;
+    cmd(b, OGPU_OP_DWT_INV, 5, a);
+}
+

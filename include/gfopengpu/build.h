@@ -100,5 +100,9 @@ void ogpu_image_paint(struct OGPUBatch *g, int slot, unsigned long flags, int sx
  * all of v1.7 (SDL 3's blend modes, PIXELART, clamping one way, the RGBA32
  * and ABGR32 orders, P010 and the new YUV colour spaces). */
 void ogpu_palette(struct OGPUBatch *b, int slot, unsigned long table);
+/* v1.9: MS-RDPRFX inverse DWT. out_address 0 overwrites in; flags:
+ * OGPU_DWT_RFX_RE; work_bytes >= OGPU_DWT_RFX_WORK_BYTES. */
+void ogpu_dwt_inv(struct OGPUBatch *b, unsigned long in_address, unsigned long out_address,
+                  unsigned long flags, unsigned long work_address, unsigned long work_bytes);
 
 #endif

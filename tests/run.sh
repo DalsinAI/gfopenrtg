@@ -112,6 +112,11 @@ cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanit
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined -DOGPU_WITH_3D \
     -o "$OUT/test_sdl3" "$HERE/test_sdl3.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c" "$OGPU/ogpu_3d.c" "$OGPU/ogpu_build.c" "$OGPU/ogpu_build3d.c" -lm
 "$OUT/test_sdl3"
+# The Vulkan back end's choice of device (host/vulkan/ogpu_vk_pick.h), no Vulkan needed:
+# a GPU before a CPU one (llvmpipe), discrete before integrated before virtual.
+cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
+    -o "$OUT/test_vk_pick" "$HERE/test_vk_pick.c"
+"$OUT/test_vk_pick" >/dev/null
 # The Vulkan back end against the core, when Vulkan's loader and headers are there
 # (it skips itself when no device is found; lavapipe will do). Built with the 3D
 # range (OGPU_WITH_3D), as the runtime is: TRIANGLES on the 3D shader, the rest

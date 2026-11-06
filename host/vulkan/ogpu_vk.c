@@ -59,6 +59,7 @@
 #define OGPU_VK_TSC 1
 #endif
 #include "ogpu_vk.h"
+#include "ogpu_vk_pick.h"
 #ifdef OGPU_WITH_3D
 #include "../../library/opengpu/ogpu_3d.h"
 #include "ogpu3d_rec.c"     /* one unit: the runtime builds the back end from this file */
@@ -90,6 +91,7 @@ struct ogpu_vk {
     VkCommandBuffer cmd;
     VkFence done;
     char name[VK_MAX_PHYSICAL_DEVICE_NAME_SIZE];
+    char why[512];              /* why that device (pick_device) */
 
     struct ogpu_core core;      /* the state, and the CPU path */
 #ifdef OGPU_WITH_3D
@@ -1640,6 +1642,7 @@ const char *ogpu_vk_vram_mode(struct ogpu_vk *vk) { return vk->vram_mode; }
 ogpu_u32 ogpu_vk_card_at(const struct ogpu_vk *vk) { return vk->card; }
 ogpu_u32 ogpu_vk_card_end(const struct ogpu_vk *vk) { return vk->card ? vk->card_end : 0; }
 const char *ogpu_vk_device(struct ogpu_vk *vk) { return vk->name; }
+const char *ogpu_vk_device_why(const struct ogpu_vk *vk) { return vk->why; }
 void ogpu_vk_stats(const struct ogpu_vk *vk, struct ogpu_vk_stats *s) {
     *s = vk->stats;
     s->route = vk->route;
@@ -1993,29 +1996,29 @@ no:
 #endif
 }
 
+/* The device (ogpu_vk_pick.h): a GPU before a CPU one, discrete before
+ * integrated before virtual; the reason kept for ogpu_vk_device_why. */
 static int pick_device(struct ogpu_vk *vk, char *err, int errlen) {
     VkPhysicalDevice devs[16];
-    uint32_t n = 16, i, best = 0;
-    int best_score = -1;
+    VkPhysicalDeviceProperties pr[16];
+    struct ogpu_vk_cand c[16];
+    uint32_t n = 16, i;
+    int best;
     const char *want = vk->cfg.device ? vk->cfg.device : getenv("OGPU_VK_DEVICE");
     VkResult r = vkEnumeratePhysicalDevices(vk->inst, &n, devs);
     if ((r != VK_SUCCESS && r != VK_INCOMPLETE) || !n) return fail(err, errlen, "no Vulkan device", r);
     for (i = 0; i < n; i++) {
-        VkPhysicalDeviceProperties pr;
         VkQueueFamilyProperties qf[16];
         uint32_t nq = 16, q;
-        int score, has_compute = 0;
-        vkGetPhysicalDeviceProperties(devs[i], &pr);
+        vkGetPhysicalDeviceProperties(devs[i], &pr[i]);
         vkGetPhysicalDeviceQueueFamilyProperties(devs[i], &nq, qf);
-        for (q = 0; q < nq; q++) if (qf[q].queueFlags & VK_QUEUE_COMPUTE_BIT) has_compute = 1;
-        if (!has_compute) continue;
-        if (want && *want) score = strstr(pr.deviceName, want) ? 10 : -1;
-        else score = pr.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU ? 4
-                   : pr.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU ? 3
-                   : pr.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU ? 1 : 2;
-        if (score > best_score) { best_score = score; best = i; }
+        c[i].name = pr[i].deviceName;
+        c[i].type = (int)pr[i].deviceType;
+        c[i].compute = 0;
+        for (q = 0; q < nq; q++) if (qf[q].queueFlags & VK_QUEUE_COMPUTE_BIT) c[i].compute = 1;
     }
-    if (best_score < 0) return fail(err, errlen, want && *want ? "no Vulkan device by that name" : "no device with compute", VK_ERROR_INITIALIZATION_FAILED);
+    best = ogpu_vk_pick(c, (int)n, want, vk->why, (int)sizeof vk->why);
+    if (best < 0) return fail(err, errlen, vk->why, VK_ERROR_INITIALIZATION_FAILED);
     vk->phys = devs[best];
     return 1;
 }

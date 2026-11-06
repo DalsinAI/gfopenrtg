@@ -623,6 +623,27 @@ static void test_3d_random(int rounds) {
 }
 #endif
 
+/* After ogpu_vk_reset the core's hooks must still be set: a command the
+ * back end runs on its own core (RLGR_DEC) reads memory through map, and
+ * the fence after it reports through fence. (gfopenrtg #180 made
+ * ogpu_core_init clear the hooks; the reset path then crashed on map.) */
+static void test_reset_keeps_hooks(void) {
+    static const ogpu_u8 rlgr[16] = { 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+                                      0x0f, 0x1e, 0x2d, 0x3c, 0x4b, 0x5a, 0x69, 0x78 };
+    ogpu_vk_reset(V);
+#ifdef OGPU_WITH_3D
+    ref_afresh();
+#endif
+    memcpy(ram_ref + 0x1000, rlgr, sizeof rlgr);
+    memcpy(ram_vk + 0x1000, rlgr, sizeof rlgr);
+    begin();
+    ogpu_rlgr_dec(&B, 0x1000, sizeof rlgr, 0x2000, 4096, 0);
+    ogpu_fence(&B, 0x52455345UL);               /* 'RESE' */
+    CHECK(run_both("after a reset: RLGR_DEC on the core, then a fence"), "the reset keeps the core's hooks");
+    CHECK(nf_vk == 1, "the fence after a reset reached the back end's hook (%ld)", nf_vk);
+}
+
+
 /* ---- the composite list ------------------------------------------------------------- */
 
 /* SDL-shaped frames: a clear and sprites in one list; a composite that reads
@@ -975,6 +996,7 @@ int main(int argc, char **argv) {
     test_copy_alias();
     test_card();
     test_supports();
+    test_reset_keeps_hooks();
 #ifdef OGPU_WITH_3D
     test_3d(argc > 4 ? argv[4] : 0);
     test_3d_random(rounds);

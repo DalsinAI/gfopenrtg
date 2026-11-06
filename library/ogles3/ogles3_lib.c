@@ -93,6 +93,8 @@
 #define CCE_NO_DISPLAY  4
 #define CCE_UNSUPPORTED 5
 
+#define NO_MODE 0xFFFFFFFFUL                /* graphics' INVALID_ID, unsigned */
+
 #define GL_STACK_MIN  (256 * 1024)
 #define GL_STACK_SIZE (1024 * 1024)
 
@@ -187,7 +189,9 @@ static struct Library *lib_init(REG(d0, struct OGL3Base *base), REG(a0, BPTR seg
     base->seglist = seglist;
     base->lib.lib_Revision = OGL3_REVISION;
     InitSemaphore(&lock);
-    NewList((struct List *)&sessions);
+    sessions.mlh_Head = (struct MinNode *)&sessions.mlh_Tail;
+    sessions.mlh_Tail = NULL;
+    sessions.mlh_TailPred = (struct MinNode *)&sessions.mlh_Head;
     return &base->lib;
 }
 
@@ -519,7 +523,7 @@ struct ogl3_context *ogl3_aglCreateContext2(ULONG *errcode, struct TagItem *tags
     struct BitMap *bm = NULL;
     struct ogl3_context *c, *share = NULL;
     struct session *ss;
-    ULONG modeid = INVALID_ID, w = 0, h = 0, depth = 0, stencil = 0, es = 31, err = CCE_OK;
+    ULONG modeid = NO_MODE, w = 0, h = 0, depth = 0, stencil = 0, es = 31, err = CCE_OK;
     int state_only = 0, ok;
 
     if (!(c = AllocVec(sizeof *c, MEMF_ANY | MEMF_CLEAR))) {
@@ -548,7 +552,7 @@ struct ogl3_context *ogl3_aglCreateContext2(ULONG *errcode, struct TagItem *tags
         default: break;
         }
     }
-    if (!err && ((win != NULL) + (bm != NULL) + (modeid != INVALID_ID)) > 1) err = CCE_BAD_TAGS;
+    if (!err && ((win != NULL) + (bm != NULL) + (modeid != NO_MODE)) > 1) err = CCE_BAD_TAGS;
     if (!err && share && share->es != es) err = CCE_BAD_TAGS;
     if (err) {
         FreeVec(c);
@@ -596,7 +600,7 @@ struct ogl3_context *ogl3_aglCreateContext2(ULONG *errcode, struct TagItem *tags
     } else if (bm) {
         target_bitmap(c, bm);
         ok = 1;
-    } else if (modeid != INVALID_ID) {
+    } else if (modeid != NO_MODE) {
         ok = open_screen(c, modeid, w, h);
     } else {
         ok = open_window(c, w, h);

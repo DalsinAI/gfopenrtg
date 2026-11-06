@@ -11,8 +11,7 @@
 **
 **   C prototypes. For use with 32 bit integers only.
 **
-**   Copyright (c) 2001 Amiga, Inc.
-**       All Rights Reserved
+**   Copyright (c) 2026 AmiCradle Team. MIT licence.
 */
 
 #include <exec/types.h>

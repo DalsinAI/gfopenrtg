@@ -1,4 +1,5 @@
 ==id $Id: warp3d_lib.sfd 5.0 (8.10.2026) $
+==copyright Copyright (c) 2026 AmiCradle Team. MIT licence.
 * "Warp3D.library": GFOpenRTG's Warp3D, version 5's 68k function table (a
 * superset of version 4). Copyright (c) 2026 AmiCradle Team, MIT licence.
 * The order and the registers are what existing programs call; the four

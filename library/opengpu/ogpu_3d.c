@@ -36,6 +36,11 @@
 
 typedef int o3_s32;                /* exactly 32 bits on every target the core builds for */
 typedef unsigned int o3_u32;
+/* Fixed-point steps that may wrap: the sums and differences are done in
+ * unsigned arithmetic (as the 68k's add.l and sub.l do), so a wrap is
+ * defined C and the result is the same bits as before. */
+#define O3_WADD(a, b) ((o3_s32)((o3_u32)(a) + (o3_u32)(b)))
+#define O3_WSUB(a, b) ((o3_s32)((o3_u32)(a) - (o3_u32)(b)))
 typedef long long o3_s64;
 typedef unsigned short o3_u16;
 
@@ -940,8 +945,8 @@ SPAN void o3_span(struct ogpu3d *t, const struct o3_pipe *pp, const struct o3_tr
                     V = o3_div_shl28(v[AT_V], q0);
                     U1 = o3_div_shl28(su1, q1);
                     V1 = o3_div_shl28(sv1, q1);
-                    dU = (U1 - U) >> 3;                     /* across 8 pixels, even when fewer are left */
-                    dV = (V1 - V) >> 3;
+                    dU = O3_WSUB(U1, U) >> 3;                /* across 8 pixels, even when fewer are left */
+                    dV = O3_WSUB(V1, V) >> 3;
                     seg = n;
                 }
                 seg--;
@@ -1053,7 +1058,7 @@ SPAN void o3_span(struct ogpu3d *t, const struct o3_pipe *pp, const struct o3_tr
                 pr[k] += tr->pxr[k];                        /* both below 2^31 */
                 if (pr[k] >= tr->pden) { pr[k] -= tr->pden; pq[k]++; }
             }
-        if (persp) { U += dU; V += dV; }
+        if (persp) { U = O3_WADD(U, dU); V = O3_WADD(V, dV); }
     }
 }
 
@@ -1130,8 +1135,8 @@ SPAN void o3_span_fast(struct ogpu3d *t, const struct o3_pipe *pp, const struct 
             o3_s32 q0 = q > 0 ? q : 1, q1 = (o3_s32)((o3_u32)q + ((o3_u32)dq << 3));
             if (q1 <= 0) q1 = 1;
             U = o3_div_shl28(su, q0); V = o3_div_shl28(sv, q0);
-            dU = (o3_div_shl28((o3_s32)((o3_u32)su + ((o3_u32)dsu << 3)), q1) - U) >> 3;
-            dV = (o3_div_shl28((o3_s32)((o3_u32)sv + ((o3_u32)dsv << 3)), q1) - V) >> 3;
+            dU = O3_WSUB(o3_div_shl28((o3_s32)((o3_u32)su + ((o3_u32)dsu << 3)), q1), U) >> 3;
+            dV = O3_WSUB(o3_div_shl28((o3_s32)((o3_u32)sv + ((o3_u32)dsv << 3)), q1), V) >> 3;
             seg = 8;
         }
         if (ztest) {
@@ -1202,11 +1207,11 @@ SPAN void o3_span_fast(struct ogpu3d *t, const struct o3_pipe *pp, const struct 
         else { dp[0] = (ogpu_u8)((f0 & 0xF8) | (f1 >> 5)); dp[1] = (ogpu_u8)(((f1 & 0x1C) << 3) | (f2 >> 3)); }
         count++;
     next:
-        if (gouraud) { r += dr; g += dg; b += db; a += da; }
-        z += dz; fv += dfv;
+        if (gouraud) { r = O3_WADD(r, dr); g = O3_WADD(g, dg); b = O3_WADD(b, db); a = O3_WADD(a, da); }
+        z = O3_WADD(z, dz); fv = O3_WADD(fv, dfv);
         if (tex) {
-            if (persp) { su += dsu; sv += dsv; q += dq; seg--; }
-            U += dU; V += dV;
+            if (persp) { su = O3_WADD(su, dsu); sv = O3_WADD(sv, dsv); q = O3_WADD(q, dq); seg--; }
+            U = O3_WADD(U, dU); V = O3_WADD(V, dV);
         }
     }
 #undef FETCH

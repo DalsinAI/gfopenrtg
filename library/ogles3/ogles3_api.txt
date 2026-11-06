@@ -1,0 +1,403 @@
+# ogles3.library's dispatch table, in ABI order (dispatch ABI 1, 380 entries).
+#   kind|return type|entry|parameters (GL entries: without the context)
+# The order, names and prototypes are ogles3.library's interface, taken from
+# its MIT-licensed SDK header <libraries/ogles3_dispatch.h> (ogles3 1.0-beta2,
+# https://github.com/ladislawv/ogles3), so that programs built with its SDK run
+# unchanged. That header's notice:
+#
+#   Copyright (c) 2026 R-Typer and Ladislawv
+#   Permission is hereby granted, free of charge, to any person obtaining a
+#   copy of this software and associated documentation files (the
+#   "Software"), to deal in the Software without restriction, including
+#   without limitation the rights to use, copy, modify, merge, publish,
+#   distribute, sublicense, and/or sell copies of the Software, and to permit
+#   persons to whom the Software is furnished to do so, subject to the
+#   following conditions: The above copyright notice and this permission
+#   notice shall be included in all copies or substantial portions of the
+#   Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+#   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+#   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+#   NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+#   DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+#   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+#   USE OR OTHER DEALINGS IN THE SOFTWARE.
+agl|struct OGLES3Context *|aglCreateContext2|ULONG *errcode, struct TagItem *tags
+agl|void|aglDestroyContext|struct OGLES3Context *ctx
+agl|void|aglMakeCurrent|struct OGLES3Context *ctx
+agl|void|aglSwapBuffers|struct OGLES3Context *ctx
+agl|void|aglSetParams2|struct OGLES3Context *ctx, struct TagItem *tags
+agl|void|aglSetBitmap|struct OGLES3Context *ctx, struct BitMap *bitmap
+gl|void|GLActiveTexture|GLenum texture
+gl|void|GLAttachShader|GLuint program, GLuint shader
+gl|void|GLBindAttribLocation|GLuint program, GLuint index, const GLchar *name
+gl|void|GLBindBuffer|GLenum target, GLuint buffer
+gl|void|GLBindFramebuffer|GLenum target, GLuint framebuffer
+gl|void|GLBindRenderbuffer|GLenum target, GLuint renderbuffer
+gl|void|GLBindTexture|GLenum target, GLuint texture
+gl|void|GLBlendColor|GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha
+gl|void|GLBlendEquation|GLenum mode
+gl|void|GLBlendEquationSeparate|GLenum modeRGB, GLenum modeAlpha
+gl|void|GLBlendFunc|GLenum sfactor, GLenum dfactor
+gl|void|GLBlendFuncSeparate|GLenum sfactorRGB, GLenum dfactorRGB, GLenum sfactorAlpha, GLenum dfactorAlpha
+gl|void|GLBufferData|GLenum target, GLsizeiptr size, const void *data, GLenum usage
+gl|void|GLBufferSubData|GLenum target, GLintptr offset, GLsizeiptr size, const void *data
+gl|GLenum|GLCheckFramebufferStatus|GLenum target
+gl|void|GLClear|GLbitfield mask
+gl|void|GLClearColor|GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha
+gl|void|GLClearDepthf|GLfloat d
+gl|void|GLClearStencil|GLint s
+gl|void|GLColorMask|GLboolean red, GLboolean green, GLboolean blue, GLboolean alpha
+gl|void|GLCompileShader|GLuint shader
+gl|void|GLCompressedTexImage2D|GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLint border, GLsizei imageSize, const void *data
+gl|void|GLCompressedTexSubImage2D|GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLsizei imageSize, const void *data
+gl|void|GLCopyTexImage2D|GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width, GLsizei height, GLint border
+gl|void|GLCopyTexSubImage2D|GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint x, GLint y, GLsizei width, GLsizei height
+gl|GLuint|GLCreateProgram|void
+gl|GLuint|GLCreateShader|GLenum type
+gl|void|GLCullFace|GLenum mode
+gl|void|GLDeleteBuffers|GLsizei n, const GLuint *buffers
+gl|void|GLDeleteFramebuffers|GLsizei n, const GLuint *framebuffers
+gl|void|GLDeleteProgram|GLuint program
+gl|void|GLDeleteRenderbuffers|GLsizei n, const GLuint *renderbuffers
+gl|void|GLDeleteShader|GLuint shader
+gl|void|GLDeleteTextures|GLsizei n, const GLuint *textures
+gl|void|GLDepthFunc|GLenum func
+gl|void|GLDepthMask|GLboolean flag
+gl|void|GLDepthRangef|GLfloat n, GLfloat f
+gl|void|GLDetachShader|GLuint program, GLuint shader
+gl|void|GLDisable|GLenum cap
+gl|void|GLDisableVertexAttribArray|GLuint index
+gl|void|GLDrawArrays|GLenum mode, GLint first, GLsizei count
+gl|void|GLDrawElements|GLenum mode, GLsizei count, GLenum type, const void *indices
+gl|void|GLEnable|GLenum cap
+gl|void|GLEnableVertexAttribArray|GLuint index
+gl|void|GLFinish|void
+gl|void|GLFlush|void
+gl|void|GLFramebufferRenderbuffer|GLenum target, GLenum attachment, GLenum renderbuffertarget, GLuint renderbuffer
+gl|void|GLFramebufferTexture2D|GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level
+gl|void|GLFrontFace|GLenum mode
+gl|void|GLGenBuffers|GLsizei n, GLuint *buffers
+gl|void|GLGenerateMipmap|GLenum target
+gl|void|GLGenFramebuffers|GLsizei n, GLuint *framebuffers
+gl|void|GLGenRenderbuffers|GLsizei n, GLuint *renderbuffers
+gl|void|GLGenTextures|GLsizei n, GLuint *textures
+gl|void|GLGetActiveAttrib|GLuint program, GLuint index, GLsizei bufSize, GLsizei *length, GLint *size, GLenum *type, GLchar *name
+gl|void|GLGetActiveUniform|GLuint program, GLuint index, GLsizei bufSize, GLsizei *length, GLint *size, GLenum *type, GLchar *name
+gl|void|GLGetAttachedShaders|GLuint program, GLsizei maxCount, GLsizei *count, GLuint *shaders
+gl|GLint|GLGetAttribLocation|GLuint program, const GLchar *name
+gl|void|GLGetBooleanv|GLenum pname, GLboolean *data
+gl|void|GLGetBufferParameteriv|GLenum target, GLenum pname, GLint *params
+gl|GLenum|GLGetError|void
+gl|void|GLGetFloatv|GLenum pname, GLfloat *data
+gl|void|GLGetFramebufferAttachmentParameteriv|GLenum target, GLenum attachment, GLenum pname, GLint *params
+gl|void|GLGetIntegerv|GLenum pname, GLint *data
+gl|void|GLGetProgramiv|GLuint program, GLenum pname, GLint *params
+gl|void|GLGetProgramInfoLog|GLuint program, GLsizei bufSize, GLsizei *length, GLchar *infoLog
+gl|void|GLGetRenderbufferParameteriv|GLenum target, GLenum pname, GLint *params
+gl|void|GLGetShaderiv|GLuint shader, GLenum pname, GLint *params
+gl|void|GLGetShaderInfoLog|GLuint shader, GLsizei bufSize, GLsizei *length, GLchar *infoLog
+gl|void|GLGetShaderPrecisionFormat|GLenum shadertype, GLenum precisiontype, GLint *range, GLint *precision
+gl|void|GLGetShaderSource|GLuint shader, GLsizei bufSize, GLsizei *length, GLchar *source
+gl|const GLubyte *|GLGetString|GLenum name
+gl|void|GLGetTexParameterfv|GLenum target, GLenum pname, GLfloat *params
+gl|void|GLGetTexParameteriv|GLenum target, GLenum pname, GLint *params
+gl|void|GLGetUniformfv|GLuint program, GLint location, GLfloat *params
+gl|void|GLGetUniformiv|GLuint program, GLint location, GLint *params
+gl|GLint|GLGetUniformLocation|GLuint program, const GLchar *name
+gl|void|GLGetVertexAttribfv|GLuint index, GLenum pname, GLfloat *params
+gl|void|GLGetVertexAttribiv|GLuint index, GLenum pname, GLint *params
+gl|void|GLGetVertexAttribPointerv|GLuint index, GLenum pname, void **pointer
+gl|void|GLHint|GLenum target, GLenum mode
+gl|GLboolean|GLIsBuffer|GLuint buffer
+gl|GLboolean|GLIsEnabled|GLenum cap
+gl|GLboolean|GLIsFramebuffer|GLuint framebuffer
+gl|GLboolean|GLIsProgram|GLuint program
+gl|GLboolean|GLIsRenderbuffer|GLuint renderbuffer
+gl|GLboolean|GLIsShader|GLuint shader
+gl|GLboolean|GLIsTexture|GLuint texture
+gl|void|GLLineWidth|GLfloat width
+gl|void|GLLinkProgram|GLuint program
+gl|void|GLPixelStorei|GLenum pname, GLint param
+gl|void|GLPolygonOffset|GLfloat factor, GLfloat units
+gl|void|GLReadPixels|GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, void *pixels
+gl|void|GLReleaseShaderCompiler|void
+gl|void|GLRenderbufferStorage|GLenum target, GLenum internalformat, GLsizei width, GLsizei height
+gl|void|GLSampleCoverage|GLfloat value, GLboolean invert
+gl|void|GLScissor|GLint x, GLint y, GLsizei width, GLsizei height
+gl|void|GLShaderBinary|GLsizei count, const GLuint *shaders, GLenum binaryFormat, const void *binary, GLsizei length
+gl|void|GLShaderSource|GLuint shader, GLsizei count, const GLchar *const*string, const GLint *length
+gl|void|GLStencilFunc|GLenum func, GLint ref, GLuint mask
+gl|void|GLStencilFuncSeparate|GLenum face, GLenum func, GLint ref, GLuint mask
+gl|void|GLStencilMask|GLuint mask
+gl|void|GLStencilMaskSeparate|GLenum face, GLuint mask
+gl|void|GLStencilOp|GLenum fail, GLenum zfail, GLenum zpass
+gl|void|GLStencilOpSeparate|GLenum face, GLenum sfail, GLenum dpfail, GLenum dppass
+gl|void|GLTexImage2D|GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const void *pixels
+gl|void|GLTexParameterf|GLenum target, GLenum pname, GLfloat param
+gl|void|GLTexParameterfv|GLenum target, GLenum pname, const GLfloat *params
+gl|void|GLTexParameteri|GLenum target, GLenum pname, GLint param
+gl|void|GLTexParameteriv|GLenum target, GLenum pname, const GLint *params
+gl|void|GLTexSubImage2D|GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, const void *pixels
+gl|void|GLUniform1f|GLint location, GLfloat v0
+gl|void|GLUniform1fv|GLint location, GLsizei count, const GLfloat *value
+gl|void|GLUniform1i|GLint location, GLint v0
+gl|void|GLUniform1iv|GLint location, GLsizei count, const GLint *value
+gl|void|GLUniform2f|GLint location, GLfloat v0, GLfloat v1
+gl|void|GLUniform2fv|GLint location, GLsizei count, const GLfloat *value
+gl|void|GLUniform2i|GLint location, GLint v0, GLint v1
+gl|void|GLUniform2iv|GLint location, GLsizei count, const GLint *value
+gl|void|GLUniform3f|GLint location, GLfloat v0, GLfloat v1, GLfloat v2
+gl|void|GLUniform3fv|GLint location, GLsizei count, const GLfloat *value
+gl|void|GLUniform3i|GLint location, GLint v0, GLint v1, GLint v2
+gl|void|GLUniform3iv|GLint location, GLsizei count, const GLint *value
+gl|void|GLUniform4f|GLint location, GLfloat v0, GLfloat v1, GLfloat v2, GLfloat v3
+gl|void|GLUniform4fv|GLint location, GLsizei count, const GLfloat *value
+gl|void|GLUniform4i|GLint location, GLint v0, GLint v1, GLint v2, GLint v3
+gl|void|GLUniform4iv|GLint location, GLsizei count, const GLint *value
+gl|void|GLUniformMatrix2fv|GLint location, GLsizei count, GLboolean transpose, const GLfloat *value
+gl|void|GLUniformMatrix3fv|GLint location, GLsizei count, GLboolean transpose, const GLfloat *value
+gl|void|GLUniformMatrix4fv|GLint location, GLsizei count, GLboolean transpose, const GLfloat *value
+gl|void|GLUseProgram|GLuint program
+gl|void|GLValidateProgram|GLuint program
+gl|void|GLVertexAttrib1f|GLuint index, GLfloat x
+gl|void|GLVertexAttrib1fv|GLuint index, const GLfloat *v
+gl|void|GLVertexAttrib2f|GLuint index, GLfloat x, GLfloat y
+gl|void|GLVertexAttrib2fv|GLuint index, const GLfloat *v
+gl|void|GLVertexAttrib3f|GLuint index, GLfloat x, GLfloat y, GLfloat z
+gl|void|GLVertexAttrib3fv|GLuint index, const GLfloat *v
+gl|void|GLVertexAttrib4f|GLuint index, GLfloat x, GLfloat y, GLfloat z, GLfloat w
+gl|void|GLVertexAttrib4fv|GLuint index, const GLfloat *v
+gl|void|GLVertexAttribPointer|GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const void *pointer
+gl|void|GLViewport|GLint x, GLint y, GLsizei width, GLsizei height
+gl|void *|GLMapBufferOES|GLenum target, GLenum access
+gl|GLboolean|GLUnmapBufferOES|GLenum target
+gl|void|GLGetBufferPointervOES|GLenum target, GLenum pname, void **params
+gl|void|GLDrawElementsBaseVertexOES|GLenum mode, GLsizei count, GLenum type, const void *indices, GLint basevertex
+gl|void|GLDiscardFramebufferEXT|GLenum target, GLsizei numAttachments, const GLenum *attachments
+gl|void|GLDrawRangeElements|GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const void *indices
+gl|void|GLGetProgramBinaryOES|GLuint program, GLsizei bufSize, GLsizei *length, GLenum *binaryFormat, void *binary
+gl|void|GLProgramBinaryOES|GLuint program, GLenum binaryFormat, const void *binary, GLint length
+gl|void|GLPolygonMode|GLenum face, GLenum mode
+gl|void|GLProvokingVertex|GLenum mode
+gl|void|GLGetBufferParameterivOES|GLenum target, GLenum pname, GLint *params
+gl|void|GLInsertEventMarkerEXT|GLsizei length, const GLchar *marker
+gl|void|GLPushGroupMarkerEXT|GLsizei length, const GLchar *marker
+gl|void|GLPopGroupMarkerEXT|void
+gl|void|GLClipControlEXT|GLenum origin, GLenum depth
+gl|void|GLDrawBuffersEXT|GLsizei n, const GLenum *bufs
+gl|const GLubyte *|GLGetStringi|GLenum name, GLuint index
+gl|void|GLGetInteger64v|GLenum pname, GLint64 *data
+gl|void|GLUniform1ui|GLint location, GLuint v0
+gl|void|GLUniform2ui|GLint location, GLuint v0, GLuint v1
+gl|void|GLUniform3ui|GLint location, GLuint v0, GLuint v1, GLuint v2
+gl|void|GLUniform4ui|GLint location, GLuint v0, GLuint v1, GLuint v2, GLuint v3
+gl|void|GLUniform1uiv|GLint location, GLsizei count, const GLuint *value
+gl|void|GLUniform2uiv|GLint location, GLsizei count, const GLuint *value
+gl|void|GLUniform3uiv|GLint location, GLsizei count, const GLuint *value
+gl|void|GLUniform4uiv|GLint location, GLsizei count, const GLuint *value
+gl|void|GLGetUniformuiv|GLuint program, GLint location, GLuint *params
+gl|void|GLUniformMatrix2x3fv|GLint location, GLsizei count, GLboolean transpose, const GLfloat *value
+gl|void|GLUniformMatrix3x2fv|GLint location, GLsizei count, GLboolean transpose, const GLfloat *value
+gl|void|GLUniformMatrix2x4fv|GLint location, GLsizei count, GLboolean transpose, const GLfloat *value
+gl|void|GLUniformMatrix4x2fv|GLint location, GLsizei count, GLboolean transpose, const GLfloat *value
+gl|void|GLUniformMatrix3x4fv|GLint location, GLsizei count, GLboolean transpose, const GLfloat *value
+gl|void|GLUniformMatrix4x3fv|GLint location, GLsizei count, GLboolean transpose, const GLfloat *value
+gl|GLint|GLGetFragDataLocation|GLuint program, const GLchar *name
+gl|void|GLGenSamplers|GLsizei count, GLuint *samplers
+gl|void|GLDeleteSamplers|GLsizei count, const GLuint *samplers
+gl|GLboolean|GLIsSampler|GLuint sampler
+gl|void|GLBindSampler|GLuint unit, GLuint sampler
+gl|void|GLSamplerParameteri|GLuint sampler, GLenum pname, GLint param
+gl|void|GLSamplerParameteriv|GLuint sampler, GLenum pname, const GLint *param
+gl|void|GLSamplerParameterf|GLuint sampler, GLenum pname, GLfloat param
+gl|void|GLSamplerParameterfv|GLuint sampler, GLenum pname, const GLfloat *param
+gl|void|GLGetSamplerParameteriv|GLuint sampler, GLenum pname, GLint *params
+gl|void|GLGetSamplerParameterfv|GLuint sampler, GLenum pname, GLfloat *params
+gl|void|GLTexImage3D|GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLenum format, GLenum type, const void *pixels
+gl|void|GLTexSubImage3D|GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const void *pixels
+gl|void|GLBindBufferRange|GLenum target, GLuint index, GLuint buffer, GLintptr offset, GLsizeiptr size
+gl|void|GLBindBufferBase|GLenum target, GLuint index, GLuint buffer
+gl|void|GLGetIntegeri_v|GLenum target, GLuint index, GLint *data
+gl|void|GLGetInteger64i_v|GLenum target, GLuint index, GLint64 *data
+gl|void|GLCopyBufferSubData|GLenum readTarget, GLenum writeTarget, GLintptr readOffset, GLintptr writeOffset, GLsizeiptr size
+gl|void|GLGetQueryiv|GLenum target, GLenum pname, GLint *params
+gl|GLuint|GLGetUniformBlockIndex|GLuint program, const GLchar *uniformBlockName
+gl|void|GLGetActiveUniformBlockiv|GLuint program, GLuint uniformBlockIndex, GLenum pname, GLint *params
+gl|void|GLGetActiveUniformBlockName|GLuint program, GLuint uniformBlockIndex, GLsizei bufSize, GLsizei *length, GLchar *uniformBlockName
+gl|void|GLUniformBlockBinding|GLuint program, GLuint uniformBlockIndex, GLuint uniformBlockBinding
+gl|void|GLGetUniformIndices|GLuint program, GLsizei uniformCount, const GLchar *const*uniformNames, GLuint *uniformIndices
+gl|void|GLGetActiveUniformsiv|GLuint program, GLsizei uniformCount, const GLuint *uniformIndices, GLenum pname, GLint *params
+gl|void *|GLMapBufferRange|GLenum target, GLintptr offset, GLsizeiptr length, GLbitfield access
+gl|void|GLFlushMappedBufferRange|GLenum target, GLintptr offset, GLsizeiptr length
+gl|GLboolean|GLUnmapBuffer|GLenum target
+gl|void|GLGetBufferPointerv|GLenum target, GLenum pname, void **params
+gl|void|GLGetBufferParameteri64v|GLenum target, GLenum pname, GLint64 *params
+gl|void|GLGenVertexArrays|GLsizei n, GLuint *arrays
+gl|void|GLDeleteVertexArrays|GLsizei n, const GLuint *arrays
+gl|GLboolean|GLIsVertexArray|GLuint array
+gl|void|GLBindVertexArray|GLuint array
+gl|void|GLVertexAttribDivisor|GLuint index, GLuint divisor
+gl|void|GLDrawArraysInstanced|GLenum mode, GLint first, GLsizei count, GLsizei instancecount
+gl|void|GLDrawElementsInstanced|GLenum mode, GLsizei count, GLenum type, const void *indices, GLsizei instancecount
+gl|void|GLVertexAttribIPointer|GLuint index, GLint size, GLenum type, GLsizei stride, const void *pointer
+gl|void|GLVertexAttribI4i|GLuint index, GLint x, GLint y, GLint z, GLint w
+gl|void|GLVertexAttribI4ui|GLuint index, GLuint x, GLuint y, GLuint z, GLuint w
+gl|void|GLVertexAttribI4iv|GLuint index, const GLint *v
+gl|void|GLVertexAttribI4uiv|GLuint index, const GLuint *v
+gl|void|GLGetVertexAttribIiv|GLuint index, GLenum pname, GLint *params
+gl|void|GLGetVertexAttribIuiv|GLuint index, GLenum pname, GLuint *params
+gl|GLsync|GLFenceSync|GLenum condition, GLbitfield flags
+gl|GLboolean|GLIsSync|GLsync sync
+gl|void|GLDeleteSync|GLsync sync
+gl|GLenum|GLClientWaitSync|GLsync sync, GLbitfield flags, GLuint64 timeout
+gl|void|GLWaitSync|GLsync sync, GLbitfield flags, GLuint64 timeout
+gl|void|GLGetSynciv|GLsync sync, GLenum pname, GLsizei count, GLsizei *length, GLint *values
+gl|void|GLGenQueries|GLsizei n, GLuint *ids
+gl|void|GLDeleteQueries|GLsizei n, const GLuint *ids
+gl|GLboolean|GLIsQuery|GLuint id
+gl|void|GLBeginQuery|GLenum target, GLuint id
+gl|void|GLEndQuery|GLenum target
+gl|void|GLGetQueryObjectuiv|GLuint id, GLenum pname, GLuint *params
+gl|void|GLDrawBuffers|GLsizei n, const GLenum *bufs
+gl|void|GLReadBuffer|GLenum src
+gl|void|GLTexStorage2D|GLenum target, GLsizei levels, GLenum internalformat, GLsizei width, GLsizei height
+gl|void|GLTexStorage3D|GLenum target, GLsizei levels, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth
+gl|void|GLCompressedTexImage3D|GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLsizei imageSize, const void *data
+gl|void|GLCompressedTexSubImage3D|GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLsizei imageSize, const void *data
+gl|void|GLClearBufferiv|GLenum buffer, GLint drawbuffer, const GLint *value
+gl|void|GLClearBufferuiv|GLenum buffer, GLint drawbuffer, const GLuint *value
+gl|void|GLClearBufferfv|GLenum buffer, GLint drawbuffer, const GLfloat *value
+gl|void|GLClearBufferfi|GLenum buffer, GLint drawbuffer, GLfloat depth, GLint stencil
+gl|void|GLRenderbufferStorageMultisample|GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height
+gl|void|GLGetInternalformativ|GLenum target, GLenum internalformat, GLenum pname, GLsizei count, GLint *params
+gl|void|GLFramebufferTextureLayer|GLenum target, GLenum attachment, GLuint texture, GLint level, GLint layer
+gl|void|GLInvalidateFramebuffer|GLenum target, GLsizei numAttachments, const GLenum *attachments
+gl|void|GLInvalidateSubFramebuffer|GLenum target, GLsizei numAttachments, const GLenum *attachments, GLint x, GLint y, GLsizei width, GLsizei height
+gl|void|GLBlitFramebuffer|GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter
+gl|void|GLCopyTexSubImage3D|GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint x, GLint y, GLsizei width, GLsizei height
+gl|void|GLGenVertexArraysOES|GLsizei n, GLuint *arrays
+gl|void|GLDeleteVertexArraysOES|GLsizei n, const GLuint *arrays
+gl|GLboolean|GLIsVertexArrayOES|GLuint array
+gl|void|GLBindVertexArrayOES|GLuint array
+gl|void|GLDrawArraysInstancedEXT|GLenum mode, GLint start, GLsizei count, GLsizei primcount
+gl|void|GLDrawElementsInstancedEXT|GLenum mode, GLsizei count, GLenum type, const void *indices, GLsizei primcount
+gl|void|GLVertexAttribDivisorEXT|GLuint index, GLuint divisor
+gl|void|GLTransformFeedbackVaryings|GLuint program, GLsizei count, const GLchar *const*varyings, GLenum bufferMode
+gl|void|GLGetTransformFeedbackVarying|GLuint program, GLuint index, GLsizei bufSize, GLsizei *length, GLsizei *size, GLenum *type, GLchar *name
+gl|void|GLBeginTransformFeedback|GLenum primitiveMode
+gl|void|GLEndTransformFeedback|void
+gl|void|GLPauseTransformFeedback|void
+gl|void|GLResumeTransformFeedback|void
+gl|void|GLBindTransformFeedback|GLenum target, GLuint id
+gl|void|GLGenTransformFeedbacks|GLsizei n, GLuint *ids
+gl|void|GLDeleteTransformFeedbacks|GLsizei n, const GLuint *ids
+gl|GLboolean|GLIsTransformFeedback|GLuint id
+gl|void|GLGetProgramBinary|GLuint program, GLsizei bufSize, GLsizei *length, GLenum *binaryFormat, void *binary
+gl|void|GLProgramBinary|GLuint program, GLenum binaryFormat, const void *binary, GLsizei length
+gl|void|GLProgramParameteri|GLuint program, GLenum pname, GLint value
+gl|void|GLSampleMaski|GLuint maskNumber, GLbitfield mask
+gl|void|GLBindImageTexture|GLuint unit, GLuint texture, GLint level, GLboolean layered, GLint layer, GLenum access, GLenum format
+gl|void|GLGetBooleani_v|GLenum target, GLuint index, GLboolean *data
+gl|void|GLBindProgramPipeline|GLuint pipeline
+gl|void|GLBindVertexBuffer|GLuint bindingindex, GLuint buffer, GLintptr offset, GLsizei stride
+gl|void|GLVertexAttribFormat|GLuint attribindex, GLint size, GLenum type, GLboolean normalized, GLuint relativeoffset
+gl|void|GLVertexAttribIFormat|GLuint attribindex, GLint size, GLenum type, GLuint relativeoffset
+gl|void|GLVertexAttribBinding|GLuint attribindex, GLuint bindingindex
+gl|void|GLVertexBindingDivisor|GLuint bindingindex, GLuint divisor
+gl|void|GLGetTexLevelParameteriv|GLenum target, GLint level, GLenum pname, GLint *params
+gl|void|GLGetTexLevelParameterfv|GLenum target, GLint level, GLenum pname, GLfloat *params
+gl|void|GLFramebufferParameteri|GLenum target, GLenum pname, GLint param
+gl|void|GLGetFramebufferParameteriv|GLenum target, GLenum pname, GLint *params
+gl|void|GLDispatchCompute|GLuint num_groups_x, GLuint num_groups_y, GLuint num_groups_z
+gl|void|GLDispatchComputeIndirect|GLintptr indirect
+gl|void|GLMemoryBarrier|GLbitfield barriers
+gl|void|GLMemoryBarrierByRegion|GLbitfield barriers
+gl|void|GLGetProgramInterfaceiv|GLuint program, GLenum programInterface, GLenum pname, GLint *params
+gl|GLuint|GLGetProgramResourceIndex|GLuint program, GLenum programInterface, const GLchar *name
+gl|void|GLGetProgramResourceName|GLuint program, GLenum programInterface, GLuint index, GLsizei bufSize, GLsizei *length, GLchar *name
+gl|void|GLGetProgramResourceiv|GLuint program, GLenum programInterface, GLuint index, GLsizei propCount, const GLenum *props, GLsizei count, GLsizei *length, GLint *params
+gl|GLint|GLGetProgramResourceLocation|GLuint program, GLenum programInterface, const GLchar *name
+gl|void|GLDrawArraysIndirect|GLenum mode, const void *indirect
+gl|void|GLDrawElementsIndirect|GLenum mode, GLenum type, const void *indirect
+gl|void|GLProgramUniform1f|GLuint program, GLint location, GLfloat v0
+gl|void|GLProgramUniform2f|GLuint program, GLint location, GLfloat v0, GLfloat v1
+gl|void|GLProgramUniform3f|GLuint program, GLint location, GLfloat v0, GLfloat v1, GLfloat v2
+gl|void|GLProgramUniform4f|GLuint program, GLint location, GLfloat v0, GLfloat v1, GLfloat v2, GLfloat v3
+gl|void|GLProgramUniform1i|GLuint program, GLint location, GLint v0
+gl|void|GLProgramUniform2i|GLuint program, GLint location, GLint v0, GLint v1
+gl|void|GLProgramUniform3i|GLuint program, GLint location, GLint v0, GLint v1, GLint v2
+gl|void|GLProgramUniform4i|GLuint program, GLint location, GLint v0, GLint v1, GLint v2, GLint v3
+gl|void|GLProgramUniform1ui|GLuint program, GLint location, GLuint v0
+gl|void|GLProgramUniform2ui|GLuint program, GLint location, GLuint v0, GLuint v1
+gl|void|GLProgramUniform3ui|GLuint program, GLint location, GLuint v0, GLuint v1, GLuint v2
+gl|void|GLProgramUniform4ui|GLuint program, GLint location, GLuint v0, GLuint v1, GLuint v2, GLuint v3
+gl|void|GLProgramUniform1fv|GLuint program, GLint location, GLsizei count, const GLfloat *value
+gl|void|GLProgramUniform2fv|GLuint program, GLint location, GLsizei count, const GLfloat *value
+gl|void|GLProgramUniform3fv|GLuint program, GLint location, GLsizei count, const GLfloat *value
+gl|void|GLProgramUniform4fv|GLuint program, GLint location, GLsizei count, const GLfloat *value
+gl|void|GLProgramUniform1iv|GLuint program, GLint location, GLsizei count, const GLint *value
+gl|void|GLProgramUniform2iv|GLuint program, GLint location, GLsizei count, const GLint *value
+gl|void|GLProgramUniform3iv|GLuint program, GLint location, GLsizei count, const GLint *value
+gl|void|GLProgramUniform4iv|GLuint program, GLint location, GLsizei count, const GLint *value
+gl|void|GLProgramUniform1uiv|GLuint program, GLint location, GLsizei count, const GLuint *value
+gl|void|GLProgramUniform2uiv|GLuint program, GLint location, GLsizei count, const GLuint *value
+gl|void|GLProgramUniform3uiv|GLuint program, GLint location, GLsizei count, const GLuint *value
+gl|void|GLProgramUniform4uiv|GLuint program, GLint location, GLsizei count, const GLuint *value
+gl|void|GLProgramUniformMatrix2fv|GLuint program, GLint location, GLsizei count, GLboolean transpose, const GLfloat *value
+gl|void|GLProgramUniformMatrix3fv|GLuint program, GLint location, GLsizei count, GLboolean transpose, const GLfloat *value
+gl|void|GLProgramUniformMatrix4fv|GLuint program, GLint location, GLsizei count, GLboolean transpose, const GLfloat *value
+gl|void|GLProgramUniformMatrix2x3fv|GLuint program, GLint location, GLsizei count, GLboolean transpose, const GLfloat *value
+gl|void|GLProgramUniformMatrix3x2fv|GLuint program, GLint location, GLsizei count, GLboolean transpose, const GLfloat *value
+gl|void|GLProgramUniformMatrix2x4fv|GLuint program, GLint location, GLsizei count, GLboolean transpose, const GLfloat *value
+gl|void|GLProgramUniformMatrix4x2fv|GLuint program, GLint location, GLsizei count, GLboolean transpose, const GLfloat *value
+gl|void|GLProgramUniformMatrix3x4fv|GLuint program, GLint location, GLsizei count, GLboolean transpose, const GLfloat *value
+gl|void|GLProgramUniformMatrix4x3fv|GLuint program, GLint location, GLsizei count, GLboolean transpose, const GLfloat *value
+gl|void|GLTexStorage2DMultisample|GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height, GLboolean fixedsamplelocations
+gl|void|GLGetMultisamplefv|GLenum pname, GLuint index, GLfloat *val
+gl|void|GLGenProgramPipelines|GLsizei n, GLuint *pipelines
+gl|void|GLDeleteProgramPipelines|GLsizei n, const GLuint *pipelines
+gl|GLboolean|GLIsProgramPipeline|GLuint pipeline
+gl|void|GLUseProgramStages|GLuint pipeline, GLbitfield stages, GLuint program
+gl|void|GLActiveShaderProgram|GLuint pipeline, GLuint program
+gl|void|GLValidateProgramPipeline|GLuint pipeline
+gl|void|GLGetProgramPipelineiv|GLuint pipeline, GLenum pname, GLint *params
+gl|void|GLGetProgramPipelineInfoLog|GLuint pipeline, GLsizei bufSize, GLsizei *length, GLchar *infoLog
+gl|GLuint|GLCreateShaderProgramv|GLenum type, GLsizei count, const GLchar *const*strings
+gl|void|GLDebugMessageControlKHR|GLenum source, GLenum type, GLenum severity, GLsizei count, const GLuint *ids, GLboolean enabled
+gl|void|GLDebugMessageInsertKHR|GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar *buf
+gl|void|GLDebugMessageCallbackKHR|GLDEBUGPROCKHR callback, const void *userParam
+gl|GLuint|GLGetDebugMessageLogKHR|GLuint count, GLsizei bufSize, GLenum *sources, GLenum *types, GLuint *ids, GLenum *severities, GLsizei *lengths, GLchar *messageLog
+gl|void|GLPushDebugGroupKHR|GLenum source, GLuint id, GLsizei length, const GLchar *message
+gl|void|GLPopDebugGroupKHR|void
+gl|void|GLObjectLabelKHR|GLenum identifier, GLuint name, GLsizei length, const GLchar *label
+gl|void|GLGetObjectLabelKHR|GLenum identifier, GLuint name, GLsizei bufSize, GLsizei *length, GLchar *label
+gl|void|GLObjectPtrLabelKHR|const void *ptr, GLsizei length, const GLchar *label
+gl|void|GLGetObjectPtrLabelKHR|const void *ptr, GLsizei bufSize, GLsizei *length, GLchar *label
+gl|void|GLGetPointervKHR|GLenum pname, void **params
+gl|void|GLTexImage3DOES|GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLenum format, GLenum type, const void *pixels
+gl|void|GLTexSubImage3DOES|GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const void *pixels
+gl|void|GLCopyTexSubImage3DOES|GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint x, GLint y, GLsizei width, GLsizei height
+gl|void|GLCompressedTexImage3DOES|GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLsizei imageSize, const void *data
+gl|void|GLCompressedTexSubImage3DOES|GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLsizei imageSize, const void *data
+gl|void|GLFramebufferTexture3DOES|GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level, GLint zoffset
+gl|void|GLTexStorage2DEXT|GLenum target, GLsizei levels, GLenum internalformat, GLsizei width, GLsizei height
+gl|void|GLTexStorage3DEXT|GLenum target, GLsizei levels, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth
+gl|void *|GLMapBufferRangeEXT|GLenum target, GLintptr offset, GLsizeiptr length, GLbitfield access
+gl|void|GLFlushMappedBufferRangeEXT|GLenum target, GLintptr offset, GLsizeiptr length
+gl|void|GLGenQueriesEXT|GLsizei n, GLuint *ids
+gl|void|GLDeleteQueriesEXT|GLsizei n, const GLuint *ids
+gl|GLboolean|GLIsQueryEXT|GLuint id
+gl|void|GLBeginQueryEXT|GLenum target, GLuint id
+gl|void|GLEndQueryEXT|GLenum target
+gl|void|GLGetQueryivEXT|GLenum target, GLenum pname, GLint *params
+gl|void|GLGetQueryObjectuivEXT|GLuint id, GLenum pname, GLuint *params
+gl|void|GLMultiDrawArraysEXT|GLenum mode, const GLint *first, const GLsizei *count, GLsizei primcount
+gl|void|GLMultiDrawElementsEXT|GLenum mode, const GLsizei *count, GLenum type, const void *const*indices, GLsizei primcount
+gl|void|GLDrawRangeElementsBaseVertexOES|GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const void *indices, GLint basevertex
+gl|void|GLDrawElementsInstancedBaseVertexOES|GLenum mode, GLsizei count, GLenum type, const void *indices, GLsizei instancecount, GLint basevertex
+gl|void|GLDrawElementsBaseVertexEXT|GLenum mode, GLsizei count, GLenum type, const void *indices, GLint basevertex
+gl|void|GLDrawRangeElementsBaseVertexEXT|GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const void *indices, GLint basevertex
+gl|void|GLDrawElementsInstancedBaseVertexEXT|GLenum mode, GLsizei count, GLenum type, const void *indices, GLsizei instancecount, GLint basevertex
+gl|void|GLMultiDrawElementsBaseVertexEXT|GLenum mode, const GLsizei *count, GLenum type, const void *const*indices, GLsizei drawcount, const GLint *basevertex
+gl|void|GLPrimitiveBoundingBoxOES|GLfloat minX, GLfloat minY, GLfloat minZ, GLfloat minW, GLfloat maxX, GLfloat maxY, GLfloat maxZ, GLfloat maxW
+gl|void|GLPrimitiveBoundingBoxEXT|GLfloat minX, GLfloat minY, GLfloat minZ, GLfloat minW, GLfloat maxX, GLfloat maxY, GLfloat maxZ, GLfloat maxW

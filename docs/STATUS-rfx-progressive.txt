@@ -74,3 +74,7 @@ to the bb7460f build); The Open SDK gathers it at gfopensdk #44 squash
 
 Bugfix (2026-11-05): stream.h RLGR_DEC wording matches the core (zeros
 past the end; ERR_DATA only >64 bits past). No kernel change.
+
+Bugfix stove: library/opengpu @ 97b82ad job j20261106T000717-4663b8 green;
+gfopengpu.library 260620 B sha256 f17fd9b0eb926c60e5b1fdc69d3307f144dce206df890690ed25eba744f4050e
+(doc/init only; size +16 B vs 5af78d8 from ogpu_core_init clearing callbacks).

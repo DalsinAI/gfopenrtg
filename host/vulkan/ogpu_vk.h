@@ -107,6 +107,7 @@ const char *ogpu_vk_device(struct ogpu_vk *vk);
  * over, e.g. "AMD Radeon RX 460 Graphics (RADV POLARIS11) (discrete GPU):
  * the best kind listed; over llvmpipe (LLVM 20.1.8, 256 bits) (CPU)". */
 const char *ogpu_vk_device_why(const struct ogpu_vk *vk);
+#define OGPU_VK_DEVICE_WHY 1        /* this header has ogpu_vk_device_why */
 /* How video RAM reaches the GPU: "own", "import", "map", or "map+card"
  * (map with a card part). */
 const char *ogpu_vk_vram_mode(struct ogpu_vk *vk);

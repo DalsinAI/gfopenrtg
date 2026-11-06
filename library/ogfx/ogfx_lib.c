@@ -608,20 +608,36 @@ static int core_planar(struct GfxBase *GfxBase, struct BitMap *bm)
     return (flags & BMF_STANDARD) && !(flags & BMF_INTERLEAVED);
 }
 
-static int core_begin(struct ogfx_state *st, struct GfxBase *GfxBase, struct RastPort *rp, int masked)
+/* For a call that is the CPU's own work everywhere (CORE_C2P: a chunky
+ * array into planes, WriteChunkyPixels and WritePixelArray8), Chip RAM is
+ * the CPU's on a real Amiga too, after WaitBlit: graphics.library does that
+ * job with the CPU as well, and the core's c2p writes a long to each plane
+ * for 32 pixels. */
+#define CORE_MASKED 1
+#define CORE_C2P    2
+static int core_may_draw(struct ogfx_state *st, struct GfxBase *GfxBase, struct BitMap *bm, int how)
+{
+    if (how & CORE_C2P) {
+        if (chip_planes(st, bm)) WaitBlit();
+        return 1;
+    }
+    return cpu_may_draw(st, GfxBase, bm, NULL);
+}
+
+static int core_begin(struct ogfx_state *st, struct GfxBase *GfxBase, struct RastPort *rp, int how)
 {
     struct Layer *l;
     struct ClipRect *cr;
 
-    if (!st->enabled || !rp || !core_planar(GfxBase, rp->BitMap) || !ogfx_rp_takes(rp, masked))
+    if (!st->enabled || !rp || !core_planar(GfxBase, rp->BitMap) || !ogfx_rp_takes(rp, how & CORE_MASKED))
         return 0;
     if (!(l = rp->Layer))
-        return cpu_may_draw(st, GfxBase, rp->BitMap, NULL);
+        return core_may_draw(st, GfxBase, rp->BitMap, how);
     LockLayerRom(l);
-    if (cpu_may_draw(st, GfxBase, rp->BitMap, NULL)) {
+    if (core_may_draw(st, GfxBase, rp->BitMap, how)) {
         for (cr = l->ClipRect; cr; cr = cr->Next)
             if (cr->obscured && cr->BitMap &&
-                !(core_planar(GfxBase, cr->BitMap) && cpu_may_draw(st, GfxBase, cr->BitMap, NULL)))
+                !(core_planar(GfxBase, cr->BitMap) && core_may_draw(st, GfxBase, cr->BitMap, how)))
                 break;
         if (!cr)
             return 1;
@@ -917,7 +933,7 @@ OGFX_CALL void do_bltpattern(struct ogfx_state *st, struct GfxBase *gfx, struct 
         r.mask_bpr = (WORD)bpr;
         if (st->provider.bltpattern(st->provider.v1.userdata, &r)) return;
     }
-    if (core_begin(st, gfx, rp, mask != NULL)) {
+    if (core_begin(st, gfx, rp, mask != NULL ? CORE_MASKED : 0)) {
         ogfx_rp_BltPattern(rp, mask, (WORD)x0, (WORD)y0, (WORD)x1, (WORD)y1, (UWORD)bpr);
         core_end(gfx, rp);
         return;
@@ -1069,7 +1085,7 @@ OGFX_CALL LONG do_array(struct ogfx_state *st, struct GfxBase *gfx, int p, struc
         }
         if (fn(st->provider.v1.userdata, &r)) return r.result;
     }
-    if (!line && core_begin(st, gfx, rp, 0)) {
+    if (!line && core_begin(st, gfx, rp, p == OGFX_P_RPA8 ? 0 : CORE_C2P)) {
         LONG r = 0;
         x0 = (UWORD)x0; y0 = (UWORD)y0; x1 = (UWORD)x1; y1 = (UWORD)y1;
         if (p == OGFX_P_WCP) ogfx_rp_WriteChunkyPixels(rp, x0, y0, x1, y1, array, bpr);

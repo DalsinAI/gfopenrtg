@@ -203,6 +203,13 @@ only what is in memory) and does what the monitor driver does.
   tile. With no GPU the same calls copy the changed tiles into the RastPort.
   `tests/test_retained.c` runs the tiles and the batch on the host;
   `tests/amiga/retained` (RetainedTest) on an Amiga.
+- **gfopengpu.library 0.28 is the one c2p** (GFOpenGfx's core at gfopengfx
+  da2cdd4): WriteChunkyPixels and WritePixelArray8 on a planar bitmap of 1
+  to 8 planes go through the core, which writes whole bytes 32 pixels at a
+  time, a long to each plane, and on a real Amiga too, in Chip RAM after
+  WaitBlit (graphics.library does this with the CPU as well). An RTG
+  screen's provider still comes first. acgame.library calls
+  WriteChunkyPixels when it finds 0.28.
 
 ## Contributors
 

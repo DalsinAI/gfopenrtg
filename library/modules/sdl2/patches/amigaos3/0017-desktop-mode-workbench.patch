@@ -1,0 +1,31 @@
+diff --git a/src/video/amigaos3/SDL_os3video.c b/src/video/amigaos3/SDL_os3video.c
+index 8e1433b..0d45765 100644
+--- a/src/video/amigaos3/SDL_os3video.c
++++ b/src/video/amigaos3/SDL_os3video.c
+@@ -270,6 +270,26 @@ static int OS3_VideoInit(_THIS)
+             }
+             nextid = NextDisplayInfo(nextid);
+         }
++        /* Open (2026): the desktop mode is the Workbench screen's, when that
++           is an RTG screen SDL can use. It was the 640x480 mode, so
++           SDL_WINDOW_FULLSCREEN_DESKTOP and SDL_GetDesktopDisplayMode said
++           640x480 whatever the Workbench was. */
++        if (found_any) {
++            struct Screen *wb = LockPubScreen(NULL);
++            if (wb) {
++                ULONG id = GetVPModeID(&wb->ViewPort);
++                if (id != INVALID_ID && IsCyberModeID(id)) {
++                    ULONG bpp = GetCyberIDAttr(CYBRIDATTR_DEPTH, id);
++                    Uint32 fmt = OS3_CyberModeFormat(id, bpp);
++                    if (fmt != SDL_PIXELFORMAT_UNKNOWN && (int)bpp >= 16) {
++                        best_mode.w      = wb->Width;
++                        best_mode.h      = wb->Height;
++                        best_mode.format = fmt;
++                    }
++                }
++                UnlockPubScreen(NULL, wb);
++            }
++        }
+         if (!found_any) {
+             /* P96/CGX library exists but no RTG modes available
+              * (no graphics card). Close it and fall through to AGA. */

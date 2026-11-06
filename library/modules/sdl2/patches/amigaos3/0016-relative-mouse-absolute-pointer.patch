@@ -1,0 +1,83 @@
+diff --git a/src/video/amigaos3/SDL_os3events.c b/src/video/amigaos3/SDL_os3events.c
+index 01b0071..de47b1c 100644
+--- a/src/video/amigaos3/SDL_os3events.c
++++ b/src/video/amigaos3/SDL_os3events.c
+@@ -301,6 +301,11 @@ static void OS3_InnerMouse(const struct Window *iwin, WORD *x, WORD *y)
+     }
+ }
+ 
++/* Relative mode: the window and pointer position the last move was
++ * measured from (OS3_PumpEvents). */
++static SDL_Window *os3_rel_window = NULL;
++static int os3_rel_x, os3_rel_y;
++
+ /* Translate IDCMP_MOUSEBUTTONS code to SDL mouse button event. */
+ static void OS3_HandleMouseButton(SDL_Window *sdlwin, UWORD code)
+ {
+@@ -441,11 +446,24 @@ void OS3_PumpEvents(_THIS)
+ 
+             case IDCMP_MOUSEMOVE:
+                 if (SDL_GetMouse()->relative_mode) {
+-                    /* IDCMP_DELTAMOVE (relative mode): the move itself */
+-                    if (mousex || mousey) {
+-                        SDL_SendMouseMotion(sdlwin, 0, 1, (int)mousex, (int)mousey);
++                    /* Open (2026): relative mode's moves are the pointer's
++                       position less the last one. IDCMP_DELTAMOVE gave
++                       nothing when the mouse is an absolute one (AmiCradle's
++                       and other tablet-like pointers send positions, not
++                       counts): OpenFodder, which turns relative mode on, got
++                       no motion at all. */
++                    OS3_InnerMouse(intuiwin, &mousex, &mousey);
++                    if (os3_rel_window == sdlwin) {
++                        int dx = (int)mousex - os3_rel_x, dy = (int)mousey - os3_rel_y;
++                        if (dx || dy) {
++                            SDL_SendMouseMotion(sdlwin, 0, 1, dx, dy);
++                        }
+                     }
++                    os3_rel_window = sdlwin;
++                    os3_rel_x = mousex;
++                    os3_rel_y = mousey;
+                 } else {
++                    os3_rel_window = NULL;
+                     OS3_InnerMouse(intuiwin, &mousex, &mousey);
+                     SDL_SendMouseMotion(sdlwin, 0, 0, (int)mousex, (int)mousey);
+                 }
+diff --git a/src/video/amigaos3/SDL_os3mouse.c b/src/video/amigaos3/SDL_os3mouse.c
+index 256ee99..2c96e52 100644
+--- a/src/video/amigaos3/SDL_os3mouse.c
++++ b/src/video/amigaos3/SDL_os3mouse.c
+@@ -436,23 +436,28 @@ static void OS3_WarpMouse(SDL_Window *window, int x, int y)
+     (void)y;
+ }
+ 
+-/* Relative mouse mode (Open): Intuition reports each move as a delta
+-   (IDCMP_DELTAMOVE) instead of a position, so a game turning with the
+-   mouse never stops at the screen's edge. SDL hides the pointer. */
++/* Relative mouse mode (Open): each move is reported as the change in the
++   pointer's position (SDL_os3events.c). SDL hides the pointer. Intuition's
++   IDCMP_DELTAMOVE is not used: an absolute mouse (AmiCradle's) gives it
++   no counts, so relative mode had no motion at all. A move past the
++   screen's edge stops there, as the pointer does. */
+ static int OS3_SetRelativeMouseMode(SDL_bool enabled)
+ {
+     SDL_VideoDevice *video = SDL_GetVideoDevice();
+     SDL_Window *sdlwin;
+ 
++    (void)enabled;
++
+     if (!video) {
+         return SDL_SetError("No video");
+     }
+     for (sdlwin = video->windows; sdlwin; sdlwin = sdlwin->next) {
+         OS3_WindowData *data = (OS3_WindowData *)sdlwin->driverdata;
+         if (data && data->window) {
+-            ULONG idcmp = data->window->IDCMPFlags | IDCMP_MOUSEMOVE;
+-            idcmp = enabled ? (idcmp | IDCMP_DELTAMOVE) : (idcmp & ~IDCMP_DELTAMOVE);
+-            ModifyIDCMP(data->window, idcmp);
++            ULONG idcmp = (data->window->IDCMPFlags | IDCMP_MOUSEMOVE) & ~IDCMP_DELTAMOVE;
++            if (idcmp != data->window->IDCMPFlags) {
++                ModifyIDCMP(data->window, idcmp);
++            }
+         }
+     }
+     return 0;

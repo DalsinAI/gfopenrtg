@@ -15,7 +15,11 @@ Ops (include/gfopengpu/stream.h, builders in include/gfopengpu/build.h)
                             int32 Y,Cb,Cr), work, work bytes                  7
   0x002C RFX_YCBCR  (v1.10) ycc (RFX_TILE's out), xy in tile, wh, out (ARGB32
                             pixel at xy), out bytes per row                   6
-  Errors: OGPU_ERR_DATA (-8, new): RLGR ran out of bits / quant > 15.
+  Errors: OGPU_ERR_DATA (-8, new): RLGR would need >64 bits past the end
+          of its source / quant > 15. Short streams of <= 4096 values never
+          hit the RLGR case (zeros finish them within 62 bits); clients
+          should treat ERR_DATA from RLGR_DEC as accel-not-taken and fall
+          back to their own CPU decoder.
           UNSUPPORTED: short work, misaligned (int16: 2, int32: 4), reserved
           flags, x+w or y+h > 64, bpr < w*4. NOMAP: unmapped buffer.
   Query: OGPU_Query(OGPU_OP_RFX_TILE / RLGR_DEC / RFX_YCBCR, OGPU_FMT_ARGB32)
@@ -67,3 +71,6 @@ Merged 5 November 2026: gfopenrtg #177 squash 5af78d8 (library/opengpu job
 j20261105T214248-23f56f at 5af78d8: green, gfopengpu.library byte-identical
 to the bb7460f build); The Open SDK gathers it at gfopensdk #44 squash
 007965a; GFAmigaRDP #2 squash 4a3d842 pins gfopensdk 007965a.
+
+Bugfix (2026-11-05): stream.h RLGR_DEC wording matches the core (zeros
+past the end; ERR_DATA only >64 bits past). No kernel change.

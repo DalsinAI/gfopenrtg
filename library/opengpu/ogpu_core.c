@@ -3167,6 +3167,10 @@ OP_FN op_blur(struct ogpu_core *c, const ogpu_u8 *a) {
 void ogpu_core_init(struct ogpu_core *c) {
     int i;
     for (i = 0; i < OGPU_MAX_SLOTS; i++) { c->slot[i].pixels = 0; c->slot[i].table = 0; }
+    c->map = 0;
+    c->fence = 0;
+    c->ext = 0;
+    c->user = 0;
     c->target = -1;
     c->cx0 = c->cy0 = c->cx1 = c->cy1 = 0;
     c->last_error = OGPU_OK;

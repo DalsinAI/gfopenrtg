@@ -76,9 +76,13 @@
  * GPU driver should gate on OGPU_ONGPU(Query), and keep its own CPU path when
  * that bit is clear (same maths, no Submit overhead on a bare 68040). The
  * CPU back end is bit-exact with the equations (and GFAmigaRDP's rdp_prog_*
- * CPU path). A malformed RLGR stream, or a quant factor over 15, is
- * OGPU_ERR_DATA. A back end that answers RFX_TILE in OGPU_Query takes all of
- * v1.10.
+ * CPU path). A quant factor over 15 is OGPU_ERR_DATA. RLGR that would need
+ * more than 64 bits past the end of its source is also OGPU_ERR_DATA; short
+ * streams of at most 4096 values never hit that (zeros finish them sooner),
+ * so the CPU core does not answer ERR_DATA for those. A client should treat
+ * ERR_DATA from RLGR_DEC as "accel not taken" and fall back to its own CPU
+ * decoder rather than aborting the session. A back end that answers RFX_TILE
+ * in OGPU_Query takes all of v1.10.
  *
  * A stream is 32-bit words, big-endian (the Amiga's order) wherever it is
  * read. Each command starts with a header word: the opcode in the top 16
@@ -523,8 +527,12 @@
  * band layout, the same bit as OGPU_DWT_RFX_RE.
  *
  * RLGR_DEC: decodes `count` values (at most 4096) of RLGR1 from the source
- * bytes into big-endian int16s. Running out of bits before `count` values is
- * OGPU_ERR_DATA (the out buffer is then partly written). With
+ * bytes into big-endian int16s. Past the end the stream reads as zeros
+ * ([MS-RDPRFX] zero-pad); the decoder only gives up when more than 64 bits
+ * past the end would be needed to finish `count` values, and then answers
+ * OGPU_ERR_DATA (the out buffer is then partly written). For count <= 4096
+ * the zero runs always finish within 62 bits past the end, so the CPU core
+ * never answers ERR_DATA for a short stream of that size. With
  * OGPU_RLGR_LL3_DELTA the LL3 band (the last 81 values with OGPU_RFX_RE,
  * else the last 64, of a 4096-value tile) is summed as deltas, in int16.
  * OGPU_RLGR_MODE3 (RLGR3) is reserved: UNSUPPORTED today. Other bits must
@@ -562,7 +570,7 @@
 #define OGPU_ERR_UNSUPPORTED    -5  /* a format pair the command can't do */
 #define OGPU_ERR_DEVICE         -6  /* the GPU failed: the batch may be partly drawn (later ones run on the CPU) */
 #define OGPU_ERR_EXPIRED        -7  /* OGPU_Wait: the fence is done, but too old for its result to be kept */
-#define OGPU_ERR_DATA           -8  /* v1.10: a compute op's input is malformed (RLGR past its bytes, quant > 15) */
+#define OGPU_ERR_DATA           -8  /* v1.10: compute input malformed (RLGR >64 bits past end, quant > 15) */
 
 /* v1.8 (gfopengpu.library 0.24): whether a back end takes one flag of a
  * command's first word, asked through OGPU_Query as an operation: bit is the

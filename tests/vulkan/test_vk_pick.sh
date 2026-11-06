@@ -15,13 +15,21 @@ tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
     -o "$tmp/test_vk_pick" "$top/tests/test_vk_pick.c"
 "$tmp/test_vk_pick"
-if [ ! -e /usr/include/vulkan/vulkan.h ] || ! { ldconfig -p 2>/dev/null | grep -q libvulkan.so.1; }; then
-    echo "no Vulkan headers or loader: the run on this machine is skipped"
+# Vulkan's loader by its path (no libvulkan-dev needed) and its headers: VULKAN_INCLUDE,
+# the system's, or those amicradle's scripts/vulkan_headers.sh unpacked into the build cache.
+lib=$(ldconfig -p 2>/dev/null | awk '/libvulkan\.so\.1 /{ print $NF; exit }')
+inc=
+for d in "${VULKAN_INCLUDE:-}" /usr/include "${AC_BUILD_CACHE:-$HOME/.cache/amicradle}"/vulkan-headers-mesa-*/include; do
+    if [ -n "$d" ] && [ -e "$d/vulkan/vulkan.h" ]; then inc=$d; break; fi
+done
+if [ -z "$lib" ] || [ -z "$inc" ]; then
+    echo "no Vulkan loader (${lib:-none}) or headers (${inc:-none}): the run on this machine is skipped"
     exit 0
 fi
+echo "vulkan: headers in $inc, loader $lib"
 ogpu=$top/library/opengpu
-cc -std=c99 -O1 -g -Wall -Wextra -Werror -DOGPU_WITH_3D -o "$tmp/vk_pick_here" "$here/vk_pick_here.c" \
-    "$top/host/vulkan/ogpu_vk.c" "$ogpu/ogpu_core.c" "$ogpu/ogpu_dwt.c" "$ogpu/ogpu_3d.c" -lvulkan -lm
+cc -std=c99 -O1 -g -Wall -Wextra -Werror -DOGPU_WITH_3D -idirafter "$inc" -o "$tmp/vk_pick_here" "$here/vk_pick_here.c" \
+    "$top/host/vulkan/ogpu_vk.c" "$ogpu/ogpu_core.c" "$ogpu/ogpu_dwt.c" "$ogpu/ogpu_3d.c" "$lib" -lm
 rc=0
 "$tmp/vk_pick_here" | tee "$tmp/out" || rc=$?
 [ "$rc" = 0 ] || { [ "$rc" = 2 ] && echo "no Vulkan device with compute here"; exit 0; }

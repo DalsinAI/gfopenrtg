@@ -1,0 +1,33 @@
+diff --git a/src/thread/amigaos3/SDL_systhread.c b/src/thread/amigaos3/SDL_systhread.c
+index d82afca..ca76524 100644
+--- a/src/thread/amigaos3/SDL_systhread.c
++++ b/src/thread/amigaos3/SDL_systhread.c
+@@ -224,18 +224,21 @@ int SDL_SYS_SetThreadPriority(SDL_ThreadPriority priority)
+     struct Task *task = FindTask(NULL);
+     BYTE pri;
+ 
++    /* Open (2026): only SDL's own audio threads go above 0. Exec runs a
++       ready task of higher priority to the exclusion of every lower one, so
++       a program's thread raised above 0 that ever busy-waits starves the
++       program's other tasks, the Workbench and the file systems: EDuke32
++       raises its main task (SDL_THREAD_PRIORITY_HIGH, then 5) and its busy
++       waits after the skill screen stopped everything at 0. SDL's audio
++       thread asks for TIME_CRITICAL and spends its time in WaitIO, so it
++       keeps 10. */
+     switch (priority) {
+     case SDL_THREAD_PRIORITY_LOW:
+         pri = -5;
+         break;
+-    case SDL_THREAD_PRIORITY_NORMAL:
+-        pri = 0;
+-        break;
+-    case SDL_THREAD_PRIORITY_HIGH:
+-        pri = 5;
+-        break;
+     case SDL_THREAD_PRIORITY_TIME_CRITICAL:
+-        pri = 10;
++        pri = (task->tc_Node.ln_Name &&
++               SDL_strncmp(task->tc_Node.ln_Name, "SDL_SDLAudio", 12) == 0) ? 10 : 0;
+         break;
+     default:
+         pri = 0;

@@ -263,7 +263,9 @@ static SDL_atomic_t prio_spins;
 static int SDLCALL prio_fn(void *data)
 {
     (void)data;
-    SDL_SetThreadPriority(SDL_THREAD_PRIORITY_TIME_CRITICAL);
+    /* Priority 10 as SDL's audio thread has it: SDL_SetThreadPriority only
+       raises SDL's own audio threads (patches/amigaos3/0018). */
+    SetTaskPri(FindTask(NULL), 10);
     while (!SDL_AtomicGet(&prio_done)) {
         SDL_AtomicAdd(&prio_counter, 1);
         SDL_AtomicIncRef(&prio_spins);

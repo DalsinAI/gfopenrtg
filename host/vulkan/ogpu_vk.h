@@ -39,7 +39,9 @@ struct ogpu_vk_config {
     void (*fence)(void *user, ogpu_u32 id);
     void *user;
     /* A device whose name contains this, or 0: the environment's
-     * OGPU_VK_DEVICE, else a real GPU before a CPU one (lavapipe). */
+     * OGPU_VK_DEVICE, else by kind: discrete GPU, integrated, virtual,
+     * other, and a CPU one (llvmpipe, lavapipe) only when nothing else is
+     * listed (ogpu_vk_pick.h). ogpu_vk_device_why says which, and why. */
     const char *device;
     /* Video RAM the caller already has (the runtime's board memory, which
      * its 68k reaches directly), or 0 for the back end's own. The GPU then
@@ -100,6 +102,11 @@ void ogpu_vk_destroy(struct ogpu_vk *vk);
  * sees everything the GPU drew. */
 ogpu_u8 *ogpu_vk_vram(struct ogpu_vk *vk);
 const char *ogpu_vk_device(struct ogpu_vk *vk);
+/* Why that device: its kind and what decided it (a name asked for, the best
+ * kind listed, or only a CPU device listed), and the devices it was taken
+ * over, e.g. "AMD Radeon RX 460 Graphics (RADV POLARIS11) (discrete GPU):
+ * the best kind listed; over llvmpipe (LLVM 20.1.8, 256 bits) (CPU)". */
+const char *ogpu_vk_device_why(const struct ogpu_vk *vk);
 /* How video RAM reaches the GPU: "own", "import", "map", or "map+card"
  * (map with a card part). */
 const char *ogpu_vk_vram_mode(struct ogpu_vk *vk);

@@ -1601,10 +1601,15 @@ long ogpu_vk_run(struct ogpu_vk *vk, const ogpu_u8 *stream, long words) {
     return done;
 }
 
-/* The core with no slots, target or clip (its hooks stay) and, built with
- * the 3D range, its 3D state as new: as the CPU path's core after a reset. */
+/* The core with no slots, target or clip and, built with the 3D range, its
+ * 3D state as new: as the CPU path's core after a reset. ogpu_core_init
+ * clears the hooks (since #180), so they are set again here. */
 static void core_afresh(struct ogpu_vk *vk) {
     ogpu_core_init(&vk->core);
+    vk->core.map = core_map;
+    vk->core.fence = core_fence;
+    vk->core.ext = vk->cfg.ext ? core_ext : 0;
+    vk->core.user = vk;
 #ifdef OGPU_WITH_3D
     ogpu3d_init(&vk->d3, &vk->core);
     vk->core.d3 = &vk->d3;
@@ -2358,10 +2363,6 @@ struct ogpu_vk *ogpu_vk_create(const struct ogpu_vk_config *cfg, char *err, int 
 #endif
     }
     core_afresh(vk);
-    vk->core.map = core_map;
-    vk->core.fence = core_fence;
-    vk->core.ext = vk->cfg.ext ? core_ext : 0;
-    vk->core.user = vk;
 #ifdef OGPU_WITH_3D
     setup_3d(vk);       /* without it, the 3D range stays on the core */
 #endif

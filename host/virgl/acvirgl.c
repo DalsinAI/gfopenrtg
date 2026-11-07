@@ -160,6 +160,7 @@ struct acvirgl {
     struct { unsigned id; uint32_t bytes; } pool[AV_PEND];     /* staging buffers not in use */
     int npool;
     int parts;                  /* AC_VIRGL_PARTS=1: the GPU's wait timed apart from the read back */
+    uint64_t stg_ns[5];         /* parts of asking for the staging copy: switch, framebuffer, read, put back, fence */
 };
 
 static void av_no_fence(void *cookie, uint32_t fence) { (void)cookie; (void)fence; }
@@ -575,6 +576,10 @@ static void av_parts_say(struct acvirgl *v)
             "conversion %.0f, staging asked %.0f\n", (unsigned long long)s->presents, (unsigned long long)s->behind,
             s->present_ns / n / 1e3, s->present_gpu_ns / n / 1e3, s->present_read_ns / n / 1e3, s->present_wait_ns / n / 1e3,
             s->present_conv_ns / n / 1e3, s->present_issue_ns / n / 1e3);
+    if (s->behind)
+        fprintf(stderr, "ACVIRGL: staging a present: switch %.0f us, framebuffer %.0f, glReadPixels %.0f, put back %.0f, fence %.0f\n",
+                v->stg_ns[0] / (double)s->behind / 1e3, v->stg_ns[1] / (double)s->behind / 1e3, v->stg_ns[2] / (double)s->behind / 1e3,
+                v->stg_ns[3] / (double)s->behind / 1e3, v->stg_ns[4] / (double)s->behind / 1e3);
 }
 
 static int32_t av_present_finish(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), void *mu, struct av_pres *p)
@@ -644,10 +649,13 @@ static int av_behind_start(struct acvirgl *v, struct av_pres *p)
     unsigned fb = 0, id;
     uint32_t need = p->box.w * p->box.h * 4, have = 0;
     const struct av_res *res = av_res_find(v, p->handle);
+    uint64_t t0 = av_ns(), t1, t2, t3;
     memset(&info, 0, sizeof info);
     if (!res || !av_layout(res->format, &dl, &dg, &db, &da) || p->layer || v->vr.resource_get_info((int)p->handle, &info)
         || !info.tex_id || !av_current(v, p->ctx))
         return 0;
+    t1 = av_ns();
+    v->stg_ns[0] += t1 - t0;
     la_none = da == 4;
     if (!(id = av_pool_get(v, need, &have))) return 0;
     for (i = 0; i < 8 && v->gl.GetError(); i++) ;     /* errors that were virglrenderer's, not ours */
@@ -661,6 +669,8 @@ static int av_behind_start(struct acvirgl *v, struct av_pres *p)
     v->gl.BindFramebuffer(AV_GL_READ_FRAMEBUFFER, fb);
     v->gl.FramebufferTexture2D(AV_GL_READ_FRAMEBUFFER, AV_GL_COLOR_ATTACHMENT0, AV_GL_TEXTURE_2D, info.tex_id, 0);
     ok = v->gl.CheckFramebufferStatus(AV_GL_READ_FRAMEBUFFER) == AV_GL_FRAMEBUFFER_COMPLETE;
+    t2 = t3 = av_ns();
+    v->stg_ns[1] += t2 - t1;
     if (ok) {
         int y1 = info.flags & VR_RESOURCE_Y_0_TOP ? (int)info.height - (int)p->box.y - (int)p->box.h : (int)p->box.y;
         v->gl.BindBuffer(AV_GL_PIXEL_PACK_BUFFER, id);
@@ -674,6 +684,8 @@ static int av_behind_start(struct acvirgl *v, struct av_pres *p)
         v->gl.ReadPixels((int)p->box.x, y1, (int)p->box.w, (int)p->box.h, strcmp(v->api, "GLES") ? AV_GL_BGRA : AV_GL_RGBA,
                          AV_GL_UNSIGNED_BYTE, NULL);
         ok = v->gl.GetError() == 0;
+        t3 = av_ns();
+        v->stg_ns[2] += t3 - t2;
         v->gl.PixelStorei(AV_GL_PACK_ALIGNMENT, al);
         v->gl.PixelStorei(AV_GL_PACK_ROW_LENGTH, rl);
         v->gl.PixelStorei(AV_GL_PACK_SKIP_ROWS, sr);
@@ -682,6 +694,7 @@ static int av_behind_start(struct acvirgl *v, struct av_pres *p)
     }
     v->gl.BindFramebuffer(AV_GL_READ_FRAMEBUFFER, (unsigned)rfb);
     v->gl.DeleteFramebuffers(1, &fb);
+    v->stg_ns[3] += av_ns() - t3;
     if (!ok) { av_pool_put(v, id, have, 1); return 0; }
     p->pbo = id; p->pbo_bytes = have;
     if (strcmp(v->api, "GLES")) { p->lr = 2; p->lg = 1; p->lb = 0; }
@@ -780,7 +793,9 @@ static int32_t av_present(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, u
         uint64_t t0 = av_ns(), t1;
         if (av_behind_start(v, &p)) {
             p.fence = ++v->fence_seq;
+            t1 = av_ns();
             if (!v->vr.context_create_fence(p.ctx, 0, 0, p.fence)) {
+                v->stg_ns[4] += av_ns() - t1;
                 v->pend[v->npend++] = p;
                 v->st.deferred++;
                 v->st.behind++;

@@ -157,6 +157,7 @@ struct acvirgl {
     /* presents one frame behind (acvirgl_behind_presents) */
     int (*behind_ok)(void *map_user, uint32_t addr, uint32_t bytes);
     struct av_gl gl;
+    void *(*egl_current)(void); /* eglGetCurrentContext */
     int gl_state;               /* 0 not looked for, 1 found, -1 not there */
     struct { unsigned id; uint32_t bytes; } pool[AV_PEND];     /* staging buffers not in use */
     int npool;
@@ -534,7 +535,8 @@ static int av_gl_load(struct acvirgl *v)
     if (v->gl_state) return v->gl_state > 0;
     v->gl_state = -1;
     if (!(egl = dlopen("libEGL.so.1", RTLD_NOW | RTLD_LOCAL))) return 0;
-    if (!(*(void **)&gpa = dlsym(egl, "eglGetProcAddress"))) return 0;
+    if (!(*(void **)&gpa = dlsym(egl, "eglGetProcAddress"))
+        || !(*(void **)&v->egl_current = dlsym(egl, "eglGetCurrentContext"))) return 0;
 #define GLF(f) if (!(*(void **)&v->gl.f = gpa("gl" #f))) return 0;
     GLF(GetIntegerv) GLF(GetError) GLF(GenFramebuffers) GLF(DeleteFramebuffers) GLF(BindFramebuffer)
     GLF(FramebufferTexture2D) GLF(CheckFramebufferStatus) GLF(GenBuffers) GLF(DeleteBuffers) GLF(BindBuffer)
@@ -598,7 +600,11 @@ static int32_t av_present_finish(struct acvirgl *v, uint8_t *(*map)(void *, uint
         int pb = 0, ok;
         unsigned id = p->pbo;
         p->pbo = 0;
-        ok = (dst = map(mu, p->addr, p->span)) != NULL && av_current(v, p->ctx);
+        /* any of virglrenderer's GL contexts maps it (they share their
+         * objects): the one current stays so, rather than switching to the
+         * frame's and back for the next command (a quarter of a millisecond
+         * a present with three programs) */
+        ok = (dst = map(mu, p->addr, p->span)) != NULL && (v->egl_current() || av_current(v, p->ctx));
         if (ok) {
             v->gl.GetIntegerv(AV_GL_PIXEL_PACK_BUFFER_BINDING, &pb);
             v->gl.BindBuffer(AV_GL_PIXEL_PACK_BUFFER, id);

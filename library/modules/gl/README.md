@@ -13,6 +13,37 @@ drivers:
   `OGPU_Query(OGPU_OP_VIRGL)` doesn't answer "full". It gives GL 3.3 and
   GLES 3.1.
 
+### Which one a program gets
+
+A program gets virgl when gfopengpu.library carries it, and softpipe
+otherwise. Softpipe is never silent (7 November 2026): before its screen is
+made, GL.module puts one line on the program's output (`Output()`) and in
+the runtime's log (the services card's `log/1`, through
+gfopenservice.device), naming the program and why virgl wasn't used: no
+ACRTG board, a runtime without the ring or without virglrenderer, no driver
+in `LIBS:GFOpenGPU/` that carries virgl, virgl's context or screen refused,
+or the switch below. For example:
+
+```
+GL: on softpipe, not virgl: the runtime has no virglrenderer (the ACRTG board doesn't offer virgl; the runtime's log says why). Shaders run on the 68k (ENV:GFOpenGPU/GLDriver gpu refuses softpipe).
+```
+
+`ENV:GFOpenGPU/GLDriver` chooses:
+
+| Value | What a program gets |
+|---|---|
+| `gpu` (or `virgl`) | virgl or nothing: softpipe is refused (one line says so and why), and the program fails to start GL where it would have run on the 68k |
+| `cpu` (or `softpipe`) | softpipe, without trying virgl |
+| anything else, or unset | virgl when it's there, else softpipe |
+
+`ENV:OGLES3/Driver` `CPU` still makes ogles3.library take softpipe, unless
+`GLDriver` says `gpu`. GLQuery and OGLES3Check print the driver they got
+(`driver: virgl` or `driver: softpipe`), and GLQuery the reason
+(`gla_last_why`, a GLA call from this change: on an older GL.module it
+answers NULL). The policy is `gla/os3/gla_virgl_os3.c`'s, tested on the PC
+(`tests/test_gla_virgl_os3.c`); the Amiga's calls it makes are
+`gla/os3/gla_notice_os3.c`'s.
+
 GL.module and libGL.a are built hard float (`-m68040 -m68881`). The module
 needs a 68040 or 68060 with its FPU; an LC040 or EC040 (no FPU) can't run it.
 
@@ -54,7 +85,7 @@ gfopengpu.library's `OGPU_ModuleOpen` (`include/gfopengpu/module.h`):
 - **GL.module** (`module/`) is Mesa, the GLA core and its OS 3 parts, linked
   as a module on `library/modules/common`. Its table hands out every call by
   name: the 1,300 GL and GLES entry points Mesa's glapi generated for this
-  build, and the 15 GLA calls (`stubs/gl/gla.names`). It is about 20 MB and
+  build, and the 16 GLA calls (`stubs/gl/gla.names`). It is about 20 MB and
   opens in about a second on the AC090.
 - **libGL.a** has one entry per call, generated with the module's table from
   the same list (`stubs/gl/gen_gl.py`). The first call loads the module and

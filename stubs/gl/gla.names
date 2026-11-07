@@ -9,6 +9,7 @@ gla_display_destroy
 gla_display_driver
 gla_display_version
 gla_get_proc_address
+gla_last_why
 gla_make_current
 gla_os3_present_init
 gla_os3_virgl_transport

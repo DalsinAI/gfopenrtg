@@ -150,8 +150,10 @@ case $NAME in *amigaos*)
     eval "$CC $FLAGS -O2 -c $TOP/mesa/amigaos/posix_shim.c -o posix_shim.o"
     # virgl's transport: OGPU_OP_VIRGL batches through gfopengpu.library
     eval "$CC $FLAGS -I$REPO/include -O2 -c $TOP/gla/os3/gla_virgl_os3.c -o gla_virgl_os3.o"
+    # its notice when a program gets softpipe: the output, the runtime's log, the ACRTG board
+    eval "$CC $FLAGS -O2 -c $TOP/gla/os3/gla_notice_os3.c -o gla_notice_os3.o"
     eval "$CC $FLAGS -O2 -c $REPO/library/opengpu/ogpu_build.c -o ogpu_build.o"
-    SHIM="posix_shim.o gla_virgl_os3.o ogpu_build.o" SYSLIBS="-lstdc++ -lm -lpthread"   # libnix has no libdl
+    SHIM="posix_shim.o gla_virgl_os3.o gla_notice_os3.o ogpu_build.o" SYSLIBS="-lstdc++ -lm -lpthread"   # libnix has no libdl
     # A -fbaserel32 program needs libnix's constructor runner done again (amigaos/initcpp.c).
     eval "$CC $FLAGS -O2 -c $TOP/mesa/amigaos/initcpp.c -o initcpp.o"
     PROGOBJS=initcpp.o ;;

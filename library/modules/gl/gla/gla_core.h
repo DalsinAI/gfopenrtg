@@ -122,8 +122,21 @@ struct gla_virgl_transport {
     void *user;
 };
 
-/* softpipe, on this CPU. */
+/* softpipe, on this CPU. With a softpipe hook (below) registered, the hook
+ * is asked first, and when it refuses this returns NULL. */
 struct gla_display *gla_display_create(void);
+/* Why a program is on softpipe, not virgl (7 Nov 2026). Without this a
+ * program that couldn't have virgl dropped to softpipe and said nothing,
+ * its shaders then running on this CPU. The core and the platform's part
+ * note why virgl wasn't had (gla_note_why: a static string, kept until
+ * another is noted); gla_display_create hands it to the hook, which says so
+ * (on OS 3.2: a line on the program's output and in the runtime's log,
+ * gla_virgl_os3.c) and returns nonzero to refuse softpipe. No hook (the
+ * host tests): softpipe as before. */
+typedef int (*gla_softpipe_hook_fn)(const char *why);
+void gla_set_softpipe_hook(gla_softpipe_hook_fn hook);
+void gla_note_why(const char *why);
+const char *gla_last_why(void);
 /* virgl through t, or NULL when the host doesn't answer (then softpipe). */
 struct gla_display *gla_display_create_virgl(const struct gla_virgl_transport *t);
 /* "softpipe" or "virgl". */

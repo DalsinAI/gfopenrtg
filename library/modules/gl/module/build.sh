@@ -10,8 +10,8 @@
 #   library/modules/gl/module/build.sh [OUT_DIR]      (default build/gl)
 # OUT_DIR gets GL.module (for LIBS:GFOpenGPU/), libGL.a and include/ (the
 # GLA headers; programs take GL's own from Mesa, $SRC/include in
-# gla-link.env). GL_WORK as for mesa/build.sh. cybergraphics.library's
-# headers come from the GCC 6.5 stove (STOVE), as the GCC 16 one has none.
+# gla-link.env). GL_WORK as for mesa/build.sh. STOVE (the GCC 6.5 stove) is
+# only for GLArrays' second build, when it is there.
 set -eu
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 GL=$(CDPATH= cd -- "$HERE/.." && pwd)
@@ -29,14 +29,9 @@ export PATH="$STOVE16/bin:$PATH"
 B=${GL_WORK:-$GL/build}/mesa-build-m68k-amigaos
 . "$B/gla-link.env"
 
-# Only cybergraphics.library's headers, so nothing else of the older stove's is seen.
-CGX=$OUT/cgx-include
-mkdir -p "$CGX/proto" "$CGX/inline" "$CGX/clib"
-I=$STOVE/prefix/m68k-amigaos/include
-cp -r "$I/cybergraphx" "$CGX/"
-cp "$I/proto/cybergraphics.h" "$CGX/proto/"
-cp "$I/inline/cybergraphics.h" "$CGX/inline/"
-cp "$I/clib/cybergraphics_protos.h" "$CGX/clib/"
+# cybergraphics.library's calls and numbers: the Team's clean-room headers
+# (gla/os3/include, from compat/cybergraphics_lib.c), not a vendor's.
+CGX=$GL/gla/os3/include
 
 W=$OUT/work
 mkdir -p "$W"

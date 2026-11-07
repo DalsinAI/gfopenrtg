@@ -205,6 +205,23 @@ sh module/build.sh [OUT_DIR]                            # AmigaOS 3.2: GL.module
 ACVIRGL_LIB=/path/libvirglrenderer.so.1 sh tests/run.sh
 ```
 
+A clean-room build from the open stack only (a `git archive` of a commit,
+the pinned Mesa tarball and its patches, GFOpenAmigaGCC 16.2 with libnix,
+OpenNDK's headers), packaged as the Amiga's part, with `BUILD-INFO.txt`
+saying what it was built from:
+
+```
+JOBS=2 sh module/build-open.sh WORK [COMMIT]      # WORK/out (GL.module, libGL.a), WORK/package/GFOpenGPU-GL
+sh module/package.sh OUT_DIR DEST [VERSION]       # the part alone, from module/build.sh's OUT_DIR
+```
+
+The part (`GFOpenGPU-GL/`) has OpenUp's layout: `Part`, `Libs/GFOpenGPU/GL.module`,
+the licences in `Utilities/OpenUp/Licences/`, a readme and `SHA256SUMS`;
+an `.lha` of it when `jlha` (or an `lha` that writes) is on PATH.
+cybergraphics.library's headers are the Team's clean-room ones in
+`gla/os3/include` (the numbers of `compat/cybergraphics_lib.c`), so no
+vendor CyberGraphX headers are needed.
+
 `GL_WORK` chooses the work directory, which defaults to `build/` here (about
 1 GB). A program for OS 3.2 compiles with Mesa's `include/` and
 `OUT_DIR/include` and links `-L OUT_DIR -lGL`; GFOpenDemos (gfopenmesa)

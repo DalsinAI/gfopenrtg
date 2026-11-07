@@ -135,6 +135,17 @@ long ogpu_vk_error_word(const struct ogpu_vk *vk);
 /* 1 once a submit has failed (the device lost; that run's error is
  * OGPU_ERR_DEVICE): from then on the core here draws everything. */
 int ogpu_vk_lost(const struct ogpu_vk *vk);
+/* Bounded waits (7 Nov 2026). ogpu_vk_create first has the device do a
+ * small piece of work, before it touches the caller's video RAM, and gives
+ * up when that isn't done within OGPU_VK_SETUP_MS (2000 by default): the
+ * device is left to finish on a thread of its own and freed there, and
+ * create returns 0 with "the GPU didn't answer within ... ms" in err. The
+ * rest of setup's waits end by the same deadline, counted from the start;
+ * one that runs out there or, later, one of a submit's waits running past
+ * OGPU_VK_WAIT_MS (20000; 0: no limit) turns the GPU path off: the C core
+ * draws, and ogpu_vk_lost says 1. */
+#define OGPU_VK_HAS_BOUNDED_WAITS 1
+double ogpu_vk_setup_ms(void);
 
 /* Why a drawing command ran on the core (ogpu_vk_stats' why[]): */
 #define OGPU_VK_WHY_OP      0   /* its opcode isn't on the GPU path (v1.4's COMPOSITE_PD, v1.5-v1.7's) */
@@ -180,6 +191,10 @@ struct ogpu_vk_stats {
      * the cost model would have drawn them on the core (card_gpu), and drawn
      * on the core because the GPU path doesn't take them, slowly (card_core). */
     unsigned long card_gpu, card_core;
+    /* Waits that ran out (OGPU_VK_HAS_BOUNDED_WAITS): 1 once a submit's
+     * wait gave up and the C core took over */
+    unsigned long stuck;
+    double probe_us;        /* setup's first piece of work, submitted and waited for */
 };
 void ogpu_vk_stats(const struct ogpu_vk *vk, struct ogpu_vk_stats *s);
 

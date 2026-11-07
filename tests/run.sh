@@ -150,6 +150,12 @@ if [ -e /usr/include/vulkan/vulkan.h ] && { ldconfig -p 2>/dev/null | grep -q li
     cc -std=c99 -O1 -g -Wall -Wextra -Werror -o "$OUT/test_opengpu_vk-no3d" "$HERE/test_opengpu_vk.c" "$HERE/../host/vulkan/ogpu_vk.c" \
         "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c" "$OGPU/ogpu_build.c" -lvulkan
     "$OUT/test_opengpu_vk-no3d" "$HERE/golden/opengpu-g1.txt" 200 "$HERE/golden/opengpu-v11.txt"
+    # Bounded waits: a device that doesn't answer within setup's deadline is given up at once,
+    # before the caller's video RAM is touched, and freed on its own thread.
+    cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
+        -o "$OUT/test_vk_bounded" "$HERE/test_vk_bounded.c" "$HERE/../host/vulkan/ogpu_vk.c" \
+        "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c" "$OGPU/ogpu_build.c" -lvulkan -lpthread
+    ASAN_OPTIONS=detect_leaks=0 "$OUT/test_vk_bounded"
 else
     echo "no Vulkan headers or loader; the GPU run is skipped"
 fi

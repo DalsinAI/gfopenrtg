@@ -47,6 +47,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <pthread.h>
 #include <vulkan/vulkan.h>
 #if defined(__unix__) || defined(__APPLE__)
 #include <sys/mman.h>
@@ -115,6 +116,17 @@ struct ogpu_vk {
     long dispatches;            /* recorded since it opened */
     ogpu_u32 arena_used;
     int failed;                 /* a submit failed: the GPU path is off */
+    /* Waits are bounded (7 Nov 2026): a new runtime hung two minutes in
+     * setup's first round trip (the kernel's drm_syncobj_array_wait_timeout)
+     * while another program kept daletop's RX 460 at 100%. While setting up,
+     * every wait ends at setup_until (now_ns's clock; OGPU_VK_SETUP_MS, 2 s);
+     * after it, a wait gives up after wait_ns_max (OGPU_VK_WAIT_MS, 20 s).
+     * A wait that ran out leaves its work with the GPU: stuck, the fence and
+     * the command pool are never reset, and the GPU path is off (failed). */
+    double setup_until;
+    unsigned long long wait_ns_max;
+    int stuck;
+    uint32_t qfam;              /* the queue's family */
     int route;                  /* OGPU_VK_ROUTE_ in force */
     double trip;                /* microseconds a submit and its wait take here (route_gpu) */
     /* What the work really took over what route_gpu reckoned, lately (1: as
@@ -390,6 +402,7 @@ static void note_2d_write(struct ogpu_vk *vk, const ogpu_u32 *args) {
 /* ogpu3d_rec's hooks */
 static void dispatch3d(void *user, const unsigned int *pc, unsigned gx, unsigned gy) {
     struct ogpu_vk *vk = user;
+    if (vk->stuck) return;              /* its last buffer is still the GPU's */
     vk->est_3d = 1;
     if (!vk->recording) begin(vk);
     if (vk->dispatches) barrier(vk);
@@ -409,6 +422,7 @@ static int pending3d(void *user) { return ((struct ogpu_vk *)user)->recording; }
 static void dispatch(struct ogpu_vk *vk, const ogpu_u32 *args, unsigned gx, unsigned gy) {
     uint32_t pc[A_COUNT];
     int i;
+    if (vk->stuck) return;              /* its last buffer is still the GPU's */
     if (vk->list_n) list_send(vk);      /* the list was first in the stream */
 #ifdef OGPU_WITH_3D
     /* the 3D work before it goes first, and the 3D path learns what this writes */
@@ -591,6 +605,16 @@ static double now_ns(void) {
     return (double)ts.tv_sec * 1e9 + (double)ts.tv_nsec;
 }
 
+/* vkWaitForFences for one fence, bounded as above (setup_until, wait_ns_max) */
+static VkResult wait_fence(struct ogpu_vk *vk, VkFence *f) {
+    uint64_t t = vk->wait_ns_max ? (uint64_t)vk->wait_ns_max : UINT64_MAX;
+    if (vk->setup_until > 0) {
+        double left = vk->setup_until - now_ns();
+        t = left > 0 ? (uint64_t)left : 0;
+    }
+    return vkWaitForFences(vk->dev, 1, f, VK_TRUE, t);
+}
+
 static void weigh(double *scale, double taken, double reckoned);
 
 /* The routing's clock, in nanoseconds (tsc_ns) */
@@ -623,6 +647,7 @@ static void stretch_begin(struct ogpu_vk *vk, int side, int kind) {
 static void flush(struct ogpu_vk *vk) {
     VkSubmitInfo si = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO };
     VkMemoryBarrier mb = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER };
+    VkResult r;
     double t0, t1, waited;
     /* A GPU stretch open (the list or the buffer full, mid-stretch): what it
      * recorded so far is this buffer's; it goes on from after the wait */
@@ -657,15 +682,26 @@ static void flush(struct ogpu_vk *vk) {
     vkEndCommandBuffer(vk->cmd);
     si.commandBufferCount = 1;
     si.pCommandBuffers = &vk->cmd;
-    if (vkQueueSubmit(vk->queue, 1, &si, vk->done) != VK_SUCCESS
-        || vkWaitForFences(vk->dev, 1, &vk->done, VK_TRUE, UINT64_MAX) != VK_SUCCESS) {
-        /* The device is lost: what was recorded may be partly drawn, and the
-         * run says so; from here on the C core draws everything. */
+    if (vk->stuck) r = VK_TIMEOUT;   /* the last buffer is still the GPU's: nothing more goes to it */
+    else if ((r = vkQueueSubmit(vk->queue, 1, &si, vk->done)) == VK_SUCCESS) {
+        r = wait_fence(vk, &vk->done);
+        if (r == VK_TIMEOUT) {
+            vk->stuck = 1;
+            fprintf(stderr, "GFOpenGPU: the GPU didn't finish a submit within %.0f ms (busy, or stuck): the C core draws from here on\n",
+                    vk->setup_until > 0 ? ogpu_vk_setup_ms() : (double)vk->wait_ns_max / 1e6);
+        }
+    }
+    if (r != VK_SUCCESS) {
+        /* The device is lost (or the wait ran out): what was recorded may be
+         * partly drawn, and the run says so; from here on the C core draws
+         * everything. */
         vk->failed = 1;
         vk->lost_now = 1;
     }
-    vkResetFences(vk->dev, 1, &vk->done);
-    vkResetCommandPool(vk->dev, vk->cpool, 0);
+    if (!vk->stuck) {
+        vkResetFences(vk->dev, 1, &vk->done);
+        vkResetCommandPool(vk->dev, vk->cpool, 0);
+    }
     vk->recording = 0;
     vk->bound = 0;
     vk->arena_used = 0;
@@ -1451,7 +1487,8 @@ static void measure_trip(struct ogpu_vk *vk) {
     memset(args, 0, sizeof args);
     args[A_OP] = OGPU_OP_FILL; args[A_DST] = 0; args[A_DBPR] = 4; args[A_DFMT] = OGPU_FMT_ARGB32;
     args[A_W] = 1; args[A_H] = 1; args[A_SBUF] = SBUF_DST_ARENA; args[A_TABLE] = 0xFFFFFFFFUL;
-    for (i = -1; i < 5; i++) {
+    for (i = 0; i < 5; i++) t[i] = 0;
+    for (i = -1; i < 5 && !vk->failed; i++) {
         double t0 = now_us();
         dispatch(vk, args, 1, 1);
         flush(vk);
@@ -1646,6 +1683,7 @@ const char *ogpu_vk_device_why(const struct ogpu_vk *vk) { return vk->why; }
 void ogpu_vk_stats(const struct ogpu_vk *vk, struct ogpu_vk_stats *s) {
     *s = vk->stats;
     s->route = vk->route;
+    s->stuck = (unsigned long)vk->stuck;
 #ifdef OGPU_WITH_3D
     if (vk->rec) {
         struct ogpu3d_rec_stats r;
@@ -2157,10 +2195,107 @@ static int setup_3d_parts(struct ogpu_vk *vk) {
 
 static int setup_3d(struct ogpu_vk *vk) {
     if (setup_3d_parts(vk)) return 1;
+    if (vk->stuck) return 0;  /* its buffers may be in the GPU's work still: they go with the device */
     teardown_3d(vk);
     return 0;
 }
 #endif
+
+double ogpu_vk_setup_ms(void) {
+    const char *e = getenv("OGPU_VK_SETUP_MS");
+    double ms = e && *e ? atof(e) : 2000;
+    return ms > 0 ? ms : 2000;
+}
+
+/* A device that didn't answer in setup: its work is left to finish on a
+ * thread of its own, which then frees it (nothing of the caller's is in it
+ * yet: the probe runs before video RAM is placed). */
+struct vk_abandoned { struct ogpu_vk *vk; VkFence fence; VkCommandPool pool; VkBuffer buf; VkDeviceMemory mem; };
+static void *vk_reap(void *arg) {
+    struct vk_abandoned *a = arg;
+    vkWaitForFences(a->vk->dev, 1, &a->fence, VK_TRUE, UINT64_MAX);
+    vkDestroyFence(a->vk->dev, a->fence, 0);
+    vkDestroyCommandPool(a->vk->dev, a->pool, 0);
+    vkDestroyBuffer(a->vk->dev, a->buf, 0);
+    vkFreeMemory(a->vk->dev, a->mem, 0);
+    ogpu_vk_destroy(a->vk);
+    free(a);
+    return NULL;
+}
+
+/* The device does a little work (a 256-byte fill), and is waited for until
+ * setup_until: 1 when it did, 0 when it didn't or couldn't (err says), and
+ * then *abandon is set when its work is still the GPU's. */
+static int probe(struct ogpu_vk *vk, char *err, int errlen, int *abandon) {
+    VkBufferCreateInfo bi = { .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+    VkMemoryAllocateInfo ai = { .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
+    VkCommandPoolCreateInfo pci = { .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
+    VkCommandBufferAllocateInfo cai = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+    VkCommandBufferBeginInfo cbi = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+    VkSubmitInfo si = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO };
+    VkFenceCreateInfo fci = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+    VkMemoryRequirements req;
+    VkBuffer buf = 0;
+    VkDeviceMemory mem = 0;
+    VkCommandPool pool = 0;
+    VkCommandBuffer cmd = 0;
+    VkFence fence = 0;
+    VkResult r = VK_ERROR_INITIALIZATION_FAILED;
+    int type, ok = 0;
+    double t0 = now_ns();
+    *abandon = 0;
+    bi.size = 256;
+    bi.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    bi.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    if (vkCreateBuffer(vk->dev, &bi, 0, &buf) != VK_SUCCESS) { buf = 0; goto out; }
+    vkGetBufferMemoryRequirements(vk->dev, buf, &req);
+    type = memory_type(vk->phys, req.memoryTypeBits, 0);
+    if (type < 0) goto out;
+    ai.allocationSize = req.size;
+    ai.memoryTypeIndex = (uint32_t)type;
+    if (vkAllocateMemory(vk->dev, &ai, 0, &mem) != VK_SUCCESS) { mem = 0; goto out; }
+    if (vkBindBufferMemory(vk->dev, buf, mem, 0) != VK_SUCCESS) goto out;
+    pci.queueFamilyIndex = vk->qfam;
+    if (vkCreateCommandPool(vk->dev, &pci, 0, &pool) != VK_SUCCESS) { pool = 0; goto out; }
+    cai.commandPool = pool;
+    cai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cai.commandBufferCount = 1;
+    if (vkAllocateCommandBuffers(vk->dev, &cai, &cmd) != VK_SUCCESS) goto out;
+    cbi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(cmd, &cbi);
+    vkCmdFillBuffer(cmd, buf, 0, 256, 0);
+    vkEndCommandBuffer(cmd);
+    if (vkCreateFence(vk->dev, &fci, 0, &fence) != VK_SUCCESS) { fence = 0; goto out; }
+    si.commandBufferCount = 1;
+    si.pCommandBuffers = &cmd;
+    if ((r = vkQueueSubmit(vk->queue, 1, &si, fence)) != VK_SUCCESS) goto out;
+    r = wait_fence(vk, &fence);
+    if (r == VK_TIMEOUT) {
+        struct vk_abandoned *a = malloc(sizeof *a);
+        pthread_t th;
+        pthread_attr_t at;
+        snprintf(err, (size_t)errlen, "the GPU didn't answer within %g ms (busy, or stuck)", ogpu_vk_setup_ms());
+        if (a) {
+            a->vk = vk; a->fence = fence; a->pool = pool; a->buf = buf; a->mem = mem;
+            pthread_attr_init(&at);
+            pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
+            if (!pthread_create(&th, &at, vk_reap, a)) { *abandon = 1; pthread_attr_destroy(&at); return 0; }
+            pthread_attr_destroy(&at);
+            free(a);
+        }
+        *abandon = 2;   /* no thread for it: kept, never freed (freeing it would wait for the GPU) */
+        return 0;
+    }
+    ok = r == VK_SUCCESS;
+    vk->stats.probe_us = (now_ns() - t0) / 1000.0;
+out:
+    if (!ok && !*abandon) fail(err, errlen, "the GPU's first piece of work failed", r);
+    if (fence) vkDestroyFence(vk->dev, fence, 0);
+    if (pool) vkDestroyCommandPool(vk->dev, pool, 0);
+    if (buf) vkDestroyBuffer(vk->dev, buf, 0);
+    if (mem) vkFreeMemory(vk->dev, mem, 0);
+    return ok;
+}
 
 struct ogpu_vk *ogpu_vk_create(const struct ogpu_vk_config *cfg, char *err, int errlen) {
     struct ogpu_vk *vk = calloc(1, sizeof *vk);
@@ -2193,6 +2328,7 @@ struct ogpu_vk *ogpu_vk_create(const struct ogpu_vk_config *cfg, char *err, int 
     VkPhysicalDeviceFeatures feat;
     ogpu_u32 card = 0, card_end = 0;
 
+    double setup_t0 = now_ns();
     if (!vk) { fail(err, errlen, "out of memory", VK_ERROR_OUT_OF_HOST_MEMORY); return 0; }
     vk->cfg = *cfg;
     if (!vk->cfg.arena_size) vk->cfg.arena_size = 4u << 20;
@@ -2265,6 +2401,23 @@ struct ogpu_vk *ogpu_vk_create(const struct ogpu_vk_config *cfg, char *err, int 
     }
     if ((r = vkCreateDevice(vk->phys, &di, 0, &vk->dev)) != VK_SUCCESS) { fail(err, errlen, "vkCreateDevice", r); goto bad; }
     vkGetDeviceQueue(vk->dev, qfam, 0, &vk->queue);
+    vk->qfam = qfam;
+    /* The device must answer before anything of the caller's goes to it
+     * (bounded waits, ogpu_vk.h): from here every wait in setup ends at
+     * setup_until. */
+    vk->setup_until = setup_t0 + ogpu_vk_setup_ms() * 1e6;
+    {
+        const char *w = getenv("OGPU_VK_WAIT_MS");
+        double ms = w && *w ? atof(w) : 20000;
+        vk->wait_ns_max = ms > 0 ? (unsigned long long)(ms * 1e6) : 0;
+    }
+    {
+        int abandon = 0;
+        if (!probe(vk, err, errlen, &abandon)) {
+            if (abandon) return 0;  /* its own thread frees it once the GPU is done (1), or never (2) */
+            goto bad;
+        }
+    }
 
     if (vk->cfg.host_vram) {
         /* The GPU's memory mapped over the caller's first, then the
@@ -2369,6 +2522,7 @@ struct ogpu_vk *ogpu_vk_create(const struct ogpu_vk_config *cfg, char *err, int 
 #ifdef OGPU_WITH_3D
     setup_3d(vk);       /* without it, the 3D range stays on the core */
 #endif
+    vk->setup_until = 0;  /* set up: from now a wait is bounded by wait_ns_max */
     return vk;
 bad:
     ogpu_vk_destroy(vk);

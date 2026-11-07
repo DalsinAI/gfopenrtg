@@ -70,7 +70,8 @@ cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanit
 "$OUT/test_vector"
 # The GL module's virgl transport on OS 3.2 (library/modules/gl/gla/os3/gla_virgl_os3.c) on a
 # fake gfopengpu.library: a block whose fence result expired (16 other batches between its submit
-# and its wait) is done, not failed; other errors still fail it.
+# and its wait) is done, not failed; other errors still fail it. And which driver a program gets:
+# ENV:GFOpenGPU/GLDriver gpu refuses softpipe, cpu takes it, and softpipe is said, with why, once.
 cc -std=gnu99 -O1 -g -Wall -Wextra -Werror -Wno-unused-parameter -fsanitize=address,undefined -fno-sanitize-recover=undefined \
     -I"$HERE/gla_virgl-include" -I"$HERE/gla_present-include" -I"$HERE/../include" -I"$HERE/../library/modules/gl" \
     -o "$OUT/test_gla_virgl_os3" "$HERE/test_gla_virgl_os3.c" "$HERE/../library/modules/gl/gla/os3/gla_virgl_os3.c" \

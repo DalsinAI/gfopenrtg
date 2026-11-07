@@ -277,6 +277,13 @@ int main(int argc, char **argv)
     }
     printf("GLQuery: %s gives GL %d (compat), %d (core), GLES %d\n", gla_display_driver(d),
            gla_display_version(d, GLA_COMPAT), gla_display_version(d, GLA_CORE), gla_display_version(d, GLA_ES2));
+    /* Which driver, in words, and on softpipe why (GL.module's gla_last_why;
+     * NULL from a GL.module before 7 November 2026, which has no such call). */
+    if (strcmp(gla_display_driver(d), "virgl")) {
+        const char *why = gla_last_why();
+        printf("GLQuery: driver softpipe (the 68k): %s\n", why ? why : "GL.module doesn't say why");
+    } else
+        printf("GLQuery: driver virgl (the host's graphics chip)\n");
     if (es) fails += query(d, GLA_ES2, all);
     if (core) fails += query(d, GLA_CORE, all);
     gla_display_destroy(d);

@@ -176,16 +176,24 @@ int main(int argc, char **argv)
             { CCT_GET_WIDTH, (ULONG)&w }, { CCT_GET_HEIGHT, (ULONG)&h },
             { TAG_DONE, 0 },
         };
+        fflush(stdout);                 /* GL.module's own line (softpipe, and why) comes after ours */
         ctx = CALL(aglCreateContext2, void *(*)(ULONG *, struct TagItem *))(&err, tags);
     }
     if (!ctx) {
-        printf("OGLES3Check: aglCreateContext2 failed, error %lu\n", (unsigned long)err);
+        printf("OGLES3Check: aglCreateContext2 failed, error %lu%s\n", (unsigned long)err,
+               err == 2 ? " (no GL: GL.module's line above says why; ENV:GFOpenGPU/GLDriver gpu refuses softpipe)" : "");
         CloseLibrary(OGLES3Base);
         return RETURN_FAIL;
     }
     CALL(aglMakeCurrent, void (*)(void *))(ctx);
     printf("context: %lux%lu\nGL_VENDOR: %s\nGL_RENDERER: %s\nGL_VERSION: %s\nGL_SHADING_LANGUAGE_VERSION: %s\n",
            (unsigned long)w, (unsigned long)h, S(GL_VENDOR), S(GL_RENDERER), S(GL_VERSION), S(GL_SHADING_LANGUAGE_VERSION));
+    /* Which driver Mesa got: its renderer names it ("virgl (...)", "softpipe") */
+    {
+        const char *r = S(GL_RENDERER);
+        printf("driver: %s\n", !strncmp(r, "virgl", 5) ? "virgl (the host's graphics chip)"
+                               : !strncmp(r, "softpipe", 8) ? "softpipe (the 68k; GL.module's line above says why)" : r);
+    }
     if (!es2) {
         GLint n = geti(GL_NUM_EXTENSIONS);
         printf("GL_NUM_EXTENSIONS: %ld\n", (long)n);

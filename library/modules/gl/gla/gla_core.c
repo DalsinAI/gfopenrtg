@@ -298,9 +298,20 @@ static void visual_from(struct st_visual *v, const struct gla_config *cfg, struc
         v->buffer_mask |= ST_ATTACHMENT_DEPTH_STENCIL_MASK;
 }
 
+/* Why virgl wasn't had, and who is told before softpipe starts (gla_core.h). */
+static gla_softpipe_hook_fn softpipe_hook;
+static const char *virgl_why;
+
+void gla_set_softpipe_hook(gla_softpipe_hook_fn hook) { softpipe_hook = hook; }
+void gla_note_why(const char *why) { virgl_why = why; }
+const char *gla_last_why(void) { return virgl_why; }
+
 struct gla_display *gla_display_create(void)
 {
-    struct gla_display *d = CALLOC_STRUCT(gla_display);
+    struct gla_display *d;
+    if (softpipe_hook && softpipe_hook(virgl_why))
+        return NULL;                    /* softpipe refused (OS 3.2: ENV:GFOpenGPU/GLDriver gpu) */
+    d = CALLOC_STRUCT(gla_display);
     if (!d)
         return NULL;
     d->ws = gla_winsys_create();
@@ -322,8 +333,12 @@ struct gla_display *gla_display_create_virgl(const struct gla_virgl_transport *t
     if (!d)
         return NULL;
     d->ws = gla_winsys_create();
-    vws = d->ws ? gla_virgl_winsys_create(d->ws, t) : NULL;
+    if (!d->ws)
+        gla_note_why("no memory for virgl's winsys");
+    vws = d->ws ? gla_virgl_winsys_create(d->ws, t) : NULL;   /* notes why when it fails */
     d->fscreen.screen = vws ? virgl_create_screen(vws, NULL) : NULL;
+    if (vws && !d->fscreen.screen)
+        gla_note_why("Mesa's virgl screen couldn't be made on the host's context (virgl_create_screen failed)");
     if (!d->fscreen.screen) {
         if (d->ws)
             d->ws->destroy(d->ws);
@@ -331,6 +346,7 @@ struct gla_display *gla_display_create_virgl(const struct gla_virgl_transport *t
         return NULL;
     }
     d->virgl = 1;
+    gla_note_why(NULL);
     d->fscreen.get_param = fs_get_param;
     return d;
 }

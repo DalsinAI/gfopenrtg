@@ -28,6 +28,7 @@ ogles3.library is a face of the one library (DESIGN.md section 5), like Warp3D.l
 - **Sessions.** Each task that makes contexts gets a session: its own opening of GL.module and a GLA display.
   - The display uses **virgl** when gfopengpu.library carries it (the PC's GPU), and **softpipe** on the 68k otherwise.
   - `SetEnv OGLES3/Driver CPU` makes the next session use softpipe.
+  - A session on softpipe says why, in one line on the program's output and in the runtime's log, and `SetEnv GFOpenGPU/GLDriver gpu` refuses softpipe (the context then fails, `CCE_NO_GPU`); `cpu` forces it (GL.module's README, "Which one a program gets"). OGLES3Check prints `driver: virgl` or `driver: softpipe`.
 - **No GFOpenGPU, no open.** Without gfopengpu.library 0.5 or later, the library won't open. A program's `OGLES3Open` then goes on to the ogles3.library in its own drawer, as ogles3's import library does.
 
 ## Installing: AmiCradle instances only

@@ -83,7 +83,7 @@ struct av_pres {
 #define AV_PEND 16                          /* deferred presents at once */
 
 struct acvirgl {
-    int ctx0_every;                     /* AC_VIRGL_CTX0=every: context 0 before every command (QEMU's way) */
+    int ctx0_every;                     /* context 0 before every command (QEMU's way); AC_VIRGL_CTX0=create: only around ACV_CTX_* */
     void *dl;
     struct vr_api vr;
     struct vr_callbacks cb;
@@ -181,7 +181,18 @@ struct acvirgl *acvirgl_create(const char *lib, char *err, int errlen)
     *(void **)&v->vr.context_create_fence = dlsym(v->dl, "virgl_renderer_context_create_fence");
     *(void **)&v->vr.poll = dlsym(v->dl, "virgl_renderer_poll");
     *(void **)&v->vr.force_ctx_0 = dlsym(v->dl, "virgl_renderer_force_ctx_0");
-    { const char *c0 = getenv("AC_VIRGL_CTX0"); v->ctx0_every = c0 && !strcmp(c0, "every") && v->vr.force_ctx_0; }
+    /* Context 0 before every command, as QEMU does. Around context creation
+     * only (#198) cured the contexts lost with "glBindVertexArray(non-gen
+     * name)", but some still died with GL_INVALID_FRAMEBUFFER_OPERATION
+     * (1286) at a draw: in t4-gl1286, 4 rounds of three ogles3 demos
+     * started staggered a run, 6 contexts in 6 runs (2 of the runs with the
+     * ring on the C core) against 0 in 6 runs with this. Some other vrend
+     * path leaves its record of the current context and the GL context
+     * really current apart; QEMU never meets it because it forces context 0
+     * before everything. It costs two eglMakeCurrent calls a command, and
+     * three demos at VSYNC kept 49 fps. AC_VIRGL_CTX0=create goes back to
+     * #198's way, for comparing. */
+    { const char *c0 = getenv("AC_VIRGL_CTX0"); v->ctx0_every = !(c0 && !strcmp(c0, "create")) && v->vr.force_ctx_0; }
     v->cb.version = v->vr.context_create_fence && v->vr.poll ? 3 : 1;
     v->cb.write_fence = av_no_fence;
     v->cb.write_context_fence = av_context_fence;

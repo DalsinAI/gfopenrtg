@@ -142,6 +142,11 @@ CC=${CC:-cc}
 cd "$B"
 eval "$CC $FLAGS -I$SRC/src/gallium/drivers -I$SRC/src/mesa/glapi -O2 -c $TOP/gla/gla_core.c -o gla_core.o"
 eval "$CC $FLAGS -I$SRC/src/gallium/drivers -I$SRC/src/virtio -I$REPO/include -O2 -c $TOP/gla/gla_virgl.c -o gla_virgl.o"
+# The shader cache (gla/gla_shader_cache.c, patch 0012): its entries are
+# keyed on this build, Mesa's version and the patches' sum, as there is no
+# ELF build id to take it from.
+echo "#define GLA_CACHE_BUILD \"mesa-$VERSION+$PSUM\"" > gla_cache_build.h
+eval "$CC $FLAGS -I. -I$TOP/gla -O2 -c $TOP/gla/gla_shader_cache.c -o gla_shader_cache.o"
 SHIM= SYSLIBS="-lstdc++ -lm -lpthread -ldl" PROGOBJS=
 # The host's half of virgl (ACVirgl over virglrenderer), for the tests on this machine.
 HOSTV=
@@ -161,7 +166,7 @@ esac
 # Mesa's c11 threads name the pthread_mutexattr calls weakly; a static link must ask for them.
 WEAK="-Wl,-u,pthread_mutexattr_init -Wl,-u,pthread_mutexattr_settype -Wl,-u,pthread_mutexattr_destroy"
 $CC $MESA_LFLAGS -std=c99 -O2 -Wall -Wextra -Werror -I"$SRC/include" -I"$REPO" ${CROSS:+-static $WEAK} -o test_gla \
-    "$TOP/tests/test_gla.c" gla_core.o gla_virgl.o $HOSTV $SHIM $PROGOBJS $FIXOBJS -Wl,--start-group $LIBS $OPT -Wl,--end-group \
+    "$TOP/tests/test_gla.c" gla_core.o gla_virgl.o gla_shader_cache.o $HOSTV $SHIM $PROGOBJS $FIXOBJS -Wl,--start-group $LIBS $OPT -Wl,--end-group \
     $SYSLIBS ${CROSS:+-latomic}
 # What programs built on this (GFOpenDemos) need to link against it, as shell
 # assignments: LFLAGS for a program on libGL.a; MESA_LFLAGS, FLAGS and
@@ -169,7 +174,7 @@ $CC $MESA_LFLAGS -std=c99 -O2 -Wall -Wextra -Werror -I"$SRC/include" -I"$REPO" $
 # Mesa itself.
 q() { printf "%s='%s'\n" "$1" "$(printf %s "$2" | sed "s/'/'\\\\''/g")"; }
 { q CC "$CC"; q FLAGS "$FLAGS"; q LFLAGS "$LFLAGS"; q SRC "$SRC"; q LIBS "$LIBS"; q OPT "$OPT"
-  q SHIM "$SHIM"; q SYSLIBS "$SYSLIBS"; q WEAK "$WEAK"; q GLAOBJS "gla_core.o gla_virgl.o"; q FIXOBJS "$FIXOBJS"
+  q SHIM "$SHIM"; q SYSLIBS "$SYSLIBS"; q WEAK "$WEAK"; q GLAOBJS "gla_core.o gla_virgl.o gla_shader_cache.o"; q FIXOBJS "$FIXOBJS"
   q PROGOBJS "$PROGOBJS"; q MESA_LFLAGS "$MESA_LFLAGS"; } > gla-link.env
 case $NAME in *amigaos*)
     # The unstripped test is ~20 MB of symbols; the copy for the Amiga is stripped.

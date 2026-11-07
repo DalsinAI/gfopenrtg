@@ -54,6 +54,7 @@ void acvirgl_stats(const struct acvirgl *v, struct acvirgl_stats *s);
  * acvirgl_settle(ACVIRGL_ALL), which the runtime calls before anything
  * else draws there. Off until this is called; needs virglrenderer's
  * per-context fences (1.0 and later), else presents stay as they were. */
+#define ACVIRGL_HAS_DEFER 1  /* these calls and the stats' deferred fields are here (a runtime may build with an older acvirgl) */
 void acvirgl_defer_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32_t addr, uint32_t bytes));
 #define ACVIRGL_READY 0     /* those whose fences have signalled */
 #define ACVIRGL_ALL   1     /* all, now */

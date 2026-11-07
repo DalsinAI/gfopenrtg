@@ -1,0 +1,30 @@
+; Copyright (c) 2026 Dalsin Limited / the AmiCradle Team. OpenRTG, MIT licence (LICENSE).
+; SPDX-License-Identifier: MIT
+;
+; Installs ogles3.library on GFOpenGPU into LIBS:, on an AmiCradle instance
+; only, and never over another ogles3.library:
+;  - an AmiCradle instance has GFOpenGPU's ACRTG.gpu driver and GL.module in
+;    LIBS:GFOpenGPU/; a machine without them is refused, so ladislawv's
+;    ogles3.library on a PiStorm is never touched;
+;  - a LIBS:ogles3.library that is not this one (its version string lacks
+;    "on GFOpenGPU") is left alone, and the install stops.
+
+(set @app-name "ogles3.library on GFOpenGPU")
+(set #src (pathonly @icon))
+
+(if (not (exists "LIBS:GFOpenGPU/ACRTG.gpu"))
+    (abort "This ogles3.library is for AmiCradle instances only: LIBS:GFOpenGPU/ACRTG.gpu isn't here.\n\nNothing was installed."))
+(if (not (exists "LIBS:GFOpenGPU/GL.module"))
+    (abort "GFOpenGPU's GL.module isn't installed (LIBS:GFOpenGPU/GL.module).\n\nNothing was installed."))
+(if (exists "LIBS:ogles3.library")
+    (if (<> 0 (run "Search >NIL: LIBS:ogles3.library \"on GFOpenGPU\" QUIET"))
+        (abort "LIBS:ogles3.library is another ogles3.library (ladislawv's, for the PiStorm?).\nIt has been left as it is.\n\nNothing was installed.")))
+
+(copylib
+    (prompt "Installing ogles3.library on GFOpenGPU")
+    (help @copylib-help)
+    (source (tackon #src "libs/ogles3.library"))
+    (dest "LIBS:")
+    (confirm))
+
+(exit "ogles3.library on GFOpenGPU is installed.")

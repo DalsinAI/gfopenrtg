@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <sys/uio.h>
 
 /* ---- virglrenderer's API, as virglrenderer.h declares it --------------------------- */
@@ -28,6 +29,9 @@ struct vr_callbacks {
     void *(*create_gl_context)(void *cookie, int scanout_idx, void *param);
     void (*destroy_gl_context)(void *cookie, void *ctx);
     int (*make_current)(void *cookie, int scanout_idx, void *ctx);
+    int (*get_drm_fd)(void *cookie);                                    /* v2 */
+    void (*write_context_fence)(void *cookie, uint32_t ctx_id, uint32_t ring_idx, uint64_t fence_id);   /* v3 */
+    int (*get_server_fd)(void *cookie, uint32_t version);              /* v3 */
 };
 
 struct vr_resource_create_args {
@@ -52,7 +56,15 @@ struct vr_api {
                              struct vr_box *box, uint64_t offset, struct iovec *iov, int iovec_cnt);
     int (*transfer_write_iov)(uint32_t handle, uint32_t ctx_id, int level, uint32_t stride, uint32_t layer_stride,
                               struct vr_box *box, uint64_t offset, struct iovec *iovec, unsigned int iovec_cnt);
+    /* optional (presents one frame behind): a resource's GL texture */
+    int (*resource_get_info)(int res_handle, void *info);
+    /* optional (deferred presents): per-context fences, and their retiring */
+    int (*context_create_fence)(uint32_t ctx_id, uint32_t flags, uint32_t ring_idx, uint64_t fence_id);
+    void (*poll)(void);
+    /* virglrenderer's context 0 made current, its idea of the current context forgotten */
+    void (*force_ctx_0)(void);
 };
+
 
 /* What ACV_PRESENT and the counters need of a resource, by handle. On the
  * Amiga a handle is the address of GLA's resource (gla_virgl.c), so the
@@ -60,6 +72,73 @@ struct vr_api {
  * handle 0 an empty slot. */
 struct av_res { uint32_t handle, format, bind, width, height; };
 #define AV_MAX_RES (1u << 20)               /* resources known at once */
+
+/* virgl_renderer_resource_info as virglrenderer.h gives it (1.0 and later);
+ * room to spare should a later one be longer. */
+struct vr_resource_info {
+    uint32_t handle, virgl_format, width, height, depth, flags, tex_id, stride;
+    int drm_fourcc, fd;
+    uint32_t spare[16];
+};
+#define VR_RESOURCE_Y_0_TOP 1       /* its GL rows run bottom up from the resource's top: read back reversed */
+
+/* ---- the GL calls presents one frame behind make, in the frame's own GL
+ * context (virglrenderer's, made current for it), found with EGL ---------------------- */
+
+typedef unsigned int av_glenum;
+#define AV_GL_UNSIGNED_BYTE         0x1401
+#define AV_GL_RGBA                  0x1908
+#define AV_GL_BGRA                  0x80E1
+#define AV_GL_TEXTURE_2D            0x0DE1
+#define AV_GL_PACK_ROW_LENGTH       0x0D02
+#define AV_GL_PACK_SKIP_ROWS        0x0D03
+#define AV_GL_PACK_SKIP_PIXELS      0x0D04
+#define AV_GL_PACK_ALIGNMENT        0x0D05
+#define AV_GL_PIXEL_PACK_BUFFER     0x88EB
+#define AV_GL_PIXEL_PACK_BUFFER_BINDING 0x88ED
+#define AV_GL_STREAM_READ           0x88E1
+#define AV_GL_READ_FRAMEBUFFER      0x8CA8
+#define AV_GL_READ_FRAMEBUFFER_BINDING 0x8CAA
+#define AV_GL_COLOR_ATTACHMENT0     0x8CE0
+#define AV_GL_FRAMEBUFFER_COMPLETE  0x8CD5
+#define AV_GL_MAP_READ_BIT          0x0001
+
+struct av_gl {
+    void (*GetIntegerv)(av_glenum, int *);
+    av_glenum (*GetError)(void);
+    void (*GenFramebuffers)(int, unsigned *);
+    void (*DeleteFramebuffers)(int, const unsigned *);
+    void (*BindFramebuffer)(av_glenum, unsigned);
+    void (*FramebufferTexture2D)(av_glenum, av_glenum, av_glenum, unsigned, int);
+    av_glenum (*CheckFramebufferStatus)(av_glenum);
+    void (*GenBuffers)(int, unsigned *);
+    void (*DeleteBuffers)(int, const unsigned *);
+    void (*BindBuffer)(av_glenum, unsigned);
+    void (*BufferData)(av_glenum, intptr_t, const void *, av_glenum);
+    void (*PixelStorei)(av_glenum, int);
+    void (*ReadPixels)(int, int, int, int, av_glenum, av_glenum, void *);
+    void *(*MapBufferRange)(av_glenum, intptr_t, intptr_t, unsigned);
+    unsigned char (*UnmapBuffer)(av_glenum);
+    void (*Finish)(void);
+};
+
+/* An ACV_PRESENT checked and placed, its pixels not yet read back and
+ * written: what av_present_finish needs. */
+struct av_pres {
+    uint32_t ctx, handle, layer, addr, bpr, fmt, span;
+    int sx, sy, rh, flip, nr;
+    int rect[ACV_PRESENT_MAX][4];
+    struct vr_box box;
+    uint64_t fence;             /* deferred: the context's fence after the frame */
+    int done;                   /* deferred: that fence has signalled */
+    /* behind: the staging buffer the GPU copies the frame into (0: deferred,
+     * read back from the resource), its bytes, where R, G, B and A are in its
+     * pixels, and whether its rows run bottom up */
+    unsigned pbo;
+    uint32_t pbo_bytes;
+    int lr, lg, lb, la, rev;
+};
+#define AV_PEND 16                          /* deferred presents at once */
 
 struct acvirgl {
     void *dl;
@@ -72,9 +151,41 @@ struct acvirgl {
     struct acvirgl_stats st;
     const char *api;            /* "GL" or "GLES": the context virglrenderer got */
     char renderer[64];          /* and the GPU it draws on, from capset 2 */
+    /* deferred presents (acvirgl_defer_presents), oldest first */
+    int (*defer_ok)(void *map_user, uint32_t addr, uint32_t bytes);
+    struct av_pres pend[AV_PEND];
+    int npend;
+    uint64_t fence_seq;
+    /* presents one frame behind (acvirgl_behind_presents) */
+    int (*behind_ok)(void *map_user, uint32_t addr, uint32_t bytes);
+    struct av_gl gl;
+    void *(*egl_current)(void); /* eglGetCurrentContext */
+    int gl_state;               /* 0 not looked for, 1 found, -1 not there */
+    struct { unsigned id; uint32_t bytes; } pool[AV_PEND];     /* staging buffers not in use */
+    int npool;
+    int parts;                  /* AC_VIRGL_PARTS=1: the GPU's wait timed apart from the read back */
+    uint64_t stg_ns[5];         /* parts of asking for the staging copy: switch, framebuffer, read, put back, fence */
 };
 
 static void av_no_fence(void *cookie, uint32_t fence) { (void)cookie; (void)fence; }
+
+/* A context's fence signalled (virglrenderer calls this from
+ * virgl_renderer_poll, on the caller's thread): its present is ready. */
+static void av_context_fence(void *cookie, uint32_t ctx_id, uint32_t ring_idx, uint64_t fence_id)
+{
+    struct acvirgl *v = cookie;
+    int i;
+    (void)ring_idx;
+    for (i = 0; i < v->npend; i++)
+        if (v->pend[i].ctx == ctx_id && v->pend[i].fence <= fence_id) v->pend[i].done = 1;
+}
+
+static uint64_t av_ns(void)
+{
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (uint64_t)t.tv_sec * 1000000000u + (uint64_t)t.tv_nsec;
+}
 
 static int av_need(struct acvirgl *v, size_t n)
 {
@@ -132,8 +243,16 @@ struct acvirgl *acvirgl_create(const char *lib, char *err, int errlen)
     SYM(transfer_read_iov, "virgl_renderer_transfer_read_iov")
     SYM(transfer_write_iov, "virgl_renderer_transfer_write_iov")
 #undef SYM
-    v->cb.version = 1;
+    /* a resource's GL texture, for presents one frame behind; AC_VIRGL_PARTS=1 times a present's parts */
+    *(void **)&v->vr.resource_get_info = dlsym(v->dl, "virgl_renderer_resource_get_info");
+    v->parts = getenv("AC_VIRGL_PARTS") && !strcmp(getenv("AC_VIRGL_PARTS"), "1");
+    /* per-context fences, for presents left to finish (virglrenderer 1.0 and later) */
+    *(void **)&v->vr.context_create_fence = dlsym(v->dl, "virgl_renderer_context_create_fence");
+    *(void **)&v->vr.poll = dlsym(v->dl, "virgl_renderer_poll");
+    *(void **)&v->vr.force_ctx_0 = dlsym(v->dl, "virgl_renderer_force_ctx_0");
+    v->cb.version = v->vr.context_create_fence && v->vr.poll ? 3 : 1;
     v->cb.write_fence = av_no_fence;
+    v->cb.write_context_fence = av_context_fence;
     /* AC_VIRGL_DRIVER names Mesa's driver for the context, e.g. zink (GL
      * over the host's Vulkan, as on a Pi 5's V3DV); unset: the GPU's own. */
     if ((drv = getenv("AC_VIRGL_DRIVER")) && *drv) setenv("MESA_LOADER_DRIVER_OVERRIDE", drv, 1);
@@ -161,6 +280,7 @@ fail:
 void acvirgl_destroy(struct acvirgl *v)
 {
     if (!v) return;
+    v->npend = 0;                           /* left unfinished: the memory they would write may be gone */
     v->vr.cleanup(v);
     /* virglrenderer keeps state at file scope; it stays loaded */
     free(v->tmp);
@@ -287,19 +407,18 @@ static int av_layout(uint32_t format, int *r, int *g, int *b, int *a)
 static int av_s16(uint32_t v) { v &= 0xFFFFu; return v >= 0x8000u ? (int)v - 0x10000 : (int)v; }
 
 /* ACV_PRESENT: the resource read back once, then written into the target's
- * rectangles in its own format. */
-static int32_t av_present(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), void *mu, const uint8_t *a, unsigned nargs)
+ * rectangles in its own format. av_present_prep checks the command and
+ * places its rectangles (the pixels it will write, 0, or an ACV_ERR_);
+ * av_present_finish reads back and writes. */
+static int32_t av_present_prep(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), void *mu, const uint8_t *a,
+                               unsigned nargs, struct av_pres *p)
 {
     uint32_t ctx = av_be32(a), handle = av_be32(a + 4), layer = av_be32(a + 8), so = av_be32(a + 12);
     uint32_t addr = av_be32(a + 16), bpr = av_be32(a + 20), fmt = av_be32(a + 24), wh = av_be32(a + 28);
     uint32_t flags = av_be32(a + 32), n = av_be32(a + 36), i, bpp;
     int sx = av_s16(so >> 16), sy = av_s16(so), tw = (int)(wh >> 16), th = (int)(wh & 0xFFFFu);
     int lr, lg, lb, la, rw, rh, bx0 = 0x7FFFFFFF, by0 = 0x7FFFFFFF, bx1 = -1, by1 = -1, flip = (flags & ACV_PRESENT_FLIP_Y) != 0;
-    int rect[ACV_PRESENT_MAX][4], nr = 0;
     const struct av_res *res;
-    struct vr_box box;
-    struct iovec iov;
-    uint8_t *dst;
     uint64_t pixels = 0, span;
     if (n > ACV_PRESENT_MAX || nargs < 10 + 2 * n || (flags & ~(uint32_t)ACV_PRESENT_FLIP_Y)) return ACV_ERR_BADCMD;
     bpp = fmt == OGPU_FMT_XRGB32 || fmt == OGPU_FMT_ARGB32 ? 4 : fmt == OGPU_FMT_RGB565 ? 2 : 0;
@@ -313,7 +432,8 @@ static int32_t av_present(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, u
      * 0x01000000, th 257), and a wrapped length would map one row while the
      * rows below it are written. Past 32 bits it is out of reach. */
     span = (uint64_t)bpr * (uint64_t)(th - 1) + (uint64_t)tw * bpp;
-    if (span > 0xFFFFFFFFu || !(dst = map(mu, addr, (uint32_t)span))) return ACV_ERR_NOMAP;
+    if (span > 0xFFFFFFFFu || !map(mu, addr, (uint32_t)span)) return ACV_ERR_NOMAP;
+    p->nr = 0;
     /* Each rectangle inside the target and over the resource; their box in the resource. */
     for (i = 0; i < n; i++) {
         uint32_t xy = av_be32(a + 40 + i * 8), rwh = av_be32(a + 44 + i * 8);
@@ -327,7 +447,8 @@ static int32_t av_present(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, u
         if (x1 > sx + rw) x1 = sx + rw;
         if (y1 > sy + rh) y1 = sy + rh;
         if (x0 >= x1 || y0 >= y1) continue;
-        rect[nr][0] = x0; rect[nr][1] = y0; rect[nr][2] = x1; rect[nr][3] = y1; nr++;
+        p->rect[p->nr][0] = x0; p->rect[p->nr][1] = y0; p->rect[p->nr][2] = x1; p->rect[p->nr][3] = y1; p->nr++;
+        pixels += (uint64_t)(x1 - x0) * (uint64_t)(y1 - y0);
         if (x0 - sx < bx0) bx0 = x0 - sx;
         if (x1 - sx > bx1) bx1 = x1 - sx;
         if (flip) {
@@ -338,34 +459,380 @@ static int32_t av_present(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, u
             if (y1 - sy > by1) by1 = y1 - sy;
         }
     }
-    if (!nr) return 0;
-    box.x = (uint32_t)bx0; box.y = (uint32_t)by0; box.z = layer;
-    box.w = (uint32_t)(bx1 - bx0); box.h = (uint32_t)(by1 - by0); box.d = 1;
-    if (!av_need(v, (size_t)box.w * box.h * 4)) return ACV_ERR_RENDERER;
-    iov.iov_base = v->tmp;
-    iov.iov_len = (size_t)box.w * box.h * 4;
-    if (v->vr.transfer_read_iov(handle, ctx, 0, box.w * 4, 0, &box, 0, &iov, 1)) return ACV_ERR_RENDERER;
-    for (i = 0; i < (uint32_t)nr; i++) {
-        int x0 = rect[i][0], y0 = rect[i][1], x1 = rect[i][2], y1 = rect[i][3], x, y;
+    if (!p->nr) return 0;
+    p->ctx = ctx; p->handle = handle; p->layer = layer; p->addr = addr; p->bpr = bpr; p->fmt = fmt; p->span = (uint32_t)span;
+    p->sx = sx; p->sy = sy; p->rh = rh; p->flip = flip;
+    p->box.x = (uint32_t)bx0; p->box.y = (uint32_t)by0; p->box.z = layer;
+    p->box.w = (uint32_t)(bx1 - bx0); p->box.h = (uint32_t)(by1 - by0); p->box.d = 1;
+    p->fence = 0; p->done = 0; p->pbo = 0; p->pbo_bytes = 0; p->rev = 0;
+    return pixels > 0x7FFFFFFF ? 0x7FFFFFFF : (int32_t)pixels;
+}
+
+/* One row of n 32-bit pixels: the resource's bytes (channels at lr, lg, lb
+ * and la; la 4: none) to A, R, G, B in memory, A 0 for XRGB32 and 0xFF when
+ * the resource has none. B, G, R, A (or X) resources, the usual display
+ * targets, are a byte swap a pixel on a little-endian host. */
+static void av_row32(uint8_t *dp, const uint8_t *sp, int n, int lr, int lg, int lb, int la, int xrgb)
+{
+    int x;
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    if (lr == 2 && lg == 1 && lb == 0 && (la == 3 || la == 4)) {
+        uint32_t clear = xrgb || la == 4 ? 0xFFu : 0, set = !xrgb && la == 4 ? 0xFFu : 0;
+        for (x = 0; x < n; x++, sp += 4, dp += 4) {
+            uint32_t w;
+            memcpy(&w, sp, 4);
+            w = (__builtin_bswap32(w) & ~clear) | set;
+            memcpy(dp, &w, 4);
+        }
+        return;
+    }
+#endif
+    for (x = 0; x < n; x++, sp += 4, dp += 4) {
+        dp[0] = xrgb ? 0 : la == 4 ? 0xFF : sp[la];
+        dp[1] = sp[lr]; dp[2] = sp[lg]; dp[3] = sp[lb];
+    }
+}
+
+/* The present's rectangles written into dst from src, the box read back:
+ * rows of box.w pixels with R, G, B and A at lr, lg, lb and la (la 4:
+ * none), bottom up when rev. */
+static uint64_t av_present_write(const struct av_pres *p, uint8_t *dst, const uint8_t *src, int lr, int lg, int lb, int la, int rev)
+{
+    const struct vr_box *box = &p->box;
+    uint64_t pixels = 0;
+    int i;
+    for (i = 0; i < p->nr; i++) {
+        int x0 = p->rect[i][0], y0 = p->rect[i][1], x1 = p->rect[i][2], y1 = p->rect[i][3], x, y;
         for (y = y0; y < y1; y++) {
-            int ry = flip ? rh - 1 - (y - sy) : y - sy;
-            const uint8_t *sp = v->tmp + ((size_t)(ry - by0) * box.w + (size_t)(x0 - sx - bx0)) * 4;
-            uint8_t *dp = dst + (size_t)y * bpr + (size_t)x0 * bpp;
-            if (fmt == OGPU_FMT_RGB565)
+            int ry = (p->flip ? p->rh - 1 - (y - p->sy) : y - p->sy) - (int)box->y;
+            const uint8_t *sp;
+            if (rev) ry = (int)box->h - 1 - ry;
+            sp = src + ((size_t)ry * box->w + (size_t)(x0 - p->sx - (int)box->x)) * 4;
+            if (p->fmt == OGPU_FMT_RGB565) {
+                uint8_t *dp = dst + (size_t)y * p->bpr + (size_t)x0 * 2;
                 for (x = x0; x < x1; x++, sp += 4, dp += 2) {
                     dp[0] = (uint8_t)((sp[lr] & 0xF8) | (sp[lg] >> 5));
                     dp[1] = (uint8_t)(((sp[lg] & 0x1C) << 3) | (sp[lb] >> 3));
                 }
-            else
-                for (x = x0; x < x1; x++, sp += 4, dp += 4) {
-                    dp[0] = fmt == OGPU_FMT_XRGB32 ? 0 : la == 4 ? 0xFF : sp[la];
-                    dp[1] = sp[lr]; dp[2] = sp[lg]; dp[3] = sp[lb];
-                }
+            } else
+                av_row32(dst + (size_t)y * p->bpr + (size_t)x0 * 4, sp, x1 - x0, lr, lg, lb, la, p->fmt == OGPU_FMT_XRGB32);
         }
         pixels += (uint64_t)(x1 - x0) * (uint64_t)(y1 - y0);
     }
-    v->st.presents++; v->st.present_rects += (uint64_t)nr; v->st.present_pixels += pixels;
+    return pixels;
+}
+
+/* The context's GL context made current: virglrenderer does it for a
+ * command buffer, even one of no words. */
+static int av_current(struct acvirgl *v, uint32_t ctx)
+{
+    static uint32_t none[1];
+    return !v->vr.submit_cmd(none, (int)ctx, 0);
+}
+
+/* The GL entry points, from EGL (virglrenderer's libepoxy has loaded it). */
+static int av_gl_load(struct acvirgl *v)
+{
+    void *egl;
+    void *(*gpa)(const char *);
+    if (v->gl_state) return v->gl_state > 0;
+    v->gl_state = -1;
+    if (!(egl = dlopen("libEGL.so.1", RTLD_NOW | RTLD_LOCAL))) return 0;
+    if (!(*(void **)&gpa = dlsym(egl, "eglGetProcAddress"))
+        || !(*(void **)&v->egl_current = dlsym(egl, "eglGetCurrentContext"))) return 0;
+#define GLF(f) if (!(*(void **)&v->gl.f = gpa("gl" #f))) return 0;
+    GLF(GetIntegerv) GLF(GetError) GLF(GenFramebuffers) GLF(DeleteFramebuffers) GLF(BindFramebuffer)
+    GLF(FramebufferTexture2D) GLF(CheckFramebufferStatus) GLF(GenBuffers) GLF(DeleteBuffers) GLF(BindBuffer)
+    GLF(BufferData) GLF(PixelStorei) GLF(ReadPixels) GLF(MapBufferRange) GLF(UnmapBuffer) GLF(Finish)
+#undef GLF
+    v->gl_state = 1;                        /* libEGL stays open with the GL it gave */
+    return 1;
+}
+
+/* Staging buffers: one not in use, at least `bytes` if there is one (else
+ * it grows), or a new one (0: none). Back when done; past AV_PEND, gone. */
+static unsigned av_pool_get(struct acvirgl *v, uint32_t bytes, uint32_t *have)
+{
+    int i, best = -1;
+    unsigned id = 0;
+    for (i = 0; i < v->npool; i++)
+        if (best < 0 || (v->pool[i].bytes >= bytes && (v->pool[best].bytes < bytes || v->pool[i].bytes < v->pool[best].bytes))) best = i;
+    if (best >= 0) {
+        id = v->pool[best].id; *have = v->pool[best].bytes;
+        v->pool[best] = v->pool[--v->npool];
+        return id;
+    }
+    v->gl.GenBuffers(1, &id);
+    *have = 0;
+    return id;
+}
+
+static void av_pool_put(struct acvirgl *v, unsigned id, uint32_t bytes, int gl)
+{
+    if (!id) return;
+    if (v->npool < AV_PEND) { v->pool[v->npool].id = id; v->pool[v->npool].bytes = bytes; v->npool++; }
+    else if (gl) v->gl.DeleteBuffers(1, &id);
+}
+
+static void av_parts_say(struct acvirgl *v)
+{
+    const struct acvirgl_stats *s = &v->st;
+    double n = s->presents ? (double)s->presents : 1;
+    if (!v->parts || s->presents % 500) return;
+    fprintf(stderr, "ACVIRGL: %llu presents (%llu behind): a present %.0f us: GPU wait %.0f, read back %.0f (of it waited %.0f), "
+            "conversion %.0f, staging asked %.0f\n", (unsigned long long)s->presents, (unsigned long long)s->behind,
+            s->present_ns / n / 1e3, s->present_gpu_ns / n / 1e3, s->present_read_ns / n / 1e3, s->present_wait_ns / n / 1e3,
+            s->present_conv_ns / n / 1e3, s->present_issue_ns / n / 1e3);
+    if (s->behind)
+        fprintf(stderr, "ACVIRGL: staging a present: switch %.0f us, framebuffer %.0f, glReadPixels %.0f, put back %.0f, fence %.0f\n",
+                v->stg_ns[0] / (double)s->behind / 1e3, v->stg_ns[1] / (double)s->behind / 1e3, v->stg_ns[2] / (double)s->behind / 1e3,
+                v->stg_ns[3] / (double)s->behind / 1e3, v->stg_ns[4] / (double)s->behind / 1e3);
+}
+
+static int32_t av_present_finish(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), void *mu, struct av_pres *p)
+{
+    int lr, lg, lb, la;
+    const struct av_res *res;
+    struct vr_box box = p->box;
+    struct iovec iov;
+    uint8_t *dst;
+    uint64_t pixels, ts = av_ns(), t0 = ts, t1;
+    if (p->pbo) {
+        /* behind: the GPU's copy of the frame, mapped (a wait only if it isn't done) */
+        const uint8_t *src = NULL;
+        int pb = 0, ok;
+        unsigned id = p->pbo;
+        p->pbo = 0;
+        /* any of virglrenderer's GL contexts maps it (they share their
+         * objects): the one current stays so, rather than switching to the
+         * frame's and back for the next command (a quarter of a millisecond
+         * a present with three programs) */
+        ok = (dst = map(mu, p->addr, p->span)) != NULL && (v->egl_current() || av_current(v, p->ctx));
+        if (ok) {
+            v->gl.GetIntegerv(AV_GL_PIXEL_PACK_BUFFER_BINDING, &pb);
+            v->gl.BindBuffer(AV_GL_PIXEL_PACK_BUFFER, id);
+            src = v->gl.MapBufferRange(AV_GL_PIXEL_PACK_BUFFER, 0, (intptr_t)p->pbo_bytes, AV_GL_MAP_READ_BIT);
+        }
+        t1 = av_ns();
+        v->st.present_read_ns += t1 - t0;
+        if (!p->done) v->st.present_wait_ns += t1 - t0;
+        pixels = src ? av_present_write(p, dst, src, p->lr, p->lg, p->lb, p->la, p->rev) : 0;
+        if (src) v->gl.UnmapBuffer(AV_GL_PIXEL_PACK_BUFFER);
+        if (ok) v->gl.BindBuffer(AV_GL_PIXEL_PACK_BUFFER, (unsigned)pb);
+        av_pool_put(v, id, p->pbo_bytes, ok);
+        v->st.present_conv_ns += av_ns() - t1;
+        if (!dst) return ACV_ERR_NOMAP;
+        if (!src) return ACV_ERR_RENDERER;
+    } else {
+        res = av_res_find(v, p->handle);
+        if (!res || !av_layout(res->format, &lr, &lg, &lb, &la) || !av_need(v, (size_t)box.w * box.h * 4)) return ACV_ERR_RENDERER;
+        if (!(dst = map(mu, p->addr, p->span))) return ACV_ERR_NOMAP;
+        if (v->parts && av_gl_load(v) && av_current(v, p->ctx)) {
+            v->gl.Finish();                 /* the GPU's wait on its own, for the measurement */
+            t1 = av_ns();
+            v->st.present_gpu_ns += t1 - t0;
+            t0 = t1;
+        }
+        iov.iov_base = v->tmp;
+        iov.iov_len = (size_t)box.w * box.h * 4;
+        if (v->vr.transfer_read_iov(p->handle, p->ctx, 0, box.w * 4, 0, &box, 0, &iov, 1)) return ACV_ERR_RENDERER;
+        t1 = av_ns();
+        v->st.present_read_ns += t1 - t0;
+        pixels = av_present_write(p, dst, v->tmp, lr, lg, lb, la, 0);
+        v->st.present_conv_ns += av_ns() - t1;
+    }
+    v->st.presents++; v->st.present_rects += (uint64_t)p->nr; v->st.present_pixels += pixels;
+    v->st.present_ns += av_ns() - ts;
+    av_parts_say(v);
     return pixels > 0x7FFFFFFF ? 0x7FFFFFFF : (int32_t)pixels;
+}
+
+/* Behind: the GPU asked to copy the present's box of the frame into a
+ * staging buffer (glReadPixels into a pixel-pack buffer), in the frame's GL
+ * context, after its drawing. virglrenderer's GL state is put back as it
+ * was: the read framebuffer, the pack buffer and the pack settings. 0 when
+ * it can't (no texture, an array layer, a framebuffer GL won't read). */
+static int av_behind_start(struct acvirgl *v, struct av_pres *p)
+{
+    struct vr_resource_info info;
+    int rfb = 0, pb = 0, al = 4, rl = 0, sr = 0, sp = 0, ok, i, la_none;
+    int dl, dg, db, da;
+    unsigned fb = 0, id;
+    uint32_t need = p->box.w * p->box.h * 4, have = 0;
+    const struct av_res *res = av_res_find(v, p->handle);
+    uint64_t t0 = av_ns(), t1, t2, t3;
+    memset(&info, 0, sizeof info);
+    if (!res || !av_layout(res->format, &dl, &dg, &db, &da) || p->layer || v->vr.resource_get_info((int)p->handle, &info)
+        || !info.tex_id || !av_current(v, p->ctx))
+        return 0;
+    t1 = av_ns();
+    v->stg_ns[0] += t1 - t0;
+    la_none = da == 4;
+    if (!(id = av_pool_get(v, need, &have))) return 0;
+    for (i = 0; i < 8 && v->gl.GetError(); i++) ;     /* errors that were virglrenderer's, not ours */
+    v->gl.GetIntegerv(AV_GL_READ_FRAMEBUFFER_BINDING, &rfb);
+    v->gl.GetIntegerv(AV_GL_PIXEL_PACK_BUFFER_BINDING, &pb);
+    v->gl.GetIntegerv(AV_GL_PACK_ALIGNMENT, &al);
+    v->gl.GetIntegerv(AV_GL_PACK_ROW_LENGTH, &rl);
+    v->gl.GetIntegerv(AV_GL_PACK_SKIP_ROWS, &sr);
+    v->gl.GetIntegerv(AV_GL_PACK_SKIP_PIXELS, &sp);
+    v->gl.GenFramebuffers(1, &fb);
+    v->gl.BindFramebuffer(AV_GL_READ_FRAMEBUFFER, fb);
+    v->gl.FramebufferTexture2D(AV_GL_READ_FRAMEBUFFER, AV_GL_COLOR_ATTACHMENT0, AV_GL_TEXTURE_2D, info.tex_id, 0);
+    ok = v->gl.CheckFramebufferStatus(AV_GL_READ_FRAMEBUFFER) == AV_GL_FRAMEBUFFER_COMPLETE;
+    t2 = t3 = av_ns();
+    v->stg_ns[1] += t2 - t1;
+    if (ok) {
+        int y1 = info.flags & VR_RESOURCE_Y_0_TOP ? (int)info.height - (int)p->box.y - (int)p->box.h : (int)p->box.y;
+        v->gl.BindBuffer(AV_GL_PIXEL_PACK_BUFFER, id);
+        if (have < need) { v->gl.BufferData(AV_GL_PIXEL_PACK_BUFFER, (intptr_t)need, NULL, AV_GL_STREAM_READ); have = need; }
+        v->gl.PixelStorei(AV_GL_PACK_ALIGNMENT, 4);
+        v->gl.PixelStorei(AV_GL_PACK_ROW_LENGTH, 0);
+        v->gl.PixelStorei(AV_GL_PACK_SKIP_ROWS, 0);
+        v->gl.PixelStorei(AV_GL_PACK_SKIP_PIXELS, 0);
+        /* desktop GL reads B, G, R, A (a byte swap a pixel to the Amiga's
+         * A, R, G, B); GLES reads R, G, B, A, the one order it must give */
+        v->gl.ReadPixels((int)p->box.x, y1, (int)p->box.w, (int)p->box.h, strcmp(v->api, "GLES") ? AV_GL_BGRA : AV_GL_RGBA,
+                         AV_GL_UNSIGNED_BYTE, NULL);
+        ok = v->gl.GetError() == 0;
+        t3 = av_ns();
+        v->stg_ns[2] += t3 - t2;
+        v->gl.PixelStorei(AV_GL_PACK_ALIGNMENT, al);
+        v->gl.PixelStorei(AV_GL_PACK_ROW_LENGTH, rl);
+        v->gl.PixelStorei(AV_GL_PACK_SKIP_ROWS, sr);
+        v->gl.PixelStorei(AV_GL_PACK_SKIP_PIXELS, sp);
+        v->gl.BindBuffer(AV_GL_PIXEL_PACK_BUFFER, (unsigned)pb);
+    }
+    v->gl.BindFramebuffer(AV_GL_READ_FRAMEBUFFER, (unsigned)rfb);
+    v->gl.DeleteFramebuffers(1, &fb);
+    v->stg_ns[3] += av_ns() - t3;
+    if (!ok) { av_pool_put(v, id, have, 1); return 0; }
+    p->pbo = id; p->pbo_bytes = have;
+    if (strcmp(v->api, "GLES")) { p->lr = 2; p->lg = 1; p->lb = 0; }
+    else { p->lr = 0; p->lg = 1; p->lb = 2; }
+    p->la = la_none ? 4 : 3;
+    p->rev = (info.flags & VR_RESOURCE_Y_0_TOP) != 0;
+    return 1;
+}
+
+/* ---- presents left to finish (acvirgl_defer_presents) -------------------------------- */
+
+/* Finish (or drop) the deferred presents `match` picks, oldest first. */
+static int av_settle_if(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), void *mu,
+                        int (*match)(const struct av_pres *p, const void *arg), const void *arg, int drop)
+{
+    int i, j, n = 0;
+    for (i = 0, j = 0; i < v->npend; i++) {
+        struct av_pres *p = &v->pend[i];
+        if (!match(p, arg)) {
+            if (j != i) v->pend[j] = *p;
+            j++;
+            continue;
+        }
+        if (!drop) {
+            if (p->done) v->st.deferred_ready++;
+            else v->st.deferred_forced++;
+            if (av_present_finish(v, map, mu, p) < 0) v->st.errors++;
+            n++;
+        } else if (p->pbo)
+            av_pool_put(v, p->pbo, p->pbo_bytes, 0);     /* its copy forgotten; the buffer kept for the next */
+    }
+    v->npend = j;
+    return n;
+}
+
+static int av_m_all(const struct av_pres *p, const void *arg) { (void)p; (void)arg; return 1; }
+static int av_m_done(const struct av_pres *p, const void *arg) { (void)arg; return p->done; }
+static int av_m_ctx(const struct av_pres *p, const void *arg) { return p->ctx == *(const uint32_t *)arg; }
+/* those still to read back from the resource: deferred, not behind (whose copy is made) */
+static int av_m_ctx_read(const struct av_pres *p, const void *arg) { return !p->pbo && p->ctx == *(const uint32_t *)arg; }
+static int av_m_handle_read(const struct av_pres *p, const void *arg) { return !p->pbo && p->handle == *(const uint32_t *)arg; }
+/* a present into the same target whose rectangles meet the new one's */
+static int av_m_overlap(const struct av_pres *p, const void *arg)
+{
+    const struct av_pres *q = arg;
+    int i, j;
+    if (p->addr != q->addr || p->bpr != q->bpr) {
+        uint64_t a0 = p->addr, a1 = a0 + p->span, b0 = q->addr, b1 = b0 + q->span;
+        return a0 < b1 && b0 < a1;          /* other targets that share bytes: the older first, to be safe */
+    }
+    for (i = 0; i < p->nr; i++)
+        for (j = 0; j < q->nr; j++)
+            if (p->rect[i][0] < q->rect[j][2] && q->rect[j][0] < p->rect[i][2] &&
+                p->rect[i][1] < q->rect[j][3] && q->rect[j][1] < p->rect[i][3]) return 1;
+    return 0;
+}
+
+void acvirgl_defer_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32_t addr, uint32_t bytes))
+{
+    if (!v) return;
+    v->defer_ok = v->vr.context_create_fence && v->vr.poll ? ok : NULL;
+    if (ok) v->behind_ok = NULL;
+}
+
+void acvirgl_behind_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32_t addr, uint32_t bytes))
+{
+    if (!v) return;
+    v->behind_ok = ok && v->vr.context_create_fence && v->vr.poll && v->vr.resource_get_info && av_gl_load(v) ? ok : NULL;
+    if (ok) v->defer_ok = NULL;
+}
+
+int acvirgl_pending(const struct acvirgl *v) { return v ? v->npend : 0; }
+
+int acvirgl_settle(struct acvirgl *v, uint8_t *(*map)(void *map_user, uint32_t address, uint32_t length), void *map_user, int how)
+{
+    if (!v || !v->npend) return 0;
+    if (how == ACVIRGL_DROP) return av_settle_if(v, map, map_user, av_m_all, NULL, 1);
+    if (how == ACVIRGL_ALL) return av_settle_if(v, map, map_user, av_m_all, NULL, 0);
+    v->vr.poll();
+    return av_settle_if(v, map, map_user, av_m_done, NULL, 0);
+}
+
+/* ACV_PRESENT. Deferred when the runtime allows it for the target: the
+ * frame's fence goes in after the context's commands, and the read back and
+ * the writing wait until it has signalled (acvirgl_settle), or until
+ * something must see them: the context's next command, the resource going,
+ * a present over the same rectangles, the runtime's own drawing. The
+ * frame's GPU time then overlaps the 68k's work rather than stopping it. */
+static int32_t av_present(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), void *mu, const uint8_t *a, unsigned nargs)
+{
+    struct av_pres p;
+    int32_t n = av_present_prep(v, map, mu, a, nargs, &p);
+    if (n <= 0) return n;
+    if (v->npend) av_settle_if(v, map, mu, av_m_overlap, &p, 0);
+    if (v->behind_ok && v->npend < AV_PEND && v->behind_ok(mu, p.addr, p.span)) {
+        uint64_t t0 = av_ns(), t1;
+        if (av_behind_start(v, &p)) {
+            p.fence = ++v->fence_seq;
+            t1 = av_ns();
+            if (!v->vr.context_create_fence(p.ctx, 0, 0, p.fence)) {
+                v->stg_ns[4] += av_ns() - t1;
+                v->pend[v->npend++] = p;
+                v->st.deferred++;
+                v->st.behind++;
+                t1 = av_ns();
+                v->st.present_issue_ns += t1 - t0;
+                v->st.present_ns += t1 - t0;
+                return n;
+            }
+            v->st.present_issue_ns += av_ns() - t0;
+            return av_present_finish(v, map, mu, &p);   /* no fence: mapped now, which waits */
+        }
+    }
+    if (v->defer_ok && v->npend < AV_PEND && v->defer_ok(mu, p.addr, p.span)) {
+        static uint32_t none[1];
+        /* the fence goes in the context's own GL context: a command buffer of
+         * no words makes it the current one */
+        if (!v->vr.submit_cmd(none, (int)p.ctx, 0)) {
+            p.fence = ++v->fence_seq;
+            if (!v->vr.context_create_fence(p.ctx, 0, 0, p.fence)) {
+                v->pend[v->npend++] = p;
+                v->st.deferred++;
+                return n;
+            }
+        }
+    }
+    return av_present_finish(v, map, mu, &p);
 }
 
 /* The words a command has after its header and result word. */
@@ -424,6 +891,10 @@ int acvirgl_run(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), 
     if (!v) return OGPU_ERR_BADOP;
     if (!words || !(blk = map(mu, addr, words * 4))) return OGPU_ERR_NOMAP;
     v->st.blocks++;
+    if (v->npend) {                         /* frames whose fences have signalled */
+        v->vr.poll();
+        av_settle_if(v, map, mu, av_m_done, NULL, 0);
+    }
     while (at + 2 <= words) {
         uint8_t *c = blk + at * 4, *a = c + 8;
         uint32_t hdr = av_be32(c);
@@ -434,6 +905,21 @@ int acvirgl_run(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), 
             av_put_be32(c + 4, (uint32_t)ACV_ERR_BADCMD);
             v->st.errors++;
             return OGPU_OK;                     /* the rest can't be trusted */
+        }
+        if (v->npend) {
+            /* a context's presents are finished before its next command, and a
+             * resource's before it goes */
+            uint32_t key;
+            switch (cmd) {
+            case ACV_CTX_DESTROY:
+                key = av_be32(a); av_settle_if(v, map, mu, av_m_ctx, &key, 0); break;
+            case ACV_ATTACH: case ACV_DETACH: case ACV_SUBMIT:
+                key = av_be32(a); av_settle_if(v, map, mu, av_m_ctx_read, &key, 0); break;
+            case ACV_PUT: case ACV_GET:
+                key = av_be32(a + 4); av_settle_if(v, map, mu, av_m_ctx_read, &key, 0); break;
+            case ACV_RES_UNREF:
+                key = av_be32(a); av_settle_if(v, map, mu, av_m_handle_read, &key, 0); break;
+            }
         }
         switch (cmd) {
         case ACV_HELLO:
@@ -471,10 +957,32 @@ int acvirgl_run(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), 
             if (nlen > sizeof buf - 1) nlen = sizeof buf - 1;
             if (s) memcpy(buf, s, nlen);
             buf[s ? nlen : 0] = 0;
+            /* vrend makes the new context's GL context current to set it up
+             * (vrend_renderer_create_sub_ctx) but leaves its record of the
+             * current context (current_ctx, current_hw_ctx) as it was. The
+             * next command of the context that was current then skipped its
+             * eglMakeCurrent and ran in the new program's GL context, where
+             * its vertex arrays and framebuffers are other names or none:
+             * "glBindVertexArray(non-gen name)", DRAW_VBO's GL error 1282
+             * (or CLEAR's 1286), and that context was dead ("Illegal command
+             * buffer"), one program in a few starting beside others. QEMU
+             * forces context 0 before every command; here around the two
+             * that change contexts, so vrend's record and the GL context
+             * really current agree again: context 0 before the new context
+             * is made (it shares with context 0), and after. Forced before
+             * only, the record said context 0 while the new context's GL
+             * context was current, so work vrend does "in context 0"
+             * without a switch would run there (one lab run of that hung
+             * in a GPU wait). */
+            if (v->vr.force_ctx_0) v->vr.force_ctx_0();
             if (v->vr.context_create(id, (uint32_t)strlen(buf), buf)) r = ACV_ERR_RENDERER;
+            if (v->vr.force_ctx_0) v->vr.force_ctx_0();
             break;
         }
-        case ACV_CTX_DESTROY: v->vr.context_destroy(av_be32(a)); break;
+        case ACV_CTX_DESTROY:
+            v->vr.context_destroy(av_be32(a));
+            if (v->vr.force_ctx_0) v->vr.force_ctx_0();
+            break;
         case ACV_RES_CREATE: {
             struct vr_resource_create_args ra;
             uint32_t ctx = av_be32(a + 44);

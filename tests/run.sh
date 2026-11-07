@@ -68,6 +68,15 @@ cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanit
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
     -o "$OUT/test_vector" "$HERE/test_vector.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c" "$OGPU/ogpu_build.c" -lm
 "$OUT/test_vector"
+# The GL module's virgl transport on OS 3.2 (library/modules/gl/gla/os3/gla_virgl_os3.c) on a
+# fake gfopengpu.library: a block whose fence result expired (16 other batches between its submit
+# and its wait) is done, not failed; other errors still fail it. And which driver a program gets:
+# ENV:GFOpenGPU/GLDriver gpu refuses softpipe, cpu takes it, and softpipe is said, with why, once.
+cc -std=gnu99 -O1 -g -Wall -Wextra -Werror -Wno-unused-parameter -fsanitize=address,undefined -fno-sanitize-recover=undefined \
+    -I"$HERE/gla_virgl-include" -I"$HERE/gla_present-include" -I"$HERE/../include" -I"$HERE/../library/modules/gl" \
+    -o "$OUT/test_gla_virgl_os3" "$HERE/test_gla_virgl_os3.c" "$HERE/../library/modules/gl/gla/os3/gla_virgl_os3.c" \
+    "$HERE/../library/opengpu/ogpu_build.c"
+"$OUT/test_gla_virgl_os3"
 # The GL module's OS 3.2 present (library/modules/gl/gla/os3/gla_present_os3.c) on a fake
 # GFOpenGPU: every frame reaches the screen whole and in order, and a screen's present neither
 # waits with the bitmap locked nor, with a back buffer, for the batch it has just sent
@@ -112,6 +121,11 @@ cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanit
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined -DOGPU_WITH_3D \
     -o "$OUT/test_sdl3" "$HERE/test_sdl3.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c" "$OGPU/ogpu_3d.c" "$OGPU/ogpu_build.c" "$OGPU/ogpu_build3d.c" -lm
 "$OUT/test_sdl3"
+# The Vulkan back end's choice of device (host/vulkan/ogpu_vk_pick.h), no Vulkan needed:
+# a GPU before a CPU one (llvmpipe), discrete before integrated before virtual.
+cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
+    -o "$OUT/test_vk_pick" "$HERE/test_vk_pick.c"
+"$OUT/test_vk_pick" >/dev/null
 # The Vulkan back end against the core, when Vulkan's loader and headers are there
 # (it skips itself when no device is found; lavapipe will do). Built with the 3D
 # range (OGPU_WITH_3D), as the runtime is: TRIANGLES on the 3D shader, the rest

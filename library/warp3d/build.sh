@@ -22,7 +22,8 @@ if [ "${1:-}" = headers ]; then
         { echo "/* Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE)."
           echo " * SPDX-License-Identifier: MIT"
           echo " * Made by sfdc from library/warp3d/warp3d_lib.sfd (library/warp3d/build.sh headers). */"
-          "$SFDC" --quiet --mode="$mode" --target=m68k-amigaos -o /dev/stdout "$HERE/warp3d_lib.sfd"; } > "$out"
+          "$SFDC" --quiet --mode="$mode" --target=m68k-amigaos -o /dev/stdout "$HERE/warp3d_lib.sfd" \
+              | sed '/^\*\*       All Rights Reserved$/d'; } > "$out"
         echo "$out"
     done
     exit 0

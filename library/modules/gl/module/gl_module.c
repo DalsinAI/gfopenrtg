@@ -18,6 +18,7 @@
 
 #include "module_rt.h"
 #include "gl_module.h"
+#include "../gla/os3/gla_notice_os3.h"
 
 /* gl_exports.c */
 extern const struct OGPUModuleExport gl_module_exports[];
@@ -56,5 +57,8 @@ struct OGPUModuleTable *ogpu_module_entry(struct OGPUModuleArgs *args)
     /* From a stub on an gfopengpu.library without modules: open it here. */
     own_opengpu = !OpenGPUBase && (OpenGPUBase = OpenLibrary((CONST_STRPTR) "gfopengpu.library", 0)) != NULL;
     CyberGfxBase = OpenLibrary((CONST_STRPTR) "cybergraphics.library", 41);
+    /* A program on softpipe says why (gla_virgl_os3.c), even one that never
+     * asks for virgl; ENV:GFOpenGPU/GLDriver gpu refuses softpipe. */
+    gla_os3_driver_init();
     return &table.head;
 }

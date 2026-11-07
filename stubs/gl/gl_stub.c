@@ -33,6 +33,7 @@
 #include <dos/dos.h>
 #include <proto/exec.h>
 #include <proto/dos.h>
+#include "../stub_tell.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -88,12 +89,7 @@ void gl_stub_prepare(void)
 
 static void fail(const char *why)
 {
-    BPTR out = Output();
-    if (out) {
-        FPuts(out, (CONST_STRPTR) "GL: ");
-        FPuts(out, (CONST_STRPTR)why);
-        FPuts(out, (CONST_STRPTR) "\n");
-    }
+    ogpu_stub_tell("GL: ", why);
     gl_stub_fail = 1;
 }
 

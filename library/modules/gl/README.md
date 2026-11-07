@@ -155,11 +155,14 @@ in its header.
 
 | Variable | Meaning | Unset |
 |---|---|---|
-| `ENV:GFOpenGPU/ShaderCache` | the directory (made if missing), or `off` | `T:GFOpenGPU/ShaderCache` |
+| `ENV:GFOpenGPU/ShaderCache` | the directory (made if missing), or `off` | `SYS:Storage/GFOpenGPU/ShaderCache`; `T:GFOpenGPU/ShaderCache` where SYS: can't take it |
 | `ENV:GFOpenGPU/ShaderCacheSize` | the cap in KiB (64 at least); past it the oldest entries go until three quarters is left | 4096 |
 
-`T:` is usually RAM: the cache lasts until a reset. To keep it across
-resets, `SetEnv SAVE GFOpenGPU/ShaderCache Work:GFOpenGPU/ShaderCache`.
+The default lasts across resets. It is not in `ENVARC:`, which the
+Startup-sequence copies into RAM (`ENV:`) at every boot: the cache would
+cost its size in RAM and the copy's time on each boot. Only the variables
+go there (`SetEnv SAVE`). On a write-protected SYS:, the cache falls back
+to `T:` (usually RAM), which lasts until a reset.
 
 - **No requesters.** The cache's disk calls run with the process's
   requesters off, so a missing volume or assign (no `T:`, a cache on a disk

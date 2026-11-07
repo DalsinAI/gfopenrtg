@@ -19,10 +19,11 @@
  * with 64 characters (FFS takes 30). This one is small and synchronous:
  *
  *  - Where: ENV:GFOpenGPU/ShaderCache, a directory, made if missing; "off"
- *    turns the cache off. Unset, T:GFOpenGPU/ShaderCache (RAM: kept until
- *    the machine is reset; `SetEnv SAVE GFOpenGPU/ShaderCache
- *    Work:GFOpenGPU/ShaderCache` keeps it across resets). On the PC
- *    (tests), GLA_SHADER_CACHE, and unset is off.
+ *    turns the cache off. Unset, SYS:Storage/GFOpenGPU/ShaderCache, kept
+ *    across resets; where SYS: can't take it (write-protected),
+ *    T:GFOpenGPU/ShaderCache, kept until the machine is reset. Not in
+ *    ENVARC:, which the Startup-sequence copies into RAM at every boot. On
+ *    the PC (tests), GLA_SHADER_CACHE, and unset is off.
  *  - How much: ENV:GFOpenGPU/ShaderCacheSize in KiB (GLA_SHADER_CACHE_SIZE
  *    on the PC), 4096 unless set, 64 at least. Past it, the oldest entries
  *    go until three quarters is left.
@@ -88,7 +89,8 @@ struct disk_cache {
 
 #define SC_DIR_VAR      "GFOpenGPU/ShaderCache"
 #define SC_SIZE_VAR     "GFOpenGPU/ShaderCacheSize"
-#define SC_DEFAULT_DIR  "T:GFOpenGPU/ShaderCache"
+#define SC_DEFAULT_DIR  "SYS:Storage/GFOpenGPU/ShaderCache"
+#define SC_FALLBACK_DIR "T:GFOpenGPU/ShaderCache"
 
 static int sc_getenv(const char *name, char *buf, int size)
 {
@@ -185,6 +187,7 @@ static struct sc_file *sc_list(const char *dir, unsigned *n)
 #define SC_DIR_VAR      "GLA_SHADER_CACHE"
 #define SC_SIZE_VAR     "GLA_SHADER_CACHE_SIZE"
 #define SC_DEFAULT_DIR  NULL
+#define SC_FALLBACK_DIR NULL
 
 static void *sc_quiet(void) { return NULL; }
 static void sc_loud(void *was) { (void)was; }
@@ -354,7 +357,7 @@ sc_create(const char *gpu_name, const char *driver_id,
 {
     static const char what[] = "GFOpenGPU GL.module shader cache";
     char dir[256], size[32];
-    const char *where = cache_dir_name;
+    const char *where = cache_dir_name, *fallback = NULL;
     struct disk_cache *c;
     uint8_t version = SC_VERSION, ptr = sizeof(void *);
     uint8_t *p;
@@ -362,7 +365,10 @@ sc_create(const char *gpu_name, const char *driver_id,
     long kib = SC_DEFAULT_KIB;
 
     if (!where) {
-        where = sc_getenv(SC_DIR_VAR, dir, sizeof dir) > 0 ? dir : SC_DEFAULT_DIR;
+        if (sc_getenv(SC_DIR_VAR, dir, sizeof dir) > 0)
+            where = dir;
+        else
+            where = SC_DEFAULT_DIR, fallback = SC_FALLBACK_DIR;
         if (!where || sc_is_off(where))
             return NULL;
     }
@@ -373,8 +379,11 @@ sc_create(const char *gpu_name, const char *driver_id,
     if (kib < SC_MIN_KIB)
         kib = SC_MIN_KIB;
     /* A directory that isn't there and can't be made: nothing to read either. */
-    if (sc_mkdirs(where) != 0)
-        return NULL;
+    if (sc_mkdirs(where) != 0) {
+        if (!fallback || sc_mkdirs(fallback) != 0)
+            return NULL;
+        where = fallback;
+    }
 
     c = calloc(1, sizeof *c);
     if (!c)

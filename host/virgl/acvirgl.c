@@ -56,12 +56,20 @@ struct vr_api {
                              struct vr_box *box, uint64_t offset, struct iovec *iov, int iovec_cnt);
     int (*transfer_write_iov)(uint32_t handle, uint32_t ctx_id, int level, uint32_t stride, uint32_t layer_stride,
                               struct vr_box *box, uint64_t offset, struct iovec *iovec, unsigned int iovec_cnt);
+    /* optional (presents one frame behind): a resource's GL texture */
+    int (*resource_get_info)(int res_handle, void *info);
     /* optional (deferred presents): per-context fences, and their retiring */
     int (*context_create_fence)(uint32_t ctx_id, uint32_t flags, uint32_t ring_idx, uint64_t fence_id);
     void (*poll)(void);
-    /* optional (presents one frame behind): a resource's GL texture */
-    int (*resource_get_info)(int res_handle, void *info);
 };
+
+
+/* What ACV_PRESENT and the counters need of a resource, by handle. On the
+ * Amiga a handle is the address of GLA's resource (gla_virgl.c), so the
+ * handles are sparse 32-bit numbers: a hash table, open addressing,
+ * handle 0 an empty slot. */
+struct av_res { uint32_t handle, format, bind, width, height; };
+#define AV_MAX_RES (1u << 20)               /* resources known at once */
 
 /* virgl_renderer_resource_info as virglrenderer.h gives it (1.0 and later);
  * room to spare should a later one be longer. */
@@ -111,13 +119,6 @@ struct av_gl {
     unsigned char (*UnmapBuffer)(av_glenum);
     void (*Finish)(void);
 };
-
-/* What ACV_PRESENT and the counters need of a resource, by handle. On the
- * Amiga a handle is the address of GLA's resource (gla_virgl.c), so the
- * handles are sparse 32-bit numbers: a hash table, open addressing,
- * handle 0 an empty slot. */
-struct av_res { uint32_t handle, format, bind, width, height; };
-#define AV_MAX_RES (1u << 20)               /* resources known at once */
 
 /* An ACV_PRESENT checked and placed, its pixels not yet read back and
  * written: what av_present_finish needs. */
@@ -239,11 +240,12 @@ struct acvirgl *acvirgl_create(const char *lib, char *err, int errlen)
     SYM(transfer_read_iov, "virgl_renderer_transfer_read_iov")
     SYM(transfer_write_iov, "virgl_renderer_transfer_write_iov")
 #undef SYM
+    /* a resource's GL texture, for presents one frame behind; AC_VIRGL_PARTS=1 times a present's parts */
+    *(void **)&v->vr.resource_get_info = dlsym(v->dl, "virgl_renderer_resource_get_info");
+    v->parts = getenv("AC_VIRGL_PARTS") && !strcmp(getenv("AC_VIRGL_PARTS"), "1");
     /* per-context fences, for presents left to finish (virglrenderer 1.0 and later) */
     *(void **)&v->vr.context_create_fence = dlsym(v->dl, "virgl_renderer_context_create_fence");
     *(void **)&v->vr.poll = dlsym(v->dl, "virgl_renderer_poll");
-    *(void **)&v->vr.resource_get_info = dlsym(v->dl, "virgl_renderer_resource_get_info");
-    v->parts = getenv("AC_VIRGL_PARTS") && !strcmp(getenv("AC_VIRGL_PARTS"), "1");
     v->cb.version = v->vr.context_create_fence && v->vr.poll ? 3 : 1;
     v->cb.write_fence = av_no_fence;
     v->cb.write_context_fence = av_context_fence;

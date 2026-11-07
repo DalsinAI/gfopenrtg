@@ -53,6 +53,20 @@ static int os3_run(void *user, void *block, unsigned long bytes)
     if (OGPU_Submit(stream, (ULONG)b.words, &fence) != OGPU_OK) return -1;
     if (eclock_hz) ReadEClock(&t0);
     r = OGPU_Wait(fence);
+    if (r == OGPU_ERR_EXPIRED) {
+        /* Sixteen or more batches of other programs came between our submit
+         * and this wait (three GL programs at once, the compositor), so the
+         * library no longer keeps our batch's result: the batch is done, not
+         * failed (gfopengpu.library waits for the newest; the driver may
+         * not have, so wait for everything so far, which holds ours). Each
+         * command's own result is in the block. Taken as a failure, a
+         * resource the host had made was freed here and its handle (its
+         * address) came again (the host's context then refused the stream:
+         * "Illegal command buffer"), and a program starting beside others
+         * fell back to softpipe, its shaders on the 68k. */
+        r = OGPU_Wait(OGPU_FENCE_ALL);
+        if (r == OGPU_ERR_EXPIRED) r = OGPU_OK;
+    }
     gla_counts.fences++;
     if (eclock_hz) {
         ReadEClock(&t1);

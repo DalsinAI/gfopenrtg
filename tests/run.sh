@@ -68,6 +68,14 @@ cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanit
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
     -o "$OUT/test_vector" "$HERE/test_vector.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c" "$OGPU/ogpu_build.c" -lm
 "$OUT/test_vector"
+# The GL module's virgl transport on OS 3.2 (library/modules/gl/gla/os3/gla_virgl_os3.c) on a
+# fake gfopengpu.library: a block whose fence result expired (16 other batches between its submit
+# and its wait) is done, not failed; other errors still fail it.
+cc -std=gnu99 -O1 -g -Wall -Wextra -Werror -Wno-unused-parameter -fsanitize=address,undefined -fno-sanitize-recover=undefined \
+    -I"$HERE/gla_virgl-include" -I"$HERE/gla_present-include" -I"$HERE/../include" -I"$HERE/../library/modules/gl" \
+    -o "$OUT/test_gla_virgl_os3" "$HERE/test_gla_virgl_os3.c" "$HERE/../library/modules/gl/gla/os3/gla_virgl_os3.c" \
+    "$HERE/../library/opengpu/ogpu_build.c"
+"$OUT/test_gla_virgl_os3"
 # The GL module's OS 3.2 present (library/modules/gl/gla/os3/gla_present_os3.c) on a fake
 # GFOpenGPU: every frame reaches the screen whole and in order, and a screen's present neither
 # waits with the bitmap locked nor, with a back buffer, for the batch it has just sent

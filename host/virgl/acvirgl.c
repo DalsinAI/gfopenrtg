@@ -83,6 +83,7 @@ struct av_pres {
 #define AV_PEND 16                          /* deferred presents at once */
 
 struct acvirgl {
+    int ctx0_every;                     /* AC_VIRGL_CTX0=every: context 0 before every command (QEMU's way) */
     void *dl;
     struct vr_api vr;
     struct vr_callbacks cb;
@@ -180,6 +181,7 @@ struct acvirgl *acvirgl_create(const char *lib, char *err, int errlen)
     *(void **)&v->vr.context_create_fence = dlsym(v->dl, "virgl_renderer_context_create_fence");
     *(void **)&v->vr.poll = dlsym(v->dl, "virgl_renderer_poll");
     *(void **)&v->vr.force_ctx_0 = dlsym(v->dl, "virgl_renderer_force_ctx_0");
+    { const char *c0 = getenv("AC_VIRGL_CTX0"); v->ctx0_every = c0 && !strcmp(c0, "every") && v->vr.force_ctx_0; }
     v->cb.version = v->vr.context_create_fence && v->vr.poll ? 3 : 1;
     v->cb.write_fence = av_no_fence;
     v->cb.write_context_fence = av_context_fence;
@@ -631,6 +633,7 @@ int acvirgl_run(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), 
                 key = av_be32(a); av_settle_if(v, map, mu, av_m_handle, &key, 0); break;
             }
         }
+        if (v->ctx0_every) v->vr.force_ctx_0();
         switch (cmd) {
         case ACV_HELLO:
             av_put_be32(a, ACV_HOST_PRESENT);

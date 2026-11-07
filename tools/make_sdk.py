@@ -323,6 +323,22 @@ endif()
 '''
 
 
+def copy_cross(dst: Path) -> None:
+    """sdk/cross/: the CMake toolchain file and the meson cross file. The
+    CMake one finds the kit from where it is (kit/cross/); the meson one is
+    given the kit's place (@DIRNAME@) and the compilers from PATH."""
+    src = SDK / "cross"
+    copy(src / "m68k-amigaos.cmake", dst / "m68k-amigaos.cmake")
+    copy(src / "Platform" / "AmigaOS.cmake", dst / "Platform" / "AmigaOS.cmake")
+    ini = (src / "m68k-amigaos.ini").read_text()
+    for name, value in (("kit", "'@DIRNAME@' / '..'"), ("cross", "'m68k-amigaos-'"),
+                        ("ndk", "'@DIRNAME@' / '..' / 'include'")):
+        ini, n = re.subn(rf"^{name} = .*$", f"{name} = {value}", ini, count=1, flags=re.M)
+        if n != 1:
+            die(f"m68k-amigaos.ini: no constant {name}")
+    (dst / "m68k-amigaos.ini").write_text(ini)
+
+
 def make_kit(args) -> Path:
     build, gl = Path(args.build).resolve(), Path(args.gl).resolve()
     work = build / "sdl2-work"
@@ -435,6 +451,7 @@ def make_kit(args) -> Path:
     # 6. Examples, the readme and the reference.
     shutil.copytree(SDK / "examples", kit / "examples",
                     ignore=None if sdl12 else shutil.ignore_patterns("sdl12"))
+    copy_cross(kit / "cross")
     copy(SDK / "README", kit / "README")
     copy(SDK / "AutoDocs-GFOpenGPU.md", kit / "AutoDocs-GFOpenGPU.md")
 
@@ -442,7 +459,7 @@ def make_kit(args) -> Path:
     L = kit / "Licences"
     L.mkdir()
     copy(ROOT / "LICENSE", L / "OpenGPU.txt")
-    notices.append(("GFOpenGPU, GFOpenRTG, Warp3D, MiniGL, TinyGL and GLA headers; libGL.a, libminigl.a, libmgl.a, libtinygl.a; libSDL2.a's SDL2_gl.o; sdl2-config, sdl-config, the pkg-config and CMake files; the examples", "MIT, AmiCradle Team (OpenGPU.txt)"))
+    notices.append(("GFOpenGPU, GFOpenRTG, Warp3D, MiniGL, TinyGL and GLA headers; libGL.a, libminigl.a, libmgl.a, libtinygl.a; libSDL2.a's SDL2_gl.o; sdl2-config, sdl-config, the pkg-config and CMake files, the cross files; the examples", "MIT, AmiCradle Team (OpenGPU.txt)"))
     if sdl12:
         copy(sdl12 / "LICENSE.txt", L / "sdl12-compat.txt")
         notices.append((f"sdl12-compat {SDL12_VERSION}: SDL/ headers, libSDL.a (altered by the Team for AmigaOS 3; with dr_mp3: public domain or MIT-0). libSDL.a also holds libSDL2.a's members, renamed SDL2X_; libSDL_gl.a", "Zlib (sdl12-compat.txt)"))

@@ -1,0 +1,26 @@
+# hostlib's manifest (HOSTLIB-ABI.md): every function built from one source
+# for the 68k and for the host. gen.py writes hl_ids.h (both builds) and
+# hostlib_host.inc (the runtime's table) from it; `python3 hostlib/gen.py
+# --check` (tests/m68k/test_hostlib.sh, in CI) fails when they are not what
+# it would write, or when an id here disagrees with common/amiga/ac_magic.h.
+#
+# An id is permanent: never reused, its contract (HOSTLIB-ABI.md, section 5)
+# frozen once merged. New behaviour is a new id.
+#
+# Each function:
+#   name      the C name (HL_FN(name)); the host build's is name_host
+#   id        the ACMF tag's id; ac_magic.h defines it as AC_MAGIC_<id_name>
+#   id_name   its name there, and HL_ID_<id_name> in hl_ids.h
+#   version   the contract's version, as HOSTLIB-ABI.md has it
+#   source    the C, under hostlib/
+#   callers   who calls the 68k build (for people; nothing reads it)
+
+abi = 1
+
+[[function]]
+name = "hostlib_text_strip"
+id = 0x00010105
+id_name = "OGFX_TEXT_STRIP"
+version = 1
+source = "text/text_strip.c"
+callers = "gfopenrtg.library's Text (library/text_strip.h, ts_build)"

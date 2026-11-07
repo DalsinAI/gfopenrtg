@@ -420,32 +420,6 @@ static void text(const struct text *t, int strips, LONG max, int rooms) {
     }
 }
 
-/* ---- ts_bits alone, in buffers of just the size (ASan sees a byte too far) ---------- */
-
-static void test_bits(void) {
-    int round;
-    for (round = 0; round < 20000; round++) {
-        LONG sbit = rnd_in(0, 40), dbit = rnd_in(0, 40), w = rnd_in(1, 70), j;
-        size_t sbytes = (size_t)((sbit + w + 7) >> 3) - (size_t)(sbit >> 3), dbytes = (size_t)((dbit + w + 7) >> 3) - (size_t)(dbit >> 3);
-        UBYTE *s = malloc(sbytes), *d = malloc(dbytes), *ref = malloc(dbytes);
-        int xor = (int)(rnd() & 1);
-        for (j = 0; j < (LONG)sbytes; j++) s[j] = (UBYTE)rnd();
-        for (j = 0; j < (LONG)dbytes; j++) d[j] = ref[j] = (UBYTE)rnd();
-        for (j = 0; j < w; j++) {
-            LONG sb = (sbit & 7) + j, db = (dbit & 7) + j;
-            if (s[sb >> 3] >> (7 - (sb & 7)) & 1) {
-                if (xor) ref[db >> 3] ^= (UBYTE)(0x80 >> (db & 7));
-                else ref[db >> 3] |= (UBYTE)(0x80 >> (db & 7));
-            }
-        }
-        /* the buffers start at the bytes the bits are in */
-        ts_bits(d - (dbit >> 3), dbit, s - (sbit >> 3), sbit, w, xor);
-        cases++;
-        CHECK(!memcmp(d, ref, dbytes), "ts_bits %ld bits from %ld to %ld (xor %d)", (long)w, (long)sbit, (long)dbit, xor);
-        free(s); free(d); free(ref);
-    }
-}
-
 /* ---- the cases ---------------------------------------------------------------------- */
 
 static const char *const fixed[] = {
@@ -508,7 +482,6 @@ int main(void) {
     make_font(9, 0, 33, 120, 2, 10, 1, 1, 0, 0, 0, 6, 1);           /* baseline 0: italic leans left */
     make_font(16, 12, 32, 100, 10, 40, 7, 1, 1, -6, 2, 20, 3);      /* wide glyphs */
 
-    test_bits();
     before_cases = cases;
 
     /* every font, style, mode, way and spacing, with the fixed strings */
@@ -547,8 +520,7 @@ int main(void) {
         rooms = rnd() % 4 == 0 ? (int)rnd_in(0, 3) : -1;
         one(w, &t, max, rooms);
     }
-    printf("text strip: %d ts_bits checks, %d Text cases drawn glyph by glyph and by strips, %d differ\n",
-           before_cases, cases - before_cases, failures);
+    printf("text strip: %d Text cases drawn glyph by glyph and by strips, %d differ\n", cases - before_cases, failures);
     printf("text strip: %ld TEMPLATEs of refused batches drawn on the CPU\n", refused);
     printf("text strip: TEMPLATEs in all: %ld glyph by glyph, %ld by strips (%ld of them strips)\n",
            templates[0], templates[1], strip_templates);

@@ -10,7 +10,7 @@ m68k-amigaos-gcc, on the PC or on the Amiga.
 
 BUILD    library/build.sh's output (the SDL 2 libraries and headers, its
          sdl2-work/ with the pinned sources' notices, libminigl.a, libmgl.a,
-         libtinygl.a)
+         libtinygl.a, libEGL.a)
 GL_OUT   library/modules/gl/module/build.sh's output (libGL.a, include/gla)
 MESA_SRC Mesa's source tree, for GL's and Khronos's headers; default: SRC
          in GL_WORK's gla-link.env (GL_WORK, default the GL module's build/)
@@ -46,7 +46,7 @@ SAT_VERSIONS = {"SDL2_image": "2.8.12", "SDL2_mixer": "2.8.2", "SDL2_ttf": "2.24
 CPU = "-m68040 -m68881"
 
 # The Team's headers in include/, by directory (all MIT, AmiCradle Team).
-OWN_INCLUDE = ("gfopengpu", "gfopenrtg", "proto", "inline", "clib", "libraries", "Warp3D", "mgl", "tgl")
+OWN_INCLUDE = ("gfopengpu", "gfopenrtg", "proto", "inline", "clib", "libraries", "Warp3D", "mgl", "tgl", "EGL")
 # GL's headers from Mesa: Mesa's gl.h (MIT) and Khronos's (MIT; the two
 # platform headers Apache 2.0). GLX, WGL and GLES 1 (which GLA doesn't
 # give) stay out, and so does GLES3/gl3ext.h, an empty header whose licence
@@ -60,7 +60,7 @@ MESA_HEADERS = ("GL/gl.h", "GL/glext.h", "GL/glcorearb.h",
 # same libraries inside the program.
 LIBS = ("libSDL2.a", "libSDL2_test.a", "libSDL2_image.a", "libSDL2_mixer.a",
         "libSDL2_image_static.a", "libSDL2_mixer_static.a", "libSDL2_ttf.a",
-        "libSDL2_net.a", "libminigl.a", "libmgl.a", "libtinygl.a")
+        "libSDL2_net.a", "libminigl.a", "libmgl.a", "libtinygl.a", "libEGL.a")
 # SDL 1.2: sdl12-compat (Zlib) on GFOpenGPU's SDL 2, when --sdl12 gives it.
 SDL12_VERSION = "1.2.78"
 
@@ -254,6 +254,8 @@ PC = {
            "-L${libdir} -lGL -lm", "-I${includedir}"),
     "glesv2": ("glesv2", "OpenGL ES 2 and 3 on GFOpenGPU (LIBS:GFOpenGPU/GL.module)", "26.2.4", "",
                "-L${libdir} -lGL -lm", "-I${includedir}"),
+    "egl": ("egl", "EGL 1.4 on GFOpenGPU's GL (libEGL.a, on GLA; LIBS:GFOpenGPU/GL.module)", "1.4", "gl",
+            "-L${libdir} -lEGL", "-I${includedir}"),
     "tinygl": ("tinygl", "TinyGL's interface on GFOpenGPU's GL (libtinygl.a, LIBS:GFOpenGPU/GL.module)", "53.1", "gl",
                "-L${libdir} -ltinygl", "-I${includedir}"),
 }
@@ -442,7 +444,7 @@ def make_kit(args) -> Path:
     L = kit / "Licences"
     L.mkdir()
     copy(ROOT / "LICENSE", L / "OpenGPU.txt")
-    notices.append(("GFOpenGPU, GFOpenRTG, Warp3D, MiniGL, TinyGL and GLA headers; libGL.a, libminigl.a, libmgl.a, libtinygl.a; libSDL2.a's SDL2_gl.o; sdl2-config, sdl-config, the pkg-config and CMake files; the examples", "MIT, AmiCradle Team (OpenGPU.txt)"))
+    notices.append(("GFOpenGPU, GFOpenRTG, Warp3D, MiniGL, TinyGL, GLA and EGL headers; libGL.a, libminigl.a, libmgl.a, libtinygl.a, libEGL.a; libSDL2.a's SDL2_gl.o; sdl2-config, sdl-config, the pkg-config and CMake files; the examples", "MIT, AmiCradle Team (OpenGPU.txt)"))
     if sdl12:
         copy(sdl12 / "LICENSE.txt", L / "sdl12-compat.txt")
         notices.append((f"sdl12-compat {SDL12_VERSION}: SDL/ headers, libSDL.a (altered by the Team for AmigaOS 3; with dr_mp3: public domain or MIT-0). libSDL.a also holds libSDL2.a's members, renamed SDL2X_; libSDL_gl.a", "Zlib (sdl12-compat.txt)"))

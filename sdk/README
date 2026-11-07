@@ -30,6 +30,8 @@ What is in it
   include/gfopengpu/ proto/ inline/ clib/ libraries/
                           gfopengpu.library, GFOpenRTG, Warp3D and MiniGL
   include/Warp3D/ mgl/    Warp3D and MiniGL
+  include/EGL/            EGL 1.4 on GLA (libEGL.a): what GLES samples start
+                          GL with
   include/tgl/ proto/tinygl.h
                           TinyGL: GLInit, GLClose and the GLA calls, and a
                           few GLU calls
@@ -50,14 +52,16 @@ What is in it
   lib/libminigl.a libmgl.a
                           MiniGL (minigl.library), and its GLUT-style helpers
   lib/libtinygl.a         TinyGL's calls, on GL (link it before -lGL)
+  lib/libEGL.a            EGL 1.4, on GLA (link it before -lGL)
   lib/libSDL.a            SDL 1.2: sdl12-compat, on SDL 2, with SDL 2's
                           link library inside it (only in a kit built with it)
   lib/libSDL_gl.a         SDL 1.2's OpenGL calls (sdl-config --gl)
   lib/pkgconfig/          sdl2, SDL2_image, SDL2_mixer, SDL2_ttf, SDL2_net,
-                          gl, glesv2 and tinygl (and sdl, with SDL 1.2)
+                          gl, glesv2, egl and tinygl (and sdl, with SDL 1.2)
   lib/cmake/              find_package(SDL2) and the satellites
-  examples/               a sprite program, an SDL_GL program, a GLA one
-                          and a TinyGL one (and an SDL 1.2 one, with SDL 1.2)
+  examples/               a sprite program, an SDL_GL program, a GLA one,
+                          an EGL one and a TinyGL one (and an SDL 1.2 one,
+                          with SDL 1.2)
   AutoDocs-GFOpenGPU.md     the reference: how it all works, and what's there
   Licences/               every notice; Licences/README says what is whose
 
@@ -118,6 +122,7 @@ Each has its build command at its top:
   examples/sprite     m68k-amigaos-gcc -O2 sprite.c -o Sprite $(sdl2-config --cflags --libs)
   examples/sdl_gl     m68k-amigaos-gcc -O2 glspin.c -o GLSpin $(sdl2-config --cflags --libs --gl)
   examples/gla        m68k-amigaos-gcc -O2 glatriangle.c -o GLATriangle $(pkg-config --cflags --libs gl)
+  examples/egl        m68k-amigaos-gcc -O2 egltriangle.c -o EGLTriangle $(pkg-config --cflags --libs egl glesv2)
   examples/tinygl     m68k-amigaos-gcc -O2 tglspin.c -o TGLSpin $(pkg-config --cflags --libs tinygl)
   examples/sdl12      m68k-amigaos-gcc -O2 bounce.c -o Bounce $(sdl-config --cflags --libs)
 

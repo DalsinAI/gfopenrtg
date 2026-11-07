@@ -584,7 +584,7 @@ static int32_t av_present_finish(struct acvirgl *v, uint8_t *(*map)(void *, uint
     struct vr_box box = p->box;
     struct iovec iov;
     uint8_t *dst;
-    uint64_t pixels, t0 = av_ns(), t1;
+    uint64_t pixels, ts = av_ns(), t0 = ts, t1;
     if (p->pbo) {
         /* behind: the GPU's copy of the frame, mapped (a wait only if it isn't done) */
         const uint8_t *src = NULL;
@@ -626,7 +626,7 @@ static int32_t av_present_finish(struct acvirgl *v, uint8_t *(*map)(void *, uint
         v->st.present_conv_ns += av_ns() - t1;
     }
     v->st.presents++; v->st.present_rects += (uint64_t)p->nr; v->st.present_pixels += pixels;
-    v->st.present_ns += av_ns() - t0;
+    v->st.present_ns += av_ns() - ts;
     av_parts_say(v);
     return pixels > 0x7FFFFFFF ? 0x7FFFFFFF : (int32_t)pixels;
 }

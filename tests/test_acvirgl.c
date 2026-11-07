@@ -265,6 +265,92 @@ int main(void)
         CHECK(s1.presents - s0.presents == 4, "deferred presents count as presents when finished (%llu)", (unsigned long long)(s1.presents - s0.presents));
     }
 
+    /* Presents one frame behind (acvirgl_behind_presents): the GPU copies the
+     * frame into a staging buffer at the present, and it is written once
+     * settled. The same pixels as at once, for 32-bit and RGB565, flipped
+     * and not, from a resource stored either way up (VIRGL_RESOURCE_Y_0_TOP);
+     * the frame as it was presented, though the resource is drawn again
+     * after it; the context's later commands don't wait for it; a drop
+     * writes nothing. */
+    {
+        enum { TW = 100, TH = 80, TB = TW * 4, T = 0x60000, R = 0x80000 };
+        uint32_t a_y0[12] = { 3, 2, 1, 2 | 8, 64, 64, 1, 1, 0, 0, 1 /* VIRGL_RESOURCE_Y_0_TOP */, 1 };
+        uint32_t a_put3[14] = { 3, 1, 0, 256, 0, 0, 0, 0, 64, 64, 1, 0x40000, 64 * 64 * 4, ACV_SWAP_NONE };
+        uint32_t a_put1[14] = { 1, 1, 0, 256, 0, 0, 0, 0, 64, 64, 1, 0x40000, 64 * 64 * 4, ACV_SWAP_NONE };
+        struct acvirgl_stats s0, s1;
+        uint32_t h, f, x;
+        int n, same = 1, pend = 1;
+        acvirgl_stats(v, &s0);
+        begin(); c = cmd(ACV_RES_CREATE, 12, a_y0); cp = cmd(ACV_PUT, 14, a_put3);
+        acvirgl_run(v, map, NULL, BLK, at - BLK);
+        CHECK(result(c) == 0 && result(cp) == 0, "a Y_0_TOP resource and its picture (%d, %d)", result(c), result(cp));
+        for (h = 1; h <= 3; h += 2)
+            for (f = 0; f < 4; f++) {
+                /* f: bit 0 RGB565, bit 1 flipped */
+                uint32_t fmt = f & 1 ? OGPU_FMT_RGB565 : OGPU_FMT_XRGB32, bpr = f & 1 ? TW * 2 : TB;
+                uint32_t pa[16] = { 1, h, 0, (10u << 16) | 5u, T, bpr, fmt, ((uint32_t)TW << 16) | TH, f & 2 ? ACV_PRESENT_FLIP_Y : 0, 3,
+                                    (12u << 16) | 7u, (20u << 16) | 10u, (60u << 16) | 60u, (40u << 16) | 40u, (80u << 16) | 0u, (20u << 16) | 4u };
+                int32_t r0, r1;
+                acvirgl_behind_presents(v, NULL);
+                memset(arena + R, 0xEE, TB * TH);
+                pa[4] = R;
+                begin(); c = cmd(ACV_PRESENT, 16, pa);
+                acvirgl_run(v, map, NULL, BLK, at - BLK);
+                r0 = result(c);
+                acvirgl_behind_presents(v, defer_all);
+                memset(arena + T, 0xEE, TB * TH);
+                pa[4] = T;
+                /* presented, then drawn over and read back by the program: the present keeps the frame it had */
+                memset(arena + 0x48000, 0x11, 64 * 64 * 4);
+                a_put1[0] = h; a_put1[11] = 0x48000;
+                begin(); c = cmd(ACV_PRESENT, 16, pa); cp = cmd(ACV_PUT, 14, a_put1); cg = cmd(ACV_GET, 14, a_get);
+                acvirgl_run(v, map, NULL, BLK, at - BLK);
+                r1 = result(c);
+                if (!acvirgl_pending(v)) pend = 0;
+                n = acvirgl_settle(v, map, NULL, ACVIRGL_ALL);
+                if (r0 != r1 || r0 <= 0 || n != 1 || memcmp(arena + R, arena + T, TB * TH)) {
+                    same = 0;
+                    printf("acvirgl: behind differs: resource %u, case %u: %d %d %d\n", h, f, r0, r1, n);
+                }
+                /* the picture back in the resource */
+                a_put1[11] = 0x40000;
+                if (h == 3) { begin(); cmd(ACV_PUT, 14, a_put3); acvirgl_run(v, map, NULL, BLK, at - BLK); }
+                else { begin(); cmd(ACV_PUT, 14, a_put1); acvirgl_run(v, map, NULL, BLK, at - BLK); }
+            }
+        CHECK(pend, "behind: presents left to finish over the context's next commands");
+        CHECK(same, "behind: the same pixels as at once, the frame as presented");
+        /* ready ones finish on a settle once their fence signals */
+        {
+            uint32_t pa[12] = { 1, 1, 0, 0, T, TB, OGPU_FMT_XRGB32, ((uint32_t)TW << 16) | TH, 0, 1, (2u << 16) | 3u, (16u << 16) | 8u };
+            memset(arena + T, 0xEE, TB * TH);
+            begin(); c = cmd(ACV_PRESENT, 12, pa);
+            acvirgl_run(v, map, NULL, BLK, at - BLK);
+            for (x = 0; acvirgl_pending(v) && x < 2000; x++) {
+                struct timespec ts = { 0, 1000000 };
+                acvirgl_settle(v, map, NULL, ACVIRGL_READY);
+                if (acvirgl_pending(v)) nanosleep(&ts, NULL);
+            }
+            CHECK(!acvirgl_pending(v) && arena[T + 3 * TB + 2 * 4 + 1] != 0xEE, "behind: the fence signals and it is finished (%d tries)", (int)x);
+            /* a newer present over the same rectangles writes the older first */
+            begin(); c = cmd(ACV_PRESENT, 12, pa); x = cmd(ACV_PRESENT, 12, pa);
+            acvirgl_run(v, map, NULL, BLK, at - BLK);
+            CHECK(acvirgl_pending(v) == 1, "behind: a present over an older one finishes it first (%d left)", acvirgl_pending(v));
+            /* dropped: nothing written */
+            acvirgl_settle(v, map, NULL, ACVIRGL_ALL);
+            memset(arena + T, 0xEE, TB * TH);
+            begin(); c = cmd(ACV_PRESENT, 12, pa);
+            acvirgl_run(v, map, NULL, BLK, at - BLK);
+            acvirgl_settle(v, map, NULL, ACVIRGL_DROP);
+            CHECK(!acvirgl_pending(v) && arena[T + 3 * TB + 2 * 4 + 1] == 0xEE, "behind: dropped presents write nothing");
+        }
+        acvirgl_behind_presents(v, NULL);
+        begin(); h = 3; cmd(ACV_RES_UNREF, 1, &h);
+        acvirgl_run(v, map, NULL, BLK, at - BLK);
+        acvirgl_stats(v, &s1);
+        printf("acvirgl: behind %llu of %llu presents\n", (unsigned long long)(s1.behind - s0.behind), (unsigned long long)(s1.presents - s0.presents));
+        CHECK(s1.behind - s0.behind == 12, "behind: twelve presents one frame behind (%llu)", (unsigned long long)(s1.behind - s0.behind));
+    }
+
     /* Handles as the Amiga makes them: GLA's resource addresses (sparse,
      * above 1 MiB). 600 display targets, every other one dropped again;
      * the rest present and count their GETs as frames read back. */

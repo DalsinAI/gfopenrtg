@@ -48,6 +48,7 @@
 
 #include <proto/exec.h>
 #include <proto/dos.h>
+#include "../stub_tell.h"
 #include <stdlib.h>
 
 /* gfopengpu.library's calls through the stub's own base, so a program's
@@ -85,12 +86,7 @@ static void SDL3Stub_Fail(const char *why)
 {
     SDL3StubFn *fn = (SDL3StubFn *)(void *)&SDL3Stub_jump_table;
     ULONG i;
-    BPTR out = Output();
-    if (out) {
-        FPuts(out, (CONST_STRPTR) "SDL 3: ");
-        FPuts(out, (CONST_STRPTR)why);
-        FPuts(out, (CONST_STRPTR) "\n");
-    }
+    ogpu_stub_tell("SDL 3: ", why);
     for (i = 0; i < sizeof(SDL3Stub_jump_table) / sizeof(*fn); i++) {
         fn[i] = SDL3Stub_None;
     }

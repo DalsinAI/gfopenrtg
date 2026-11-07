@@ -496,14 +496,15 @@ struct virgl_winsys *gla_virgl_winsys_create(struct sw_winsys *sws, const struct
     static const char name[] = "GLA";
     uint32_t a[3];
     unsigned rh, rc;
+    int ran;
     char *nm;
-    if (!w) return NULL;
+    if (!w) { gla_note_why("no memory for virgl's winsys"); return NULL; }
     w->sws = sws;
     w->t = *t;
     w->next_handle = 1;
     w->ctx_id = NEW_CTX_ID(w);
     (void)mtx_init(&w->mutex, mtx_plain);
-    if (!(w->blk = w->t.alloc(w->t.user, BLK_WORDS * 4 + 64))) { FREE(w); return NULL; }
+    if (!(w->blk = w->t.alloc(w->t.user, BLK_WORDS * 4 + 64))) { gla_note_why("no memory for virgl's request block"); FREE(w); return NULL; }
     nm = (char *)(w->blk + BLK_WORDS);
     memcpy(nm, name, sizeof name);
     blk_begin(w);
@@ -511,7 +512,12 @@ struct virgl_winsys *gla_virgl_winsys_create(struct sw_winsys *sws, const struct
     rh = blk_cmd(w, ACV_HELLO, 1, a);
     a[0] = CTX_ID; a[1] = w->t.addr(w->t.user, nm); a[2] = sizeof name - 1;
     rc = blk_cmd(w, ACV_CTX_CREATE, 3, a);
-    if (blk_run(w) || blk_result(w, rh) != ACV_PROTOCOL || blk_result(w, rc) != 0) {
+    ran = blk_run(w) == 0;
+    if (!ran || blk_result(w, rh) != ACV_PROTOCOL || blk_result(w, rc) != 0) {
+        /* Why, for the program's notice (gla_core.h, gla_note_why). */
+        if (!ran) gla_note_why("virgl's first request block didn't run (gfopengpu.library or the ACRTG ring failed it)");
+        else if (blk_result(w, rh) != ACV_PROTOCOL) gla_note_why("the runtime's ACVirgl speaks another protocol (ACV_HELLO)");
+        else gla_note_why("the runtime's virglrenderer refused a context (ACV_CTX_CREATE)");
         w->t.free(w->t.user, w->blk);
         FREE(w);
         return NULL;

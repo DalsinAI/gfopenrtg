@@ -15,6 +15,7 @@
 #include <proto/timer.h>
 #include <proto/gfopengpu.h>
 #include <gfopengpu/build.h>
+#include "gla_notice_os3.h"
 
 struct Library *OpenGPUBase;
 
@@ -76,10 +77,118 @@ static int os3_run(void *user, void *block, unsigned long bytes)
     return r == OGPU_OK ? 0 : -1;
 }
 
+/* ---- which driver, and saying so when it is softpipe (7 Nov 2026) ----
+ * A program that couldn't have virgl used to drop to softpipe in silence,
+ * its shaders then running on the 68k: GL at a frame a second where the
+ * PC's graphics chip gives sixty, and nothing said why. Now softpipe starts
+ * with one line, on the program's output and in the runtime's log
+ * (gla_notice_os3.c), naming why virgl wasn't used. ENV:GFOpenGPU/GLDriver
+ * chooses: "gpu" (or "virgl") refuses softpipe, so the program fails where
+ * it would have run on the 68k; "cpu" (or "softpipe") takes softpipe
+ * without trying virgl; anything else, or none, is virgl when it's there
+ * and softpipe when not. ENV:OGLES3/Driver CPU still makes ogles3.library
+ * take softpipe (it doesn't ask for virgl), unless GLDriver says gpu. */
+
+static const char why_env_cpu[] = "ENV:GFOpenGPU/GLDriver is cpu";
+static const char why_ogles3_cpu[] = "ENV:OGLES3/Driver is CPU";
+static const char why_asked[] = "the program asked for softpipe";
+static const char why_no_library[] = "gfopengpu.library didn't open";
+static const char why_no_driver[] = "gfopengpu.library has no driver that carries virgl "
+    "(LIBS:GFOpenGPU/ACRTG.gpu missing or too old, or the board stopped answering)";
+
+static int lower(int c) { return c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c; }
+
+/* "gpu" or "cpu" at the start of v, in any case; "virgl" and "softpipe" too. */
+static int word_is(const char *v, const char *w)
+{
+    while (*v == ' ' || *v == '\t') v++;
+    for (; *w; v++, w++)
+        if (lower((unsigned char)*v) != *w) return 0;
+    return !*v || *v == ' ' || *v == '\t' || *v == '\n' || *v == '\r';
+}
+
+int gla_os3_driver_of(const char *v)
+{
+    if (!v) return GLA_OS3_DRIVER_AUTO;
+    if (word_is(v, "gpu") || word_is(v, "virgl")) return GLA_OS3_DRIVER_GPU;
+    if (word_is(v, "cpu") || word_is(v, "softpipe")) return GLA_OS3_DRIVER_CPU;
+    return GLA_OS3_DRIVER_AUTO;
+}
+
+int gla_os3_gl_driver(void)
+{
+    char v[16];
+    return gla_os3_getenv("GFOpenGPU/GLDriver", v, sizeof v) > 0 ? gla_os3_driver_of(v) : GLA_OS3_DRIVER_AUTO;
+}
+
+/* Why gfopengpu.library offers no virgl; NULL when it does. */
+static const char *library_why(void)
+{
+    const char *board;
+    if (!OpenGPUBase && !(OpenGPUBase = OpenLibrary((CONST_STRPTR)OPENGPU_NAME, 0))) return why_no_library;
+    if (OGPU_ANSWER(OGPU_Query(OGPU_OP_VIRGL, 0)) == OGPU_FULL) return NULL;
+    board = gla_os3_board_why();        /* no board, no ring, no virglrenderer */
+    return board ? board : why_no_driver;
+}
+
+static void cat(char *d, unsigned long size, const char *s)
+{
+    unsigned long n = 0;
+    while (n < size - 1 && d[n]) n++;
+    while (n < size - 1 && *s) d[n++] = *s++;
+    d[n] = 0;
+}
+
+static int told;                        /* the notice is given once a program (each has its own data) */
+
+/* gla_display_create's hook (gla_core.h): why, then refuse softpipe when
+ * GLDriver says gpu. */
+static int softpipe_hook(const char *why)
+{
+    char line[400];
+    int drv = gla_os3_gl_driver();
+    if (!why) {
+        /* The program went to softpipe without asking for virgl, or asked
+         * a GL.module that wasn't told why. */
+        char v[8];
+        if (drv == GLA_OS3_DRIVER_CPU) why = why_env_cpu;
+        else if (gla_os3_getenv("OGLES3/Driver", v, sizeof v) > 0 && (v[0] == 'C' || v[0] == 'c')) why = why_ogles3_cpu;
+        else if (!(why = library_why())) why = why_asked;
+    }
+    line[0] = 0;
+    if (drv == GLA_OS3_DRIVER_GPU) {
+        cat(line, sizeof line, "GL: softpipe refused, as ENV:GFOpenGPU/GLDriver is gpu; no virgl: ");
+        cat(line, sizeof line, why);
+        gla_os3_say(line);
+        return 1;
+    }
+    if (!told) {
+        told = 1;
+        cat(line, sizeof line, "GL: on softpipe, not virgl: ");
+        cat(line, sizeof line, why);
+        cat(line, sizeof line, ". Shaders run on the 68k (ENV:GFOpenGPU/GLDriver gpu refuses softpipe).");
+        gla_os3_say(line);
+    }
+    return 0;
+}
+
+void gla_os3_driver_init(void)
+{
+    gla_set_softpipe_hook(softpipe_hook);
+}
+
 int gla_os3_virgl_transport(struct gla_virgl_transport *t)
 {
-    if (!OpenGPUBase && !(OpenGPUBase = OpenLibrary((CONST_STRPTR)OPENGPU_NAME, 0))) return 0;
-    if (OGPU_ANSWER(OGPU_Query(OGPU_OP_VIRGL, 0)) != OGPU_FULL) return 0;
+    const char *why;
+    gla_os3_driver_init();
+    if (gla_os3_gl_driver() == GLA_OS3_DRIVER_CPU) {
+        gla_note_why(why_env_cpu);
+        return 0;
+    }
+    if ((why = library_why()) != NULL) {
+        gla_note_why(why);
+        return 0;
+    }
     if (!gla_timer_base && !OpenDevice((CONST_STRPTR)TIMERNAME, UNIT_ECLOCK, (struct IORequest *)&timer_io, 0)) {
         struct EClockVal e;
         gla_timer_base = timer_io.tr_node.io_Device;   /* until gla_os3_virgl_close */

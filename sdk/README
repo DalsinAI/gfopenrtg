@@ -56,6 +56,7 @@ What is in it
   lib/pkgconfig/          sdl2, SDL2_image, SDL2_mixer, SDL2_ttf, SDL2_net,
                           gl, glesv2 and tinygl (and sdl, with SDL 1.2)
   lib/cmake/              find_package(SDL2) and the satellites
+  cross/                  a CMake toolchain file and a meson cross file
   examples/               a sprite program, an SDL_GL program, a GLA one
                           and a TinyGL one (and an SDL 1.2 one, with SDL 1.2)
   AutoDocs-GFOpenGPU.md     the reference: how it all works, and what's there
@@ -99,6 +100,54 @@ SDL2::SDL2 (and SDL2::SDL2main, empty), find_package(SDL2_mixer) and the
 others give their targets.
 
 
+CMake and meson
+---------------
+
+cross/ has a CMake toolchain file and a meson cross file, so projects built
+with CMake or meson cross-build as they are:
+
+  cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=/path/to/GFOpenGPU-SDK-0.6/cross/m68k-amigaos.cmake
+  meson setup build --cross-file /path/to/GFOpenGPU-SDK-0.6/cross/m68k-amigaos.ini
+
+Both give -m68040 -m68881 -noixemul -fno-tree-loop-distribute-patterns on
+every compile and link, the kit's include/ and lib/ as the system's, and
+pkg-config only the kit's lib/pkgconfig (PKG_CONFIG_LIBDIR): find_package,
+find_library, find_path and dependency() never find the PC's own libraries.
+find_package(SDL2) and the satellites, pkg_check_modules(... glesv2) and
+find_package(OpenGL COMPONENTS GLES2 GLES3) find the kit's. There are no
+shared libraries (library() and add_library() build static ones), and
+no emulator: programs aren't run, so try_run and tests are skipped.
+
+What a project can test: in CMake, AMIGAOS and AMIGA are TRUE and
+CMAKE_SYSTEM_NAME is AmigaOS (UNIX isn't set); in meson,
+host_machine.system() is 'amigaos', cpu_family() 'm68k'. The compiler
+itself defines __AMIGA__, __amigaos__ and AMIGA.
+
+CMake's settings (-D on the first configure, or the environment):
+AMIGAOS_KIT (default: the kit the file is in), AMIGAOS_TOOLCHAIN (the
+compiler's folder; default ~/CradleLab/toolchain/openamigagcc-16.2.0-open4-x86_64-linux,
+else m68k-amigaos-gcc on PATH), AMIGAOS_CPU (e.g. "-m68060 -m68881"),
+AMIGAOS_RUNTIME, AMIGAOS_EXTRA and AMIGAOS_NDK (an NDK's include folder,
+searched last). For meson, a second cross file after this one changes its
+[constants]: kit, cross (the compilers' path up to "gcc"; in the kit
+'m68k-amigaos-', from PATH), cpu, runtime, extra and ndk:
+
+  [constants]
+  cpu = ['-m68060', '-m68881']
+
+The kit's own .pc and SDL2Config.cmake files add -m68040 -m68881 after the
+cross file's flags, so a target that links SDL or GL is built for the
+68040 whatever the CPU setting (it runs on a 68060 too).
+
+examples/crossbuild builds GLTri, a GLES 2 triangle through SDL 2, both
+ways: SDL 2 from find_package and GLES from glesv2.pc with CMake, both from
+pkg-config with meson.
+
+In this repository the files are in sdk/cross/; there the defaults are a
+stove's prefix/m68k-amigaos (~/CradleLab/stoves/os32-gcc16-canvas) and the
+compiler in ~/CradleLab/toolchain.
+
+
 On the Amiga
 ------------
 
@@ -117,6 +166,7 @@ Each has its build command at its top:
 
   examples/sprite     m68k-amigaos-gcc -O2 sprite.c -o Sprite $(sdl2-config --cflags --libs)
   examples/sdl_gl     m68k-amigaos-gcc -O2 glspin.c -o GLSpin $(sdl2-config --cflags --libs --gl)
+  examples/crossbuild cmake or meson with cross/ (see "CMake and meson")
   examples/gla        m68k-amigaos-gcc -O2 glatriangle.c -o GLATriangle $(pkg-config --cflags --libs gl)
   examples/tinygl     m68k-amigaos-gcc -O2 tglspin.c -o TGLSpin $(pkg-config --cflags --libs tinygl)
   examples/sdl12      m68k-amigaos-gcc -O2 bounce.c -o Bounce $(sdl-config --cflags --libs)

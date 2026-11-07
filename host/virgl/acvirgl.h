@@ -88,6 +88,22 @@ void acvirgl_behind_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32
 int acvirgl_settle(struct acvirgl *v, uint8_t *(*map)(void *map_user, uint32_t address, uint32_t length), void *map_user, int how);
 int acvirgl_pending(const struct acvirgl *v);
 
+/* What a request block will write besides its own words (7 Nov 2026), for a
+ * runtime that carries blocks out on a thread of its own while the guest's
+ * CPU runs on: the block is read through map as acvirgl_run reads it and,
+ * for each ACV_PRESENT, present(user, address, bytes) is told the target's
+ * bytes it may write. Returns 0 when the block writes nothing else of the
+ * guest's memory and reads nothing in the range [avoid, avoid + avoid_len)
+ * (the runtime's video RAM, which the CPU may be writing); 1 when it may
+ * (ACV_GET and ACV_CAPS write the guest's memory; a command reading that
+ * range; a block it can't read or parse): such a block must run while the
+ * guest's CPU is stopped, as before. Any thread; touches no virglrenderer
+ * state. */
+#define ACVIRGL_HAS_SCAN 1
+int acvirgl_block_scan(uint8_t *(*map)(void *map_user, uint32_t address, uint32_t length), void *map_user,
+                       uint32_t addr, uint32_t bytes, uint32_t avoid, uint32_t avoid_len,
+                       void (*present)(void *user, uint32_t address, uint32_t bytes), void *user);
+
 /* "GL" or "GLES": the kind of context virglrenderer is drawing with. */
 const char *acvirgl_api(const struct acvirgl *v);
 /* The GPU it draws on, the host's GL_RENDERER: "V3D 7.1", "zink Vulkan 1.3(V3D 7.1 ...)", "unknown". */

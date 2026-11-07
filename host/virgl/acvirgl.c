@@ -897,6 +897,56 @@ static int32_t av_transfer(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, 
     return ACV_OK;
 }
 
+/* [a, a + n) meets [lo, lo + len) */
+static int av_meets(uint32_t a, uint64_t n, uint32_t lo, uint32_t len)
+{
+    return len && n && (uint64_t)a < (uint64_t)lo + len && (uint64_t)lo < (uint64_t)a + n;
+}
+
+int acvirgl_block_scan(uint8_t *(*map)(void *, uint32_t, uint32_t), void *mu, uint32_t addr, uint32_t bytes,
+                       uint32_t avoid, uint32_t avoid_len, void (*present)(void *, uint32_t, uint32_t), void *user)
+{
+    const uint8_t *blk;
+    uint32_t at = 0, words = bytes / 4;
+    if (!words || !(blk = map(mu, addr, words * 4))) return 1;
+    if (av_meets(addr, (uint64_t)words * 4, avoid, avoid_len)) return 1;    /* the block itself in video RAM */
+    while (at + 2 <= words) {
+        const uint8_t *c = blk + at * 4, *a = c + 8;
+        uint32_t hdr = av_be32(c);
+        unsigned cmd = ACV_HDR_CMD(hdr), len = ACV_HDR_WORDS(hdr);
+        int n = av_args_of(cmd);
+        if (len < 2 || at + len > words || n < 0 || len - 2 < (unsigned)n) return 0;   /* acvirgl_run stops there: nothing more */
+        switch (cmd) {
+        case ACV_HELLO: case ACV_CAPSET_INFO: case ACV_CTX_DESTROY: case ACV_RES_CREATE: case ACV_RES_UNREF:
+        case ACV_ATTACH: case ACV_DETACH:
+            break;                                      /* their words only */
+        case ACV_CTX_CREATE:                            /* reads its name */
+            if (av_meets(av_be32(a + 4), av_be32(a + 8), avoid, avoid_len)) return 1;
+            break;
+        case ACV_SUBMIT:                                /* reads its commands */
+            if (av_meets(av_be32(a + 4), (uint64_t)av_be32(a + 8) * 4, avoid, avoid_len)) return 1;
+            break;
+        case ACV_PUT:                                   /* reads its pixels */
+            if (av_meets(av_be32(a + 44), av_be32(a + 48), avoid, avoid_len)) return 1;
+            break;
+        case ACV_PRESENT: {                             /* writes its target, as av_present_prep places it */
+            uint32_t to = av_be32(a + 16), bpr = av_be32(a + 20), fmt = av_be32(a + 24), wh = av_be32(a + 28);
+            uint32_t tw = wh >> 16, th = wh & 0xFFFFu, bpp = fmt == OGPU_FMT_XRGB32 || fmt == OGPU_FMT_ARGB32 ? 4 : fmt == OGPU_FMT_RGB565 ? 2 : 0;
+            uint64_t span;
+            if (!bpp || !tw || !th) break;              /* refused, or nothing to write */
+            span = (uint64_t)bpr * (uint64_t)(th - 1) + (uint64_t)tw * bpp;
+            if (span > 0xFFFFFFFFu) break;              /* refused (ACV_ERR_NOMAP) */
+            if (present) present(user, to, (uint32_t)span);
+            break;
+        }
+        default:                                        /* ACV_GET, ACV_CAPS: the guest's memory */
+            return 1;
+        }
+        at += len;
+    }
+    return 0;
+}
+
 int acvirgl_run(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), void *mu, uint32_t addr, uint32_t bytes)
 {
     uint8_t *blk;

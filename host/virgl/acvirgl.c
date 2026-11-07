@@ -59,6 +59,8 @@ struct vr_api {
     /* optional (deferred presents): per-context fences, and their retiring */
     int (*context_create_fence)(uint32_t ctx_id, uint32_t flags, uint32_t ring_idx, uint64_t fence_id);
     void (*poll)(void);
+    /* virglrenderer's context 0 made current, its idea of the current context forgotten */
+    void (*force_ctx_0)(void);
 };
 
 /* What ACV_PRESENT and the counters need of a resource, by handle. On the
@@ -177,6 +179,7 @@ struct acvirgl *acvirgl_create(const char *lib, char *err, int errlen)
     /* per-context fences, for presents left to finish (virglrenderer 1.0 and later) */
     *(void **)&v->vr.context_create_fence = dlsym(v->dl, "virgl_renderer_context_create_fence");
     *(void **)&v->vr.poll = dlsym(v->dl, "virgl_renderer_poll");
+    *(void **)&v->vr.force_ctx_0 = dlsym(v->dl, "virgl_renderer_force_ctx_0");
     v->cb.version = v->vr.context_create_fence && v->vr.poll ? 3 : 1;
     v->cb.write_fence = av_no_fence;
     v->cb.write_context_fence = av_context_fence;
@@ -665,9 +668,24 @@ int acvirgl_run(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), 
             if (s) memcpy(buf, s, nlen);
             buf[s ? nlen : 0] = 0;
             if (v->vr.context_create(id, (uint32_t)strlen(buf), buf)) r = ACV_ERR_RENDERER;
+            /* vrend makes the new context's GL context current to set it up
+             * (vrend_renderer_create_sub_ctx) but leaves its record of the
+             * current one (current_ctx, current_hw_ctx) as it was. The next
+             * command of the context that was current then skips its
+             * eglMakeCurrent and runs in the new program's GL context, where
+             * its vertex arrays and framebuffers are other names or none:
+             * "glBindVertexArray(non-gen name)", DRAW_VBO's GL error 1282
+             * (or CLEAR's 1286), and that context is dead ("Illegal command
+             * buffer"), one program in a few starting beside others. QEMU
+             * forces context 0 before every command; here after the two
+             * that change contexts. */
+            if (v->vr.force_ctx_0) v->vr.force_ctx_0();
             break;
         }
-        case ACV_CTX_DESTROY: v->vr.context_destroy(av_be32(a)); break;
+        case ACV_CTX_DESTROY:
+            v->vr.context_destroy(av_be32(a));
+            if (v->vr.force_ctx_0) v->vr.force_ctx_0();
+            break;
         case ACV_RES_CREATE: {
             struct vr_resource_create_args ra;
             uint32_t ctx = av_be32(a + 44);

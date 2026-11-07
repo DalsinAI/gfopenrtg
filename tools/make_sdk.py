@@ -19,6 +19,11 @@ SDL12_OUT SDL 1.2 (sdl12-compat on GFOpenGPU's SDL 2): library/modules/sdl12's
          and LICENSE.txt; default BUILD/sdl12 when it is there. Without it the
          kit has no SDL 1.2 (no SDL/, -lSDL or sdl-config).
 
+GLU and GLUT come from BUILD/glu and BUILD/glut (library/modules/glu and
+glut's build.sh) when they are there: GL/glu.h, libGLU.a, GL/glut.h and
+freeglut's headers, libglut.a, glu.pc and glut.pc, examples/glut. Without
+them the kit has neither.
+
 It makes OUT_DIR/GFOpenGPU-SDK-VERSION/ and, with --archives, its .tar.gz
 (for cross-compiling on the PC) and .lha (for the Amiga) beside it.
 Everything in the kit is redistributable: each third-party header is
@@ -63,6 +68,12 @@ LIBS = ("libSDL2.a", "libSDL2_test.a", "libSDL2_image.a", "libSDL2_mixer.a",
         "libSDL2_net.a", "libminigl.a", "libmgl.a", "libtinygl.a")
 # SDL 1.2: sdl12-compat (Zlib) on GFOpenGPU's SDL 2, when --sdl12 gives it.
 SDL12_VERSION = "1.2.78"
+# GLU (SGI's, Mesa's glu) and GLUT (freeglut's interface), when BUILD has them.
+GLU_VERSION = "9.0.3"
+FREEGLUT_VERSION = "3.6.0"
+SGI_FREEB_MARK = re.compile(r"SGI FREE SOFTWARE LICENSE B \(Version 2\.0")
+# freeglut's headers with no notice of their own (freeglut's COPYING covers them).
+FREEGLUT_NO_NOTICE = ("glut.h", "freeglut.h", "freeglut_ucall.h")
 
 APACHE_MARK = re.compile(r"SPDX-License-Identifier:\s*Apache-2\.0")
 APACHE_TEXT = Path("/usr/share/common-licenses/Apache-2.0")
@@ -264,8 +275,17 @@ PC_SDL12 = {
 }
 
 
+# Only with BUILD/glu and BUILD/glut.
+PC_GLUT = {
+    "glu": ("glu", "SGI's OpenGL Utility Library (Mesa's glu) on GFOpenGPU's GL", GLU_VERSION, "gl",
+            "-L${libdir} -lGLU", "-I${includedir}"),
+    "glut": ("glut", "GLUT (freeglut's interface) on GFOpenGPU's GLA, in an Intuition window", FREEGLUT_VERSION, "glu gl",
+             "-L${libdir} -lglut", "-I${includedir}"),
+}
+
+
 def pc_text(name: str) -> str:
-    n, desc, ver, req, libs, cflags = PC[name] if name in PC else PC_SDL12[name]
+    n, desc, ver, req, libs, cflags = {**PC, **PC_SDL12, **PC_GLUT}[name]
     return ("# GFOpenGPU developer kit. The kit's prefix is two levels up from this file:\n"
             "# the kit's own, or a stove's prefix/m68k-amigaos.\n"
             "prefix=${pcfiledir}/../..\nexec_prefix=${prefix}\nlibdir=${prefix}/lib\nincludedir=${prefix}/include\n\n"
@@ -330,6 +350,8 @@ def make_kit(args) -> Path:
     sdl12 = Path(args.sdl12).resolve() if args.sdl12 else None
     if not sdl12 and (build / "sdl12" / "libSDL.a").is_file():
         sdl12 = build / "sdl12"
+    glu, glut = build / "glu", build / "glut"
+    has_glut = (glu / "lib" / "libGLU.a").is_file() and (glut / "lib" / "libglut.a").is_file()
     kit = Path(args.out).resolve() / f"GFOpenGPU-SDK-{args.version}"
     if kit.exists():
         die(f"{kit} is there already: choose another OUT_DIR, or move it away")
@@ -396,6 +418,20 @@ def make_kit(args) -> Path:
         copy(sdl12 / "libSDL.a", lib / "libSDL.a")
         copy(sdl12 / "libSDL_gl.a", lib / "libSDL_gl.a")
 
+    # 3c. GLU (SGI Free Software License B 2.0) and GLUT (freeglut's headers,
+    #     MIT), when BUILD has them.
+    if has_glut:
+        f = glu / "include" / "GL" / "glu.h"
+        if not SGI_FREEB_MARK.search(f.read_text(encoding="latin-1")[:3000]):
+            die(f"{f}: not SGI's Free Software License B 2.0")
+        copy(f, inc / "GL" / "glu.h")
+        for f in sorted((glut / "include" / "GL").glob("*.h")):
+            if f.name not in FREEGLUT_NO_NOTICE and licence_of(f) != "MIT":
+                die(f"{f}: licence unclear")
+            copy(f, inc / "GL" / f.name)
+        copy(glu / "lib" / "libGLU.a", lib / "libGLU.a")
+        copy(glut / "lib" / "libglut.a", lib / "libglut.a")
+
     # 4. The libraries. One set serves both stoves: the GCC 16 builds link
     #    with GCC 6.5's libnix too (same libnix, a.out objects, FPU ABI).
     for name in LIBS:
@@ -415,7 +451,7 @@ def make_kit(args) -> Path:
         cfg = kit / "bin" / "sdl-config"
         cfg.write_text(SDL_CONFIG.replace("@CPU@", CPU).replace("@VERSION@", SDL12_VERSION))
         cfg.chmod(0o755)
-    for name in list(PC) + (list(PC_SDL12) if sdl12 else []):
+    for name in list(PC) + (list(PC_SDL12) if sdl12 else []) + (list(PC_GLUT) if has_glut else []):
         p = lib / "pkgconfig" / f"{name}.pc"
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(pc_text(name))
@@ -433,8 +469,9 @@ def make_kit(args) -> Path:
         (d / f"{name.lower()}-config.cmake").write_text(text)
 
     # 6. Examples, the readme and the reference.
+    left_out = ([] if sdl12 else ["sdl12"]) + ([] if has_glut else ["glut"])
     shutil.copytree(SDK / "examples", kit / "examples",
-                    ignore=None if sdl12 else shutil.ignore_patterns("sdl12"))
+                    ignore=shutil.ignore_patterns(*left_out) if left_out else None)
     copy(SDK / "README", kit / "README")
     copy(SDK / "AutoDocs-GFOpenGPU.md", kit / "AutoDocs-GFOpenGPU.md")
 
@@ -446,6 +483,11 @@ def make_kit(args) -> Path:
     if sdl12:
         copy(sdl12 / "LICENSE.txt", L / "sdl12-compat.txt")
         notices.append((f"sdl12-compat {SDL12_VERSION}: SDL/ headers, libSDL.a (altered by the Team for AmigaOS 3; with dr_mp3: public domain or MIT-0). libSDL.a also holds libSDL2.a's members, renamed SDL2X_; libSDL_gl.a", "Zlib (sdl12-compat.txt)"))
+    if has_glut:
+        copy(glu / "LICENSE.txt", L / "SGI-FreeB-2.0.txt")
+        notices.append((f"GLU {GLU_VERSION} (SGI's libGLU, Mesa's glu repository): GL/glu.h, libGLU.a (with glu_cxx.o, the Team's, MIT)", "SGI Free Software License B 2.0 (SGI-FreeB-2.0.txt)"))
+        copy(glut / "LICENSE.txt", L / "freeglut.txt")
+        notices.append((f"freeglut {FREEGLUT_VERSION}: GL/glut.h, GL/freeglut*.h (GLUT_ES_PROFILE added by the Team), libglut.a's shapes, teapot and fonts; the rest of libglut.a is the Team's (MIT)", "MIT/X11 (freeglut.txt)"))
     sdl = work / f"SDL2-{SDL_VERSION}"
     copy(sdl / "LICENSE.txt", L / "SDL2.txt")
     notices.append((f"SDL {SDL_VERSION}: SDL2/ headers (SDL_config.h is the Team's SDL_config_amigaos.h, MIT), libSDL2.a (SDL's dynamic API, altered by the Team), libSDL2_test.a", "Zlib (SDL2.txt)"))

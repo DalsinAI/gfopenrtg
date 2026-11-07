@@ -32,6 +32,16 @@
  *                                    stops here, with the ranges known)
  *   if (...) HL_DECLINE();           an input the host leaves to the 68k
  *                                    code (which goes on as it always has)
+ *   HL_PTR_R(p, at, n), HL_PTR_W(p, at, n)  p: a byte pointer to [at, at + n),
+ *                                    which must lie inside one declared range
+ *                                    (a write range for HL_PTR_W), else the
+ *                                    host gives the call back. Bytes only (no
+ *                                    16- or 32-bit loads through it: the host
+ *                                    is little-endian), and only inside those
+ *                                    n bytes: the host checks the span once,
+ *                                    not each access, so the function checks
+ *                                    its own indices (HL_DECLINE) before it
+ *                                    uses them. For inner loops.
  * The rules are HOSTLIB-ABI.md's, section 3.
  */
 #include <stdint.h>
@@ -57,6 +67,8 @@ typedef uint32_t hl_addr;
 #define HL_RD16(a) (*(const uint16_t *)(uintptr_t)(hl_addr)(a))
 #define HL_RD32(a) (*(const uint32_t *)(uintptr_t)(hl_addr)(a))
 #define HL_WR8(a, v) (*(uint8_t *)(uintptr_t)(hl_addr)(a) = (uint8_t)(v))
+#define HL_PTR_R(var, a, n) ((var) = (const uint8_t *)(uintptr_t)(hl_addr)(a))
+#define HL_PTR_W(var, a, n) ((var) = (uint8_t *)(uintptr_t)(hl_addr)(a))
 
 #else
 /* ---- the host build --------------------------------------------------- *
@@ -78,6 +90,7 @@ struct hl_ctx {
     int why;                            /* HL_OK, or why the call is the 68k code's */
     uint32_t nr, rlo[HL_RANGES], rn[HL_RANGES];
     uint32_t nw, wlo[HL_RANGES], wn[HL_RANGES];
+    uint32_t rclo, rcn, wclo, wcn;      /* the range the last read and the last write fell in */
     uint64_t bytes;                     /* declared, for the cost */
 };
 
@@ -87,6 +100,7 @@ static inline void hl_init(struct hl_ctx *hl, int dry)
     hl->dry = dry;
     hl->why = HL_OK;
     hl->nr = hl->nw = 0;
+    hl->rclo = hl->rcn = hl->wclo = hl->wcn = 0;
     hl->bytes = 0;
 }
 
@@ -105,28 +119,53 @@ static inline int hl_need(struct hl_ctx *hl, uint64_t at, uint64_t n, int write)
     return 1;
 }
 
-/* inside a declared range: a read in a read or a write range, a write in a write range */
-static inline int hl_in(const struct hl_ctx *hl, hl_addr a, uint32_t n, int write)
+/* inside a declared range: a read in a read or a write range, a write in a
+ * write range. The range the last access fell in is kept, and tried first. */
+static inline int hl_find(struct hl_ctx *hl, hl_addr a, uint32_t n, int write)
 {
     uint32_t i;
-    for (i = 0; i < hl->nw; i++) if (a - hl->wlo[i] < hl->wn[i] && hl->wn[i] - (a - hl->wlo[i]) >= n) return 1;
+    for (i = 0; i < hl->nw; i++)
+        if (a - hl->wlo[i] < hl->wn[i] && hl->wn[i] - (a - hl->wlo[i]) >= n) {
+            if (write) { hl->wclo = hl->wlo[i]; hl->wcn = hl->wn[i]; }
+            else { hl->rclo = hl->wlo[i]; hl->rcn = hl->wn[i]; }
+            return 1;
+        }
     if (write) return 0;
-    for (i = 0; i < hl->nr; i++) if (a - hl->rlo[i] < hl->rn[i] && hl->rn[i] - (a - hl->rlo[i]) >= n) return 1;
+    for (i = 0; i < hl->nr; i++)
+        if (a - hl->rlo[i] < hl->rn[i] && hl->rn[i] - (a - hl->rlo[i]) >= n) { hl->rclo = hl->rlo[i]; hl->rcn = hl->rn[i]; return 1; }
     return 0;
 }
 /* an access outside them gives the call back: it reads 0 and writes nothing from then on */
 static inline uint32_t hl_rd(struct hl_ctx *hl, hl_addr a, uint32_t n)
 {
     const uint8_t *p;
-    if (hl->why || !hl_in(hl, a, n, 0)) { if (!hl->why) hl->why = HL_WHY_INPUT; return 0; }
+    uint32_t o = a - hl->rclo, ow = a - hl->wclo;
+    if (hl->why || (!(o < hl->rcn && hl->rcn - o >= n) && !(ow < hl->wcn && hl->wcn - ow >= n))) {
+        /* not in the last read's range, nor in the last write's (a read back of what it writes) */
+        if (hl->why || !hl_find(hl, a, n, 0)) { if (!hl->why) hl->why = HL_WHY_INPUT; return 0; }
+    }
     p = hl->mem + a;
     return n == 1 ? p[0] : n == 2 ? (uint32_t)p[0] << 8 | p[1]
                                   : (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
 }
 static inline void hl_wr8(struct hl_ctx *hl, hl_addr a, uint32_t v)
 {
-    if (hl->why || !hl_in(hl, a, 1, 1)) { if (!hl->why) hl->why = HL_WHY_INPUT; return; }
+    uint32_t o = a - hl->wclo;
+    if (hl->why || !(o < hl->wcn)) {
+        if (hl->why || !hl_find(hl, a, 1, 1)) { if (!hl->why) hl->why = HL_WHY_INPUT; return; }
+    }
     hl->mem[a] = (uint8_t)v;
+}
+/* [a, a + n) wholly inside one declared range (a write range for w), for HL_PTR_R/HL_PTR_W */
+static inline int hl_span(struct hl_ctx *hl, hl_addr a, uint32_t n, int w)
+{
+    uint32_t o = a - hl->wclo, orr = a - hl->rclo;
+    if (hl->why) return 0;
+    if (o < hl->wcn && hl->wcn - o >= n) return 1;
+    if (!w && orr < hl->rcn && hl->rcn - orr >= n) return 1;
+    if (hl_find(hl, a, n, w)) return 1;
+    hl->why = HL_WHY_INPUT;
+    return 0;
 }
 /* the declared writes, to the JIT, before the first of them */
 static inline void hl_declared(struct hl_ctx *hl)
@@ -145,6 +184,8 @@ static inline void hl_declared(struct hl_ctx *hl)
 #define HL_RD16(a) hl_rd(hl_, (hl_addr)(a), 2)
 #define HL_RD32(a) hl_rd(hl_, (hl_addr)(a), 4)
 #define HL_WR8(a, v) hl_wr8(hl_, (hl_addr)(a), (uint32_t)(v))
+#define HL_PTR_R(var, a, n) do { if (!hl_span(hl_, (hl_addr)(a), (uint32_t)(n), 0)) return 0; (var) = hl_->mem + (hl_addr)(a); } while (0)
+#define HL_PTR_W(var, a, n) do { if (!hl_span(hl_, (hl_addr)(a), (uint32_t)(n), 1)) return 0; (var) = hl_->mem + (hl_addr)(a); } while (0)
 #endif
 
 /* the block's long number n (at byte 4 n) */

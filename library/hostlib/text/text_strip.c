@@ -52,7 +52,11 @@ HL_FN(hostlib_text_strip)
     HL_NEED_W(strip, (uint64_t)(uint32_t)bpr * (uint32_t)ysize);
     HL_DECLARED();
 
-    for (r = 0; r < bpr * ysize; r++) HL_WR8(strip + (uint32_t)r, 0);
+    if (bpr * ysize > 0) {
+        uint8_t *z;
+        HL_PTR_W(z, strip, bpr * ysize);
+        for (r = 0; r < bpr * ysize; r++) z[r] = 0;
+    }
     for (; i < j; i++) {
         uint32_t c = HL_RD8(s + (uint32_t)i);
         int32_t k = ((int32_t)c >= lo && (int32_t)c <= hi) ? (int32_t)c - lo : hi - lo + 1;
@@ -64,21 +68,22 @@ HL_FN(hostlib_text_strip)
                 for (r = 0; r < ysize; r++) {
                     /* w bits from bit off of the font's row r, ORed (or XORed) into the
                      * strip's row r from bit dbit; bit 0 is a byte's top bit */
-                    hl_addr d = strip + (uint32_t)(r * bpr), src = data + (uint32_t)(r * mod);
+                    const uint8_t *src;
+                    uint8_t *row;
                     int32_t dbit = at + b + (italic ? hl_ts_slant(baseline, r) : 0), sbit = off, n = w;
-                    while (n > 0) {
-                        int32_t cnt = n < 8 ? n : 8, sh = sbit & 7, dh = dbit & 7;
-                        hl_addr sp = src + (uint32_t)(sbit >> 3), dp = d + (uint32_t)(dbit >> 3);
-                        uint32_t v = HL_RD8(sp) << 8;
-                        if (sh + cnt > 8) v |= HL_RD8(sp + 1);
-                        v = ((v << sh) & (0xFF00u << (8 - cnt)) & 0xFF00u) >> dh;   /* the cnt bits, dh from the top of 16 */
-                        if (xor_) {
-                            HL_WR8(dp, HL_RD8(dp) ^ (v >> 8));
-                            if (dh + cnt > 8) HL_WR8(dp + 1, HL_RD8(dp + 1) ^ (v & 0xFF));
-                        } else {
-                            HL_WR8(dp, HL_RD8(dp) | (v >> 8));
-                            if (dh + cnt > 8) HL_WR8(dp + 1, HL_RD8(dp + 1) | (v & 0xFF));
-                        }
+                    HL_PTR_R(src, data + (uint32_t)(r * mod), mod);
+                    HL_PTR_W(row, strip + (uint32_t)(r * bpr), bpr);
+                    if (dbit < 0 || dbit + w > bpr * 8 || off + w > mod * 8) HL_DECLINE();   /* the bits outside the rows */
+                    while (n > 0) {             /* up to 24 bits a turn: at most 4 bytes each side */
+                        int32_t cnt = n < 24 ? n : 24, sh = sbit & 7, dh = dbit & 7, q;
+                        int32_t sb = (sh + cnt + 7) >> 3, db = (dh + cnt + 7) >> 3;   /* the bytes the bits are in */
+                        const uint8_t *sp = src + (sbit >> 3);
+                        uint8_t *dp = row + (dbit >> 3);
+                        uint32_t v = 0;
+                        for (q = 0; q < 4; q++) v = v << 8 | (q < sb ? sp[q] : 0u);
+                        v = ((v << sh) & (0xFFFFFFFFu << (32 - cnt))) >> dh;      /* the cnt bits, dh from the top */
+                        if (xor_) for (q = 0; q < db; q++) dp[q] ^= (uint8_t)(v >> (24 - 8 * q));
+                        else for (q = 0; q < db; q++) dp[q] |= (uint8_t)(v >> (24 - 8 * q));
                         sbit += cnt; dbit += cnt; n -= cnt;
                     }
                 }

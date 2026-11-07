@@ -9,12 +9,12 @@
 # files must still match the pin).
 set -eu
 OUT=${1:?usage: fetch_ogfx_core.sh OUT_DIR}
-PIN=8b649386d59916198621c2a6a548899c97439add
+PIN=da2cdd46056ca6e13bdd0a7cd64a61f13163cfd3
 REPO=${OGFX_CORE_REPO:-https://github.com/DalsinAI/gfopengfx.git}
-SUMS='52fa2b89fdd526c0fa1f3b2cf07cda4d96259d12508fc989bb43b085a40a185d  gfx_core.c
-ce60403283f6278ca5394cbbd13ac17322e4a4488dadad8d384f3cf5478863d5  gfx_core.h
-ce28f237cc613824d343e176479a9c5ab0a71ab2a59b81cb5fc7c24a4344b9ff  gfx_rp.c
-3be35c67e773e61d0316caaa9afacffb5ac7737bd9961aa40cff0431127d54fc  gfx_rp.h'
+SUMS='14a7b52f10c1c678bf79f634e91f3af4577ee7cf9ac91ce46862936b302eb4a8  gfx_core.c
+57117320dd3b0233d9d3b98b627ef37c699399818e170301cccf8762bb4da661  gfx_core.h
+984576d3e8acbb6ff31ebe26b8a61d5a4901b877e8636c51910e63b5f7624cc7  gfx_rp.c
+5af25eb2d67450720739501cf5ec63d75197d78119a54f62c07759b8be1843dc  gfx_rp.h'
 DST="$OUT/ogfx-core"
 mkdir -p "$DST"
 if (cd "$DST" && echo "$SUMS" | sha256sum -c --quiet) >/dev/null 2>&1; then exit 0; fi

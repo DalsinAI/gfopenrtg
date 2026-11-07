@@ -78,6 +78,12 @@
  * host's order, wrong on a little-endian driver). A malformed input is the
  * new OGPU_ERR_DATA. Drivers that don't answer these keep falling through
  * to this core. Ask OGPU_Query(OGPU_OP_RFX_TILE, OGPU_FMT_ARGB32).
+ * 0.29: WriteChunkyPixels and WritePixelArray8 on a planar bitmap are
+ * GFOpenGfx's core's on a real Amiga too, in Chip RAM after WaitBlit (they
+ * are CPU work in graphics.library as well), and the core (gfopengfx
+ * da2cdd4) writes whole bytes 32 pixels at a time, a long to each plane.
+ * The one c2p for games and the browser: acgame.library calls
+ * WriteChunkyPixels when it finds 0.29 or later.
  * 0.28: the last 256 batches' results are kept, where 0.27 kept 16
  * (RESULTS). A fence older than that is OGPU_ERR_EXPIRED (waited for as
  * the newest, 0.20); with several GL programs and the compositor, sixteen
@@ -139,7 +145,7 @@
 
 #define REG(r, decl) register decl __asm(#r)   /* bebbo gcc: an argument in a register */
 #define LIB_VERSION 0
-#define LIB_REVISION 28
+#define LIB_REVISION 29
 #define RESULTS 256                             /* the last batches' results, by fence (0.28; 16 before) */
 #define MAX_DRIVERS 8                           /* files looked at in LIBS:GFOpenGPU/ */
 #define ON_CPU 0                                /* dfence[] for a batch the CPU ran */
@@ -193,9 +199,9 @@ int start(void) { return -1; }
 const ULONG ogpu_ogfx_at = offsetof(struct OpenGPUBase, ogfx);
 
 static const char lib_name[] = "gfopengpu.library";
-static const char lib_id[] = "gfopengpu.library 0.28 (7.11.2026) GFOpenGPU, AmiCradle Team\r\n";
+static const char lib_id[] = "gfopengpu.library 0.29 (7.11.2026) GFOpenGPU, AmiCradle Team\r\n";
 /* For C:Version, which looks for "$VER:" in the file. */
-static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopengpu.library 0.28 (7.11.2026) GFOpenGPU, AmiCradle Team";
+static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopengpu.library 0.29 (7.11.2026) GFOpenGPU, AmiCradle Team";
 static const char cpu_name[] = "CPU";
 static const char dos_name[] = "dos.library";
 static const char drv_dir[] = "LIBS:GFOpenGPU";

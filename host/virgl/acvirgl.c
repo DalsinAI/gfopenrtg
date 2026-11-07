@@ -395,6 +395,31 @@ static int32_t av_present_prep(struct acvirgl *v, uint8_t *(*map)(void *, uint32
     return pixels > 0x7FFFFFFF ? 0x7FFFFFFF : (int32_t)pixels;
 }
 
+/* One row of n 32-bit pixels: the resource's bytes (channels at lr, lg, lb
+ * and la; la 4: none) to A, R, G, B in memory, A 0 for XRGB32 and 0xFF when
+ * the resource has none. B, G, R, A (or X) resources, the usual display
+ * targets, are a byte swap a pixel on a little-endian host. */
+static void av_row32(uint8_t *dp, const uint8_t *sp, int n, int lr, int lg, int lb, int la, int xrgb)
+{
+    int x;
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    if (lr == 2 && lg == 1 && lb == 0 && (la == 3 || la == 4)) {
+        uint32_t clear = xrgb || la == 4 ? 0xFFu : 0, set = !xrgb && la == 4 ? 0xFFu : 0;
+        for (x = 0; x < n; x++, sp += 4, dp += 4) {
+            uint32_t w;
+            memcpy(&w, sp, 4);
+            w = (__builtin_bswap32(w) & ~clear) | set;
+            memcpy(dp, &w, 4);
+        }
+        return;
+    }
+#endif
+    for (x = 0; x < n; x++, sp += 4, dp += 4) {
+        dp[0] = xrgb ? 0 : la == 4 ? 0xFF : sp[la];
+        dp[1] = sp[lr]; dp[2] = sp[lg]; dp[3] = sp[lb];
+    }
+}
+
 static int32_t av_present_finish(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), void *mu, const struct av_pres *p)
 {
     int lr, lg, lb, la, i;
@@ -403,6 +428,7 @@ static int32_t av_present_finish(struct acvirgl *v, uint8_t *(*map)(void *, uint
     struct iovec iov;
     uint8_t *dst;
     uint64_t pixels = 0, t0 = av_ns();
+    uint32_t fmt = p->fmt, bpr = p->bpr;
     if (!res || !av_layout(res->format, &lr, &lg, &lb, &la) || !av_need(v, (size_t)box.w * box.h * 4)) return ACV_ERR_RENDERER;
     if (!(dst = map(mu, p->addr, p->span))) return ACV_ERR_NOMAP;
     iov.iov_base = v->tmp;
@@ -413,19 +439,14 @@ static int32_t av_present_finish(struct acvirgl *v, uint8_t *(*map)(void *, uint
         for (y = y0; y < y1; y++) {
             int ry = p->flip ? p->rh - 1 - (y - p->sy) : y - p->sy;
             const uint8_t *sp = v->tmp + ((size_t)(ry - (int)box.y) * box.w + (size_t)(x0 - p->sx - (int)box.x)) * 4;
-            if (p->fmt == OGPU_FMT_RGB565) {
-                uint8_t *dp = dst + (size_t)y * p->bpr + (size_t)x0 * 2;
+            if (fmt == OGPU_FMT_RGB565) {
+                uint8_t *dp = dst + (size_t)y * bpr + (size_t)x0 * 2;
                 for (x = x0; x < x1; x++, sp += 4, dp += 2) {
                     dp[0] = (uint8_t)((sp[lr] & 0xF8) | (sp[lg] >> 5));
                     dp[1] = (uint8_t)(((sp[lg] & 0x1C) << 3) | (sp[lb] >> 3));
                 }
-            } else {
-                uint8_t *dp = dst + (size_t)y * p->bpr + (size_t)x0 * 4;
-                for (x = x0; x < x1; x++, sp += 4, dp += 4) {
-                    dp[0] = p->fmt == OGPU_FMT_XRGB32 ? 0 : la == 4 ? 0xFF : sp[la];
-                    dp[1] = sp[lr]; dp[2] = sp[lg]; dp[3] = sp[lb];
-                }
-            }
+            } else
+                av_row32(dst + (size_t)y * bpr + (size_t)x0 * 4, sp, x1 - x0, lr, lg, lb, la, fmt == OGPU_FMT_XRGB32);
         }
         pixels += (uint64_t)(x1 - x0) * (uint64_t)(y1 - y0);
     }

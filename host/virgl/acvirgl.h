@@ -38,6 +38,13 @@ struct acvirgl_stats {
     uint64_t presents, present_rects, present_pixels;   /* ACV_PRESENT: frames written straight into a bitmap */
     uint64_t present_ns;                            /* time reading them back and writing them */
     uint64_t deferred, deferred_ready, deferred_forced; /* presents left to finish; finished after their fence, or before */
+    /* (ACVIRGL_HAS_BEHIND) a present's parts: */
+    uint64_t behind;                                /* presents read back one frame behind (acvirgl_behind_presents) */
+    uint64_t present_gpu_ns;                        /* AC_VIRGL_PARTS=1: waiting for the GPU before a read back */
+    uint64_t present_read_ns;                       /* the read back itself (transfer_read_iov, or mapping a staged frame) */
+    uint64_t present_conv_ns;                       /* turning it into the target's format */
+    uint64_t present_issue_ns;                      /* behind: asking the GPU for the frame's copy */
+    uint64_t present_wait_ns;                       /* behind: of present_read_ns, mapping a frame not yet ready (it waited) */
 };
 void acvirgl_stats(const struct acvirgl *v, struct acvirgl_stats *s);
 
@@ -59,6 +66,24 @@ void acvirgl_defer_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32_
 #define ACVIRGL_READY 0     /* those whose fences have signalled */
 #define ACVIRGL_ALL   1     /* all, now */
 #define ACVIRGL_DROP  2     /* none: forget them (a reset; their memory may be gone) */
+/* Presents one frame behind (7 Nov 2026). Deferral still read the frame
+ * back with transfer_read_iov, and most were forced before their fence by
+ * the context's next frame. Here a present whose target ok() allows asks the
+ * GPU itself to copy the frame into a staging buffer (glReadPixels into a
+ * pixel-pack buffer, in the frame's own GL context: queued after its
+ * drawing, no wait) and returns; the staging buffer is mapped and written
+ * into the target once its fence has signalled (acvirgl_settle with
+ * ACVIRGL_READY: every block, every vertical blank), and at the latest before
+ * a present over the same rectangles, the context's destruction or
+ * acvirgl_settle(ACVIRGL_ALL). The copy is the frame as it was when it was
+ * presented, so the context's later commands need not wait for it: the
+ * Amiga sees each frame up to one present later. The pixels a program reads
+ * back itself (ACV_GET, glReadPixels) are the resource's, as before. Needs
+ * per-context fences and virgl_renderer_resource_get_info (virglrenderer 1.0
+ * and later) and EGL's GL entry points; else presents stay as they were.
+ * Replaces acvirgl_defer_presents' setting (one or the other); 0 turns it off. */
+#define ACVIRGL_HAS_BEHIND 1
+void acvirgl_behind_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32_t addr, uint32_t bytes));
 /* Returns how many were finished. */
 int acvirgl_settle(struct acvirgl *v, uint8_t *(*map)(void *map_user, uint32_t address, uint32_t length), void *map_user, int how);
 int acvirgl_pending(const struct acvirgl *v);

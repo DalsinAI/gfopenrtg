@@ -46,6 +46,7 @@
 
 #include <proto/exec.h>
 #include <proto/dos.h>
+#include "../stub_tell.h"
 #include <stdlib.h>
 
 /* gfopengpu.library's calls through the stub's own base, so a program's
@@ -76,12 +77,7 @@ void SDL2Stub_AtClose(struct SDL2StubCloseHook *hook)
 
 static void SDL2Stub_Fail(const char *why)
 {
-    BPTR out = Output();
-    if (out) {
-        FPuts(out, (CONST_STRPTR) "SDL 2: ");
-        FPuts(out, (CONST_STRPTR)why);
-        FPuts(out, (CONST_STRPTR) "\n");
-    }
+    ogpu_stub_tell("SDL 2: ", why);
     exit(20);
 }
 

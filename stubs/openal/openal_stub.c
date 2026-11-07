@@ -33,6 +33,7 @@
 #include <dos/dos.h>
 #include <proto/exec.h>
 #include <proto/dos.h>
+#include "../stub_tell.h"
 #include <string.h>
 
 #include "openal_module.h"
@@ -55,12 +56,7 @@ APTR OpenALStub_a4 = NULL;
 /* The module couldn't be loaded: said once, and every call does nothing. */
 static void OpenALStub_Fail(const char *why)
 {
-    BPTR out = Output();
-    if (out) {
-        FPuts(out, (CONST_STRPTR) "OpenAL: ");
-        FPuts(out, (CONST_STRPTR)why);
-        FPuts(out, (CONST_STRPTR) "\n");
-    }
+    ogpu_stub_tell("OpenAL: ", why);
     if (OpenALStub_handle) {
         OGPU_ModuleClose(OpenALStub_handle);
         OpenALStub_handle = NULL;

@@ -18,6 +18,7 @@
 
 #include <proto/exec.h>
 #include <proto/dos.h>
+#include "../stub_tell.h"
 #include <dos/dos.h>
 #include <stdlib.h>
 
@@ -45,12 +46,7 @@ static struct SDL2StubCloseHook sat_hook;
 
 static void sat_fail(const char *why)
 {
-    BPTR out = Output();
-    if (out) {
-        FPuts(out, (CONST_STRPTR)SAT_NAME ": ");
-        FPuts(out, (CONST_STRPTR)why);
-        FPuts(out, (CONST_STRPTR) "\n");
-    }
+    ogpu_stub_tell(SAT_NAME ": ", why);
     exit(20);
 }
 

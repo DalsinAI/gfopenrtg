@@ -95,6 +95,11 @@ that it is based on GFOpenRTG by the AmiCradle Team.
   `tools/make_sdk.py --build build --gl build/gl OUT_DIR --archives`.
   `sdk/README` is the kit's readme and `sdk/AutoDocs-GFOpenGPU.md` its
   reference. The kit is build output and is not committed.
+- `tools/ogg2iff/`: ogg2iff converts Ogg Vorbis to AIFF (16-bit big-endian),
+  IFF 8SVX, WAV or raw PCM, so ports ship their music decoded. It can
+  resample, downmix, normalise and trim, and converts whole folders. It is
+  built on stb_vorbis, for the PC and for the 68040; `tools/ogg2iff/README.md`
+  has the details.
 
 ## In a ROM (15 October 2026)
 

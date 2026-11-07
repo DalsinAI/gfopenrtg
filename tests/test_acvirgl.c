@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "../host/virgl/acvirgl.h"
 #include "../include/gfopengpu/stream.h"
 #include "../include/gfopengpu/virgl.h"
@@ -19,6 +20,9 @@
 #define ARENA (1u << 20)
 static uint8_t arena[ARENA];
 static uint8_t *map(void *u, uint32_t a, uint32_t len) { (void)u; return a < ARENA && len <= ARENA - a ? arena + a : NULL; }
+
+static int defer_all(void *u, uint32_t a, uint32_t n) { (void)u; (void)a; (void)n; return 1; }
+static int defer_none(void *u, uint32_t a, uint32_t n) { (void)u; (void)a; (void)n; return 0; }
 
 static int fails, checks;
 #define CHECK(c, ...) do { checks++; if (!(c)) { fails++; printf("FAIL: "); printf(__VA_ARGS__); printf("\n"); } } while (0)
@@ -197,6 +201,68 @@ int main(void)
         printf("acvirgl: %llu presents, %llu rectangles, %llu pixels; %llu frame bytes read back\n", (unsigned long long)s.presents,
                (unsigned long long)s.present_rects, (unsigned long long)s.present_pixels, (unsigned long long)s.frame_get_bytes);
         CHECK(s.presents == 2 && s.present_rects == 3 && s.present_pixels == 526 && s.frame_get_bytes == 0, "present counters");
+    }
+
+    /* Deferred presents (acvirgl_defer_presents): the result at once, the
+     * pixels once settled; the context's next command, the resource's
+     * unref and acvirgl_settle(ACVIRGL_ALL) finish them first; a drop
+     * writes nothing. */
+    {
+        enum { TW = 100, TH = 80, TB = TW * 4, T = 0x60000 };
+        uint32_t pa[12] = { 1, 1, 0, 0, T, TB, OGPU_FMT_XRGB32, ((uint32_t)TW << 16) | TH, 0, 1, (2u << 16) | 3u, (16u << 16) | 8u };
+        struct acvirgl_stats s0, s1;
+        uint32_t x, y, ok;
+        int n;
+        acvirgl_stats(v, &s0);
+        acvirgl_defer_presents(v, defer_all);
+        memset(arena + T, 0xEE, TB * TH);
+        begin(); c = cmd(ACV_PRESENT, 12, pa);
+        acvirgl_run(v, map, NULL, BLK, at - BLK);
+        CHECK(result(c) == 16 * 8, "deferred present: its pixels told at once (%d)", result(c));
+        if (acvirgl_pending(v)) {
+            CHECK(arena[T + 3 * TB + 2 * 4 + 1] == 0xEE, "deferred present: nothing written yet");
+            n = acvirgl_settle(v, map, NULL, ACVIRGL_ALL);
+            CHECK(n == 1 && !acvirgl_pending(v), "settle all finishes it (%d)", n);
+        } else
+            printf("acvirgl: this virglrenderer has no per-context fences; presents are not deferred\n");
+        for (ok = 1, y = 3; y < 11; y++)
+            for (x = 2; x < 18; x++) {
+                const uint8_t *d = arena + T + y * TB + x * 4, *p = arena + 0x40000 + (y * 64 + x) * 4;
+                if (d[0] != 0 || d[1] != p[2] || d[2] != p[1] || d[3] != p[0]) ok = 0;
+            }
+        CHECK(ok && arena[T + 2 * TB + 2 * 4 + 1] == 0xEE, "deferred present: the same pixels as at once, and only there");
+
+        /* the context's next command finishes it first */
+        memset(arena + T, 0xEE, TB * TH);
+        begin(); c = cmd(ACV_PRESENT, 12, pa); cg = cmd(ACV_GET, 14, a_get);
+        acvirgl_run(v, map, NULL, BLK, at - BLK);
+        CHECK(!acvirgl_pending(v) && arena[T + 3 * TB + 2 * 4 + 1] != 0xEE, "a GET of the context finishes its present first");
+        /* the fence: once signalled, a settle for the ready ones finishes it */
+        memset(arena + T, 0xEE, TB * TH);
+        begin(); c = cmd(ACV_PRESENT, 12, pa);
+        acvirgl_run(v, map, NULL, BLK, at - BLK);
+        for (n = 0, x = 0; acvirgl_pending(v) && x < 2000; x++) {
+            struct timespec ts = { 0, 1000000 };
+            n += acvirgl_settle(v, map, NULL, ACVIRGL_READY);
+            if (acvirgl_pending(v)) nanosleep(&ts, NULL);
+        }
+        CHECK(!acvirgl_pending(v) && arena[T + 3 * TB + 2 * 4 + 1] != 0xEE, "the frame's fence signals and it is finished (%d tries)", (int)x);
+        /* dropped: nothing written */
+        memset(arena + T, 0xEE, TB * TH);
+        begin(); c = cmd(ACV_PRESENT, 12, pa);
+        acvirgl_run(v, map, NULL, BLK, at - BLK);
+        acvirgl_settle(v, map, NULL, ACVIRGL_DROP);
+        CHECK(!acvirgl_pending(v) && arena[T + 3 * TB + 2 * 4 + 1] == 0xEE, "dropped presents write nothing");
+        /* the target not allowed: at once, as before */
+        acvirgl_defer_presents(v, defer_none);
+        begin(); c = cmd(ACV_PRESENT, 12, pa);
+        acvirgl_run(v, map, NULL, BLK, at - BLK);
+        CHECK(!acvirgl_pending(v) && arena[T + 3 * TB + 2 * 4 + 1] != 0xEE, "a target the runtime refuses is written at once");
+        acvirgl_defer_presents(v, NULL);
+        acvirgl_stats(v, &s1);
+        printf("acvirgl: deferred %llu, finished after the fence %llu, before it %llu\n", (unsigned long long)(s1.deferred - s0.deferred),
+               (unsigned long long)(s1.deferred_ready - s0.deferred_ready), (unsigned long long)(s1.deferred_forced - s0.deferred_forced));
+        CHECK(s1.presents - s0.presents == 4, "deferred presents count as presents when finished (%llu)", (unsigned long long)(s1.presents - s0.presents));
     }
 
     /* Handles as the Amiga makes them: GLA's resource addresses (sparse,

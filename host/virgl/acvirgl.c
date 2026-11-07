@@ -675,16 +675,24 @@ int acvirgl_run(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), 
              * its vertex arrays and framebuffers are other names or none:
              * "glBindVertexArray(non-gen name)", DRAW_VBO's GL error 1282
              * (or CLEAR's 1286), and that context was dead ("Illegal command
-             * buffer"), one program in a few starting beside others. Context
-             * 0 first: vrend's record is then context 0, which no request
-             * names, so the next command of every program's context makes
-             * its own GL context current; the new context's resources are
-             * still made in its own GL context, as before. */
+             * buffer"), one program in a few starting beside others. QEMU
+             * forces context 0 before every command; here around the two
+             * that change contexts, so vrend's record and the GL context
+             * really current agree again: context 0 before the new context
+             * is made (it shares with context 0), and after. Forced before
+             * only, the record said context 0 while the new context's GL
+             * context was current, so work vrend does "in context 0"
+             * without a switch would run there (one lab run of that hung
+             * in a GPU wait). */
             if (v->vr.force_ctx_0) v->vr.force_ctx_0();
             if (v->vr.context_create(id, (uint32_t)strlen(buf), buf)) r = ACV_ERR_RENDERER;
+            if (v->vr.force_ctx_0) v->vr.force_ctx_0();
             break;
         }
-        case ACV_CTX_DESTROY: v->vr.context_destroy(av_be32(a)); break;
+        case ACV_CTX_DESTROY:
+            v->vr.context_destroy(av_be32(a));
+            if (v->vr.force_ctx_0) v->vr.force_ctx_0();
+            break;
         case ACV_RES_CREATE: {
             struct vr_resource_create_args ra;
             uint32_t ctx = av_be32(a + 44);

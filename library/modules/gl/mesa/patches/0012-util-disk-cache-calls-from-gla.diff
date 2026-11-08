@@ -1,0 +1,35 @@
+GL.module gives Mesa's disk_cache calls its own cache (gla/gla_shader_cache.c):
+declare them without ENABLE_SHADER_CACHE, in place of the inline stubs.
+
+--- a/src/util/disk_cache.h
++++ b/src/util/disk_cache.h
+@@ -131,9 +131,18 @@
+ }
+ #endif
+ 
+-/* Provide inlined stub functions if the shader cache is disabled. */
++/* Provide inlined stub functions if the shader cache is disabled.
++ *
++ * GFOpenGPU's GL.module builds Mesa without its shader cache (zlib or zstd,
++ * a writer thread, mmap and flock) and gives these calls its own small one
++ * (library/modules/gl/gla/gla_shader_cache.c), so they are declared here
++ * either way, and the state tracker's GLSL and NIR caching works on it.
++ */
++#ifndef ENABLE_SHADER_CACHE
++#define GLA_DISK_CACHE 1
++#endif
+ 
+-#ifdef ENABLE_SHADER_CACHE
++#if defined(ENABLE_SHADER_CACHE) || defined(GLA_DISK_CACHE)
+ 
+ /**
+  * Create a new cache object.
+@@ -340,7 +349,7 @@
+ {
+ }
+ 
+-#endif /* ENABLE_SHADER_CACHE */
++#endif /* ENABLE_SHADER_CACHE || GLA_DISK_CACHE */
+ 
+ #ifdef __cplusplus
+ }

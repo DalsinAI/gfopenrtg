@@ -74,7 +74,9 @@ deals with byte order in these places:
   - 0001-0006 are the AmigaOS port. It was gfopenmesa's until
     8 October 2026; it moved here with the one-library design, and
     gfopenmesa keeps GFOpenDemos.
-  - 0007-0010 are for virgl.
+  - 0007-0011 are for virgl.
+  - 0012 declares Mesa's disk_cache calls for GL.module's shader cache
+    (below).
 
 ## GL.module and libGL.a
 
@@ -125,6 +127,65 @@ gfopengpu.library's `OGPU_ModuleOpen` (`include/gfopengpu/module.h`):
   libnix honours it only when its stack swap is linked, which defining
   `__stack` doesn't do, and the GCC 16 stove's libnix stack swap crashes.
 
+## Shader cache
+
+A program's shaders are compiled on the 68k, on softpipe and on virgl
+alike: Mesa's GLSL compiler, linker and NIR passes run in GL.module, and
+only the result goes to the host. A demo with big shaders can take minutes
+to start. GL.module keeps what it compiled, so the next run of the program
+(or another that uses the same shaders) skips that work.
+
+**What is kept.** Mesa's state tracker already caches when the screen
+hands it a cache (`get_disk_shader_cache`): glCompileShader of a source it
+has seen is skipped, and glLinkProgram loads the linked program's metadata
+and NIR instead of preprocessing, parsing, linking, translating to NIR and
+optimising. virgl's screen makes its cache itself (keyed on the host's
+caps); `gla/gla_core.c` gives softpipe's screen one. What still runs on a
+hit is the driver's part, NIR to TGSI as each variant is made: much
+smaller, and not cached (yet). A cache also turns on Mesa's
+ARB_get_program_binary / OES_get_program_binary (one binary format).
+
+**Whose cache.** Mesa is built with `-Dshader-cache=disabled`. Its own cache
+compresses (zlib or zstd, both left out), writes from a thread (a shared
+GL.module starts none), maps its index with mmap, locks with flock and
+names its files with 64 characters (FFS takes 30). Patch 0012 declares the
+disk_cache calls anyway, and `gla/gla_shader_cache.c` does them: one file
+per entry, written in the call, with the whole key, the size and a CRC-32
+in its header.
+
+| Variable | Meaning | Unset |
+|---|---|---|
+| `ENV:GFOpenGPU/ShaderCache` | the directory (made if missing), or `off` | `SYS:Storage/GFOpenGPU/ShaderCache`; `T:GFOpenGPU/ShaderCache` where SYS: can't take it |
+| `ENV:GFOpenGPU/ShaderCacheSize` | the cap in KiB (64 at least); past it the oldest entries go until three quarters is left | 4096 |
+
+The default lasts across resets. It is not in `ENVARC:`, which the
+Startup-sequence copies into RAM (`ENV:`) at every boot: the cache would
+cost its size in RAM and the copy's time on each boot. Only the variables
+go there (`SetEnv SAVE`). On a write-protected SYS:, the cache falls back
+to `T:` (usually RAM), which lasts until a reset.
+
+- **No requesters.** The cache's disk calls run with the process's
+  requesters off, so a missing volume or assign (no `T:`, a cache on a disk
+  taken out) is a miss or no cache, not "Please insert volume".
+- **Read-only.** A directory that can't be made is no cache. A write that
+  fails (write-protected, full) stops writes for the rest of the run;
+  what is there is still read.
+- **Damage.** An entry whose header, size or CRC-32 doesn't match is
+  deleted and compiled again. Entries are written under a `t` name and
+  renamed, so a reset mid-write leaves no half entry, and the leftovers go
+  at the next count.
+- **Keys.** Mesa's: the program's sources and bindings, the GL version, and
+  the cache's own part: the cache's version, the GL.module build
+  (`GLA_CACHE_BUILD`: Mesa's version and the patches' sum, from
+  `mesa/build.sh`; there is no ELF build id to take it from), the driver
+  and its id. A GL.module built from other patches never reads an older
+  one's entries; they age out under the cap.
+- **On the PC** (tests) the variables are `GLA_SHADER_CACHE` and
+  `GLA_SHADER_CACHE_SIZE`, and unset is off, so test_gla is unchanged.
+  `tests/shader_cache.sh` tests the store without building Mesa.
+- `MESA_GLSL=cache_info` should have Mesa say on standard error what it
+  put and found (libnix's getenv reads `ENV:`; not yet tried on the Amiga).
+
 ## GCC 16's FPCR clash
 
 At `-m68040`, GCC 16 sometimes saves FPCR around a float-to-int store in
@@ -143,6 +204,23 @@ CROSS=mesa/cross/m68k-amigaos.ini sh mesa/build.sh      # AmigaOS 3.2 (the os32-
 sh module/build.sh [OUT_DIR]                            # AmigaOS 3.2: GL.module, libGL.a, include/ (default build/gl)
 ACVIRGL_LIB=/path/libvirglrenderer.so.1 sh tests/run.sh
 ```
+
+A clean-room build from the open stack only (a `git archive` of a commit,
+the pinned Mesa tarball and its patches, GFOpenAmigaGCC 16.2 with libnix,
+OpenNDK's headers), packaged as the Amiga's part, with `BUILD-INFO.txt`
+saying what it was built from:
+
+```
+JOBS=2 sh module/build-open.sh WORK [COMMIT]      # WORK/out (GL.module, libGL.a), WORK/package/GFOpenGPU-GL
+sh module/package.sh OUT_DIR DEST [VERSION]       # the part alone, from module/build.sh's OUT_DIR
+```
+
+The part (`GFOpenGPU-GL/`) has OpenUp's layout: `Part`, `Libs/GFOpenGPU/GL.module`,
+the licences in `Utilities/OpenUp/Licences/`, a readme and `SHA256SUMS`;
+an `.lha` of it when `jlha` (or an `lha` that writes) is on PATH.
+cybergraphics.library's headers are the Team's clean-room ones in
+`gla/os3/include` (the numbers of `compat/cybergraphics_lib.c`), so no
+vendor CyberGraphX headers are needed.
 
 `GL_WORK` chooses the work directory, which defaults to `build/` here (about
 1 GB). A program for OS 3.2 compiles with Mesa's `include/` and

@@ -265,6 +265,55 @@ int main(void)
         CHECK(s1.presents - s0.presents == 4, "deferred presents count as presents when finished (%llu)", (unsigned long long)(s1.presents - s0.presents));
     }
 
+    /* Direct presents (acvirgl_direct_presents): the GPU writes the frame into
+     * guest memory itself. The same bytes as an ordinary present: XRGB32 and
+     * ARGB32 go direct, RGB565 falls back, flipped and not, from a resource
+     * stored either way up. Skipped where the GPU can't (not counted as direct). */
+    {
+        enum { TW = 100, TH = 80, TB = TW * 4, T = 0x60000, R = 0x80000 };
+        uint32_t a_y0[12] = { 3, 2, 1, 2 | 8, 64, 64, 1, 1, 0, 0, 1 /* VIRGL_RESOURCE_Y_0_TOP */, 1 };
+        uint32_t a_put3[14] = { 3, 1, 0, 256, 0, 0, 0, 0, 64, 64, 1, 0x40000, 64 * 64 * 4, ACV_SWAP_NONE };
+        static const uint32_t fmts[3] = { OGPU_FMT_XRGB32, OGPU_FMT_ARGB32, OGPU_FMT_RGB565 };
+        struct acvirgl_stats s0, s1;
+        uint32_t h, f, y;
+        int same = 1;
+        acvirgl_stats(v, &s0);
+        begin(); c = cmd(ACV_RES_CREATE, 12, a_y0); cp = cmd(ACV_PUT, 14, a_put3);
+        acvirgl_run(v, map, NULL, BLK, at - BLK);
+        CHECK(result(c) == 0 && result(cp) == 0, "direct: a Y_0_TOP resource and its picture (%d, %d)", result(c), result(cp));
+        for (h = 1; h <= 3; h += 2)
+            for (f = 0; f < 6; f++) {
+                uint32_t fmt = fmts[f % 3], bpr = fmt == OGPU_FMT_RGB565 ? TW * 2 : TB;
+                uint32_t pa[16] = { 1, h, 0, (10u << 16) | 5u, T, bpr, fmt, ((uint32_t)TW << 16) | TH, f >= 3 ? ACV_PRESENT_FLIP_Y : 0, 3,
+                                    (12u << 16) | 7u, (20u << 16) | 10u, (60u << 16) | 60u, (40u << 16) | 40u, (80u << 16) | 0u, (20u << 16) | 4u };
+                int32_t r0, r1;
+                acvirgl_direct_presents(v, NULL);
+                memset(arena + R, 0xEE, TB * TH);
+                pa[4] = R;
+                begin(); c = cmd(ACV_PRESENT, 16, pa);
+                acvirgl_run(v, map, NULL, BLK, at - BLK);
+                r0 = result(c);
+                acvirgl_direct_presents(v, defer_all);
+                memset(arena + T, 0xEE, TB * TH);
+                pa[4] = T;
+                begin(); c = cmd(ACV_PRESENT, 16, pa);
+                acvirgl_run(v, map, NULL, BLK, at - BLK);
+                r1 = result(c);
+                if (r0 != r1 || r0 <= 0 || memcmp(arena + R, arena + T, TB * TH)) {
+                    same = 0;
+                    for (y = 0; y < TB * TH && arena[R + y] == arena[T + y]; y++) ;
+                    printf("acvirgl: direct differs: resource %u, case %u: %d %d, byte %u: %02x %02x\n", h, f, r0, r1, y, arena[R + y], arena[T + y]);
+                }
+            }
+        acvirgl_direct_presents(v, NULL);
+        CHECK(same, "direct: the same bytes as an ordinary present");
+        begin(); h = 3; cmd(ACV_RES_UNREF, 1, &h);
+        acvirgl_run(v, map, NULL, BLK, at - BLK);
+        acvirgl_stats(v, &s1);
+        printf("acvirgl: direct %llu of %llu presents\n", (unsigned long long)(s1.direct - s0.direct), (unsigned long long)(s1.presents - s0.presents));
+        CHECK(s1.direct - s0.direct == 8 || s1.direct == s0.direct, "direct: all eight 32-bit presents, or none on a GPU that can't (%llu)", (unsigned long long)(s1.direct - s0.direct));
+    }
+
     /* Presents one frame behind (acvirgl_behind_presents): the GPU copies the
      * frame into a staging buffer at the present, and it is written once
      * settled. The same pixels as at once, for 32-bit and RGB565, flipped

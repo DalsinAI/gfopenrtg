@@ -40,6 +40,7 @@ struct acvirgl_stats {
     uint64_t deferred, deferred_ready, deferred_forced; /* presents left to finish; finished after their fence, or before */
     /* (ACVIRGL_HAS_BEHIND) a present's parts: */
     uint64_t behind;                                /* presents read back one frame behind (acvirgl_behind_presents) */
+    uint64_t direct;                                /* presents the GPU wrote straight into guest memory (acvirgl_direct_presents) */
     uint64_t present_gpu_ns;                        /* AC_VIRGL_PARTS=1: waiting for the GPU before a read back */
     uint64_t present_read_ns;                       /* the read back itself (transfer_read_iov, or mapping a staged frame) */
     uint64_t present_conv_ns;                       /* turning it into the target's format */
@@ -84,6 +85,19 @@ void acvirgl_defer_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32_
  * Replaces acvirgl_defer_presents' setting (one or the other); 0 turns it off. */
 #define ACVIRGL_HAS_BEHIND 1
 void acvirgl_behind_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32_t addr, uint32_t bytes));
+/* Direct presents (8 Nov 2026). A present into 32-bit memory that ok()
+ * allows is written by the GPU itself: a compute shader, in the frame's own
+ * GL context, turns the frame into the guest's layout (X or A, R, G, B, either
+ * way up) straight into the guest's pages, pinned as a GL buffer with
+ * GL_AMD_pinned_memory, so this side neither copies nor converts. Needs GL 4.3
+ * and that extension (AMD's radeonsi); anything else, or any failure, presents
+ * as before. It waits for the GPU (glFinish) like an ordinary present, and
+ * ok() has the rules of acvirgl_behind_presents' (not memory the runtime
+ * guards or watches). 0 turns it off and lets go of the pinned pages: call
+ * that before the guest's memory is unmapped or moved. Timed by hand on a
+ * clear-only frame, 1920x1080: 7.7 to 2.1 ms on a Vega 8, 5.5 to 2.5 ms on an RX 460. */
+#define ACVIRGL_HAS_DIRECT 1
+void acvirgl_direct_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32_t addr, uint32_t bytes));
 /* Returns how many were finished. */
 int acvirgl_settle(struct acvirgl *v, uint8_t *(*map)(void *map_user, uint32_t address, uint32_t length), void *map_user, int how);
 int acvirgl_pending(const struct acvirgl *v);

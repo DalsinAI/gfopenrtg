@@ -102,6 +102,17 @@ typedef unsigned int av_glenum;
 #define AV_GL_COLOR_ATTACHMENT0     0x8CE0
 #define AV_GL_FRAMEBUFFER_COMPLETE  0x8CD5
 #define AV_GL_MAP_READ_BIT          0x0001
+#define AV_GL_EXTERNAL_VIRTUAL_MEMORY_BUFFER_AMD 0x9160
+#define AV_GL_SHADER_STORAGE_BUFFER 0x90D2
+#define AV_GL_SHADER_STORAGE_BUFFER_BINDING 0x90D3
+#define AV_GL_SHADER_STORAGE_BUFFER_START 0x90D4
+#define AV_GL_SHADER_STORAGE_BUFFER_SIZE 0x90D5
+#define AV_GL_COMPUTE_SHADER        0x91B9
+#define AV_GL_LINK_STATUS           0x8B82
+#define AV_GL_CURRENT_PROGRAM       0x8B8D
+#define AV_GL_ACTIVE_TEXTURE        0x84E0
+#define AV_GL_TEXTURE0              0x84C0
+#define AV_GL_TEXTURE_BINDING_2D    0x8069
 
 struct av_gl {
     void (*GetIntegerv)(av_glenum, int *);
@@ -120,6 +131,26 @@ struct av_gl {
     void *(*MapBufferRange)(av_glenum, intptr_t, intptr_t, unsigned);
     unsigned char (*UnmapBuffer)(av_glenum);
     void (*Finish)(void);
+    /* direct presents' (av_direct_load), apart so they can't stop the ones above */
+    void (*ActiveTexture)(av_glenum);
+    void (*BindTexture)(av_glenum, unsigned);
+    void (*GetInteger64i_v)(av_glenum, unsigned, int64_t *);
+    void (*BindBufferBase)(av_glenum, unsigned, unsigned);
+    void (*BindBufferRange)(av_glenum, unsigned, unsigned, intptr_t, intptr_t);
+    unsigned (*CreateShader)(av_glenum);
+    void (*ShaderSource)(unsigned, int, const char *const *, const int *);
+    void (*CompileShader)(unsigned);
+    void (*DeleteShader)(unsigned);
+    unsigned (*CreateProgram)(void);
+    void (*DeleteProgram)(unsigned);
+    void (*AttachShader)(unsigned, unsigned);
+    void (*LinkProgram)(unsigned);
+    void (*GetProgramiv)(unsigned, av_glenum, int *);
+    void (*UseProgram)(unsigned);
+    void (*DispatchCompute)(unsigned, unsigned, unsigned);
+    int (*GetUniformLocation)(unsigned, const char *);
+    void (*Uniform1i)(int, int);
+    void (*Uniform4i)(int, int, int, int, int);
 };
 
 /* An ACV_PRESENT checked and placed, its pixels not yet read back and
@@ -139,6 +170,9 @@ struct av_pres {
     int lr, lg, lb, la, rev;
 };
 #define AV_PEND 16                          /* deferred presents at once */
+#define AV_DIRECT_PINS 4                    /* guest ranges kept pinned at once */
+#define AV_DIRECT_UNIT 31                   /* the texture unit and */
+#define AV_DIRECT_SSBO 7                    /* the storage binding direct presents borrow, and put back */
 
 struct acvirgl {
     int ctx0_every;                     /* context 0 before every command (QEMU's way); AC_VIRGL_CTX0=create: only around ACV_CTX_* */
@@ -157,6 +191,13 @@ struct acvirgl {
     struct av_pres pend[AV_PEND];
     int npend;
     uint64_t fence_seq;
+    /* direct presents (acvirgl_direct_presents): the guest pages pinned as GL
+     * buffers, and the compute program that writes them */
+    int (*direct_ok)(void *map_user, uint32_t addr, uint32_t bytes);
+    int direct_state;                   /* 0 untried, 1 working, -1 this GPU or GL can't */
+    unsigned direct_prog;
+    int du_src, du_dst, du_tex;
+    struct { uint8_t *base; size_t bytes; unsigned id; uint64_t used; } pin[AV_DIRECT_PINS];
     /* presents one frame behind (acvirgl_behind_presents) */
     int (*behind_ok)(void *map_user, uint32_t addr, uint32_t bytes);
     struct av_gl gl;
@@ -728,6 +769,167 @@ static int av_behind_start(struct acvirgl *v, struct av_pres *p)
     return 1;
 }
 
+/* ---- direct presents (acvirgl_direct_presents) ----------------------------------------- */
+
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+/* One rectangle of the frame in the guest's own layout: 4 bytes a pixel, A
+ * (or X, 0), R, G, B in memory, so a little-endian word B<<24 | G<<16 | R<<8 | A.
+ * src: the first row's x and y in the texture, y's step, and the top byte
+ * (0: 0, 1: 0xFF, 2: the frame's alpha). dst: the first word in the buffer,
+ * the words a row, width, height. */
+static const char av_direct_cs[] =
+    "#version 430\n"
+    "layout(local_size_x = 32, local_size_y = 32) in;\n"
+    "layout(std430, binding = 7) writeonly buffer B { uint p[]; };\n"
+    "uniform sampler2D t;\n"
+    "uniform ivec4 src;\n"
+    "uniform ivec4 dst;\n"
+    "void main() {\n"
+    "    ivec2 c = ivec2(gl_GlobalInvocationID.xy);\n"
+    "    if (c.x >= dst.z || c.y >= dst.w) return;\n"
+    "    uvec4 u = uvec4(texelFetch(t, ivec2(src.x + c.x, src.y + src.z * c.y), 0) * 255.0 + 0.5);\n"
+    "    uint a = src.w == 0 ? 0u : src.w == 1 ? 255u : u.a;\n"
+    "    p[dst.x + dst.y * c.y + c.x] = (u.b << 24) | (u.g << 16) | (u.r << 8) | a;\n"
+    "}\n";
+
+/* The GL calls and the program, once; direct_state says how it went. */
+static int av_direct_ready(struct acvirgl *v)
+{
+    void *egl;
+    void *(*gpa)(const char *);
+    unsigned s, prog;
+    int ok = 0;
+    const char *src = av_direct_cs;
+    if (v->direct_state) return v->direct_state > 0;
+    v->direct_state = -1;
+    if (!av_gl_load(v) || !(egl = dlopen("libEGL.so.1", RTLD_NOW | RTLD_LOCAL))) return 0;
+    if (!(*(void **)&gpa = dlsym(egl, "eglGetProcAddress"))) return 0;
+#define GLF(f) if (!(*(void **)&v->gl.f = gpa("gl" #f))) return 0;
+    GLF(ActiveTexture) GLF(BindTexture) GLF(GetInteger64i_v) GLF(BindBufferBase) GLF(BindBufferRange) GLF(CreateShader)
+    GLF(ShaderSource) GLF(CompileShader) GLF(DeleteShader) GLF(CreateProgram) GLF(DeleteProgram) GLF(AttachShader)
+    GLF(LinkProgram) GLF(GetProgramiv) GLF(UseProgram) GLF(DispatchCompute) GLF(GetUniformLocation) GLF(Uniform1i) GLF(Uniform4i)
+#undef GLF
+    while (v->gl.GetError()) ;
+    s = v->gl.CreateShader(AV_GL_COMPUTE_SHADER);
+    if (!s || v->gl.GetError()) return 0;       /* no compute shaders: below GL 4.3 */
+    v->gl.ShaderSource(s, 1, &src, NULL);
+    v->gl.CompileShader(s);
+    prog = v->gl.CreateProgram();
+    v->gl.AttachShader(prog, s);
+    v->gl.LinkProgram(prog);
+    v->gl.DeleteShader(s);
+    v->gl.GetProgramiv(prog, AV_GL_LINK_STATUS, &ok);
+    if (!ok) { v->gl.DeleteProgram(prog); return 0; }
+    v->direct_prog = prog;
+    v->du_src = v->gl.GetUniformLocation(prog, "src");
+    v->du_dst = v->gl.GetUniformLocation(prog, "dst");
+    v->du_tex = v->gl.GetUniformLocation(prog, "t");
+    v->direct_state = 1;
+    return 1;
+}
+
+/* A GL buffer over the guest's pages at host..host+bytes, or 0. A range
+ * already pinned is reused; the one used longest ago makes room. */
+static unsigned av_direct_pin(struct acvirgl *v, uint8_t *base, size_t bytes)
+{
+    static uint64_t tick;
+    int i, old = 0;
+    unsigned id = 0;
+    av_glenum e;
+    for (i = 0; i < AV_DIRECT_PINS; i++) {
+        if (v->pin[i].id && base >= v->pin[i].base && base + bytes <= v->pin[i].base + v->pin[i].bytes) {
+            v->pin[i].used = ++tick;
+            return v->pin[i].id;
+        }
+        if (v->pin[i].used < v->pin[old].used) old = i;
+    }
+    if (v->pin[old].id) { v->gl.DeleteBuffers(1, &v->pin[old].id); v->pin[old].id = 0; }
+    while (v->gl.GetError()) ;
+    v->gl.GenBuffers(1, &id);
+    v->gl.BindBuffer(AV_GL_EXTERNAL_VIRTUAL_MEMORY_BUFFER_AMD, id);
+    if ((e = v->gl.GetError())) {               /* no GL_AMD_pinned_memory */
+        v->gl.DeleteBuffers(1, &id);
+        if (e == 0x0500) v->direct_state = -1;  /* INVALID_ENUM: this driver never can */
+        return 0;
+    }
+    v->gl.BufferData(AV_GL_EXTERNAL_VIRTUAL_MEMORY_BUFFER_AMD, (intptr_t)bytes, base, AV_GL_STREAM_READ);
+    e = v->gl.GetError();
+    v->gl.BindBuffer(AV_GL_EXTERNAL_VIRTUAL_MEMORY_BUFFER_AMD, 0);
+    if (e) { v->gl.DeleteBuffers(1, &id); return 0; }
+    v->pin[old].base = base; v->pin[old].bytes = bytes; v->pin[old].id = id; v->pin[old].used = ++tick;
+    return id;
+}
+
+/* The frame written straight into the guest's memory by the GPU, in the
+ * guest's layout: no copy and no conversion on this side. The pixels, or -1
+ * when this present can't go this way (nothing has been changed, or the
+ * caller's own way overwrites what was), and it is presented as before. */
+static int32_t av_direct_present(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), void *mu, struct av_pres *p)
+{
+    struct vr_resource_info info;
+    const struct av_res *res = av_res_find(v, p->handle);
+    uint8_t *host, *base;
+    size_t off, bytes;
+    unsigned id;
+    int dl, dg, db, da, i, prog = 0, at = 0, tex = 0, gb = 0, ib = 0, amode, stride, y0top;
+    int64_t istart = 0, isize = 0;
+    uint64_t pixels = 0, ts = av_ns();
+    int ok;
+    memset(&info, 0, sizeof info);
+    if ((p->fmt != OGPU_FMT_XRGB32 && p->fmt != OGPU_FMT_ARGB32) || (p->bpr & 3) || (p->addr & 3) || p->layer
+        || !strcmp(v->api, "GLES") || !res || !av_layout(res->format, &dl, &dg, &db, &da)
+        || v->vr.resource_get_info((int)p->handle, &info) || !info.tex_id || info.depth > 1
+        || !av_current(v, p->ctx) || !av_direct_ready(v) || !(host = map(mu, p->addr, p->span)))
+        return -1;
+    off = (uintptr_t)host & 4095;
+    base = host - off;
+    bytes = (off + p->span + 4095) & ~(size_t)4095;
+    if (!(id = av_direct_pin(v, base, bytes))) return -1;
+    v->gl.GetIntegerv(AV_GL_CURRENT_PROGRAM, &prog);
+    v->gl.GetIntegerv(AV_GL_ACTIVE_TEXTURE, &at);
+    v->gl.ActiveTexture(AV_GL_TEXTURE0 + AV_DIRECT_UNIT);
+    v->gl.GetIntegerv(AV_GL_TEXTURE_BINDING_2D, &tex);
+    v->gl.GetIntegerv(AV_GL_SHADER_STORAGE_BUFFER_BINDING, &gb);
+    v->gl.GetInteger64i_v(AV_GL_SHADER_STORAGE_BUFFER_BINDING, AV_DIRECT_SSBO, &istart);
+    ib = (int)istart;
+    v->gl.GetInteger64i_v(AV_GL_SHADER_STORAGE_BUFFER_START, AV_DIRECT_SSBO, &istart);
+    v->gl.GetInteger64i_v(AV_GL_SHADER_STORAGE_BUFFER_SIZE, AV_DIRECT_SSBO, &isize);
+    while (v->gl.GetError()) ;
+    v->gl.BindTexture(AV_GL_TEXTURE_2D, info.tex_id);
+    v->gl.UseProgram(v->direct_prog);
+    v->gl.Uniform1i(v->du_tex, AV_DIRECT_UNIT);
+    v->gl.BindBufferBase(AV_GL_SHADER_STORAGE_BUFFER, AV_DIRECT_SSBO, id);
+    amode = p->fmt == OGPU_FMT_XRGB32 ? 0 : da == 4 ? 1 : 2;
+    stride = (int)(p->bpr / 4);
+    y0top = (info.flags & VR_RESOURCE_Y_0_TOP) != 0;
+    for (i = 0; i < p->nr; i++) {
+        int x0 = p->rect[i][0], y0 = p->rect[i][1], x1 = p->rect[i][2], y1 = p->rect[i][3];
+        int ry = p->flip ? p->rh - 1 - (y0 - p->sy) : y0 - p->sy;
+        v->gl.Uniform4i(v->du_src, x0 - p->sx, y0top ? (int)info.height - 1 - ry : ry, (p->flip != 0) == y0top ? 1 : -1, amode);
+        v->gl.Uniform4i(v->du_dst, (int)(off / 4) + y0 * stride + x0, stride, x1 - x0, y1 - y0);
+        v->gl.DispatchCompute((unsigned)(x1 - x0 + 31) / 32, (unsigned)(y1 - y0 + 31) / 32, 1);
+        pixels += (uint64_t)(x1 - x0) * (uint64_t)(y1 - y0);
+    }
+    v->gl.Finish();
+    ok = v->gl.GetError() == 0;
+    v->gl.UseProgram((unsigned)prog);
+    v->gl.BindTexture(AV_GL_TEXTURE_2D, (unsigned)tex);
+    v->gl.ActiveTexture((av_glenum)at);
+    if (isize) v->gl.BindBufferRange(AV_GL_SHADER_STORAGE_BUFFER, AV_DIRECT_SSBO, (unsigned)ib, (intptr_t)istart, (intptr_t)isize);
+    else v->gl.BindBufferBase(AV_GL_SHADER_STORAGE_BUFFER, AV_DIRECT_SSBO, (unsigned)ib);
+    v->gl.BindBuffer(AV_GL_SHADER_STORAGE_BUFFER, (unsigned)gb);
+    if (!ok) return -1;
+    v->st.presents++; v->st.present_rects += (uint64_t)p->nr; v->st.present_pixels += pixels;
+    v->st.direct++;
+    v->st.present_ns += av_ns() - ts;
+    av_parts_say(v);
+    return pixels > 0x7FFFFFFF ? 0x7FFFFFFF : (int32_t)pixels;
+}
+#else
+static int32_t av_direct_present(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), void *mu, struct av_pres *p)
+{ (void)v; (void)map; (void)mu; (void)p; return -1; }
+#endif
+
 /* ---- presents left to finish (acvirgl_defer_presents) -------------------------------- */
 
 /* Finish (or drop) the deferred presents `match` picks, oldest first. */
@@ -783,6 +985,18 @@ void acvirgl_defer_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32_
     if (ok) v->behind_ok = NULL;
 }
 
+void acvirgl_direct_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32_t addr, uint32_t bytes))
+{
+    int i;
+    if (!v) return;
+    v->direct_ok = ok;
+    if (ok) return;
+    for (i = 0; i < AV_DIRECT_PINS; i++) {      /* the guest's memory may be about to go */
+        if (v->pin[i].id && v->gl.DeleteBuffers && v->egl_current && v->egl_current()) v->gl.DeleteBuffers(1, &v->pin[i].id);
+        v->pin[i].id = 0; v->pin[i].base = NULL; v->pin[i].bytes = 0; v->pin[i].used = 0;
+    }
+}
+
 void acvirgl_behind_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32_t addr, uint32_t bytes))
 {
     if (!v) return;
@@ -813,6 +1027,10 @@ static int32_t av_present(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, u
     int32_t n = av_present_prep(v, map, mu, a, nargs, &p);
     if (n <= 0) return n;
     if (v->npend) av_settle_if(v, map, mu, av_m_overlap, &p, 0);
+    if (v->direct_ok && v->direct_ok(mu, p.addr, p.span)) {
+        int32_t d = av_direct_present(v, map, mu, &p);
+        if (d >= 0) return d;
+    }
     if (v->behind_ok && v->npend < AV_PEND && v->behind_ok(mu, p.addr, p.span)) {
         uint64_t t0 = av_ns(), t1;
         if (av_behind_start(v, &p)) {

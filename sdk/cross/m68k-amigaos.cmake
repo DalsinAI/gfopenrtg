@@ -107,12 +107,27 @@ set(_amigaos_inc "-idirafter ${AMIGAOS_KIT}/include")
 if(AMIGAOS_NDK)
     string(APPEND _amigaos_inc " -idirafter ${AMIGAOS_NDK}")
 endif()
+# A -DCMAKE_C_FLAGS=... on the first configure replaces the _INIT flags, and
+# the build would quietly lose the CPU, the runtime and the kit: put them in
+# front of such flags (once; the test keeps later configures from adding
+# them again).
+macro(_amigaos_flags_init var value)
+    set(${var}_INIT "${value}")
+    if(DEFINED CACHE{${var}})
+        string(FIND " ${${var}} " " ${value} " _amigaos_at)
+        if(_amigaos_at EQUAL -1)
+            set(${var} "${value} ${${var}}" CACHE STRING "" FORCE)
+        endif()
+    endif()
+endmacro()
 foreach(lang C CXX ASM)
-    set(CMAKE_${lang}_FLAGS_INIT "${_amigaos_flags} ${AMIGAOS_EXTRA} ${_amigaos_inc}")
+    _amigaos_flags_init(CMAKE_${lang}_FLAGS "${_amigaos_flags} ${AMIGAOS_EXTRA} ${_amigaos_inc}")
 endforeach()
 foreach(kind EXE SHARED MODULE)
-    set(CMAKE_${kind}_LINKER_FLAGS_INIT "${_amigaos_flags} -L${AMIGAOS_KIT}/lib")
+    _amigaos_flags_init(CMAKE_${kind}_LINKER_FLAGS "${_amigaos_flags} -L${AMIGAOS_KIT}/lib")
 endforeach()
+# libgcc's unwinder (any g++ link) calls pthread_mutex_lock and the like.
+set(CMAKE_CXX_STANDARD_LIBRARIES_INIT "-lpthread")
 
 # Look for headers, libraries and packages only in the kit (and the
 # compiler's own folder); programs (code generators) only on the host.

@@ -6,7 +6,7 @@
  * its mode; then, for each kind of context a GLFW program asks for (GL
  * compatibility, GLES 2.0, GLES 2.0 through the EGL API, GLES 3.1, GL 3.3
  * and 4.1 core), a window: the context's GL_VERSION and GL_RENDERER and
- * GLA's driver, a clear read back at the window's middle, frames a second
+ * GLA's driver, that the window is open on the screen, a clear read back at the window's middle, frames a second
  * through glfwSwapBuffers, and the framebuffer before and after
  * glfwSetWindowSize. Last, a window with no context, and how long
  * glfwTerminate takes.
@@ -20,6 +20,7 @@
 
 #include <GLFW/glfw3.h>
 #define GLFW_EXPOSE_NATIVE_GLA
+#define GLFW_EXPOSE_NATIVE_AMIGAOS
 #define GLFW_NATIVE_INCLUDE_NONE
 #include <GLFW/glfw3native.h>
 
@@ -102,11 +103,14 @@ static int check(const struct kind *k, double seconds)
            (const char *) glGetString(GL_VERSION), (const char *) glGetString(GL_RENDERER));
     glfwGetWindowPos(w, &x, &y);
     glfwGetFramebufferSize(w, &width, &height);
-    printf("  window at %d,%d, framebuffer %dx%d\n", x, y, width, height);
+    printf("  window at %d,%d, framebuffer %dx%d, %s\n", x, y, width, height,
+           !glfwGetWindowAttrib(w, GLFW_VISIBLE) ? "not visible" :
+           !glfwGetAmigaWindow(w) ? "visible but no Intuition window" : "open");
     fflush(stdout);
+    bad = !glfwGetWindowAttrib(w, GLFW_VISIBLE) || !glfwGetAmigaWindow(w);
 
-    bad = draw(w, seconds, &frames);
-    printf("  %d frames in %.1f s, %d read back wrong\n", frames, seconds, bad);
+    bad += draw(w, seconds, &frames);
+    printf("  %d frames in %.1f s\n", frames, seconds);
 
     glfwSetWindowSize(w, 320, 200);
     glfwPollEvents();
@@ -125,7 +129,7 @@ static int check(const struct kind *k, double seconds)
 int main(int argc, char **argv)
 {
     double seconds = 1.0;
-    int i, failed = 0;
+    int i, open, failed = 0;
     GLFWmonitor *m;
     GLFWwindow *w;
 
@@ -160,11 +164,13 @@ int main(int argc, char **argv)
     glfwDefaultWindowHints();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     w = glfwCreateWindow(160, 100, "no context", NULL, NULL);
-    printf("  %s\n", w ? "window made" : "no window");
+    open = w && glfwGetAmigaWindow(w);
+    printf("  %s\n", !w ? "no window" : open ? "window open" : "window made, not open");
     if (w) {
         glfwPollEvents();
         glfwDestroyWindow(w);
-    } else
+    }
+    if (!open)
         failed++;
 
     printf("glfwTerminate...\n");

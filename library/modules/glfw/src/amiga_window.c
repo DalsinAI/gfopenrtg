@@ -738,6 +738,14 @@ GLFWbool _glfwCreateWindowOS3(_GLFWwindow* window,
     if (wndconfig->mousePassthrough)
         _glfwSetWindowMousePassthroughOS3(window, GLFW_TRUE);
 
+    // glfwCreateWindow leaves showing a GLFW_VISIBLE window to the platform
+    if (!window->monitor && wndconfig->visible)
+    {
+        _glfwShowWindowOS3(window);
+        if (wndconfig->focused)
+            _glfwFocusWindowOS3(window);
+    }
+
     return GLFW_TRUE;
 }
 

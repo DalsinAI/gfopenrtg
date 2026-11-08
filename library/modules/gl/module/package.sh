@@ -18,7 +18,7 @@ OUT=$(CDPATH= cd -- "$1" && pwd)
 DEST=$2
 MESA=$(sed -n 's/.*"version": "\(.*\)".*/\1/p' "$GL/mesa/UPSTREAM.json")
 SRC=$(sed -n "s/^SRC='\(.*\)'$/\1/p" "${GL_WORK:-$GL/build}/mesa-build-m68k-amigaos/gla-link.env")
-COMMIT=$(cat "$REPO/.commit" 2>/dev/null || git -C "$REPO" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
+COMMIT=$(cut -c1-12 "$REPO/.commit" 2>/dev/null || git -C "$REPO" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
 VERSION=${3:-$MESA-$COMMIT}
 [ -f "$OUT/GL.module" ] || { echo "package: no $OUT/GL.module (run module/build.sh)"; exit 1; }
 [ -f "$SRC/docs/license.rst" ] || { echo "package: no Mesa tree at $SRC for its licence"; exit 1; }

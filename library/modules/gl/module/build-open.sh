@@ -67,7 +67,7 @@ J=$WORK/src/library/modules/gl/mesa/UPSTREAM.json
 {
     echo "GL.module, built clean room from the open stack"
     echo "built:      $(date -u '+%Y-%m-%d %H:%M UTC') on $(uname -srm)"
-    echo "gfopenrtg:  $COMMIT ($(git -C "$REPO" log -1 --format='%ci %s' "$COMMIT"))"
+    echo "gfopenrtg:  $COMMIT, tree $(git -C "$REPO" rev-parse "$COMMIT^{tree}") ($(git -C "$REPO" log -1 --format='%ci %s' "$COMMIT"))"
     echo "mesa:       $(sed -n 's/.*"file": "\(.*\)".*/\1/p' "$J") sha256 $(sed -n 's/.*"sha256": "\(.*\)".*/\1/p' "$J")"
     echo "patches:    $(ls "$WORK/src/library/modules/gl/mesa/patches" | tr '\n' ' ')"
     echo "            sum $(cat "$GLW"/mesa-*/.gla-patched)"
@@ -78,10 +78,13 @@ J=$WORK/src/library/modules/gl/mesa/UPSTREAM.json
     echo "meson:      $(meson --version); ninja $("$NINJA" --version) -j$JOBS; python $(${PYTHON:-python3} --version 2>&1 | cut -d' ' -f2)"
     echo "mesa flags: $(sed -n "s/^FLAGS='\(.*\)'$/\1/p" "$B/gla-link.env")"
     echo "link flags: $(sed -n "s/^MESA_LFLAGS='\(.*\)'$/\1/p" "$B/gla-link.env")"
-    echo "options:    $(grep -o "\-D[a-z0-9_-]*=[^ ]*" "$WORK/src/library/modules/gl/mesa/build.sh" | tr '\n' ' ')"
+    echo "options:    $(grep -o "\-D[a-z0-9_-]*=[^ \"]*" "$WORK/src/library/modules/gl/mesa/build.sh" | tr '\n' ' ')"
     echo
     (cd "$OUT" && sha256sum GL.module libGL.a)
-} > "$OUT/BUILD-INFO.txt"
+} > "$WORK/build-info.raw"
+# It ships in the part: no paths of this machine's (its home, the work
+# directory), and gla-link.env's shell quoting undone.
+sed -e "s|$WORK|WORK|g" -e "s|$HOME|~|g" -e "s/'\\\\''/'/g" "$WORK/build-info.raw" > "$OUT/BUILD-INFO.txt"
 
 # 6. The Amiga's part.
 GL_WORK=$GLW sh "$WORK/src/library/modules/gl/module/package.sh" "$OUT" "$WORK/package"

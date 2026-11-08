@@ -6,11 +6,11 @@ pkg-config and CMake files, examples, notices and documents for building
 programs on GFOpenGPU (gfopengpu.library, SDL2.module and GL.module) with bebbo's
 m68k-amigaos-gcc, on the PC or on the Amiga.
 
-    tools/make_sdk.py --build BUILD --gl GL_OUT [--mesa MESA_SRC] [--sdl12 SDL12_OUT] [--version 0.6] OUT_DIR [--archives]
+    tools/make_sdk.py --build BUILD --gl GL_OUT [--mesa MESA_SRC] [--sdl12 SDL12_OUT] [--glfw GLFW_OUT] [--version 0.6] OUT_DIR [--archives]
 
 BUILD    library/build.sh's output (the SDL 2 libraries and headers, its
          sdl2-work/ with the pinned sources' notices, libminigl.a, libmgl.a,
-         libtinygl.a)
+         libtinygl.a, libEGL.a)
 GL_OUT   library/modules/gl/module/build.sh's output (libGL.a, include/gla)
 MESA_SRC Mesa's source tree, for GL's and Khronos's headers; default: SRC
          in GL_WORK's gla-link.env (GL_WORK, default the GL module's build/)
@@ -18,6 +18,9 @@ SDL12_OUT SDL 1.2 (sdl12-compat on GFOpenGPU's SDL 2): library/modules/sdl12's
          output, a folder with include/SDL/ (sdl12-compat's headers), libSDL.a
          and LICENSE.txt; default BUILD/sdl12 when it is there. Without it the
          kit has no SDL 1.2 (no SDL/, -lSDL or sdl-config).
+GLFW_OUT GLFW 3.4 on GLA: library/modules/glfw's output, laid out as the kit
+         (include/GLFW/, lib/libglfw3.a, lib/pkgconfig/glfw3.pc,
+         lib/cmake/glfw3/, LICENSE.md); default BUILD/glfw when it is there.
 
 GLU and GLUT come from BUILD/glu and BUILD/glut (library/modules/glu and
 glut's build.sh) when they are there: GL/glu.h, libGLU.a, GL/glut.h and
@@ -51,7 +54,7 @@ SAT_VERSIONS = {"SDL2_image": "2.8.12", "SDL2_mixer": "2.8.2", "SDL2_ttf": "2.24
 CPU = "-m68040 -m68881"
 
 # The Team's headers in include/, by directory (all MIT, AmiCradle Team).
-OWN_INCLUDE = ("gfopengpu", "gfopenrtg", "proto", "inline", "clib", "libraries", "Warp3D", "mgl", "tgl")
+OWN_INCLUDE = ("gfopengpu", "gfopenrtg", "proto", "inline", "clib", "libraries", "Warp3D", "mgl", "tgl", "EGL")
 # GL's headers from Mesa: Mesa's gl.h (MIT) and Khronos's (MIT; the two
 # platform headers Apache 2.0). GLX, WGL and GLES 1 (which GLA doesn't
 # give) stay out, and so does GLES3/gl3ext.h, an empty header whose licence
@@ -65,7 +68,7 @@ MESA_HEADERS = ("GL/gl.h", "GL/glext.h", "GL/glcorearb.h",
 # same libraries inside the program.
 LIBS = ("libSDL2.a", "libSDL2_test.a", "libSDL2_image.a", "libSDL2_mixer.a",
         "libSDL2_image_static.a", "libSDL2_mixer_static.a", "libSDL2_ttf.a",
-        "libSDL2_net.a", "libminigl.a", "libmgl.a", "libtinygl.a")
+        "libSDL2_net.a", "libminigl.a", "libmgl.a", "libtinygl.a", "libEGL.a")
 # SDL 1.2: sdl12-compat (Zlib) on GFOpenGPU's SDL 2, when --sdl12 gives it.
 SDL12_VERSION = "1.2.78"
 # GLU (SGI's, Mesa's glu) and GLUT (freeglut's interface), when BUILD has them.
@@ -265,6 +268,8 @@ PC = {
            "-L${libdir} -lGL -lm", "-I${includedir}"),
     "glesv2": ("glesv2", "OpenGL ES 2 and 3 on GFOpenGPU (LIBS:GFOpenGPU/GL.module)", "26.2.4", "",
                "-L${libdir} -lGL -lm", "-I${includedir}"),
+    "egl": ("egl", "EGL 1.4 on GFOpenGPU's GL (libEGL.a, on GLA; LIBS:GFOpenGPU/GL.module)", "1.4", "gl",
+            "-L${libdir} -lEGL", "-I${includedir}"),
     "tinygl": ("tinygl", "TinyGL's interface on GFOpenGPU's GL (libtinygl.a, LIBS:GFOpenGPU/GL.module)", "53.1", "gl",
                "-L${libdir} -ltinygl", "-I${includedir}"),
 }
@@ -343,6 +348,22 @@ endif()
 '''
 
 
+def copy_cross(dst: Path) -> None:
+    """sdk/cross/: the CMake toolchain file and the meson cross file. The
+    CMake one finds the kit from where it is (kit/cross/); the meson one is
+    given the kit's place (@DIRNAME@) and the compilers from PATH."""
+    src = SDK / "cross"
+    copy(src / "m68k-amigaos.cmake", dst / "m68k-amigaos.cmake")
+    copy(src / "Platform" / "AmigaOS.cmake", dst / "Platform" / "AmigaOS.cmake")
+    ini = (src / "m68k-amigaos.ini").read_text()
+    for name, value in (("kit", "'@DIRNAME@' / '..'"), ("cross", "'m68k-amigaos-'"),
+                        ("ndk", "'@DIRNAME@' / '..' / 'include'")):
+        ini, n = re.subn(rf"^{name} = .*$", f"{name} = {value}", ini, count=1, flags=re.M)
+        if n != 1:
+            die(f"m68k-amigaos.ini: no constant {name}")
+    (dst / "m68k-amigaos.ini").write_text(ini)
+
+
 def make_kit(args) -> Path:
     build, gl = Path(args.build).resolve(), Path(args.gl).resolve()
     work = build / "sdl2-work"
@@ -352,6 +373,9 @@ def make_kit(args) -> Path:
         sdl12 = build / "sdl12"
     glu, glut = build / "glu", build / "glut"
     has_glut = (glu / "lib" / "libGLU.a").is_file() and (glut / "lib" / "libglut.a").is_file()
+    glfw = Path(args.glfw).resolve() if args.glfw else None
+    if not glfw and (build / "glfw" / "lib" / "libglfw3.a").is_file():
+        glfw = build / "glfw"
     kit = Path(args.out).resolve() / f"GFOpenGPU-SDK-{args.version}"
     if kit.exists():
         die(f"{kit} is there already: choose another OUT_DIR, or move it away")
@@ -418,7 +442,19 @@ def make_kit(args) -> Path:
         copy(sdl12 / "libSDL.a", lib / "libSDL.a")
         copy(sdl12 / "libSDL_gl.a", lib / "libSDL_gl.a")
 
-    # 3c. GLU (SGI Free Software License B 2.0) and GLUT (freeglut's headers,
+    # 3c. GLFW 3.4 (Zlib) with the Team's AmigaOS platform, when given: its
+    #     headers, library, pkg-config and CMake files, as built.
+    if glfw:
+        for f in ("include/GLFW/glfw3.h", "include/GLFW/glfw3native.h", "lib/libglfw3.a",
+                  "lib/pkgconfig/glfw3.pc", "lib/cmake/glfw3/glfw3Config.cmake",
+                  "lib/cmake/glfw3/glfw3ConfigVersion.cmake"):
+            if not (glfw / f).is_file():
+                die(f"no {f} in {glfw}")
+            if f.endswith(".h") and licence_of(glfw / f) != "Zlib":
+                die(f"{glfw / f}: licence unclear")
+            copy(glfw / f, kit / f)
+
+    # 3d. GLU (SGI Free Software License B 2.0) and GLUT (freeglut's headers,
     #     MIT), when BUILD has them.
     if has_glut:
         f = glu / "include" / "GL" / "glu.h"
@@ -472,6 +508,7 @@ def make_kit(args) -> Path:
     left_out = ([] if sdl12 else ["sdl12"]) + ([] if has_glut else ["glut"])
     shutil.copytree(SDK / "examples", kit / "examples",
                     ignore=shutil.ignore_patterns(*left_out) if left_out else None)
+    copy_cross(kit / "cross")
     copy(SDK / "README", kit / "README")
     copy(SDK / "AutoDocs-GFOpenGPU.md", kit / "AutoDocs-GFOpenGPU.md")
 
@@ -479,7 +516,7 @@ def make_kit(args) -> Path:
     L = kit / "Licences"
     L.mkdir()
     copy(ROOT / "LICENSE", L / "OpenGPU.txt")
-    notices.append(("GFOpenGPU, GFOpenRTG, Warp3D, MiniGL, TinyGL and GLA headers; libGL.a, libminigl.a, libmgl.a, libtinygl.a; libSDL2.a's SDL2_gl.o; sdl2-config, sdl-config, the pkg-config and CMake files; the examples", "MIT, AmiCradle Team (OpenGPU.txt)"))
+    notices.append(("GFOpenGPU, GFOpenRTG, Warp3D, MiniGL, TinyGL, GLA and EGL headers; libGL.a, libminigl.a, libmgl.a, libtinygl.a, libEGL.a; libSDL2.a's SDL2_gl.o; sdl2-config, sdl-config, the pkg-config and CMake files, the cross files; the examples", "MIT, AmiCradle Team (OpenGPU.txt)"))
     if sdl12:
         copy(sdl12 / "LICENSE.txt", L / "sdl12-compat.txt")
         notices.append((f"sdl12-compat {SDL12_VERSION}: SDL/ headers, libSDL.a (altered by the Team for AmigaOS 3; with dr_mp3: public domain or MIT-0). libSDL.a also holds libSDL2.a's members, renamed SDL2X_; libSDL_gl.a", "Zlib (sdl12-compat.txt)"))
@@ -488,6 +525,9 @@ def make_kit(args) -> Path:
         notices.append((f"GLU {GLU_VERSION} (SGI's libGLU, Mesa's glu repository): GL/glu.h, libGLU.a (with glu_cxx.o, the Team's, MIT)", "SGI Free Software License B 2.0 (SGI-FreeB-2.0.txt)"))
         copy(glut / "LICENSE.txt", L / "freeglut.txt")
         notices.append((f"freeglut {FREEGLUT_VERSION}: GL/glut.h, GL/freeglut*.h (GLUT_ES_PROFILE added by the Team), libglut.a's shapes, teapot and fonts; the rest of libglut.a is the Team's (MIT)", "MIT/X11 (freeglut.txt)"))
+    if glfw:
+        copy(glfw / "LICENSE.md", L / "GLFW.txt")
+        notices.append(("GLFW 3.4: GLFW/ headers, libglfw3.a (with the Team's AmigaOS platform, src/amiga_*.c, also Zlib), glfw3.pc and lib/cmake/glfw3", "Zlib (GLFW.txt)"))
     sdl = work / f"SDL2-{SDL_VERSION}"
     copy(sdl / "LICENSE.txt", L / "SDL2.txt")
     notices.append((f"SDL {SDL_VERSION}: SDL2/ headers (SDL_config.h is the Team's SDL_config_amigaos.h, MIT), libSDL2.a (SDL's dynamic API, altered by the Team), libSDL2_test.a", "Zlib (SDL2.txt)"))
@@ -580,6 +620,7 @@ def main() -> int:
     ap.add_argument("--gl", default=str(ROOT / "build" / "gl"))
     ap.add_argument("--mesa")
     ap.add_argument("--sdl12", help="sdl12-compat's build (include/SDL/, libSDL.a, LICENSE.txt); default BUILD/sdl12")
+    ap.add_argument("--glfw", help="library/modules/glfw's build (include/GLFW/, lib/libglfw3.a ...); default BUILD/glfw")
     ap.add_argument("--version", default="0.6")
     ap.add_argument("--stove", default=os.environ.get("STOVE16", str(Path.home() / "AmiCradle/stoves/os32-gcc16/prefix")),
                     help="a stove prefix, for m68k-amigaos-ar when it isn't on PATH")

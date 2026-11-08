@@ -26,6 +26,7 @@
 #include "util/u_memory.h"
 #include "util/u_math.h"
 #include "util/u_endian.h"
+#include "util/disk_cache.h"
 
 #include "glapi/glapi.h"
 
@@ -306,6 +307,19 @@ void gla_set_softpipe_hook(gla_softpipe_hook_fn hook) { softpipe_hook = hook; }
 void gla_note_why(const char *why) { virgl_why = why; }
 const char *gla_last_why(void) { return virgl_why; }
 
+/* Softpipe's shader cache (gla_shader_cache.c); virgl makes its own. One
+ * for all of a program's softpipe screens, made with the first and gone
+ * with the last. With it, Mesa's state tracker keeps linked programs as NIR
+ * and skips compiling and linking what it has seen. */
+static struct disk_cache *softpipe_cache;
+static int softpipe_cache_users;
+
+static struct disk_cache *softpipe_get_disk_shader_cache(struct pipe_screen *screen)
+{
+    (void)screen;
+    return softpipe_cache;
+}
+
 struct gla_display *gla_display_create(void)
 {
     struct gla_display *d;
@@ -322,6 +336,9 @@ struct gla_display *gla_display_create(void)
         FREE(d);
         return NULL;
     }
+    if (!softpipe_cache_users++)
+        softpipe_cache = disk_cache_create("softpipe", "gla", 0);
+    d->fscreen.screen->get_disk_shader_cache = softpipe_get_disk_shader_cache;
     d->fscreen.get_param = fs_get_param;
     return d;
 }
@@ -364,6 +381,10 @@ void gla_display_destroy(struct gla_display *d)
     d->fscreen.screen->destroy(d->fscreen.screen);   /* softpipe and virgl destroy their winsys too */
     if (d->virgl)
         d->ws->destroy(d->ws);                       /* virgl's display targets' */
+    else if (!--softpipe_cache_users) {
+        disk_cache_destroy(softpipe_cache);
+        softpipe_cache = NULL;
+    }
     FREE(d);
 }
 

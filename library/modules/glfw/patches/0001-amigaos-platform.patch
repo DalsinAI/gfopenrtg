@@ -1,0 +1,265 @@
+diff --git a/include/GLFW/glfw3.h b/include/GLFW/glfw3.h
+index 9c55ac9..3659b66 100644
+--- a/include/GLFW/glfw3.h
++++ b/include/GLFW/glfw3.h
+@@ -1341,6 +1341,8 @@ extern "C" {
+ #define GLFW_PLATFORM_WAYLAND       0x00060003
+ #define GLFW_PLATFORM_X11           0x00060004
+ #define GLFW_PLATFORM_NULL          0x00060005
++/* AmigaOS 3 (GFOpenGPU's GLA): not an upstream GLFW platform */
++#define GLFW_PLATFORM_AMIGAOS       0x00060006
+ /*! @} */
+ 
+ #define GLFW_DONT_CARE              -1
+diff --git a/include/GLFW/glfw3native.h b/include/GLFW/glfw3native.h
+index 92f0d32..77943d2 100644
+--- a/include/GLFW/glfw3native.h
++++ b/include/GLFW/glfw3native.h
+@@ -155,6 +155,12 @@ extern "C" {
+   #include <GL/osmesa.h>
+  #endif
+ 
++ #if defined(GLFW_EXPOSE_NATIVE_AMIGAOS)
++  #include <intuition/intuition.h>
++ #endif
++ #if defined(GLFW_EXPOSE_NATIVE_GLA)
++  #include <gla/gla_core.h>
++ #endif
+ #endif /*GLFW_NATIVE_INCLUDE_NONE*/
+ 
+ 
+@@ -588,6 +594,41 @@ GLFWAPI EGLContext glfwGetEGLContext(GLFWwindow* window);
+ GLFWAPI EGLSurface glfwGetEGLSurface(GLFWwindow* window);
+ #endif
+ 
++#if defined(GLFW_EXPOSE_NATIVE_AMIGAOS)
++/*! @brief Returns the Intuition window of the specified window.
++ *
++ *  @return The `struct Window` of the specified window, or `NULL` while it
++ *  is hidden (AmigaOS 3 windows open when shown) or if an
++ *  [error](@ref error_handling) occurred.
++ *
++ *  @errors Possible errors include @ref GLFW_NOT_INITIALIZED and @ref
++ *  GLFW_PLATFORM_UNAVAILABLE.
++ */
++GLFWAPI struct Window* glfwGetAmigaWindow(GLFWwindow* window);
++
++/*! @brief Returns the Intuition screen the specified window is on.
++ *
++ *  @return The Workbench, the full screen window's own screen, or `NULL`
++ *  while the window is hidden or if an [error](@ref error_handling) occurred.
++ */
++GLFWAPI struct Screen* glfwGetAmigaScreen(GLFWwindow* window);
++#endif
++
++#if defined(GLFW_EXPOSE_NATIVE_GLA)
++/*! @brief Returns the GLA context of the specified window.
++ *
++ *  @return The `struct gla_context` of the specified window, or `NULL` if
++ *  an [error](@ref error_handling) occurred.
++ */
++GLFWAPI struct gla_context* glfwGetGLAContext(GLFWwindow* window);
++
++/*! @brief Returns the driver GL runs on: `"virgl"` (the PC's graphics chip
++ *  on AmiCradle) or `"softpipe"` (the 68k), or `NULL` before the first
++ *  context.
++ */
++GLFWAPI const char* glfwGetGLADriver(void);
++#endif
++
+ #if defined(GLFW_EXPOSE_NATIVE_OSMESA)
+ /*! @brief Retrieves the color buffer associated with the specified window.
+  *
+diff --git a/src/platform.c b/src/platform.c
+index af1b0f4..f9b39b3 100644
+--- a/src/platform.c
++++ b/src/platform.c
+@@ -56,6 +56,9 @@ static const struct
+ #if defined(_GLFW_X11)
+     { GLFW_PLATFORM_X11, _glfwConnectX11 },
+ #endif
++#if defined(_GLFW_AMIGAOS)
++    { GLFW_PLATFORM_AMIGAOS, _glfwConnectOS3 },
++#endif
+ };
+ 
+ GLFWbool _glfwSelectPlatform(int desiredID, _GLFWplatform* platform)
+@@ -68,6 +71,7 @@ GLFWbool _glfwSelectPlatform(int desiredID, _GLFWplatform* platform)
+         desiredID != GLFW_PLATFORM_COCOA &&
+         desiredID != GLFW_PLATFORM_WAYLAND &&
+         desiredID != GLFW_PLATFORM_X11 &&
++        desiredID != GLFW_PLATFORM_AMIGAOS &&
+         desiredID != GLFW_PLATFORM_NULL)
+     {
+         _glfwInputError(GLFW_INVALID_ENUM, "Invalid platform ID 0x%08X", desiredID);
+@@ -147,6 +151,7 @@ GLFWAPI int glfwPlatformSupported(int platformID)
+         platformID != GLFW_PLATFORM_COCOA &&
+         platformID != GLFW_PLATFORM_WAYLAND &&
+         platformID != GLFW_PLATFORM_X11 &&
++        platformID != GLFW_PLATFORM_AMIGAOS &&
+         platformID != GLFW_PLATFORM_NULL)
+     {
+         _glfwInputError(GLFW_INVALID_ENUM, "Invalid platform ID 0x%08X", platformID);
+@@ -181,6 +186,9 @@ GLFWAPI const char* glfwGetVersionString(void)
+ #endif
+ #if defined(_GLFW_X11)
+         " X11 GLX"
++#endif
++#if defined(_GLFW_AMIGAOS)
++        " AmigaOS GLA"
+ #endif
+         " Null"
+         " EGL"
+diff --git a/src/platform.h b/src/platform.h
+index 75652dc..d2df9ee 100644
+--- a/src/platform.h
++++ b/src/platform.h
+@@ -33,7 +33,10 @@
+     defined(GLFW_BUILD_POSIX_MODULE) || \
+     defined(GLFW_BUILD_POSIX_THREAD) || \
+     defined(GLFW_BUILD_POSIX_POLL) || \
+-    defined(GLFW_BUILD_LINUX_JOYSTICK)
++    defined(GLFW_BUILD_LINUX_JOYSTICK) || \
++    defined(GLFW_BUILD_OS3_TIMER) || \
++    defined(GLFW_BUILD_OS3_MODULE) || \
++    defined(GLFW_BUILD_OS3_THREAD)
+  #error "You must not define these; define zero or more _GLFW_<platform> macros instead"
+ #endif
+ 
+@@ -90,6 +93,19 @@
+  #define GLFW_GLX_LIBRARY_CONTEXT_STATE
+ #endif
+ 
++#if defined(_GLFW_AMIGAOS)
++ #include "amiga_platform.h"
++ #define GLFW_EXPOSE_NATIVE_AMIGAOS
++ #define GLFW_EXPOSE_NATIVE_GLA
++#else
++ #define GLFW_OS3_WINDOW_STATE
++ #define GLFW_OS3_MONITOR_STATE
++ #define GLFW_OS3_CURSOR_STATE
++ #define GLFW_OS3_LIBRARY_WINDOW_STATE
++ #define GLFW_GLA_CONTEXT_STATE
++ #define GLFW_GLA_LIBRARY_CONTEXT_STATE
++#endif
++
+ #include "null_joystick.h"
+ 
+ #if defined(_GLFW_WIN32)
+@@ -106,6 +122,13 @@
+  #define GLFW_COCOA_LIBRARY_JOYSTICK_STATE
+ #endif
+ 
++#if defined(_GLFW_AMIGAOS)
++ #include "amiga_joystick.h"
++#else
++ #define GLFW_OS3_JOYSTICK_STATE
++ #define GLFW_OS3_LIBRARY_JOYSTICK_STATE
++#endif
++
+ #if (defined(_GLFW_X11) || defined(_GLFW_WAYLAND)) && defined(__linux__)
+  #define GLFW_BUILD_LINUX_JOYSTICK
+ #endif
+@@ -118,6 +141,7 @@
+ #endif
+ 
+ #define GLFW_PLATFORM_WINDOW_STATE \
++        GLFW_OS3_WINDOW_STATE \
+         GLFW_WIN32_WINDOW_STATE \
+         GLFW_COCOA_WINDOW_STATE \
+         GLFW_WAYLAND_WINDOW_STATE \
+@@ -125,6 +149,7 @@
+         GLFW_NULL_WINDOW_STATE \
+ 
+ #define GLFW_PLATFORM_MONITOR_STATE \
++        GLFW_OS3_MONITOR_STATE \
+         GLFW_WIN32_MONITOR_STATE \
+         GLFW_COCOA_MONITOR_STATE \
+         GLFW_WAYLAND_MONITOR_STATE \
+@@ -132,6 +157,7 @@
+         GLFW_NULL_MONITOR_STATE \
+ 
+ #define GLFW_PLATFORM_CURSOR_STATE \
++        GLFW_OS3_CURSOR_STATE \
+         GLFW_WIN32_CURSOR_STATE \
+         GLFW_COCOA_CURSOR_STATE \
+         GLFW_WAYLAND_CURSOR_STATE \
+@@ -139,11 +165,13 @@
+         GLFW_NULL_CURSOR_STATE \
+ 
+ #define GLFW_PLATFORM_JOYSTICK_STATE \
++        GLFW_OS3_JOYSTICK_STATE \
+         GLFW_WIN32_JOYSTICK_STATE \
+         GLFW_COCOA_JOYSTICK_STATE \
+         GLFW_LINUX_JOYSTICK_STATE
+ 
+ #define GLFW_PLATFORM_LIBRARY_WINDOW_STATE \
++        GLFW_OS3_LIBRARY_WINDOW_STATE \
+         GLFW_WIN32_LIBRARY_WINDOW_STATE \
+         GLFW_COCOA_LIBRARY_WINDOW_STATE \
+         GLFW_WAYLAND_LIBRARY_WINDOW_STATE \
+@@ -151,27 +179,36 @@
+         GLFW_NULL_LIBRARY_WINDOW_STATE \
+ 
+ #define GLFW_PLATFORM_LIBRARY_JOYSTICK_STATE \
++        GLFW_OS3_LIBRARY_JOYSTICK_STATE \
+         GLFW_WIN32_LIBRARY_JOYSTICK_STATE \
+         GLFW_COCOA_LIBRARY_JOYSTICK_STATE \
+         GLFW_LINUX_LIBRARY_JOYSTICK_STATE
+ 
+ #define GLFW_PLATFORM_CONTEXT_STATE \
++        GLFW_GLA_CONTEXT_STATE \
+         GLFW_WGL_CONTEXT_STATE \
+         GLFW_NSGL_CONTEXT_STATE \
+         GLFW_GLX_CONTEXT_STATE
+ 
+ #define GLFW_PLATFORM_LIBRARY_CONTEXT_STATE \
++        GLFW_GLA_LIBRARY_CONTEXT_STATE \
+         GLFW_WGL_LIBRARY_CONTEXT_STATE \
+         GLFW_NSGL_LIBRARY_CONTEXT_STATE \
+         GLFW_GLX_LIBRARY_CONTEXT_STATE
+ 
+ #if defined(_WIN32)
+  #define GLFW_BUILD_WIN32_THREAD
++#elif defined(__amigaos__)
++ #define GLFW_BUILD_OS3_THREAD
+ #else
+  #define GLFW_BUILD_POSIX_THREAD
+ #endif
+ 
+-#if defined(GLFW_BUILD_WIN32_THREAD)
++#if defined(GLFW_BUILD_OS3_THREAD)
++ #include "amiga_thread.h"
++ #define GLFW_PLATFORM_TLS_STATE    GLFW_OS3_TLS_STATE
++ #define GLFW_PLATFORM_MUTEX_STATE  GLFW_OS3_MUTEX_STATE
++#elif defined(GLFW_BUILD_WIN32_THREAD)
+  #include "win32_thread.h"
+  #define GLFW_PLATFORM_TLS_STATE    GLFW_WIN32_TLS_STATE
+  #define GLFW_PLATFORM_MUTEX_STATE  GLFW_WIN32_MUTEX_STATE
+@@ -185,11 +222,16 @@
+  #define GLFW_BUILD_WIN32_TIMER
+ #elif defined(__APPLE__)
+  #define GLFW_BUILD_COCOA_TIMER
++#elif defined(__amigaos__)
++ #define GLFW_BUILD_OS3_TIMER
+ #else
+  #define GLFW_BUILD_POSIX_TIMER
+ #endif
+ 
+-#if defined(GLFW_BUILD_WIN32_TIMER)
++#if defined(GLFW_BUILD_OS3_TIMER)
++ #include "amiga_time.h"
++ #define GLFW_PLATFORM_LIBRARY_TIMER_STATE  GLFW_OS3_LIBRARY_TIMER_STATE
++#elif defined(GLFW_BUILD_WIN32_TIMER)
+  #include "win32_time.h"
+  #define GLFW_PLATFORM_LIBRARY_TIMER_STATE  GLFW_WIN32_LIBRARY_TIMER_STATE
+ #elif defined(GLFW_BUILD_COCOA_TIMER)
+@@ -202,6 +244,8 @@
+ 
+ #if defined(_WIN32)
+  #define GLFW_BUILD_WIN32_MODULE
++#elif defined(__amigaos__)
++ #define GLFW_BUILD_OS3_MODULE
+ #else
+  #define GLFW_BUILD_POSIX_MODULE
+ #endif

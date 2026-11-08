@@ -307,13 +307,13 @@ int main(void)
                 uint32_t pa[16] = { 1, h, 0, (10u << 16) | 5u, T, bpr, fmt, ((uint32_t)TW << 16) | TH, f >= 3 ? ACV_PRESENT_FLIP_Y : 0, 3,
                                     (12u << 16) | 7u, (20u << 16) | 10u, (60u << 16) | 60u, (40u << 16) | 40u, (80u << 16) | 0u, (20u << 16) | 4u };
                 int32_t r0, r1;
-                acvirgl_direct_presents(v, NULL, NULL);
+                acvirgl_direct_presents(v, NULL, NULL, NULL);
                 memset(arena + R, 0xEE, TB * TH);
                 pa[4] = R;
                 begin(); c = cmd(ACV_PRESENT, 16, pa);
                 acvirgl_run(v, map, NULL, BLK, at - BLK);
                 r0 = result(c);
-                acvirgl_direct_presents(v, defer_all, NULL);
+                acvirgl_direct_presents(v, defer_all, NULL, NULL);
                 memset(arena + T, 0xEE, TB * TH);
                 pa[4] = T;
                 begin(); c = cmd(ACV_PRESENT, 16, pa);
@@ -335,13 +335,13 @@ int main(void)
                                     (12u << 16) | 7u, (20u << 16) | 10u, (60u << 16) | 60u, (40u << 16) | 40u, (80u << 16) | 0u, (20u << 16) | 4u };
                 int32_t r0, r1;
                 acvirgl_stats(v, &m0);
-                acvirgl_direct_presents(v, NULL, NULL);
+                acvirgl_direct_presents(v, NULL, NULL, NULL);
                 memset(arena + R, 0xEE, TB * TH);
                 pa[4] = R;
                 begin(); c = cmd(ACV_PRESENT, 16, pa);
                 acvirgl_run(v, map, NULL, BLK, at - BLK);
                 r0 = result(c);
-                acvirgl_direct_presents(v, defer_all, mf_file);
+                acvirgl_direct_presents(v, defer_all, mf_file, NULL);
                 memset(mf + 0x8000, 0xEE, TB * TH);
                 pa[4] = MF_AT + 0x8000;
                 begin(); c = cmd(ACV_PRESENT, 16, pa);
@@ -356,13 +356,13 @@ int main(void)
                 begin(); c = cmd(ACV_PRESENT, 16, pa);
                 acvirgl_run(v, map, NULL, BLK, at - BLK);
                 CHECK(result(c) == r0 && !memcmp(arena + R, mf + 0x8000, TB * TH), "direct: after acvirgl_direct_forget, the file still written");
-                acvirgl_direct_presents(v, NULL, NULL);
+                acvirgl_direct_presents(v, NULL, NULL, NULL);
                 munmap(mf, MF_SIZE); mf = NULL;
             }
             if (mf_fd >= 0) close(mf_fd);
             mf_fd = -1;
         }
-        acvirgl_direct_presents(v, NULL, NULL);
+        acvirgl_direct_presents(v, NULL, NULL, NULL);
         CHECK(same, "direct: the same bytes as an ordinary present");
         begin(); h = 3; cmd(ACV_RES_UNREF, 1, &h);
         acvirgl_run(v, map, NULL, BLK, at - BLK);

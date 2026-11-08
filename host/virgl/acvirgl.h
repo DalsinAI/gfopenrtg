@@ -94,6 +94,7 @@ void acvirgl_behind_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32
  *     (*fd, *offset of addr in it, *size of it; returns 1): it is imported
  *     through /dev/udmabuf and GL_EXT_memory_object_fd, in windows;
  *   otherwise anonymous memory is pinned with GL_AMD_pinned_memory.
+ * Both callbacks are given user, whatever the block's map_user is.
  * Anything else, or any failure, presents as before. It waits for the GPU
  * (glFinish) like an ordinary present, and ok() has the rules of
  * acvirgl_behind_presents' (not memory the runtime guards or watches). Ok 0
@@ -103,8 +104,8 @@ void acvirgl_behind_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32
  * by hand on a clear-only frame, 1920x1080: 7.7 to 1.9 ms on a Vega 8 (memfd
  * through udmabuf). */
 #define ACVIRGL_HAS_DIRECT 1
-void acvirgl_direct_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32_t addr, uint32_t bytes),
-                             int (*file)(void *map_user, uint32_t addr, int *fd, uint64_t *offset, uint64_t *size));
+void acvirgl_direct_presents(struct acvirgl *v, int (*ok)(void *user, uint32_t addr, uint32_t bytes),
+                             int (*file)(void *user, uint32_t addr, int *fd, uint64_t *offset, uint64_t *size), void *user);
 void acvirgl_direct_forget(struct acvirgl *v);
 /* Returns how many were finished. */
 int acvirgl_settle(struct acvirgl *v, uint8_t *(*map)(void *map_user, uint32_t address, uint32_t length), void *map_user, int how);

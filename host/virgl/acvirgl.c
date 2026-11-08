@@ -203,11 +203,12 @@ struct acvirgl {
     uint64_t fence_seq;
     /* direct presents (acvirgl_direct_presents): the guest pages pinned as GL
      * buffers, and the compute program that writes them */
-    int (*direct_ok)(void *map_user, uint32_t addr, uint32_t bytes);
+    int (*direct_ok)(void *user, uint32_t addr, uint32_t bytes);
+    void *direct_user;                  /* what the two callbacks are given */
     int direct_state;                   /* 0 untried, 1 working, -1 this GPU or GL can't */
     unsigned direct_prog;
     int du_src, du_dst, du_tex;
-    int (*direct_file)(void *map_user, uint32_t addr, int *fd, uint64_t *offset, uint64_t *size);
+    int (*direct_file)(void *user, uint32_t addr, int *fd, uint64_t *offset, uint64_t *size);
     int udmabuf;                        /* /dev/udmabuf, once opened; -1 none */
     unsigned drop_seen, drop_asked;     /* acvirgl_direct_presents' asks to let go, on the thread that owns GL */
     struct { uint8_t *base; size_t bytes; unsigned id, mem; uint64_t used; } pin[AV_DIRECT_PINS];
@@ -923,7 +924,7 @@ static unsigned av_direct_userptr(struct acvirgl *v, uint8_t *base, size_t bytes
 /* The GL buffer over the guest's pages holding base..base+bytes, and where
  * that buffer starts (*at), or 0. Asks to let go are honoured first, here on
  * the thread that owns GL. */
-static unsigned av_direct_pin(struct acvirgl *v, void *mu, uint32_t addr, uint8_t *base, size_t bytes, uint8_t **at)
+static unsigned av_direct_pin(struct acvirgl *v, uint32_t addr, uint8_t *base, size_t bytes, uint8_t **at)
 {
     static uint64_t tick;
     unsigned ask = __atomic_load_n(&v->drop_asked, __ATOMIC_ACQUIRE);
@@ -941,7 +942,7 @@ static unsigned av_direct_pin(struct acvirgl *v, void *mu, uint32_t addr, uint8_
             return v->pin[i].id;
         }
     *at = base;
-    if (v->direct_file && v->direct_file(mu, addr, &fd, &off, &fsize) && fd >= 0) {
+    if (v->direct_file && v->direct_file(v->direct_user, addr, &fd, &off, &fsize) && fd >= 0) {
         off -= (uint64_t)(((uintptr_t)addr & 4095));   /* to the page base, as base is */
         id = av_direct_import(v, fd, off, fsize, at, &bytes);
     } else
@@ -975,7 +976,7 @@ static int32_t av_direct_present(struct acvirgl *v, uint8_t *(*map)(void *, uint
     off = (uintptr_t)host & 4095;
     base = host - off;
     bytes = (off + p->span + 4095) & ~(size_t)4095;
-    if (!(id = av_direct_pin(v, mu, p->addr, base, bytes, &at))) return -1;
+    if (!(id = av_direct_pin(v, p->addr, base, bytes, &at))) return -1;
     first = (size_t)(host - at) / 4;
     v->gl.GetIntegerv(AV_GL_CURRENT_PROGRAM, &prog);
     v->gl.GetIntegerv(AV_GL_ACTIVE_TEXTURE, &atex);
@@ -1077,10 +1078,11 @@ void acvirgl_defer_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32_
     if (ok) v->behind_ok = NULL;
 }
 
-void acvirgl_direct_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32_t addr, uint32_t bytes),
-                             int (*file)(void *map_user, uint32_t addr, int *fd, uint64_t *offset, uint64_t *size))
+void acvirgl_direct_presents(struct acvirgl *v, int (*ok)(void *user, uint32_t addr, uint32_t bytes),
+                             int (*file)(void *user, uint32_t addr, int *fd, uint64_t *offset, uint64_t *size), void *user)
 {
     if (!v) return;
+    v->direct_user = user;
     v->direct_ok = ok;
     v->direct_file = file;
     if (!ok) __atomic_add_fetch(&v->drop_asked, 1, __ATOMIC_RELEASE);
@@ -1121,7 +1123,7 @@ static int32_t av_present(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, u
     int32_t n = av_present_prep(v, map, mu, a, nargs, &p);
     if (n <= 0) return n;
     if (v->npend) av_settle_if(v, map, mu, av_m_overlap, &p, 0);
-    if (v->direct_ok && v->direct_ok(mu, p.addr, p.span)) {
+    if (v->direct_ok && v->direct_ok(v->direct_user, p.addr, p.span)) {
         int32_t d = av_direct_present(v, map, mu, &p);
         if (d >= 0) return d;
     }

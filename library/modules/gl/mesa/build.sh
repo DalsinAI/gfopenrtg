@@ -25,7 +25,9 @@ mkdir -p "$WORK"
 
 if [ ! -f "$WORK/$FILE" ] || ! echo "$SHA  $WORK/$FILE" | sha256sum -c --status; then
     for u in $URLS; do
-        curl -sSfL -o "$WORK/$FILE.part" "$u" && mv "$WORK/$FILE.part" "$WORK/$FILE" && break || true
+        # A stalled mirror gives up after 30 s (under 100 KB/s) and the next is tried:
+        # a stove job has 900 s for all of it.
+        curl -sSfL --connect-timeout 20 --speed-limit 102400 --speed-time 30 -o "$WORK/$FILE.part" "$u" && mv "$WORK/$FILE.part" "$WORK/$FILE" && break || true
     done
     echo "$SHA  $WORK/$FILE" | sha256sum -c --status || { echo "mesa: $FILE missing or its SHA-256 differs"; exit 1; }
 fi

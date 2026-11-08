@@ -6,6 +6,9 @@
  * (virglrenderer.h, MIT), declared here as it gives them, and found with
  * dlsym. */
 #define _GNU_SOURCE
+#include <sys/ioctl.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include "acvirgl.h"
 #include "../../include/gfopengpu/stream.h"
 #include "../../include/gfopengpu/virgl.h"
@@ -151,6 +154,11 @@ struct av_gl {
     int (*GetUniformLocation)(unsigned, const char *);
     void (*Uniform1i)(int, int);
     void (*Uniform4i)(int, int, int, int, int);
+    /* GL_EXT_memory_object_fd, for guest memory that is a file (udmabuf) */
+    void (*CreateMemoryObjectsEXT)(int, unsigned *);
+    void (*DeleteMemoryObjectsEXT)(int, const unsigned *);
+    void (*ImportMemoryFdEXT)(unsigned, uint64_t, av_glenum, int);
+    void (*BufferStorageMemEXT)(av_glenum, intptr_t, unsigned, uint64_t);
 };
 
 /* An ACV_PRESENT checked and placed, its pixels not yet read back and
@@ -173,6 +181,8 @@ struct av_pres {
 #define AV_DIRECT_PINS 4                    /* guest ranges kept pinned at once */
 #define AV_DIRECT_UNIT 31                   /* the texture unit and */
 #define AV_DIRECT_SSBO 7                    /* the storage binding direct presents borrow, and put back */
+#define AV_DIRECT_WINDOW (32u << 20)        /* a file is imported in windows this size apart and twice as long, so most presents find one */
+#define AV_GL_HANDLE_TYPE_OPAQUE_FD 0x9586
 
 struct acvirgl {
     int ctx0_every;                     /* context 0 before every command (QEMU's way); AC_VIRGL_CTX0=create: only around ACV_CTX_* */
@@ -197,7 +207,10 @@ struct acvirgl {
     int direct_state;                   /* 0 untried, 1 working, -1 this GPU or GL can't */
     unsigned direct_prog;
     int du_src, du_dst, du_tex;
-    struct { uint8_t *base; size_t bytes; unsigned id; uint64_t used; } pin[AV_DIRECT_PINS];
+    int (*direct_file)(void *map_user, uint32_t addr, int *fd, uint64_t *offset, uint64_t *size);
+    int udmabuf;                        /* /dev/udmabuf, once opened; -1 none */
+    unsigned drop_seen, drop_asked;     /* acvirgl_direct_presents' asks to let go, on the thread that owns GL */
+    struct { uint8_t *base; size_t bytes; unsigned id, mem; uint64_t used; } pin[AV_DIRECT_PINS];
     /* presents one frame behind (acvirgl_behind_presents) */
     int (*behind_ok)(void *map_user, uint32_t addr, uint32_t bytes);
     struct av_gl gl;
@@ -808,6 +821,7 @@ static int av_direct_ready(struct acvirgl *v)
     GLF(ActiveTexture) GLF(BindTexture) GLF(GetInteger64i_v) GLF(BindBufferBase) GLF(BindBufferRange) GLF(CreateShader)
     GLF(ShaderSource) GLF(CompileShader) GLF(DeleteShader) GLF(CreateProgram) GLF(DeleteProgram) GLF(AttachShader)
     GLF(LinkProgram) GLF(GetProgramiv) GLF(UseProgram) GLF(DispatchCompute) GLF(GetUniformLocation) GLF(Uniform1i) GLF(Uniform4i)
+    GLF(CreateMemoryObjectsEXT) GLF(DeleteMemoryObjectsEXT) GLF(ImportMemoryFdEXT) GLF(BufferStorageMemEXT)
 #undef GLF
     while (v->gl.GetError()) ;
     s = v->gl.CreateShader(AV_GL_COMPUTE_SHADER);
@@ -828,22 +842,67 @@ static int av_direct_ready(struct acvirgl *v)
     return 1;
 }
 
-/* A GL buffer over the guest's pages at host..host+bytes, or 0. A range
- * already pinned is reused; the one used longest ago makes room. */
-static unsigned av_direct_pin(struct acvirgl *v, uint8_t *base, size_t bytes)
+struct av_udmabuf_create { uint32_t memfd, flags; uint64_t offset, size; };    /* linux/udmabuf.h's, here so older headers build */
+#define AV_UDMABUF_CREATE _IOW('u', 0x42, struct av_udmabuf_create)
+#define AV_UDMABUF_CLOEXEC 1
+
+static void av_direct_unpin(struct acvirgl *v, int i)
 {
-    static uint64_t tick;
+    if (v->pin[i].id) v->gl.DeleteBuffers(1, &v->pin[i].id);
+    if (v->pin[i].mem) v->gl.DeleteMemoryObjectsEXT(1, &v->pin[i].mem);
+    memset(&v->pin[i], 0, sizeof v->pin[i]);
+}
+
+/* A slot for a new range: free, or the one used longest ago, let go. */
+static int av_direct_slot(struct acvirgl *v)
+{
     int i, old = 0;
-    unsigned id = 0;
-    av_glenum e;
     for (i = 0; i < AV_DIRECT_PINS; i++) {
-        if (v->pin[i].id && base >= v->pin[i].base && base + bytes <= v->pin[i].base + v->pin[i].bytes) {
-            v->pin[i].used = ++tick;
-            return v->pin[i].id;
-        }
+        if (!v->pin[i].id) return i;
         if (v->pin[i].used < v->pin[old].used) old = i;
     }
-    if (v->pin[old].id) { v->gl.DeleteBuffers(1, &v->pin[old].id); v->pin[old].id = 0; }
+    av_direct_unpin(v, old);
+    return old;
+}
+
+/* A GL buffer over a window of the guest's file, through udmabuf (0: none):
+ * the file's own pages, shared with every mapping of it, so protecting one
+ * mapping (the runtime's guard) doesn't matter. *base and *bytes come back as
+ * the window's; the file must be sealed against shrinking. */
+static unsigned av_direct_import(struct acvirgl *v, int fd, uint64_t off, uint64_t fsize, uint8_t **base, size_t *bytes)
+{
+    struct av_udmabuf_create uc;
+    uint64_t w0 = off & ~(uint64_t)(AV_DIRECT_WINDOW - 1), wlen = (uint64_t)AV_DIRECT_WINDOW * 2;
+    unsigned id = 0, mem = 0;
+    int db, s;
+    if (off + *bytes > w0 + wlen) return 0;     /* astride a window: not this way */
+    if (wlen > fsize - w0) wlen = fsize - w0;
+    if (v->udmabuf == 0) v->udmabuf = open("/dev/udmabuf", O_RDWR | O_CLOEXEC) + 1;   /* kept +1, so 0 is untried */
+    if (v->udmabuf <= 0) return 0;
+    uc.memfd = (uint32_t)fd; uc.flags = AV_UDMABUF_CLOEXEC; uc.offset = w0; uc.size = wlen;
+    if ((db = ioctl(v->udmabuf - 1, AV_UDMABUF_CREATE, &uc)) < 0) return 0;
+    while (v->gl.GetError()) ;
+    v->gl.CreateMemoryObjectsEXT(1, &mem);
+    v->gl.ImportMemoryFdEXT(mem, wlen, AV_GL_HANDLE_TYPE_OPAQUE_FD, db);   /* GL owns db now */
+    if (v->gl.GetError()) { v->gl.DeleteMemoryObjectsEXT(1, &mem); return 0; }
+    v->gl.GenBuffers(1, &id);
+    v->gl.BindBuffer(AV_GL_SHADER_STORAGE_BUFFER, id);
+    v->gl.BufferStorageMemEXT(AV_GL_SHADER_STORAGE_BUFFER, (intptr_t)wlen, mem, 0);
+    v->gl.BindBuffer(AV_GL_SHADER_STORAGE_BUFFER, 0);
+    if (v->gl.GetError()) { v->gl.DeleteBuffers(1, &id); v->gl.DeleteMemoryObjectsEXT(1, &mem); return 0; }
+    *base -= off - w0;
+    *bytes = (size_t)wlen;
+    s = av_direct_slot(v);
+    v->pin[s].base = *base; v->pin[s].bytes = *bytes; v->pin[s].id = id; v->pin[s].mem = mem;
+    return id;
+}
+
+/* A GL buffer over the guest's anonymous pages at base..base+bytes, or 0. */
+static unsigned av_direct_userptr(struct acvirgl *v, uint8_t *base, size_t bytes)
+{
+    unsigned id = 0;
+    av_glenum e;
+    int s;
     while (v->gl.GetError()) ;
     v->gl.GenBuffers(1, &id);
     v->gl.BindBuffer(AV_GL_EXTERNAL_VIRTUAL_MEMORY_BUFFER_AMD, id);
@@ -856,7 +915,39 @@ static unsigned av_direct_pin(struct acvirgl *v, uint8_t *base, size_t bytes)
     e = v->gl.GetError();
     v->gl.BindBuffer(AV_GL_EXTERNAL_VIRTUAL_MEMORY_BUFFER_AMD, 0);
     if (e) { v->gl.DeleteBuffers(1, &id); return 0; }
-    v->pin[old].base = base; v->pin[old].bytes = bytes; v->pin[old].id = id; v->pin[old].used = ++tick;
+    s = av_direct_slot(v);
+    v->pin[s].base = base; v->pin[s].bytes = bytes; v->pin[s].id = id; v->pin[s].mem = 0;
+    return id;
+}
+
+/* The GL buffer over the guest's pages holding base..base+bytes, and where
+ * that buffer starts (*at), or 0. Asks to let go are honoured first, here on
+ * the thread that owns GL. */
+static unsigned av_direct_pin(struct acvirgl *v, void *mu, uint32_t addr, uint8_t *base, size_t bytes, uint8_t **at)
+{
+    static uint64_t tick;
+    unsigned ask = __atomic_load_n(&v->drop_asked, __ATOMIC_ACQUIRE);
+    int i, fd = -1;
+    unsigned id;
+    uint64_t off = 0, fsize = 0;
+    if (ask != v->drop_seen) {
+        for (i = 0; i < AV_DIRECT_PINS; i++) if (v->pin[i].id) av_direct_unpin(v, i);
+        v->drop_seen = ask;
+    }
+    for (i = 0; i < AV_DIRECT_PINS; i++)
+        if (v->pin[i].id && base >= v->pin[i].base && base + bytes <= v->pin[i].base + v->pin[i].bytes) {
+            v->pin[i].used = ++tick;
+            *at = v->pin[i].base;
+            return v->pin[i].id;
+        }
+    *at = base;
+    if (v->direct_file && v->direct_file(mu, addr, &fd, &off, &fsize) && fd >= 0) {
+        off -= (uint64_t)(((uintptr_t)addr & 4095));   /* to the page base, as base is */
+        id = av_direct_import(v, fd, off, fsize, at, &bytes);
+    } else
+        id = av_direct_userptr(v, base, bytes);
+    if (id)
+        for (i = 0; i < AV_DIRECT_PINS; i++) if (v->pin[i].id == id) v->pin[i].used = ++tick;
     return id;
 }
 
@@ -868,10 +959,10 @@ static int32_t av_direct_present(struct acvirgl *v, uint8_t *(*map)(void *, uint
 {
     struct vr_resource_info info;
     const struct av_res *res = av_res_find(v, p->handle);
-    uint8_t *host, *base;
-    size_t off, bytes;
+    uint8_t *host, *base, *at;
+    size_t off, bytes, first;
     unsigned id;
-    int dl, dg, db, da, i, prog = 0, at = 0, tex = 0, gb = 0, ib = 0, amode, stride, y0top;
+    int dl, dg, db, da, i, prog = 0, atex = 0, tex = 0, gb = 0, ib = 0, amode, stride, y0top;
     int64_t istart = 0, isize = 0;
     uint64_t pixels = 0, ts = av_ns();
     int ok;
@@ -884,9 +975,10 @@ static int32_t av_direct_present(struct acvirgl *v, uint8_t *(*map)(void *, uint
     off = (uintptr_t)host & 4095;
     base = host - off;
     bytes = (off + p->span + 4095) & ~(size_t)4095;
-    if (!(id = av_direct_pin(v, base, bytes))) return -1;
+    if (!(id = av_direct_pin(v, mu, p->addr, base, bytes, &at))) return -1;
+    first = (size_t)(host - at) / 4;
     v->gl.GetIntegerv(AV_GL_CURRENT_PROGRAM, &prog);
-    v->gl.GetIntegerv(AV_GL_ACTIVE_TEXTURE, &at);
+    v->gl.GetIntegerv(AV_GL_ACTIVE_TEXTURE, &atex);
     v->gl.ActiveTexture(AV_GL_TEXTURE0 + AV_DIRECT_UNIT);
     v->gl.GetIntegerv(AV_GL_TEXTURE_BINDING_2D, &tex);
     v->gl.GetIntegerv(AV_GL_SHADER_STORAGE_BUFFER_BINDING, &gb);
@@ -906,7 +998,7 @@ static int32_t av_direct_present(struct acvirgl *v, uint8_t *(*map)(void *, uint
         int x0 = p->rect[i][0], y0 = p->rect[i][1], x1 = p->rect[i][2], y1 = p->rect[i][3];
         int ry = p->flip ? p->rh - 1 - (y0 - p->sy) : y0 - p->sy;
         v->gl.Uniform4i(v->du_src, x0 - p->sx, y0top ? (int)info.height - 1 - ry : ry, (p->flip != 0) == y0top ? 1 : -1, amode);
-        v->gl.Uniform4i(v->du_dst, (int)(off / 4) + y0 * stride + x0, stride, x1 - x0, y1 - y0);
+        v->gl.Uniform4i(v->du_dst, (int)first + y0 * stride + x0, stride, x1 - x0, y1 - y0);
         v->gl.DispatchCompute((unsigned)(x1 - x0 + 31) / 32, (unsigned)(y1 - y0 + 31) / 32, 1);
         pixels += (uint64_t)(x1 - x0) * (uint64_t)(y1 - y0);
     }
@@ -914,7 +1006,7 @@ static int32_t av_direct_present(struct acvirgl *v, uint8_t *(*map)(void *, uint
     ok = v->gl.GetError() == 0;
     v->gl.UseProgram((unsigned)prog);
     v->gl.BindTexture(AV_GL_TEXTURE_2D, (unsigned)tex);
-    v->gl.ActiveTexture((av_glenum)at);
+    v->gl.ActiveTexture((av_glenum)atex);
     if (isize) v->gl.BindBufferRange(AV_GL_SHADER_STORAGE_BUFFER, AV_DIRECT_SSBO, (unsigned)ib, (intptr_t)istart, (intptr_t)isize);
     else v->gl.BindBufferBase(AV_GL_SHADER_STORAGE_BUFFER, AV_DIRECT_SSBO, (unsigned)ib);
     v->gl.BindBuffer(AV_GL_SHADER_STORAGE_BUFFER, (unsigned)gb);
@@ -985,16 +1077,18 @@ void acvirgl_defer_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32_
     if (ok) v->behind_ok = NULL;
 }
 
-void acvirgl_direct_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32_t addr, uint32_t bytes))
+void acvirgl_direct_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32_t addr, uint32_t bytes),
+                             int (*file)(void *map_user, uint32_t addr, int *fd, uint64_t *offset, uint64_t *size))
 {
-    int i;
     if (!v) return;
     v->direct_ok = ok;
-    if (ok) return;
-    for (i = 0; i < AV_DIRECT_PINS; i++) {      /* the guest's memory may be about to go */
-        if (v->pin[i].id && v->gl.DeleteBuffers && v->egl_current && v->egl_current()) v->gl.DeleteBuffers(1, &v->pin[i].id);
-        v->pin[i].id = 0; v->pin[i].base = NULL; v->pin[i].bytes = 0; v->pin[i].used = 0;
-    }
+    v->direct_file = file;
+    if (!ok) __atomic_add_fetch(&v->drop_asked, 1, __ATOMIC_RELEASE);
+}
+
+void acvirgl_direct_forget(struct acvirgl *v)
+{
+    if (v) __atomic_add_fetch(&v->drop_asked, 1, __ATOMIC_RELEASE);
 }
 
 void acvirgl_behind_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32_t addr, uint32_t bytes))

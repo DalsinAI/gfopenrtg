@@ -8,10 +8,14 @@
  * surface, a framebuffer, a clear) whose colour comes back as the 68k
  * reads it: A, R, G, B. Skipped when ACVIRGL_LIB isn't set.
  *   tests/run.sh builds it with virglrenderer's protocol header (fetched). */
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/mman.h>
 #include "../host/virgl/acvirgl.h"
 #include "../include/gfopengpu/stream.h"
 #include "../include/gfopengpu/virgl.h"
@@ -19,7 +23,23 @@
 
 #define ARENA (1u << 20)
 static uint8_t arena[ARENA];
-static uint8_t *map(void *u, uint32_t a, uint32_t len) { (void)u; return a < ARENA && len <= ARENA - a ? arena + a : NULL; }
+#define MF_AT 0x100000u           /* guest addresses from here are a sealed memfd, as the runtime's video RAM is */
+#define MF_SIZE (1u << 20)
+static uint8_t *mf;
+static int mf_fd = -1;
+static uint8_t *map(void *u, uint32_t a, uint32_t len)
+{
+    (void)u;
+    if (mf && a >= MF_AT && len <= MF_SIZE && a - MF_AT <= MF_SIZE - len) return mf + (a - MF_AT);
+    return a < ARENA && len <= ARENA - a ? arena + a : NULL;
+}
+static int mf_file(void *u, uint32_t a, int *fd, uint64_t *off, uint64_t *size)
+{
+    (void)u;
+    if (!mf || a < MF_AT) return 0;
+    *fd = mf_fd; *off = a - MF_AT; *size = MF_SIZE;
+    return 1;
+}
 
 static int defer_all(void *u, uint32_t a, uint32_t n) { (void)u; (void)a; (void)n; return 1; }
 static int defer_none(void *u, uint32_t a, uint32_t n) { (void)u; (void)a; (void)n; return 0; }
@@ -287,13 +307,13 @@ int main(void)
                 uint32_t pa[16] = { 1, h, 0, (10u << 16) | 5u, T, bpr, fmt, ((uint32_t)TW << 16) | TH, f >= 3 ? ACV_PRESENT_FLIP_Y : 0, 3,
                                     (12u << 16) | 7u, (20u << 16) | 10u, (60u << 16) | 60u, (40u << 16) | 40u, (80u << 16) | 0u, (20u << 16) | 4u };
                 int32_t r0, r1;
-                acvirgl_direct_presents(v, NULL);
+                acvirgl_direct_presents(v, NULL, NULL);
                 memset(arena + R, 0xEE, TB * TH);
                 pa[4] = R;
                 begin(); c = cmd(ACV_PRESENT, 16, pa);
                 acvirgl_run(v, map, NULL, BLK, at - BLK);
                 r0 = result(c);
-                acvirgl_direct_presents(v, defer_all);
+                acvirgl_direct_presents(v, defer_all, NULL);
                 memset(arena + T, 0xEE, TB * TH);
                 pa[4] = T;
                 begin(); c = cmd(ACV_PRESENT, 16, pa);
@@ -305,13 +325,50 @@ int main(void)
                     printf("acvirgl: direct differs: resource %u, case %u: %d %d, byte %u: %02x %02x\n", h, f, r0, r1, y, arena[R + y], arena[T + y]);
                 }
             }
-        acvirgl_direct_presents(v, NULL);
+        /* the same, into a sealed memfd (udmabuf), as the runtime's guarded video RAM is */
+        {
+            struct acvirgl_stats m0, m1;
+            mf_fd = memfd_create("acvirgl-test", MFD_CLOEXEC | MFD_ALLOW_SEALING);
+            if (mf_fd >= 0 && !ftruncate(mf_fd, MF_SIZE) && !fcntl(mf_fd, F_ADD_SEALS, F_SEAL_SHRINK)
+                && (mf = mmap(NULL, MF_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mf_fd, 0)) != MAP_FAILED) {
+                uint32_t pa[16] = { 1, 1, 0, (10u << 16) | 5u, T, TB, OGPU_FMT_XRGB32, ((uint32_t)TW << 16) | TH, 0, 3,
+                                    (12u << 16) | 7u, (20u << 16) | 10u, (60u << 16) | 60u, (40u << 16) | 40u, (80u << 16) | 0u, (20u << 16) | 4u };
+                int32_t r0, r1;
+                acvirgl_stats(v, &m0);
+                acvirgl_direct_presents(v, NULL, NULL);
+                memset(arena + R, 0xEE, TB * TH);
+                pa[4] = R;
+                begin(); c = cmd(ACV_PRESENT, 16, pa);
+                acvirgl_run(v, map, NULL, BLK, at - BLK);
+                r0 = result(c);
+                acvirgl_direct_presents(v, defer_all, mf_file);
+                memset(mf + 0x8000, 0xEE, TB * TH);
+                pa[4] = MF_AT + 0x8000;
+                begin(); c = cmd(ACV_PRESENT, 16, pa);
+                acvirgl_run(v, map, NULL, BLK, at - BLK);
+                r1 = result(c);
+                acvirgl_stats(v, &m1);
+                printf("acvirgl: direct into a memfd: %llu of %llu presents\n", (unsigned long long)(m1.direct - m0.direct), (unsigned long long)(m1.presents - m0.presents));
+                CHECK(r0 == r1 && r0 > 0 && !memcmp(arena + R, mf + 0x8000, TB * TH), "direct: into a memfd, the same bytes as an ordinary present (%d %d)", r0, r1);
+                /* a let-go, then the pages changing: the next present still reaches the file */
+                acvirgl_direct_forget(v);
+                memset(mf + 0x8000, 0xEE, TB * TH);
+                begin(); c = cmd(ACV_PRESENT, 16, pa);
+                acvirgl_run(v, map, NULL, BLK, at - BLK);
+                CHECK(result(c) == r0 && !memcmp(arena + R, mf + 0x8000, TB * TH), "direct: after acvirgl_direct_forget, the file still written");
+                acvirgl_direct_presents(v, NULL, NULL);
+                munmap(mf, MF_SIZE); mf = NULL;
+            }
+            if (mf_fd >= 0) close(mf_fd);
+            mf_fd = -1;
+        }
+        acvirgl_direct_presents(v, NULL, NULL);
         CHECK(same, "direct: the same bytes as an ordinary present");
         begin(); h = 3; cmd(ACV_RES_UNREF, 1, &h);
         acvirgl_run(v, map, NULL, BLK, at - BLK);
         acvirgl_stats(v, &s1);
         printf("acvirgl: direct %llu of %llu presents\n", (unsigned long long)(s1.direct - s0.direct), (unsigned long long)(s1.presents - s0.presents));
-        CHECK(s1.direct - s0.direct == 8 || s1.direct == s0.direct, "direct: all eight 32-bit presents, or none on a GPU that can't (%llu)", (unsigned long long)(s1.direct - s0.direct));
+        CHECK(s1.direct - s0.direct >= 8 || s1.direct == s0.direct, "direct: all eight 32-bit presents, or none on a GPU that can't (%llu)", (unsigned long long)(s1.direct - s0.direct));
     }
 
     /* Presents one frame behind (acvirgl_behind_presents): the GPU copies the

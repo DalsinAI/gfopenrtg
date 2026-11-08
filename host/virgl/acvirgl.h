@@ -88,16 +88,24 @@ void acvirgl_behind_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32
 /* Direct presents (8 Nov 2026). A present into 32-bit memory that ok()
  * allows is written by the GPU itself: a compute shader, in the frame's own
  * GL context, turns the frame into the guest's layout (X or A, R, G, B, either
- * way up) straight into the guest's pages, pinned as a GL buffer with
- * GL_AMD_pinned_memory, so this side neither copies nor converts. Needs GL 4.3
- * and that extension (AMD's radeonsi); anything else, or any failure, presents
- * as before. It waits for the GPU (glFinish) like an ordinary present, and
- * ok() has the rules of acvirgl_behind_presents' (not memory the runtime
- * guards or watches). 0 turns it off and lets go of the pinned pages: call
- * that before the guest's memory is unmapped or moved. Timed by hand on a
- * clear-only frame, 1920x1080: 7.7 to 2.1 ms on a Vega 8, 5.5 to 2.5 ms on an RX 460. */
+ * way up) straight into the guest's memory, so this side neither copies nor
+ * converts. Needs GL 4.3 and a way to give the GPU that memory:
+ *   file() says the memory is a file, a memfd sealed against shrinking
+ *     (*fd, *offset of addr in it, *size of it; returns 1): it is imported
+ *     through /dev/udmabuf and GL_EXT_memory_object_fd, in windows;
+ *   otherwise anonymous memory is pinned with GL_AMD_pinned_memory.
+ * Anything else, or any failure, presents as before. It waits for the GPU
+ * (glFinish) like an ordinary present, and ok() has the rules of
+ * acvirgl_behind_presents' (not memory the runtime guards or watches). Ok 0
+ * turns it off. The GPU holds the memory's pages: call acvirgl_direct_forget
+ * before they change under it (a hole punched in the file, memory unmapped or
+ * moved); the buffers go on the GL thread at the next direct present. Timed
+ * by hand on a clear-only frame, 1920x1080: 7.7 to 1.9 ms on a Vega 8 (memfd
+ * through udmabuf). */
 #define ACVIRGL_HAS_DIRECT 1
-void acvirgl_direct_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32_t addr, uint32_t bytes));
+void acvirgl_direct_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32_t addr, uint32_t bytes),
+                             int (*file)(void *map_user, uint32_t addr, int *fd, uint64_t *offset, uint64_t *size));
+void acvirgl_direct_forget(struct acvirgl *v);
 /* Returns how many were finished. */
 int acvirgl_settle(struct acvirgl *v, uint8_t *(*map)(void *map_user, uint32_t address, uint32_t length), void *map_user, int how);
 int acvirgl_pending(const struct acvirgl *v);

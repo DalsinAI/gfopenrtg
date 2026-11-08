@@ -24,6 +24,9 @@
  * It stays in memory for its patches: GetDisplayInfoData and, for ECS,
  * NextDisplayInfo, by SetFunction, with every call passed on.
  */
+/* No start-up code: the file's first instruction is where it starts (-fno-toplevel-reorder). */
+__asm__(".text\n\tjmp _start\n");
+
 #include <exec/types.h>
 #include <exec/execbase.h>
 #include <exec/memory.h>
@@ -55,9 +58,6 @@
 #define NATIVE(id) (((id) >> 24) == 0)              /* RTG's are 0x4n to 0x6n */
 #define MONITOR_OF(id) ((id) & MONITOR_ID_MASK)
 #define NAME_ROOM 32                                /* DISPLAYNAMELEN */
-
-/* No start-up code: the file's first instruction is where it starts (-fno-toplevel-reorder). */
-__asm__(".text\n\tjmp _start\n");
 
 static const char version[] __attribute__((used)) = "$VER: " CHIP_NAME " 1.0 (8.11.2026) AmiCradle Team";
 

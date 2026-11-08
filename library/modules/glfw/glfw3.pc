@@ -1,0 +1,14 @@
+# GFOpenGPU developer kit. The kit's prefix is two levels up from this file:
+# the kit's own, or a stove's prefix/m68k-amigaos.
+prefix=${pcfiledir}/../..
+exec_prefix=${prefix}
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: GLFW
+Description: GLFW 3.4 on GFOpenGPU (AmigaOS 3: Intuition windows, GL and GLES through GLA)
+Version: 3.4.0
+URL: https://www.glfw.org/
+Requires: gl
+Libs: -L${libdir} -lglfw3
+Cflags: -I${includedir}

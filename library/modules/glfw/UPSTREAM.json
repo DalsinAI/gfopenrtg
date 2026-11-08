@@ -1,0 +1,29 @@
+{
+  "glfw": {
+    "name": "GLFW",
+    "version": "3.4",
+    "file": "glfw-3.4.zip",
+    "dir": "glfw-3.4",
+    "url": "https://github.com/glfw/glfw/releases/download/3.4/glfw-3.4.zip",
+    "sha256": "b5ec004b2712fd08e8861dc271428f048775200a2df719ccf575143ba749a3e9",
+    "bytes": 1653725,
+    "licence": "Zlib",
+    "used_for": "GLFW 3's API on GFOpenGPU: include/GLFW/, libglfw3.a, glfw3.pc and lib/cmake/glfw3"
+  },
+  "sokol": {
+    "name": "sokol",
+    "commit": "7151e640e6ccc44a1e6eefb50cd1435a7e00da63",
+    "url": "https://raw.githubusercontent.com/floooh/sokol/7151e640e6ccc44a1e6eefb50cd1435a7e00da63/",
+    "files": ["sokol_gfx.h", "sokol_log.h"],
+    "licence": "Zlib",
+    "used_for": "tests/build-tests.sh only: the sokol sample's headers; nothing goes in the kit"
+  },
+  "sokol-samples": {
+    "name": "sokol-samples",
+    "commit": "4b1c99193c2b49ecf2dff53b980ef2484b4cadac",
+    "url": "https://raw.githubusercontent.com/floooh/sokol-samples/4b1c99193c2b49ecf2dff53b980ef2484b4cadac/glfw/",
+    "files": ["triangle-glfw.c", "glfw_glue.c", "glfw_glue.h"],
+    "licence": "MIT",
+    "used_for": "tests/build-tests.sh only: one sokol sample built on this GLFW; nothing goes in the kit"
+  }
+}

@@ -274,6 +274,22 @@ without SDL.
 
 `examples/gla/glatriangle.c` uses all of these in a Workbench window.
 
+### EGL
+
+libEGL.a is EGL 1.4 on GLA (`include/EGL/`, `pkg-config egl`), for the GLES
+samples that start GL through EGL. There is one display, whatever
+`eglGetDisplay` is given; `EGLNativeWindowType` is a `struct Window *`, and
+GL draws inside its borders. `eglInitialize` takes virgl when GFOpenGPU has
+it, else softpipe; `eglCreateContext` gives ES 2, 3.0 and 3.1 (by
+`EGL_CONTEXT_CLIENT_VERSION` or `EGL_CONTEXT_MAJOR_VERSION` and
+`EGL_CONTEXT_MINOR_VERSION`) and, after `eglBindAPI(EGL_OPENGL_API)`,
+OpenGL core or compatibility. The configs are RGB565, RGB888 and RGBA8888
+with depth 0, 16 or 24 and stencil 0 or 8, for windows and pbuffers.
+`eglSwapInterval` is the number of vertical blanks waited before a frame is
+shown (1 by default). There is no ES 1, OpenVG, pixmap surface or EGL 1.5
+call; gfopenrtg's `library/egl/README.md` has the list.
+`examples/egl/egltriangle.c` is an EGL program.
+
 ### TinyGL
 
 TinyGL's interface (`include/proto/tinygl.h`, `include/tgl/`) on GL.module.

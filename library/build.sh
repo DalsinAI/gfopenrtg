@@ -143,10 +143,11 @@ echo "$OUT/GFOpenRTG-Monitor ($(wc -c < "$OUT/GFOpenRTG-Monitor") bytes)"
 "$HERE/warp3d/build.sh" "$OUT"        # Warp3D.library, its tools and checks
 "$HERE/minigl/build.sh" "$OUT"        # minigl.library, libminigl.a, libmgl.a and MGLTest
 "$HERE/tinygl/build.sh" "$OUT"        # tinygl.library (the stand-in) and libtinygl.a
+"$HERE/egl/build.sh" "$OUT"           # libEGL.a: EGL 1.4 on GLA
 [ ! -x "${SDL2_STOVE:-$HOME/AmiCradle/stoves/os32-gcc16/prefix}/bin/m68k-amigaos-gcc" ] || STOVE="${SDL2_STOVE:-$HOME/AmiCradle/stoves/os32-gcc16/prefix}" "$HERE/modules/sdl2/build.sh" "$OUT"   # SDL 2 (library/modules/sdl2), with the GCC 16 stove
 [ ! -x "${SDL2_STOVE:-$HOME/AmiCradle/stoves/os32-gcc16/prefix}/bin/m68k-amigaos-gcc" ] || STOVE="${SDL2_STOVE:-$HOME/AmiCradle/stoves/os32-gcc16/prefix}" "$HERE/modules/openal/build.sh" "$OUT"   # OpenAL (library/modules/openal), with the GCC 16 stove
 # SDL 1.2 (library/modules/sdl12: sdl12-compat on that SDL 2), when SDL 2 was built.
 [ ! -f "$OUT/libSDL2.a" ] || STOVE16="${SDL2_STOVE:-$HOME/AmiCradle/stoves/os32-gcc16/prefix}" "$HERE/modules/sdl12/build.sh" "$OUT"
 # No float-to-int store through the FPCR register (tools/fpcr_check.py: GCC 16
 # at -m68040 can make one; the check runs on every build, whichever stove).
-python3 "$ROOT/tools/fpcr_check.py" "${CC%gcc}objdump" "$OUT/gfopenrtg.library" "$OUT/cybergraphics.library" "$OUT/gfopengpu.library" $([ "${OGPU_ROM:-0}" = 1 ] || echo "$OUT/rom/gfopengpu.library") "$OUT/GFOpenRTG" "$OUT/GFOpenRTG-Monitor" "$OUT/minigl.library" "$OUT/tinygl.library" "$OUT/libtinygl.a"
+python3 "$ROOT/tools/fpcr_check.py" "${CC%gcc}objdump" "$OUT/gfopenrtg.library" "$OUT/cybergraphics.library" "$OUT/gfopengpu.library" $([ "${OGPU_ROM:-0}" = 1 ] || echo "$OUT/rom/gfopengpu.library") "$OUT/GFOpenRTG" "$OUT/GFOpenRTG-Monitor" "$OUT/minigl.library" "$OUT/tinygl.library" "$OUT/libtinygl.a" "$OUT/libEGL.a"

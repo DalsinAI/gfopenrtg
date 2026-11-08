@@ -149,9 +149,13 @@ ARB_get_program_binary / OES_get_program_binary (one binary format).
 compresses (zlib or zstd, both left out), writes from a thread (a shared
 GL.module starts none), maps its index with mmap, locks with flock and
 names its files with 64 characters (FFS takes 30). Patch 0012 declares the
-disk_cache calls anyway, and `gla/gla_shader_cache.c` does them: one file
-per entry, written in the call, with the whole key, the size and a CRC-32
-in its header.
+disk_cache calls anyway, and lets the linker's half of the GLSL cache
+(`st_glsl_to_nir.cpp`, behind `ENABLE_SHADER_CACHE` in Mesa) run too: without
+it glCompileShader skips a source it has seen and the link, which should
+compile it again when the program isn't cached, doesn't (8 November 2026:
+GLInfo's raymarcher, which shares the tiny pair's vertex shader, failed to
+link). `gla/gla_shader_cache.c` does the calls: one file per entry, written
+in the call, with the whole key, the size and a CRC-32 in its header.
 
 | Variable | Meaning | Unset |
 |---|---|---|

@@ -1,5 +1,8 @@
 GL.module gives Mesa's disk_cache calls its own cache (gla/gla_shader_cache.c):
-declare them without ENABLE_SHADER_CACHE, in place of the inline stubs.
+declare them without ENABLE_SHADER_CACHE, in place of the inline stubs, and
+let the linker read and write the GLSL program cache (st_glsl_to_nir.cpp)
+under GLA_DISK_CACHE too: glCompileShader skips a source it has seen, and
+only the link puts it right (compiling the skipped shaders on a miss).
 
 --- a/src/util/disk_cache.h
 +++ b/src/util/disk_cache.h
@@ -33,3 +36,23 @@ declare them without ENABLE_SHADER_CACHE, in place of the inline stubs.
  
  #ifdef __cplusplus
  }
+--- a/src/mesa/state_tracker/st_glsl_to_nir.cpp
++++ b/src/mesa/state_tracker/st_glsl_to_nir.cpp
+@@ -810,7 +810,7 @@
+       if (!spirv) {
+          link_shaders_init(ctx, prog);
+ 
+-#ifdef ENABLE_SHADER_CACHE
++#if defined(ENABLE_SHADER_CACHE) || defined(GLA_DISK_CACHE)
+          shader_cache_read_program_metadata(ctx, prog);
+ #endif
+       } else
+@@ -848,7 +848,7 @@
+       }
+    }
+ 
+-#ifdef ENABLE_SHADER_CACHE
++#if defined(ENABLE_SHADER_CACHE) || defined(GLA_DISK_CACHE)
+    if (prog->data->LinkStatus)
+       shader_cache_write_program_metadata(ctx, prog);
+ #endif

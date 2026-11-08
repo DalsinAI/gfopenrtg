@@ -191,7 +191,7 @@ static void name_it(char *name)
 
 static UWORD ecs_depth(ULONG id)
 {
-    if (id & SUPER_KEY) return 2;
+    if ((id & SUPER_KEY) == SUPER_KEY) return 2;     /* SUPER_KEY has HIRES_KEY's bit too */
     if (id & HIRES_KEY) return 4;
     return 6;
 }

@@ -190,6 +190,25 @@ to `T:` (usually RAM), which lasts until a reset.
 - `MESA_GLSL=cache_info` should have Mesa say on standard error what it
   put and found (libnix's getenv reads `ENV:`; not yet tried on the Amiga).
 
+### Measured, 8 November 2026
+
+GLInfo (`tools/glinfo`, ES 3.1) on a copy of Instance-32 (AC090 68040; virgl
+on the host's RX 460), GL.module from the Cradle's stove
+(`build-amiga.sh`). Compile, link and first draw or dispatch, in ms:
+
+| | virgl, no cache | virgl, cached | softpipe, no cache | softpipe, cached |
+|---|---|---|---|---|
+| raymarcher (154-line fragment shader) | 166, 187 | 57, 63 | 347, 310 | 205, 195 |
+| compute shader (106 lines) | 230, 223 | 94, 124 | 435, 343 | 287, 284 |
+
+The links go from 140 to 200 ms to 50 to 80; the compiles are skipped. What
+is left is the driver's part at first use (on softpipe, the 68k drawing too).
+The first cached run on virgl took longer once at first use (213 and 437 ms):
+the host's GPU driver met the cached path's TGSI for the first time.
+A full run (all profiles, both drivers) with the cap at 64 KiB kept the
+cache under it; a volume that isn't there, and a write-protected one
+(`Lock Work: ON`), gave no requester and no failure.
+
 ## GCC 16's FPCR clash
 
 At `-m68040`, GCC 16 sometimes saves FPCR around a float-to-int store in

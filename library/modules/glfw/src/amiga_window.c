@@ -715,16 +715,12 @@ GLFWbool _glfwCreateWindowOS3(_GLFWwindow* window,
 
     if (ctxconfig->client != GLFW_NO_API)
     {
-        if (ctxconfig->source == GLFW_NATIVE_CONTEXT_API)
+        // GLA is the platform's EGL as well: there is no libEGL to load, and
+        // programs written for GLES ask for EGL (examples/triangle-opengles.c)
+        if (ctxconfig->source == GLFW_NATIVE_CONTEXT_API ||
+            ctxconfig->source == GLFW_EGL_CONTEXT_API)
         {
             if (!_glfwCreateContextGLA(window, ctxconfig, fbconfig))
-                return GLFW_FALSE;
-        }
-        else if (ctxconfig->source == GLFW_EGL_CONTEXT_API)
-        {
-            if (!_glfwInitEGL())
-                return GLFW_FALSE;
-            if (!_glfwCreateContextEGL(window, ctxconfig, fbconfig))
                 return GLFW_FALSE;
         }
         else if (ctxconfig->source == GLFW_OSMESA_CONTEXT_API)

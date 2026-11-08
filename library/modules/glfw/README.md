@@ -102,7 +102,10 @@ own.
   (a program's icon is its `.info`), aspect ratio, gamma ramps,
   content scale (always 1), attention (a `DisplayBeep`)**.
 - **Hot-plugged pads, pads in the mouse port, more than one pad.**
-- **EGL and OSMesa context APIs**: GLFW's code is there but finds no
-  library (no shared objects to load); GLA is the native API.
+- **OSMesa context API**: GLFW's code is there but finds no library (no
+  shared objects to load). `GLFW_EGL_CONTEXT_API` is taken as GLA, like
+  `GLFW_NATIVE_CONTEXT_API`, so programs that ask for EGL (GLES ones
+  often do) get the same contexts; `glfwGetEGLContext` and the other EGL
+  native calls have nothing to give.
 - **Multisampling**: `GLFW_SAMPLES` is ignored (GLA's buffers have one
   sample); render to a multisampled FBO instead.

@@ -287,7 +287,7 @@ GLFWAPI struct gla_context* glfwGetGLAContext(GLFWwindow* handle)
     _GLFW_REQUIRE_INIT_OR_RETURN(NULL);
 
     if (_glfw.platform.platformID != GLFW_PLATFORM_AMIGAOS ||
-        window->context.source != GLFW_NATIVE_CONTEXT_API)
+        window->context.source == GLFW_OSMESA_CONTEXT_API)
     {
         _glfwInputError(GLFW_PLATFORM_UNAVAILABLE,
                         "GLA: Platform not initialized");

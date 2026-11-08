@@ -56,6 +56,9 @@
 #define MONITOR_OF(id) ((id) & MONITOR_ID_MASK)
 #define NAME_ROOM 32                                /* DISPLAYNAMELEN */
 
+/* No start-up code: the file's first instruction is where it starts (-fno-toplevel-reorder). */
+__asm__(".text\n\tjmp _start\n");
+
 static const char version[] __attribute__((used)) = "$VER: " CHIP_NAME " 1.0 (8.11.2026) AmiCradle Team";
 
 struct ExecBase *SysBase;
@@ -242,7 +245,11 @@ int start(void)
     int own_gfx, have_chips;
     struct MonitorSpec *def;
 
-    SysBase = *(struct ExecBase **)4;
+    {
+        struct ExecBase **p = (struct ExecBase **)4;
+        __asm__ ("" : "+r"(p));                     /* GCC knows no object at 4 */
+        SysBase = *p;
+    }
     me = (struct Process *)FindTask(NULL);
     if (!me->pr_CLI) {                              /* from its icon: nothing to do */
         struct Message *m;

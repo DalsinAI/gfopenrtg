@@ -12,5 +12,5 @@ for t in listmodes modescreen; do
     "$CC" $SOFT -noixemul -Os -fno-delete-null-pointer-checks -Wall -o "$OUT/$t" "$HERE/$t.c"
 done
 for c in AGA ECS; do
-    "$CC" $SOFT -nostartfiles -Os -fno-delete-null-pointer-checks -fomit-frame-pointer -Wall -DCHIPSET_$c -o "$OUT/$c" "$HERE/chipset_monitor.c" -lamiga
+    "$CC" $SOFT -nostartfiles -Os -fno-toplevel-reorder -fno-delete-null-pointer-checks -fomit-frame-pointer -Wall -DCHIPSET_$c -o "$OUT/$c" "$HERE/chipset_monitor.c" -lamiga
 done

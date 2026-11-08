@@ -12,7 +12,9 @@
 #include <GL/gl.h>
 #include <GL/glext.h>
 
-static int glad_gl_version;     /* major * 10 + minor, after gladLoaderLoadGL */
+/* major * 10 + minor, after gladLoaderLoadGL. Weak, so every file of a program
+ * shares the one: shaderutil.c tests it, and the program's main file sets it. */
+__attribute__((weak)) int glad_gl_version;
 
 static inline int gladLoaderLoadGL(void)
 {

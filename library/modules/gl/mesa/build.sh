@@ -71,15 +71,35 @@ else
     NAME=host; XARG= PYARG=--native-file
 fi
 B=$WORK/mesa-build-$NAME
+# GL_DRIVERS: the Gallium drivers GL.module carries (9 November 2026).
+# both (the default): softpipe and virgl, as before. virgl: no softpipe, for a
+# GPU ROM or a set that always has the host's GPU; with no virgl a program's
+# GL fails cleanly (gla_virgl_os3.c says why). softpipe: no virgl, for a
+# machine without the ACRTG board's virgl. The GLA core is told which by
+# GLA_HAVE_SOFTPIPE and GLA_HAVE_VIRGL (gla_core.h), in FLAGS below.
+GL_DRIVERS=${GL_DRIVERS:-both}
+case $GL_DRIVERS in
+    both)     GDRV=softpipe,virgl; HAVE_SP=1; HAVE_VG=1 ;;
+    virgl)    GDRV=virgl;          HAVE_SP=0; HAVE_VG=1 ;;
+    softpipe) GDRV=softpipe;       HAVE_SP=1; HAVE_VG=0 ;;
+    *) echo "mesa: GL_DRIVERS is both, virgl or softpipe, not $GL_DRIVERS"; exit 1 ;;
+esac
 if [ ! -f "$B/build.ninja" ]; then
-    # Only what GLA needs: softpipe and virgl, GL and GLES 2/3, no window systems or LLVM.
+    # Only what GLA needs: softpipe and/or virgl, GL and GLES 2/3, no window systems or LLVM.
     meson setup "$B" "$SRC" $XARG $PYARG "$WORK/python.ini" --buildtype=release \
-        -Dgallium-drivers=softpipe,virgl -Dvulkan-drivers= -Dllvm=disabled -Dplatforms= \
+        -Dgallium-drivers=$GDRV -Dvulkan-drivers= -Dllvm=disabled -Dplatforms= \
         -Degl=disabled -Dglx=disabled -Dgbm=disabled -Dgles1=disabled -Dgles2=enabled \
         -Dopengl=true -Dvalgrind=disabled -Dlibunwind=disabled -Dzstd=disabled \
         -Dexpat=disabled -Dzlib=disabled -Dshader-cache=disabled -Dspirv-tools=disabled
+elif [ "$(cat "$B/.gl-drivers" 2>/dev/null || echo both)" != "$GL_DRIVERS" ]; then
+    # A build tree made for another set: the same tree, told the new one.
+    meson configure "$B" -Dgallium-drivers=$GDRV
 fi
-LIBS="src/mesa/libmesa.a src/gallium/drivers/softpipe/libsoftpipe.a src/gallium/drivers/virgl/libvirgl.a src/gallium/auxiliary/libgallium.a src/gallium/auxiliary/libgalliumvl_stub.a
+echo "$GL_DRIVERS" > "$B/.gl-drivers"
+DRVLIBS=
+[ $HAVE_SP = 1 ] && DRVLIBS="$DRVLIBS src/gallium/drivers/softpipe/libsoftpipe.a"
+[ $HAVE_VG = 1 ] && DRVLIBS="$DRVLIBS src/gallium/drivers/virgl/libvirgl.a"
+LIBS="src/mesa/libmesa.a$DRVLIBS src/gallium/auxiliary/libgallium.a src/gallium/auxiliary/libgalliumvl_stub.a
  src/compiler/glsl/libglsl.a src/compiler/glsl/glcpp/libglcpp.a src/compiler/spirv/libvtn.a
  src/compiler/nir/libnir.a src/compiler/libcompiler.a src/mesa/glapi/glapi/libglapi_bridge.a
  src/mesa/glapi/shared-glapi/libglapi.a src/util/libxmlconfig.a src/util/libmesa_util.a
@@ -115,6 +135,7 @@ for e in json.load(open(b + "/compile_commands.json")):
         break
 PY
 )
+FLAGS="$FLAGS -DGLA_HAVE_SOFTPIPE=$HAVE_SP -DGLA_HAVE_VIRGL=$HAVE_VG"
 # The cross file's link flags (-m68040, -noixemul, ...), without its libraries.
 LFLAGS=
 if [ -n "${CROSS:-}" ]; then

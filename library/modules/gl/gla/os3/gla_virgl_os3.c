@@ -175,6 +175,13 @@ static int softpipe_hook(const char *why)
         else if (!(why = library_why())) why = why_asked;
     }
     line[0] = 0;
+#if !GLA_HAVE_SOFTPIPE
+    /* GL_DRIVERS=virgl: no softpipe to fall back to, whatever GLDriver says. */
+    cat(line, sizeof line, "GL: no virgl, and this GL.module has no softpipe (built GL_DRIVERS=virgl): ");
+    cat(line, sizeof line, why);
+    gla_os3_say(line);
+    return 1;
+#endif
     if (drv == GLA_OS3_DRIVER_GPU) {
         cat(line, sizeof line, "GL: softpipe refused, as ENV:GFOpenGPU/GLDriver is gpu; no virgl: ");
         cat(line, sizeof line, why);

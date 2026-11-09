@@ -9,6 +9,17 @@
 #ifndef GLA_CORE_H
 #define GLA_CORE_H
 
+/* The Gallium drivers this build carries (mesa/build.sh GL_DRIVERS, 9 Nov
+ * 2026): both unless the build says otherwise. Without softpipe,
+ * gla_display_create gives NULL (the softpipe hook is told first, and says
+ * why); without virgl, gla_display_create_virgl does. */
+#ifndef GLA_HAVE_SOFTPIPE
+#define GLA_HAVE_SOFTPIPE 1
+#endif
+#ifndef GLA_HAVE_VIRGL
+#define GLA_HAVE_VIRGL 1
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

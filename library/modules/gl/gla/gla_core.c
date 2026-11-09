@@ -351,18 +351,23 @@ const char *gla_last_why(void) { return virgl_why; }
 static struct disk_cache *softpipe_cache;
 static int softpipe_cache_users;
 
+#if GLA_HAVE_SOFTPIPE
 static struct disk_cache *softpipe_get_disk_shader_cache(struct pipe_screen *screen)
 {
     (void)screen;
     return softpipe_cache;
 }
+#endif
 
 struct gla_display *gla_display_create(void)
 {
-    struct gla_display *d;
     if (softpipe_hook && softpipe_hook(virgl_why))
         return NULL;                    /* softpipe refused (OS 3.2: ENV:GFOpenGPU/GLDriver gpu) */
-    d = CALLOC_STRUCT(gla_display);
+#if !GLA_HAVE_SOFTPIPE
+    /* A build without softpipe (GL_DRIVERS=virgl): the hook, which knows, has said so. */
+    return NULL;
+#else
+    struct gla_display *d = CALLOC_STRUCT(gla_display);
     if (!d)
         return NULL;
     d->ws = gla_winsys_create();
@@ -378,10 +383,16 @@ struct gla_display *gla_display_create(void)
     d->fscreen.screen->get_disk_shader_cache = softpipe_get_disk_shader_cache;
     d->fscreen.get_param = fs_get_param;
     return d;
+#endif
 }
 
 struct gla_display *gla_display_create_virgl(const struct gla_virgl_transport *t)
 {
+#if !GLA_HAVE_VIRGL
+    (void)t;
+    gla_note_why("this GL.module was built without virgl (GL_DRIVERS=softpipe)");
+    return NULL;
+#else
     struct gla_display *d = CALLOC_STRUCT(gla_display);
     struct virgl_winsys *vws;
     if (!d)
@@ -403,6 +414,7 @@ struct gla_display *gla_display_create_virgl(const struct gla_virgl_transport *t
     gla_note_why(NULL);
     d->fscreen.get_param = fs_get_param;
     return d;
+#endif
 }
 
 const char *gla_display_driver(struct gla_display *d)

@@ -81,8 +81,8 @@
  *     for one block, which the 68k waits for), or no room left.
  * A PUT of Q_COPY bytes or fewer is copied into the arena, so Mesa may write
  * the resource again at once (the usual pattern: glBufferSubData over data
- * a queued draw still needs); a bigger one is read where it is, and the
- * resource is busy until its block has run. A SUBMIT's commands are copied
+ * a queued draw still needs); a bigger one is read where it is, and runs at
+ * once with the queue before it (its resource busy only meanwhile). A SUBMIT's commands are copied
  * into the arena (Mesa writes its command buffer again at once). Creates
  * and unrefs queue too; an unref'd resource's memory is freed once no
  * queued PUT reads it. Results of queued commands are looked at when their
@@ -281,7 +281,7 @@ static int transfer(struct gv_ws *w, struct virgl_hw_res *res, const struct pipe
 {
     uint32_t a[14];
     unsigned r;
-    int rc;
+    int rc, copied;
     a[0] = res->res_handle; a[1] = CTX_ID; a[2] = level; a[3] = stride; a[4] = layer_stride;
     a[5] = box->x; a[6] = box->y; a[7] = box->z; a[8] = box->width; a[9] = box->height; a[10] = box->depth;
     a[11] = w->t.addr(w->t.user, res->ptr + buf_offset);
@@ -296,22 +296,30 @@ static int transfer(struct gv_ws *w, struct virgl_hw_res *res, const struct pipe
         return rc;
     }
     q_reserve(w, 14);
+    copied = 0;
     if (w->batch && a[12] && a[12] <= Q_COPY) {
         uint8_t *copy = q_room(w, a[12]);
         if (copy) {
             memcpy(copy, res->ptr + buf_offset, a[12]);
             a[11] = w->t.addr(w->t.user, copy);
-        } else
-            res->busy_seq = w->seq + 1;
-    } else
-        res->busy_seq = w->seq + 1;     /* read in place: busy until this block has run */
+            copied = 1;
+        }
+    }
+    if (!copied) res->busy_seq = w->seq + 1;    /* read in place: busy until this block has run */
     w->qbytes += a[12];
     q_cmd(w, ACV_PUT, 14, a);
     rc = 0;
     if (!w->batch) {
         rc = q_run(w) ? -1 : (int32_t)util_be32_to_cpu(w->q[1]);
         w->first_err = 0;
-    } else
+    } else if (!copied)
+        /* A PUT read in place runs now, with what is queued before it, as
+         * every PUT did unbatched. Left queued, its resource stayed busy,
+         * and Mesa then gives a buffer it rewrites whole a new resource
+         * rather than waiting (virgl_resource_transfer_prepare's realloc):
+         * Boing Swarm's 16,384 boids a frame, 206 -> 122 fps on daletop. */
+        q_run(w);
+    else
         q_after(w);
     mtx_unlock(&w->mutex);
     return rc;

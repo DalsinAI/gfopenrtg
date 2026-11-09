@@ -283,6 +283,28 @@ draws in them (amicradle's `docs/design/Design-OpenGPU-2D-On-The-GPU.md`
 - Each bitmap is freed with its texture, or with its window's surface (a
   resize, the window closing).
 
+## The standard keys
+
+Every program on SDL2.module, and every SDL 1.2 program through
+sdl12-compat, has the same keys (`src/video/amigaos3/SDL_os3keys.c`,
+`patches/amigaos3/0020`). They are on Right Amiga, which games leave alone:
+
+| Keys | What they do |
+| --- | --- |
+| Right Amiga + F | Window or full screen (a screen of the window's size). The choice is kept in `ENVARC:GFGames/<program>/Screen` and used the next time. |
+| Right Amiga + Q | Quit, as the window's close gadget (`SDL_QUIT`). |
+| Right Amiga + P | Pause: the picture, the sound and the game's clock (`SDL_GetTicks`, the performance counter) stop until Right Amiga + P again. The window's title says so. |
+| Right Amiga + M | Free the mouse pointer from a game in relative mode, or take it back. |
+| Right Amiga + S | A PNG of the window in `PROGDIR:Screenshots/<program>_NNN.png`. |
+| Help | The controls card: `PROGDIR:Controls` (plain text) and these keys, in a requester; the game is paused meanwhile. Without that file Help is the game's key. |
+| Right Amiga + F1, F2 | F11 and F12, which Amiga keyboards haven't got. |
+| Right Amiga + cursor keys | Page Up and Page Down (up, down), Home and End (left, right). |
+
+A program's icon can say `FULLSCREEN` or `WINDOW` (tooltypes) for how it
+starts; a choice made with Right Amiga + F comes first. Setting
+`SDL_AMIGA_STANDARD_KEYS` to 0 (a hint, or `ENV:SDL_AMIGA_STANDARD_KEYS`)
+turns all of it off.
+
 ## SDL2_image and SDL2_mixer: modules, decoding on the cores
 
 The design is amicradle's `docs/design/Design-OpenGPU-SDL2-Satellites.md`.

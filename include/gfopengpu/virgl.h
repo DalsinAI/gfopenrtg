@@ -70,6 +70,8 @@
 #define ACV_HOST_PRESENT    4   /* ACV_PRESENT is there */
 #define ACV_HOST_NO_BATCH   8   /* the runtime asks for each command in a block of its own
                                    (AC_VIRGL_BATCH=0): GL.module then doesn't queue them */
+#define ACV_HOST_NO_PIPELINE 16 /* the runtime asks GL.module to wait for every block it
+                                   sends (AC_VIRGL_PIPELINE=0) */
 
 /* ACV_PRESENT (DalsinAI/amicradle docs/design/Design-OpenGPU-Virgl-Direct-
  * Present.md). Target pixel (x, y) comes from resource pixel (x - sx, y - sy),

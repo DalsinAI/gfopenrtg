@@ -43,16 +43,27 @@ static struct Device *gla_timer_base;
 static struct timerequest timer_io;
 static ULONG eclock_hz;
 
-static int os3_run(void *user, void *block, unsigned long bytes)
+/* A block sent, not waited for (gla_virgl.h's gla_virgl_send): its fence
+ * is the ticket. */
+static int os3_send(void *user, void *block, unsigned long bytes, unsigned long *ticket)
 {
     ULONG stream[4], fence = 0;
     struct OGPUBatch b;
-    struct EClockVal t0, t1;
-    LONG r;
     (void)user;
     ogpu_batch_init(&b, stream, 4);
     ogpu_virgl(&b, (unsigned long)block, bytes);
     if (OGPU_Submit(stream, (ULONG)b.words, &fence) != OGPU_OK) return -1;
+    *ticket = fence;
+    return 0;
+}
+
+/* ... and waited for (gla_virgl_wait); os3_run is both. */
+static int os3_wait(void *user, unsigned long ticket)
+{
+    ULONG fence = (ULONG)ticket;
+    struct EClockVal t0, t1;
+    LONG r;
+    (void)user;
     if (eclock_hz) ReadEClock(&t0);
     r = OGPU_Wait(fence);
     if (r == OGPU_ERR_EXPIRED) {
@@ -76,6 +87,13 @@ static int os3_run(void *user, void *block, unsigned long bytes)
         gla_counts.fence_wait_us += (ULONG)(((unsigned long long)(t1.ev_lo - t0.ev_lo) * 1000000u) / eclock_hz);
     }
     return r == OGPU_OK ? 0 : -1;
+}
+
+static int os3_run(void *user, void *block, unsigned long bytes)
+{
+    unsigned long ticket;
+    if (os3_send(user, block, bytes, &ticket)) return -1;
+    return os3_wait(user, ticket);
 }
 
 /* ---- which driver, and saying so when it is softpipe (7 Nov 2026) ----
@@ -199,6 +217,14 @@ int gla_os3_virgl_transport(struct gla_virgl_transport *t)
             if (v[0] == '0' || word_is(v, "off")) gla_virgl_batch_wanted = 0;
             else if (v[0] == '1' || word_is(v, "on")) gla_virgl_batch_wanted = 1;
         }
+        /* ENV:GFOpenGPU/GLPipeline: the same for blocks sent without waiting */
+        gla_virgl_pipeline_wanted = -1;
+        if (gla_os3_getenv("GFOpenGPU/GLPipeline", v, sizeof v) > 0) {
+            if (v[0] == '0' || word_is(v, "off")) gla_virgl_pipeline_wanted = 0;
+            else if (v[0] == '1' || word_is(v, "on")) gla_virgl_pipeline_wanted = 1;
+        }
+        gla_virgl_send = os3_send;
+        gla_virgl_wait = os3_wait;
     }
     if (!gla_timer_base && !OpenDevice((CONST_STRPTR)TIMERNAME, UNIT_ECLOCK, (struct IORequest *)&timer_io, 0)) {
         struct EClockVal e;

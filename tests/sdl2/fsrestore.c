@@ -28,7 +28,14 @@
  *               its own mode, as many screens as before
  * The picture: four coloured quarters inside a yellow border and a moving
  * black bar, so a stale or misplaced picture shows on a screenshot.
- * Exit 0 when every check passes, 10 otherwise. */
+ * Exit 0 when every check passes, 10 otherwise.
+ *
+ * Linked with libSDL2_static.a, SDL's Amiga back end and this program share
+ * IntuitionBase and GfxBase, and SDL_Quit closes them and sets them to NULL
+ * (OS3_VideoQuit). The checks after SDL_Quit then called Intuition through a
+ * NULL base and the program hung (Lab-50, 9 Nov 2026). So this program opens
+ * both libraries itself before SDL_Init and puts its own bases back after
+ * SDL_Quit. Each call around SDL_Quit is logged ("trace") before and after. */
 #include "SDL.h"
 #include <stdio.h>
 #include <string.h>
@@ -44,6 +51,14 @@
 static int failures = 0;
 static int wait_key = 0;
 static int step_no = 0;
+static struct IntuitionBase *own_intuition = NULL;
+static struct GfxBase *own_gfx = NULL;
+
+static void trace(const char *what)
+{
+    printf("  trace %s (t=%u ms)\n", what, (unsigned)SDL_GetTicks());
+    fflush(stdout);
+}
 
 static void report(const char *what, int ok, const char *detail)
 {
@@ -309,6 +324,13 @@ int main(int argc, char *argv[])
         return 20;
     }
     wait_key = SDL_getenv("FSRESTORE_WAIT") != NULL;
+    /* our own opens: SDL_Quit may close and clear the shared bases */
+    own_intuition = (struct IntuitionBase *)OpenLibrary((CONST_STRPTR)"intuition.library", 39);
+    own_gfx = (struct GfxBase *)OpenLibrary((CONST_STRPTR)"graphics.library", 39);
+    if (!own_intuition || !own_gfx) {
+        printf("fsrestore: can't open intuition.library or graphics.library 39\n");
+        return 20;
+    }
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         printf("SDL_Init: %s\n", SDL_GetError());
         return 20;
@@ -376,8 +398,17 @@ quit:
     step("SDL_Quit with the window as it is (full screen)");
     /* no SDL_DestroyWindow: SDL_Quit destroys it, full screen, as a game
        that quits from full screen does */
+    trace("SDL_Quit called");
     SDL_Quit();
+    trace("SDL_Quit returned");
+    printf("  trace IntuitionBase %p, GfxBase %p after SDL_Quit (ours %p, %p)\n",
+           (void *)IntuitionBase, (void *)GfxBase, (void *)own_intuition, (void *)own_gfx);
+    fflush(stdout);
+    IntuitionBase = own_intuition;
+    GfxBase = own_gfx;
+    trace("look after");
     look("after", &sc);
+    trace("look after returned");
     SDL_snprintf(line, sizeof(line),
                  "front %s, mode 0x%08lx (Workbench's 0x%08lx), %d SDL screens left, %d screens (%d before)",
                  sc.front_is_wb ? "the Workbench" : "NOT the Workbench",
@@ -386,5 +417,7 @@ quit:
                    sc.screens == before, line);
     printf("fsrestore: %s\n", failures ? "FAILED" : "all passed");
     fflush(stdout);
+    CloseLibrary((struct Library *)own_gfx);
+    CloseLibrary((struct Library *)own_intuition);
     return failures ? 10 : 0;
 }

@@ -27,11 +27,22 @@ id on its own.
 3. **A data load.** `Copy` of `Games:Ported/CrispyDoom/crispy-doom`
    (1,342,636 bytes) to RAM:. There is no `pak0.wad` in
    `Games:Ported/Quake/id1/`.
-4. **SDL2 blits.** Not run. `LIBS:sdl2.library` is not on this copy, and
-   `Search SYS: sdl2.library FILE` printed nothing. The thirteen demos are
-   installed at `DH1:SDL2 Demos` (about 114 KB each), so they are not
-   carrying the module themselves. Task 7 stays waiting on a lab that has
-   `sdl2.library`.
+4. **SDL2 blits.** `LIBS:sdl2.library` is not a separate file on this copy
+   (`Search SYS: sdl2.library FILE` printed nothing). The thirteen demos
+   are at `DH1:SDL2 Demos`. OpenSprites runs from there; the software
+   renderer is in that program, not in a library on `LIBS:`.
+
+   With no hint it printed
+   `SDL renderer=opengpu kind=ACCELERATED` and the machine sat at about
+   20% for 30 seconds. No guest block was over 4% (`$40BF2E24`, FPU
+   setup). That path is not a blit.
+
+   `SetEnv SDL_RENDER_DRIVER software` made the next start print
+   `SDL renderer=software kind=SOFTWARE/CPU`. Eight windows, 40 seconds,
+   35,944 emulation samples, 91% CPU. Translated code was 72.4% of that.
+   The runtime was 19.6%, and 11.8 points of it were `op_addx_subx`
+   (the JIT's helper for ADDX/SUBX). libc was 2.4%. The RTG line helpers
+   were not in the hot list. Display was 0.5%.
 
 ## The costliest guest blocks
 
@@ -57,12 +68,36 @@ The 14% window (the copy, and the PNG open falls in the same stretch) has
 no guest block over 4.7% (`$41534E12`). The copy is spread out. It is not
 a candidate on this run.
 
+The software OpenSprites window, same byte dump:
+
+| Share | Address | Where |
+|------:|---------|--------|
+| 29.5% | `$40D0957A` | inside the loaded OpenSprites |
+| 21.4% | `$40D09824` | the same, the inner loop |
+| 1.9% | `$40D0952E` | the same |
+| 1.8% | `$40CC1D26` | the same |
+
+`$40D09824` starts `MOVE.W #$00FF,D6` and contains `MULU.W` of a
+stack slot into a data register (and a second `MULU.W` the same way).
+That is a channel multiply, the shape of a blend or a pixel-format
+conversion, not the sprite's FPU update. The two blocks together are
+half of that window. They are not named to a C function: this program
+has no symbols here.
+
 ## What this says for hostlib
 
-The unpack is the only workload here that is worth a hostlib id, and it
-is inside GFOpenCompress, not a library call the ROM already exports.
-Inflate-on-ABI-2 (task 6, Team 3) is the same kind of work. Do not spend
-a hostlib id on the RTG line start, the emulator loop, or this PNG.
+The unpack is worth a hostlib id, and it is inside GFOpenCompress, not a
+library call the ROM already exports. Inflate-on-ABI-2 (task 6, Team 3)
+is the same kind of work. Do not spend a hostlib id on the RTG line
+start, the emulator loop, or this PNG.
 
-SDL2 blits are still unmeasured. Task 7 does not start until a lab with
-`sdl2.library` and a blit demo has been profiled the same way.
+The software blit is also worth one. Half of a 91% window is two blocks
+in OpenSprites, and the JIT is spending another 11.8% calling out for
+ADDX/SUBX inside that loop. Do not hostlib `op_addx_subx`: that helper
+goes away if the loop does. The accelerated renderer is not the same
+work and is not a candidate.
+
+Task 7 does not get a function yet. The 68k body is the specification,
+and these addresses are not yet tied to a C function in SDL2.module. The
+next step is that name, from a build with symbols, then one hostlib id
+for that convert. Not before.

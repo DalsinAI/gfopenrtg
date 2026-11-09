@@ -51,11 +51,9 @@ void GLUTPostRedisplay(void) { glut.redisplay = 1; }
 int GLUTCreateWindow(const char *title)
 {
     GLcontext c;
-    int keep = mgl_prefs.window;
-    mgl_prefs.window = 1;
     if (glut.mode & GLUT_DEPTH) mgl_prefs.zbits = mgl_prefs.zbits ? mgl_prefs.zbits : 16;
-    c = MGLCreateContext(glut.x, glut.y, glut.w > 0 ? glut.w : 300, glut.h > 0 ? glut.h : 300);
-    mgl_prefs.window = keep;
+    /* the library makes the context current: a GLUT program writes no variable (spec 9.3) */
+    c = mgl_create_window(glut.x, glut.y, glut.w > 0 ? glut.w : 300, glut.h > 0 ? glut.h : 300);
     if (!c) return 0;
 #ifndef MGL_HOST
     if (title && c->disp && MGLGetWindowHandle(c)) SetWindowTitles((struct Window *)MGLGetWindowHandle(c), (STRPTR)title, (STRPTR)-1);
@@ -80,6 +78,7 @@ void GLUTMainLoop(void)
 {
     GLcontext c = mgl_current;
     if (!c) return;
+    mgl_input_on(c);
     c->quit = 0;
     while (!c->quit && mgl_current == c) {
         if (glut.reshape && (glut.shown_w != c->width || glut.shown_h != c->height)) {

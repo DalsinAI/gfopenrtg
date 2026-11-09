@@ -9,7 +9,9 @@
  * here, on the 68k. Both draw the same pixels.
  *
  * The parts:
- *   mgl_lib.c       the library, its table, preferences, small helpers
+ *   mgl_lib.c       the library, the -30 vector, preferences, small helpers
+ *   mgl_table.c     the dispatch table (made by gen_api.py from the spec)
+ *   mgl_choose.c    mglChoose* and mglProhibit*
  *   mgl_math.c      the arithmetic the 68040's FPU leaves to software
  *   mgl_state.c     enables, functions, queries, strings, errors
  *   mgl_matrix.c    matrices, gluPerspective, gluLookAt
@@ -37,10 +39,10 @@
 #include "../opengpu/ogpu_core.h"
 #include "../opengpu/ogpu_3d.h"
 #include "../../include/gfopengpu/build3d.h"
-#include "mgl_slots.h"
+#include "mgl_entries.h"           /* the functions behind the table (gen_api.py, from the spec) */
 
-#define MGL_LIB_VERSION   29
-#define MGL_LIB_REVISION  10
+#define MGL_LIB_VERSION   30
+#define MGL_LIB_REVISION  0
 
 #ifndef MGL_HOST
 #define REG(r, decl) register decl __asm(#r)   /* bebbo gcc: an argument in a register */
@@ -350,6 +352,10 @@ struct GLcontext_t {
 
     /* statistics */
     ULONG tris, verts;
+
+    /* MiniGL's own capabilities (spec 7.2, 9.1) */
+    GLboolean persp_mapping;        /* MGL_PERSPECTIVE_MAPPING: state only */
+    GLboolean array_be;             /* MGL_ARRAY_TRANSFORMATIONS: on, arrays are big-endian; off, little-endian */
 };
 
 #define PRIM_NONE 0xFFFF
@@ -377,8 +383,30 @@ struct mgl_prefs {                  /* chosen before mglCreateContext */
     int route;                      /* ENV:MiniGL/Driver: -1 auto, ROUTE_ */
     int flip;                       /* ENV:MiniGL/Flip: screens change buffers instead of blitting */
     int gpu_3d, gpu_host;           /* gfopengpu.library draws 3D (and not on this 68k) */
+    int prohibit_mip;               /* mglProhibitMipMapping: stored, no effect */
+    int vbuf, mtexbuf;              /* mglChooseVertexBufferSize, mglChooseMtexBufferSize: hints */
+    ULONG tex_names;                /* mglChooseTextureBufferSize: names below it (0: any) */
+    int max_tex;                    /* ENV:MiniGL/MaxTextureSize: GL_MAX_TEXTURE_SIZE (0: 1024) */
 };
 extern struct mgl_prefs mgl_prefs;
+
+/* The mglChoose* and mglProhibit* requests back at their defaults (spec 9.2):
+ * when a client opens the library, when a context is deleted. */
+static __inline__ void mgl_prefs_defaults(void)
+{
+    mgl_prefs.window = 0;
+    mgl_prefs.buffers = 1;
+    mgl_prefs.depth = 24;
+    mgl_prefs.zbits = 32;
+    mgl_prefs.vbuf = 1024;
+    mgl_prefs.mtexbuf = 4096;
+    mgl_prefs.tex_names = 4096;
+    mgl_prefs.guard = 0;
+    mgl_prefs.alpha_fallback = 0;
+    mgl_prefs.prohibit_mip = 1;
+    mgl_prefs.no_mip = 0;
+    mgl_prefs.close_desktop = 0;
+}
 
 void *mgl_alloc(ULONG bytes);       /* cleared; 0 when there is no memory */
 void mgl_free(void *p);
@@ -472,6 +500,8 @@ ULONG mgl_fu(float f);              /* a float's bits, for records */
 
 /* ---- the display (mgl_display.c, or a test's) ------------------------------------------- */
 
+GLcontext mgl_create_window(int x, int y, int w, int h);   /* GLUT's window, current */
+void mgl_input_on(GLcontext c);     /* the input window's messages, for a main loop */
 int mgl_disp_lock(GLcontext c);     /* c->base, c->bpr for one batch; 0 when it can't */
 void mgl_disp_unlock(GLcontext c);
 int mgl_disp_readable(GLcontext c); /* the area's pixels as the core left them can be read now */

@@ -68,6 +68,8 @@
 #define ACV_HOST_GPU        1   /* virglrenderer draws on a graphics chip (else llvmpipe or the like) */
 #define ACV_HOST_GLES       2   /* ... through GLES */
 #define ACV_HOST_PRESENT    4   /* ACV_PRESENT is there */
+#define ACV_HOST_NO_BATCH   8   /* the runtime asks for each command in a block of its own
+                                   (AC_VIRGL_BATCH=0): GL.module then doesn't queue them */
 
 /* ACV_PRESENT (DalsinAI/amicradle docs/design/Design-OpenGPU-Virgl-Direct-
  * Present.md). Target pixel (x, y) comes from resource pixel (x - sx, y - sy),

@@ -38,13 +38,15 @@ void gla_note_why(const char *why) { noted = why; }
 const char *gla_last_why(void) { return noted; }
 
 /* gla_notice_os3.c's three, faked: the environment, what was said, the board */
-static const char *env_gldriver, *env_ogles3;
+static const char *env_gldriver, *env_ogles3, *env_glbatch;
 static char said[8][512];
 static int nsaid;
 static const char *board_says;
+int gla_virgl_batch_wanted = 7;         /* gla_virgl.c's: what the transport sets it to */
 int gla_os3_getenv(const char *name, char *buf, int size)
 {
-    const char *v = !strcmp(name, "GFOpenGPU/GLDriver") ? env_gldriver : !strcmp(name, "OGLES3/Driver") ? env_ogles3 : NULL;
+    const char *v = !strcmp(name, "GFOpenGPU/GLDriver") ? env_gldriver : !strcmp(name, "OGLES3/Driver") ? env_ogles3
+                  : !strcmp(name, "GFOpenGPU/GLBatch") ? env_glbatch : NULL;
     if (!v) return -1;
     snprintf(buf, (size_t)size, "%s", v);
     return (int)strlen(buf);
@@ -155,6 +157,19 @@ int main(void)
     env_gldriver = "whatever"; nsaid = 0;
     CHECK(gla_os3_virgl_transport(&t), "auto: the transport, when virgl is there");
     CHECK(nsaid == 0, "... and nothing said");
+
+    /* ENV:GFOpenGPU/GLBatch (9 Nov 2026): unset as the runtime asks, 0/off never, 1/on always */
+    env_glbatch = NULL;
+    CHECK(gla_os3_virgl_transport(&t) && gla_virgl_batch_wanted == -1, "GLBatch unset: as the runtime asks (%d)", gla_virgl_batch_wanted);
+    env_glbatch = "0";
+    CHECK(gla_os3_virgl_transport(&t) && gla_virgl_batch_wanted == 0, "GLBatch 0: a block a command (%d)", gla_virgl_batch_wanted);
+    env_glbatch = "Off";
+    CHECK(gla_os3_virgl_transport(&t) && gla_virgl_batch_wanted == 0, "GLBatch off: a block a command (%d)", gla_virgl_batch_wanted);
+    env_glbatch = "1";
+    CHECK(gla_os3_virgl_transport(&t) && gla_virgl_batch_wanted == 1, "GLBatch 1: batched (%d)", gla_virgl_batch_wanted);
+    env_glbatch = "maybe";
+    CHECK(gla_os3_virgl_transport(&t) && gla_virgl_batch_wanted == -1, "GLBatch maybe: as the runtime asks (%d)", gla_virgl_batch_wanted);
+    env_glbatch = NULL;
     printf("test_gla_virgl_os3: %d of %d checks passed\n", checks - fails, checks);
     return fails != 0;
 }

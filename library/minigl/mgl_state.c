@@ -99,7 +99,8 @@ const GLubyte *GLGetString(GLcontext c, GLenum name)
     switch (name) {
     case GL_VENDOR: return (const GLubyte *)"AmiCradle Team (GFOpenRTG)";
     case GL_RENDERER:
-        return (const GLubyte *)(c && c->route == ROUTE_GPU ? "AmiCradle GL 1.1 for minigl.library programs, on GFOpenGPU"
+        return (const GLubyte *)(c && c->route == ROUTE_VIRGL ? "AmiCradle GL 1.1 for minigl.library programs, on the host's GPU (virgl)"
+                               : c && c->route == ROUTE_GPU ? "AmiCradle GL 1.1 for minigl.library programs, on GFOpenGPU"
                                                           : "AmiCradle GL 1.1 for minigl.library programs, on the 68k");
     case GL_VERSION: return (const GLubyte *)"1.1";     /* exactly (spec 9.1) */
     case GL_EXTENSIONS:

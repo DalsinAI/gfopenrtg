@@ -27,6 +27,10 @@ What is in it
                           OpenGL and GLES (Mesa's and Khronos's headers)
   include/gla/            GLA: GFOpenGPU's own GL interface (displays, contexts,
                           buffers shown in a window)
+  include/GL/glu.h        GLU: SGI's, all of it (only in a kit built with it)
+  include/GL/glut.h freeglut.h
+                          GLUT: freeglut's interface, in an Intuition window
+                          (only in a kit built with it)
   include/gfopengpu/ proto/ inline/ clib/ libraries/
                           gfopengpu.library, GFOpenRTG, Warp3D and MiniGL
   include/Warp3D/ mgl/    Warp3D and MiniGL
@@ -52,17 +56,25 @@ What is in it
   lib/libminigl.a libmgl.a
                           MiniGL (minigl.library), and its GLUT-style helpers
   lib/libtinygl.a         TinyGL's calls, on GL (link it before -lGL)
+  lib/libGLU.a            GLU: the matrix helpers, mipmaps, quadrics, the
+                          tessellator and NURBS, on GL (C programs need no
+                          libstdc++ for NURBS)
+  lib/libglut.a           GLUT on GLA: one window (Workbench's, or a screen
+                          of its own), its callbacks from IDCMP, freeglut's
+                          shapes, teapot and fonts
   lib/libEGL.a            EGL 1.4, on GLA (link it before -lGL)
   lib/libSDL.a            SDL 1.2: sdl12-compat, on SDL 2, with SDL 2's
                           link library inside it (only in a kit built with it)
   lib/libSDL_gl.a         SDL 1.2's OpenGL calls (sdl-config --gl)
   lib/pkgconfig/          sdl2, SDL2_image, SDL2_mixer, SDL2_ttf, SDL2_net,
-                          gl, glesv2, egl and tinygl (and sdl, with SDL 1.2)
+                          gl, glesv2, egl and tinygl (and sdl, with SDL 1.2;
+                          glu and glut, with GLUT)
   lib/cmake/              find_package(SDL2) and the satellites
   cross/                  a CMake toolchain file and a meson cross file
   examples/               a sprite program, an SDL_GL program, a GLA one,
                           an EGL one and a TinyGL one (and an SDL 1.2 one,
-                          with SDL 1.2)
+                          with SDL 1.2; three GLUT ones, one of them GLU's,
+                          with GLUT)
   AutoDocs-GFOpenGPU.md     the reference: how it all works, and what's there
   Licences/               every notice; Licences/README says what is whose
 
@@ -175,6 +187,8 @@ Each has its build command at its top:
   examples/egl        m68k-amigaos-gcc -O2 egltriangle.c -o EGLTriangle $(pkg-config --cflags --libs egl glesv2)
   examples/tinygl     m68k-amigaos-gcc -O2 tglspin.c -o TGLSpin $(pkg-config --cflags --libs tinygl)
   examples/sdl12      m68k-amigaos-gcc -O2 bounce.c -o Bounce $(sdl-config --cflags --libs)
+  examples/glut       m68k-amigaos-gcc -O2 glutspin.c -o GLUTSpin $(pkg-config --cflags --libs glut)
+                      (and gluscene.c, GLU's; glutcore.c, a core profile)
 
 Copy the program to the Amiga and run it from a Shell. Each takes
 SECONDS n, to end by itself.
@@ -198,13 +212,25 @@ Things to know
   draw, play and read input through SDL2.module, like SDL 2 programs.
   sdl-config takes the same SDL2_CPU and SDL2_RUNTIME settings, and --gl.
   -lSDL is all such a program links: libSDL.a has SDL 2's link library
-  inside it. --gl adds SDL 1.2's OpenGL (-lSDL_gl and -lGL). The kit has no
-  GLU, so sdl-config --cflags gives -DNO_SDL_GLU, and SDL_opengl.h leaves
-  GL/glu.h out.
+  inside it. --gl adds SDL 1.2's OpenGL (-lSDL_gl and -lGL). sdl-config
+  --cflags gives -DNO_SDL_GLU, so SDL_opengl.h leaves GL/glu.h out; a
+  program that uses GLU includes it and links -lGLU itself.
 - TinyGL programs run on GL.module like other GL programs. They also need
   LIBS:tinygl.library (GFOpenUp installs it), which they open themselves.
   SetEnv TinyGL/Driver CPU picks softpipe. A program that includes only
   <GL/gl.h> and uses the glA... calls adds -include proto/tinygl.h.
+- GLUT programs build as they do elsewhere: pkg-config glut gives -lglut
+  -lGLU -lGL. The window opens on Workbench (glutFullScreen and game mode:
+  a 24-bit screen of its own, Workbench's size), and the context is the
+  compatibility profile at the highest version GL has, unless
+  glutInitContextProfile asks for GLUT_CORE_PROFILE or GLUT_ES_PROFILE (the
+  kit's addition, for GLES 2 and 3). The right mouse button is the
+  program's: menus are accepted but never shown. One window; no overlays,
+  joysticks or freeglut's ...Ucall calls. Esc is the program's; the close
+  gadget and Ctrl-C end glutMainLoop.
+- GLU is SGI's, all of it. libtinygl.a has five of its calls (tgl/glu.h);
+  libGLU.a's are weak, so a TinyGL program can link -lGLU too, in either
+  order.
 - With GCC 16, run tools/fpcr_check.py (gfopenrtg) on what you build:
   GCC 16 at -m68040 can put a float-to-int store in the wrong place.
 

@@ -217,6 +217,8 @@ struct vg_layout {
 #define VG_D_FSC       (1UL << 6)
 #define VG_D_ALL       0xFFFFFFFFUL
 
+#define VG_RING        4                /* the vertex and index buffers: arenas long */
+
 struct mgl_vg {
     ULONG ctx_id;
     ULONG host_flags;                   /* HELLO's ACV_HOST_ */
@@ -236,6 +238,12 @@ struct mgl_vg {
     UBYTE *va; ULONG nva, cva;
     UWORD *ia; ULONG nia, cia;
     struct vg_res *colour, *depth, *vbuf, *ibuf;
+    /* Where the arenas go in vbuf and ibuf (bytes): each block's after the
+     * last one's, never over them. virglrenderer writes a buffer's PUT
+     * unsynchronized (GL_MAP_UNSYNCHRONIZED_BIT), so a PUT over vertices an
+     * earlier block's draws still read changed those draws on the GPU. The
+     * buffers are VG_RING arenas long; past the end, new ones (vg_ring). */
+    ULONG vb_off, vb_size, ib_base, ib_size;
     struct vg_res *dead;                /* resources released after the next block */
     ULONG grow_va, grow_ia, grow_cmd;   /* asked for at the next frame's start */
 

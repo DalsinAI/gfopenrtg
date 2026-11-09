@@ -100,7 +100,7 @@ void vg_set_vertex_buffer(GLcontext c, ULONG stride)
     if (!p) return;
     VG_W(p, VG_CMD0(VG_CCMD_SET_VERTEX_BUFFERS, 0, 3));
     VG_W(p, stride);
-    VG_W(p, 0);
+    VG_W(p, c->vg->vb_off);             /* this block's arena in the buffer (vg_ring) */
     VG_W(p, c->vg->vbuf->handle);
     c->vg->stride = stride;
 }
@@ -123,7 +123,8 @@ void vg_draw(GLcontext c, ULONG prim, ULONG start, ULONG count, int indexed, LON
 {
     ULONG *p;
     if (indexed) {
-        if (start * 2 != c->vg->ib_off || (c->vg->dirty & VG_D_IBUF)) { vg_set_index_buffer(c, start * 2); c->vg->dirty &= ~VG_D_IBUF; }
+        ULONG off = c->vg->ib_base + start * 2;     /* this block's arena in the buffer (vg_ring) */
+        if (off != c->vg->ib_off || (c->vg->dirty & VG_D_IBUF)) { vg_set_index_buffer(c, off); c->vg->dirty &= ~VG_D_IBUF; }
         start = 0;
     }
     p = vg_cmd(c, 13);

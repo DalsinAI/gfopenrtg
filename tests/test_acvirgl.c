@@ -393,6 +393,65 @@ int main(void)
               "a display target's GET counts as a frame read back (%d, %llu bytes, %llu presents)", result(c),
               (unsigned long long)(s1.frame_get_bytes - s0.frame_get_bytes), (unsigned long long)(s1.presents - s0.presents));
     }
+    /* Depth/stencil invalidated at a present (AC_VIRGL_ZDISCARD): when the
+     * context cleared both since its last present; never again once it
+     * presents a depth buffer it kept. Context 1's framebuffer gets a Z24S8
+     * depth buffer (surface 12 on resource 5). */
+    {
+        enum { T = 0x60000 };
+        uint32_t a_z[12] = { 5, 2, 20 /* S8_UINT_Z24_UNORM */, 1 /* DEPTH_STENCIL */, 64, 64, 1, 1, 0, 0, 0, 1 };
+        uint32_t pa[12] = { 1, 1, 0, 0, T, 64 * 4, OGPU_FMT_XRGB32, (64u << 16) | 64u, 0, 1, 0, (64u << 16) | 64u };
+        const char *zd = getenv("AC_VIRGL_ZDISCARD");
+        int on = !(zd && !strcmp(zd, "0")), k;
+        struct acvirgl_stats s0, s1, s2;
+        uint32_t a_sub[3] = { 1, CMDS, 0 };
+        begin(); c = cmd(ACV_RES_CREATE, 12, a_z);
+        acvirgl_run(v, map, NULL, BLK, at - BLK);
+        CHECK(result(c) == 0, "a depth buffer (%d)", result(c));
+        acvirgl_stats(v, &s0);
+        for (k = 0; k < 3; k++) {             /* three frames, each cleared */
+            cn = 0;
+            if (!k) {
+                le(VIRGL_CMD0(VIRGL_CCMD_CREATE_OBJECT, VIRGL_OBJECT_SURFACE, VIRGL_OBJ_SURFACE_SIZE)); le(12); le(5); le(20); le(0); le(0);
+                le(VIRGL_CMD0(VIRGL_CCMD_SET_FRAMEBUFFER_STATE, 0, VIRGL_SET_FRAMEBUFFER_STATE_SIZE(1))); le(1); le(12); le(10);
+            }
+            le(VIRGL_CMD0(VIRGL_CCMD_CLEAR, 0, VIRGL_OBJ_CLEAR_SIZE)); le(1 << 2 | 1 | 2);
+            le(f32(0.25f)); le(f32(0.5f)); le(f32(0.75f)); le(f32(1.0f));
+            { double d = 1.0; uint32_t w2[2]; memcpy(w2, &d, 8); le(w2[0]); le(w2[1]); }
+            le(0);
+            a_sub[2] = cn;
+            begin(); cs = cmd(ACV_SUBMIT, 3, a_sub); c = cmd(ACV_PRESENT, 12, pa);
+            acvirgl_run(v, map, NULL, BLK, at - BLK);
+            CHECK(result(cs) == 0 && result(c) == 64 * 64, "frame %d: submit %d, present %d", k, result(cs), result(c));
+        }
+        /* a second present of the same frame (another bitmap): nothing new, not given up */
+        begin(); c = cmd(ACV_PRESENT, 12, pa);
+        acvirgl_run(v, map, NULL, BLK, at - BLK);
+        acvirgl_stats(v, &s1);
+        c = T + (10 * 64 + 10) * 4;
+        CHECK(arena[c] == 0 && arena[c + 1] >= 0x3F && arena[c + 1] <= 0x40, "frames with depth invalidated still show");
+        CHECK(s1.zs_discards - s0.zs_discards == (on ? 3u : 0u), "depth/stencil not stored for 3 cleared frames (%llu)",
+              (unsigned long long)(s1.zs_discards - s0.zs_discards));
+        /* a frame that keeps depth (colour cleared only): given up for good */
+        for (k = 0; k < 2; k++) {
+            cn = 0;
+            le(VIRGL_CMD0(VIRGL_CCMD_CLEAR, 0, VIRGL_OBJ_CLEAR_SIZE)); le(k ? (1 << 2 | 1 | 2) : 1 << 2);
+            le(f32(0.25f)); le(f32(0.5f)); le(f32(0.75f)); le(f32(1.0f));
+            { double d = 1.0; uint32_t w2[2]; memcpy(w2, &d, 8); le(w2[0]); le(w2[1]); }
+            le(0);
+            a_sub[2] = cn;
+            begin(); cs = cmd(ACV_SUBMIT, 3, a_sub); c = cmd(ACV_PRESENT, 12, pa);
+            acvirgl_run(v, map, NULL, BLK, at - BLK);
+        }
+        acvirgl_stats(v, &s2);
+        CHECK(s2.zs_discards == s1.zs_discards, "a context that kept its depth once is never invalidated again (%llu)",
+              (unsigned long long)(s2.zs_discards - s1.zs_discards));
+        /* stages: used when asked for (AC_VIRGL_STAGE=1), where the host has them */
+        printf("acvirgl: %llu presents through a stage, %llu with depth/stencil not stored\n", (unsigned long long)s2.staged,
+               (unsigned long long)s2.zs_discards);
+        if (getenv("AC_VIRGL_STAGE") && !strcmp(getenv("AC_VIRGL_STAGE"), "1"))
+            CHECK(s2.staged > 0, "AC_VIRGL_STAGE=1: presents went through a stage (%llu)", (unsigned long long)s2.staged);
+    }
     acvirgl_destroy(v);
     printf("acvirgl: %d of %d checks passed\n", checks - fails, checks);
     return fails != 0;

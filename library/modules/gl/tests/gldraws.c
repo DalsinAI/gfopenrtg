@@ -12,9 +12,9 @@
  *                  draw (a lightmap's pattern)
  * Frames are presented through the GLA core's hook into memory (no screen),
  * so what is timed is GL, the transport and the host. For each mode it
- * prints the frames a second, the request blocks a frame and the 68k's wait
- * for them a frame (gla_get_stats: fences, fence_wait_us), and checks one
- * quad's colour.
+ * prints the frames a second and the milliseconds a frame, and checks one
+ * quad's colour. (The request blocks a frame are test_gla's to count, on
+ * the PC: libGL.a gives programs no gla_get_stats.)
  *   GLDraws [MODE immediate|buffersubdata|texsubimage|all] [FRAMES n]
  *           [DRAWS n] [WIDTH w] [HEIGHT h] [CPU]
  * Defaults: all, 100 frames, 300 draws, 320 x 240. Returns 0, or 5 when a
@@ -126,7 +126,6 @@ static const char *const names[3] = { "immediate", "buffersubdata", "texsubimage
 static int run(struct gla_context *c, struct gla_buffer *b, int mode, int frames, int draws)
 {
     GLuint vbo = 0, tex = 0;
-    struct gla_stats st;
     double t0, t1;
     int f, ok, probe = draws - 1;
     unsigned px, py;
@@ -153,14 +152,12 @@ static int run(struct gla_context *c, struct gla_buffer *b, int mode, int frames
     }
     frame(mode, draws);                 /* the first frame (shaders made) is not timed */
     gla_swap(c, b);
-    gla_get_stats(NULL, 1);
     t0 = seconds();
     for (f = 0; f < frames; f++) {
         frame(mode, draws);
         gla_swap(c, b);
     }
     t1 = seconds();
-    gla_get_stats(&st, 1);
     /* the last quad drawn: its middle must be its colour */
     if (probe >= cols * rows) probe = cols * rows - 1;
     quad_of(probe, v);
@@ -174,9 +171,8 @@ static int run(struct gla_context *c, struct gla_buffer *b, int mode, int frames
         int k;
         ok = 1;
         for (k = 0; k < 3; k++) if (p[k] > want[k] + 8 || want[k] > p[k] + 8) ok = 0;
-        printf("GLDraws %s: %d frames of %d draws in %.2f s: %.1f frames a second; %.1f request blocks a frame, "
-               "the 68k waited %.2f ms a frame for them; picture %s (%u,%u,%u)\n", names[mode], frames, draws, t1 - t0,
-               t1 > t0 ? frames / (t1 - t0) : 0.0, (double)st.fences / frames, st.fence_wait_us / 1000.0 / frames,
+        printf("GLDraws %s: %d frames of %d draws in %.2f s: %.1f frames a second, %.2f ms a frame; picture %s (%u,%u,%u)\n",
+               names[mode], frames, draws, t1 - t0, t1 > t0 ? frames / (t1 - t0) : 0.0, (t1 - t0) * 1000.0 / frames,
                ok ? "right" : "WRONG", p[0], p[1], p[2]);
     }
     if (mode == 1) { glDisableClientState(GL_VERTEX_ARRAY); pBindBuffer(GL_ARRAY_BUFFER, 0); if (pDeleteBuffers) pDeleteBuffers(1, &vbo); }

@@ -194,6 +194,58 @@ struct av_gl {
     void *(*GetCurrentDisplay)(void);                                     /* EGL's */
     void *(*CreateImageKHR)(void *, void *, unsigned, void *, const int *);
     unsigned (*DestroyImageKHR)(void *, void *);
+    /* direct presents (av_direct_*): optional, all needed */
+    unsigned (*CreateShader)(av_glenum);
+    void (*ShaderSource)(unsigned, int, const char *const *, const int *);
+    void (*CompileShader)(unsigned);
+    void (*GetShaderiv)(unsigned, av_glenum, int *);
+    void (*DeleteShader)(unsigned);
+    unsigned (*CreateProgram)(void);
+    void (*AttachShader)(unsigned, unsigned);
+    void (*LinkProgram)(unsigned);
+    void (*GetProgramiv)(unsigned, av_glenum, int *);
+    void (*UseProgram)(unsigned);
+    int (*GetUniformLocation)(unsigned, const char *);
+    void (*Uniform1i)(int, int);
+    void (*Uniform4i)(int, int, int, int, int);
+    void (*GenVertexArrays)(int, unsigned *);
+    void (*BindVertexArray)(unsigned);
+    void (*DrawArrays)(av_glenum, int, int);
+    void (*Viewport)(int, int, int, int);
+    void (*Scissor)(int, int, int, int);
+    void (*ActiveTexture)(av_glenum);
+    void (*GenSamplers)(int, unsigned *);
+    void (*BindSampler)(unsigned, unsigned);
+    void (*SamplerParameteri)(unsigned, av_glenum, int);
+    void (*WaitSync)(void *, unsigned, uint64_t);
+    /* EGL's, for a context of acvirgl's own */
+    unsigned (*eglMakeCurrent)(void *, void *, void *, void *);
+    void *(*eglCreateContext)(void *, void *, void *, const int *);
+    unsigned (*eglDestroyContext)(void *, void *);
+    unsigned (*eglQueryContext)(void *, void *, int, int *);
+    unsigned (*eglChooseConfig)(void *, const int *, void **, int, int *);
+    unsigned (*eglBindAPI)(unsigned);
+    unsigned (*eglQueryAPI)(void);
+    void *(*eglGetCurrentSurface)(int);
+};
+
+/* Direct presents (acvirgl_video_ram): a window of video RAM's file made a
+ * dmabuf and imported as a linear R, G, B, A image the size of a present's
+ * target, and the framebuffer on it in acvirgl's own context. */
+#define AV_VWINS 4
+/* On by default where measured faster (renderer: capset 2's GL_RENDERER),
+ * tests/acvirgl_present_bench.c, 9 Nov 2026, a present at once, ms:
+ *   Pi 5 (V3D 7.1, through a stage before): 640x480 1.04 -> 0.86, 1920x1080 7.25 -> 5.95
+ *   PC (RX 460, radeonsi, read back before): 640x480 1.04-1.25 -> 0.66-0.70, 1920x1080 5.8-6.2 -> 2.4-2.6
+ * Elsewhere (Intel, zink, llvmpipe: not measured) AC_VIRGL_DIRECT=1 asks for it. */
+#define AV_DIRECT_DEFAULT(renderer) (!strncmp((renderer), "V3D", 3) || strstr((renderer), "radeonsi") ? 0 : -1)
+struct av_vwin {
+    int fd;                     /* the udmabuf; -1: none */
+    uint32_t off, len;          /* the window in the file (pages) */
+    uint32_t at, tw, th, bpr;   /* the image: its offset in the window, size and pitch */
+    void *img;                  /* EGLImage */
+    unsigned tex, fbo;          /* its texture (shared), its framebuffer (acvirgl's context's) */
+    unsigned last;              /* when last used, for the one to replace */
 };
 
 /* An ACV_PRESENT checked and placed, its pixels not yet read back and
@@ -216,6 +268,10 @@ struct av_pres {
     int stage;
     void *sync;
     uint32_t stage_at;          /* the box's first row there, in bytes */
+    /* or written by the GPU straight into video RAM (1 + its window's index;
+     * 0: not), the GL fence after it in p->sync; the target's size */
+    int direct;
+    int tw, th;
 };
 #define AV_PEND 16                          /* deferred presents at once */
 
@@ -280,6 +336,21 @@ struct acvirgl {
     /* depth/stencil invalidation (struct av_zs) */
     int zs_on;
     struct av_zs *zs;           /* AV_ZS_CTX of them, made when first needed */
+    /* video RAM as a file (acvirgl_video_ram) and direct presents into it:
+     * direct_state 0 not tried, 1 in use, -1 not here or off (AC_VIRGL_DIRECT) */
+    int vr_fd;
+    uint32_t vr_base, vr_size;
+    int (*vr_ok)(void *user, uint32_t addr, uint32_t bytes);
+    void *vr_user;
+    unsigned vr_gen, vr_gen_seen;   /* acvirgl_video_ram_forget's count, and the windows' */
+    int direct_state;
+    void *own_dpy, *own_ctx;    /* acvirgl's own GL context, sharing virglrenderer's objects */
+    unsigned own_prog, own_vao, own_samp;
+    int own_u_t, own_u_m;
+    struct av_vwin vw[AV_VWINS];
+    unsigned vw_tick;
+    int direct_said;            /* targets EGL wouldn't take, told in the log (the first few) */
+    uint32_t bad[4];            /* the last one: width, height, bytes a row, offset in its page */
 };
 
 static void av_no_fence(void *cookie, uint32_t fence) { (void)cookie; (void)fence; }
@@ -412,6 +483,12 @@ struct acvirgl *acvirgl_create(const char *lib, char *err, int errlen)
         /* a small box costs little either way; a stage per size would be made and remade */
         v->stage_min = st && !strcmp(st, "1") ? 0 : 16384;
         v->zs_on = !(zd && !strcmp(zd, "0"));
+        v->vr_fd = -1;
+        for (i = 0; i < AV_VWINS; i++) v->vw[i].fd = -1;
+        /* direct presents (acvirgl_video_ram): AC_VIRGL_DIRECT 1 on, 0 off;
+         * unset, on where they measured faster than the stage or the read back */
+        st = getenv("AC_VIRGL_DIRECT");
+        v->direct_state = st && *st ? (strcmp(st, "0") ? 0 : -1) : AV_DIRECT_DEFAULT(v->renderer);
     }
     return v;
 fail:
@@ -420,10 +497,22 @@ fail:
     return NULL;
 }
 
+#ifdef AV_HAVE_DMABUF
+static void av_vwin_free(struct acvirgl *v, struct av_vwin *w, int gl);
+#endif
+
 void acvirgl_destroy(struct acvirgl *v)
 {
     if (!v) return;
     v->npend = 0;                           /* left unfinished: the memory they would write may be gone */
+#ifdef AV_HAVE_DMABUF
+    {
+        int i;                              /* video RAM's windows and acvirgl's own context, before virglrenderer's EGL goes */
+        for (i = 0; i < AV_VWINS; i++) av_vwin_free(v, &v->vw[i], 0);
+        if (v->own_ctx) v->gl.eglDestroyContext(v->own_dpy, v->own_ctx);
+        if (v->vr_fd >= 0) close(v->vr_fd);
+    }
+#endif
     v->vr.cleanup(v);
 #ifdef AV_HAVE_DMABUF
     {
@@ -618,6 +707,7 @@ static int32_t av_present_prep(struct acvirgl *v, uint8_t *(*map)(void *, uint32
     p->box.x = (uint32_t)bx0; p->box.y = (uint32_t)by0; p->box.z = layer;
     p->box.w = (uint32_t)(bx1 - bx0); p->box.h = (uint32_t)(by1 - by0); p->box.d = 1;
     p->fence = 0; p->done = 0; p->pbo = 0; p->pbo_bytes = 0; p->rev = 0; p->stage = 0; p->sync = NULL;
+    p->direct = 0; p->tw = tw; p->th = th;
     return pixels > 0x7FFFFFFF ? 0x7FFFFFFF : (int32_t)pixels;
 }
 
@@ -711,7 +801,16 @@ static int av_gl_load(struct acvirgl *v)
 #define GLO(f) *(void **)&v->gl.f = gpa("gl" #f);
     GLO(GenTextures) GLO(DeleteTextures) GLO(BindTexture) GLO(BlitFramebuffer) GLO(IsEnabled) GLO(Enable) GLO(Disable)
     GLO(Flush) GLO(FenceSync) GLO(ClientWaitSync) GLO(DeleteSync) GLO(EGLImageTargetTexture2DOES) GLO(InvalidateFramebuffer)
+    /* for direct presents */
+    GLO(CreateShader) GLO(ShaderSource) GLO(CompileShader) GLO(GetShaderiv) GLO(DeleteShader) GLO(CreateProgram) GLO(AttachShader)
+    GLO(LinkProgram) GLO(GetProgramiv) GLO(UseProgram) GLO(GetUniformLocation) GLO(Uniform1i) GLO(Uniform4i) GLO(GenVertexArrays)
+    GLO(BindVertexArray) GLO(DrawArrays) GLO(Viewport) GLO(Scissor) GLO(ActiveTexture) GLO(GenSamplers) GLO(BindSampler)
+    GLO(SamplerParameteri) GLO(WaitSync)
 #undef GLO
+#define EGLO(f) *(void **)&v->gl.f = dlsym(egl, #f);
+    EGLO(eglMakeCurrent) EGLO(eglCreateContext) EGLO(eglDestroyContext) EGLO(eglQueryContext) EGLO(eglChooseConfig)
+    EGLO(eglBindAPI) EGLO(eglQueryAPI) EGLO(eglGetCurrentSurface)
+#undef EGLO
     *(void **)&v->gl.GetCurrentDisplay = dlsym(egl, "eglGetCurrentDisplay");
     *(void **)&v->gl.CreateImageKHR = gpa("eglCreateImageKHR");
     *(void **)&v->gl.DestroyImageKHR = gpa("eglDestroyImageKHR");
@@ -968,9 +1067,337 @@ static int av_stage_wait(struct acvirgl *v, struct av_pres *p)
     av_dmabuf_sync(v->stages[p->stage - 1].fd, AV_SYNC_READ);  /* waits for its writer too, and invalidates the CPU's caches */
     return ok;
 }
+
+/* ---- direct presents: the GPU writes video RAM itself (acvirgl_video_ram) ---------------- */
+
+#define AV_SYNC_RW                  3
+#define AV_GL_FRAGMENT_SHADER       0x8B30
+#define AV_GL_VERTEX_SHADER         0x8B31
+#define AV_GL_COMPILE_STATUS        0x8B81
+#define AV_GL_LINK_STATUS           0x8B82
+#define AV_GL_TEXTURE0              0x84C0
+#define AV_GL_TEXTURE_MIN_FILTER    0x2801
+#define AV_GL_TEXTURE_MAG_FILTER    0x2800
+#define AV_GL_TRIANGLES             0x0004
+#define AV_GL_FRAMEBUFFER           0x8D40
+#define AV_GL_TIMEOUT_IGNORED       0xFFFFFFFFFFFFFFFFull
+#define AV_EGL_CONFIG_ID            0x3028
+#define AV_EGL_NONE                 0x3038
+#define AV_EGL_DRAW                 0x3059
+#define AV_EGL_READ                 0x305A
+#define AV_EGL_CONTEXT_CLIENT_TYPE  0x3097
+#define AV_EGL_CONTEXT_MAJOR        0x3098
+#define AV_EGL_CONTEXT_MINOR        0x30FB
+#define AV_EGL_CONTEXT_PROFILE      0x30FD
+#define AV_EGL_OPENGL_API           0x30A2
+#define AV_DRM_ABGR8888             0x34324241      /* R, G, B, A in memory */
+
+static void av_direct_off(struct acvirgl *v, const char *why)
+{
+    v->direct_state = -1;
+    fprintf(stderr, "ACVIRGL: no direct presents into video RAM (%s): through a stage or read back as before\n", why);
+}
+
+/* What was current (one of virglrenderer's contexts, as its record says),
+ * put back after a spell in acvirgl's own. */
+struct av_cur { void *dpy, *draw, *read, *ctx; };
+static int av_own_enter(struct acvirgl *v, struct av_cur *c)
+{
+    c->dpy = v->gl.GetCurrentDisplay();
+    c->ctx = v->egl_current();
+    c->draw = v->gl.eglGetCurrentSurface(AV_EGL_DRAW);
+    c->read = v->gl.eglGetCurrentSurface(AV_EGL_READ);
+    return v->gl.eglMakeCurrent(v->own_dpy, NULL, NULL, v->own_ctx) != 0;
+}
+static void av_own_leave(struct acvirgl *v, const struct av_cur *c)
+{
+    v->gl.eglMakeCurrent(c->dpy ? c->dpy : v->own_dpy, c->draw, c->read, c->ctx);
+}
+
+static unsigned av_shader(struct acvirgl *v, av_glenum type, const char *src)
+{
+    unsigned s = v->gl.CreateShader(type);
+    int ok = 0;
+    if (!s) return 0;
+    v->gl.ShaderSource(s, 1, &src, NULL);
+    v->gl.CompileShader(s);
+    v->gl.GetShaderiv(s, AV_GL_COMPILE_STATUS, &ok);
+    if (!ok) { v->gl.DeleteShader(s); return 0; }
+    return s;
+}
+
+/* acvirgl's own GL context, in the share group of the one current (one of
+ * virglrenderer's), with the program that writes X or A, R, G, B: the
+ * fragment at (x, y) of the target takes the frame's texel (x - m.x,
+ * m.y * y + m.z) (either way up, either storage), and its first byte is 0
+ * (m.w 0, XRGB32), the texel's alpha (1) or 0xFF (2: a frame with none). */
+static int av_own_make(struct acvirgl *v)
+{
+    static const char vs[] =
+        "void main() { gl_Position = vec4(float((gl_VertexID & 1) * 4 - 1), float((gl_VertexID >> 1) * 4 - 1), 0.0, 1.0); }\n";
+    static const char fs[] =
+        "uniform sampler2D t;\nuniform ivec4 m;\nout vec4 o;\n"
+        "void main() {\n"
+        "    ivec2 f = ivec2(gl_FragCoord.xy);\n"
+        "    vec4 c = texelFetch(t, ivec2(f.x - m.x, m.y * f.y + m.z), 0);\n"
+        "    o = vec4(m.w == 0 ? 0.0 : m.w == 1 ? c.a : 1.0, c.r, c.g, c.b);\n"
+        "}\n";
+    static const int a33[] = { AV_EGL_CONTEXT_MAJOR, 3, AV_EGL_CONTEXT_MINOR, 3, AV_EGL_CONTEXT_PROFILE, 1, AV_EGL_NONE };
+    static const int a31[] = { AV_EGL_CONTEXT_MAJOR, 3, AV_EGL_CONTEXT_MINOR, 1, AV_EGL_NONE };
+    static const int a30[] = { AV_EGL_CONTEXT_MAJOR, 3, AV_EGL_NONE };
+    char vsrc[256], fsrc[512];
+    void *dpy = v->gl.GetCurrentDisplay(), *share = v->egl_current(), *cfg = NULL, *ctx;
+    int cid = 0, type = 0, n = 0, gl, ok = 0, i;
+    unsigned api, s1 = 0, s2 = 0, prog = 0;
+    struct av_cur cur;
+    if (!dpy || !share || !v->gl.eglQueryContext(dpy, share, AV_EGL_CONTEXT_CLIENT_TYPE, &type)) return 0;
+    gl = type == AV_EGL_OPENGL_API;
+    v->gl.eglQueryContext(dpy, share, AV_EGL_CONFIG_ID, &cid);
+    if (cid) {                              /* else EGL_KHR_no_config_context's, as virglrenderer's */
+        int ca[] = { AV_EGL_CONFIG_ID, cid, AV_EGL_NONE };
+        if (!v->gl.eglChooseConfig(dpy, ca, &cfg, 1, &n) || n < 1) return 0;
+    }
+    api = v->gl.eglQueryAPI();
+    v->gl.eglBindAPI((unsigned)type);
+    ctx = v->gl.eglCreateContext(dpy, cfg, share, gl ? a33 : a30);
+    if (!ctx && gl) ctx = v->gl.eglCreateContext(dpy, cfg, share, a31);   /* V3D's desktop GL is 3.1 */
+    v->gl.eglBindAPI(api);
+    if (!ctx) return 0;
+    v->own_dpy = dpy; v->own_ctx = ctx;
+    if (!av_own_enter(v, &cur)) { v->gl.eglDestroyContext(dpy, ctx); v->own_ctx = NULL; return 0; }
+    snprintf(vsrc, sizeof vsrc, "%s%s", gl ? "#version 140\n" : "#version 300 es\n", vs);
+    snprintf(fsrc, sizeof fsrc, "%s%s", gl ? "#version 140\n" : "#version 300 es\nprecision highp float;\nprecision highp int;\n", fs);
+    if ((s1 = av_shader(v, AV_GL_VERTEX_SHADER, vsrc)) && (s2 = av_shader(v, AV_GL_FRAGMENT_SHADER, fsrc)) && (prog = v->gl.CreateProgram())) {
+        v->gl.AttachShader(prog, s1);
+        v->gl.AttachShader(prog, s2);
+        v->gl.LinkProgram(prog);
+        v->gl.GetProgramiv(prog, AV_GL_LINK_STATUS, &ok);
+    }
+    if (s1) v->gl.DeleteShader(s1);
+    if (s2) v->gl.DeleteShader(s2);
+    if (ok) {
+        v->own_prog = prog;
+        v->gl.UseProgram(prog);
+        v->own_u_t = v->gl.GetUniformLocation(prog, "t");
+        v->own_u_m = v->gl.GetUniformLocation(prog, "m");
+        v->gl.Uniform1i(v->own_u_t, 0);
+        v->gl.GenVertexArrays(1, &v->own_vao);
+        /* a sampler of its own: texelFetch needs no filter, but the frame's
+         * texture's own (virglrenderer's) is never touched */
+        for (i = 0; i < 8 && v->gl.GetError(); i++) ;
+        v->gl.GenSamplers(1, &v->own_samp);
+        if (v->gl.GetError()) v->own_samp = 0;
+        else {
+            v->gl.SamplerParameteri(v->own_samp, AV_GL_TEXTURE_MIN_FILTER, AV_GL_NEAREST);
+            v->gl.SamplerParameteri(v->own_samp, AV_GL_TEXTURE_MAG_FILTER, AV_GL_NEAREST);
+        }
+        ok = v->gl.GetError() == 0 && v->own_vao;
+    }
+    av_own_leave(v, &cur);
+    if (!ok) { v->gl.eglDestroyContext(dpy, ctx); v->own_ctx = NULL; }
+    return ok;
+}
+
+/* A window's image and framebuffer let go of (acvirgl's own context current, or none for GL). */
+static void av_vwin_free(struct acvirgl *v, struct av_vwin *w, int gl)
+{
+    if (w->fd < 0) return;
+    if (gl && w->fbo) v->gl.DeleteFramebuffers(1, &w->fbo);
+    if (gl && w->tex) v->gl.DeleteTextures(1, &w->tex);
+    if (w->img) v->gl.DestroyImageKHR(v->own_dpy, w->img);
+    close(w->fd);
+    memset(w, 0, sizeof *w);
+    w->fd = -1;
+}
+
+/* The window of video RAM's file under the present's target, its image the
+ * target's size with its pitch, and a framebuffer on it (made, or one made
+ * before): its index, or -1. In acvirgl's own context. */
+static int av_vwin_get(struct acvirgl *v, const struct av_pres *p)
+{
+    uint32_t foff = p->addr - v->vr_base, off = foff & ~4095u;
+    uint64_t end = ((uint64_t)foff + p->span + 4095) & ~(uint64_t)4095;
+    uint32_t len = (uint32_t)(end - off), at = foff - off;
+    int i, pick = -1, tb = 0;
+    struct av_vwin *w;
+    struct av_udmabuf_create c;
+    for (i = 0; i < AV_VWINS; i++) {
+        w = &v->vw[i];
+        if (w->fd >= 0 && w->off == off && w->len == len && w->at == at && w->tw == (uint32_t)p->tw && w->th == (uint32_t)p->th
+            && w->bpr == p->bpr) {
+            w->last = ++v->vw_tick;
+            return i;
+        }
+        if (pick < 0 || w->fd < 0 || (v->vw[pick].fd >= 0 && w->last < v->vw[pick].last)) pick = i;
+    }
+    if (v->bad[0] == (uint32_t)p->tw && v->bad[1] == (uint32_t)p->th && v->bad[2] == p->bpr && v->bad[3] == at)
+        return -1;                          /* EGL wouldn't take it the last time */
+    w = &v->vw[pick];
+    av_vwin_free(v, w, 1);
+    if (v->udmabuf_fd == -1 && (v->udmabuf_fd = open("/dev/udmabuf", O_RDWR | O_CLOEXEC)) < 0) v->udmabuf_fd = -2;
+    if (v->udmabuf_fd < 0) { av_direct_off(v, "no /dev/udmabuf this user may open"); return -1; }
+    memset(&c, 0, sizeof c);
+    c.memfd = (uint32_t)v->vr_fd; c.flags = AV_UDMABUF_CLOEXEC; c.offset = off; c.size = len;
+    if ((w->fd = ioctl(v->udmabuf_fd, AV_UDMABUF_CREATE, &c)) < 0) {
+        w->fd = -1;
+        if (errno == EINVAL || errno == EBADFD || errno == EBADF) av_direct_off(v, "udmabuf refuses video RAM's file: not a sealed memfd?");
+        return -1;
+    }
+    w->off = off; w->len = len; w->at = at; w->tw = (uint32_t)p->tw; w->th = (uint32_t)p->th; w->bpr = p->bpr;
+    {
+        int attrs[] = { 0x3057 /* EGL_WIDTH */, p->tw, 0x3056 /* EGL_HEIGHT */, p->th,
+                        0x3271 /* EGL_LINUX_DRM_FOURCC_EXT */, (int)AV_DRM_ABGR8888,
+                        0x3272 /* EGL_DMA_BUF_PLANE0_FD_EXT */, w->fd, 0x3273 /* EGL_DMA_BUF_PLANE0_OFFSET_EXT */, (int)at,
+                        0x3274 /* EGL_DMA_BUF_PLANE0_PITCH_EXT */, (int)p->bpr, AV_EGL_NONE };
+        if (!(w->img = v->gl.CreateImageKHR(v->own_dpy, NULL, 0x3270 /* EGL_LINUX_DMA_BUF_EXT */, NULL, attrs))) {
+            if (v->direct_said++ < 4)       /* this pitch or offset (another target may do) */
+                fprintf(stderr, "ACVIRGL: EGL won't take a %dx%d target %u bytes a row, %u into a page, as an image: "
+                        "presents into it go the ordinary way\n", p->tw, p->th, p->bpr, at);
+            v->bad[0] = (uint32_t)p->tw; v->bad[1] = (uint32_t)p->th; v->bad[2] = p->bpr; v->bad[3] = at;
+            av_vwin_free(v, w, 1);
+            return -1;
+        }
+    }
+    for (i = 0; i < 8 && v->gl.GetError(); i++) ;
+    v->gl.GetIntegerv(AV_GL_TEXTURE_BINDING_2D, &tb);
+    v->gl.GenTextures(1, &w->tex);
+    v->gl.BindTexture(AV_GL_TEXTURE_2D, w->tex);
+    v->gl.EGLImageTargetTexture2DOES(AV_GL_TEXTURE_2D, w->img);
+    v->gl.BindTexture(AV_GL_TEXTURE_2D, (unsigned)tb);
+    v->gl.GenFramebuffers(1, &w->fbo);
+    v->gl.BindFramebuffer(AV_GL_FRAMEBUFFER, w->fbo);
+    v->gl.FramebufferTexture2D(AV_GL_FRAMEBUFFER, AV_GL_COLOR_ATTACHMENT0, AV_GL_TEXTURE_2D, w->tex, 0);
+    if (v->gl.CheckFramebufferStatus(AV_GL_FRAMEBUFFER) != AV_GL_FRAMEBUFFER_COMPLETE || v->gl.GetError()) {
+        v->gl.BindFramebuffer(AV_GL_FRAMEBUFFER, 0);
+        av_vwin_free(v, w, 1);
+        return -1;
+    }
+    v->gl.BindFramebuffer(AV_GL_FRAMEBUFFER, 0);
+    w->last = ++v->vw_tick;
+    return pick;
+}
+
+/* The present's rectangle written by the GPU straight into video RAM: a
+ * fence after the frame in its own context, waited for by the GPU in
+ * acvirgl's, and there one triangle through the program into the target's
+ * window; a GL fence after it (p->sync). The CPU's caches over the window
+ * are cleaned first (the GPU doesn't snoop them on a Pi). 1 when asked
+ * (p->direct), 0 when it can't (the present then goes another way). */
+static int av_direct_start(struct acvirgl *v, struct av_pres *p)
+{
+    struct vr_resource_info info;
+    const struct av_res *res;
+    struct av_cur cur;
+    struct av_vwin *w;
+    int dl, dg, db, da, wi, s, t, i, ok;
+    unsigned gen;
+    void *fs;
+    if (v->direct_state < 0 || v->vr_fd < 0 || p->nr != 1 || p->layer || (p->fmt != OGPU_FMT_XRGB32 && p->fmt != OGPU_FMT_ARGB32)
+        || p->addr < v->vr_base || (uint64_t)(p->addr - v->vr_base) + p->span > v->vr_size || !v->vr.resource_get_info
+        || !(res = av_res_find(v, p->handle)) || !av_layout(res->format, &dl, &dg, &db, &da))
+        return 0;
+    if (v->vr_ok && !v->vr_ok(v->vr_user, p->addr, p->span)) return 0;
+    if (!v->direct_state) {                 /* the first time: all it needs there? */
+        if (!av_gl_load(v) || !v->gl.FenceSync || !v->gl.ClientWaitSync || !v->gl.DeleteSync || !v->gl.WaitSync || !v->gl.Flush
+            || !v->gl.GenTextures || !v->gl.DeleteTextures || !v->gl.BindTexture || !v->gl.EGLImageTargetTexture2DOES
+            || !v->gl.GetCurrentDisplay || !v->gl.CreateImageKHR || !v->gl.DestroyImageKHR || !v->gl.CreateShader || !v->gl.ShaderSource
+            || !v->gl.CompileShader || !v->gl.GetShaderiv || !v->gl.DeleteShader || !v->gl.CreateProgram || !v->gl.AttachShader
+            || !v->gl.LinkProgram || !v->gl.GetProgramiv || !v->gl.UseProgram || !v->gl.GetUniformLocation || !v->gl.Uniform1i
+            || !v->gl.Uniform4i || !v->gl.GenVertexArrays || !v->gl.BindVertexArray || !v->gl.DrawArrays || !v->gl.Viewport
+            || !v->gl.Scissor || !v->gl.ActiveTexture || !v->gl.GenSamplers || !v->gl.BindSampler || !v->gl.SamplerParameteri
+            || !v->gl.Enable || !v->gl.eglMakeCurrent || !v->gl.eglCreateContext || !v->gl.eglDestroyContext
+            || !v->gl.eglQueryContext || !v->gl.eglChooseConfig || !v->gl.eglBindAPI || !v->gl.eglQueryAPI || !v->gl.eglGetCurrentSurface) {
+            av_direct_off(v, "GL or EGL entry points missing");
+            return 0;
+        }
+        v->direct_state = 1;
+    }
+    memset(&info, 0, sizeof info);
+    if (v->vr.resource_get_info((int)p->handle, &info) || !info.tex_id || !av_current(v, p->ctx)) return 0;
+    if (!v->own_ctx && !av_own_make(v)) { av_direct_off(v, "no GL context of its own with the program"); return 0; }
+    /* the frame's drawing before ours: a fence after it in its own context */
+    for (i = 0; i < 8 && v->gl.GetError(); i++) ;     /* virglrenderer's, not ours */
+    if (!(fs = v->gl.FenceSync(AV_GL_SYNC_GPU_COMMANDS_COMPLETE, 0))) return 0;
+    v->gl.Flush();
+    if (!av_own_enter(v, &cur)) { v->gl.DeleteSync(fs); return 0; }
+    gen = __atomic_load_n(&v->vr_gen, __ATOMIC_ACQUIRE);
+    if (gen != v->vr_gen_seen) {            /* video RAM's pages changed: the windows taken again */
+        for (i = 0; i < AV_VWINS; i++) av_vwin_free(v, &v->vw[i], 1);
+        v->vr_gen_seen = gen;
+    }
+    wi = v->direct_state > 0 ? av_vwin_get(v, p) : -1;
+    if (wi < 0) {
+        v->gl.DeleteSync(fs);
+        av_own_leave(v, &cur);
+        return 0;
+    }
+    w = &v->vw[wi];
+    v->gl.WaitSync(fs, 0, AV_GL_TIMEOUT_IGNORED);
+    v->gl.DeleteSync(fs);
+    /* the CPU's lines over the window written back, none left to land over the GPU's writes */
+    av_dmabuf_sync(w->fd, AV_SYNC_RW);
+    av_dmabuf_sync(w->fd, AV_SYNC_RW | AV_SYNC_END);
+    /* target row y is resource row ry = y - sy (flipped: rh - 1 + sy - y),
+     * the texture's row ry (Y_0_TOP: height - 1 - ry) */
+    if (!p->flip) { s = 1; t = -p->sy; } else { s = -1; t = p->rh - 1 + p->sy; }
+    if (info.flags & VR_RESOURCE_Y_0_TOP) { s = -s; t = (int)info.height - 1 - t; }
+    v->gl.BindFramebuffer(AV_GL_FRAMEBUFFER, w->fbo);
+    v->gl.Viewport(0, 0, p->tw, p->th);
+    v->gl.Enable(AV_GL_SCISSOR_TEST);
+    v->gl.Scissor(p->rect[0][0], p->rect[0][1], p->rect[0][2] - p->rect[0][0], p->rect[0][3] - p->rect[0][1]);
+    v->gl.UseProgram(v->own_prog);
+    v->gl.BindVertexArray(v->own_vao);
+    v->gl.ActiveTexture(AV_GL_TEXTURE0);
+    v->gl.BindTexture(AV_GL_TEXTURE_2D, info.tex_id);
+    if (v->own_samp) v->gl.BindSampler(0, v->own_samp);
+    v->gl.Uniform4i(v->own_u_m, p->sx, s, t, p->fmt == OGPU_FMT_XRGB32 ? 0 : da == 4 ? 2 : 1);
+    v->gl.DrawArrays(AV_GL_TRIANGLES, 0, 3);
+    v->gl.BindTexture(AV_GL_TEXTURE_2D, 0);
+    v->gl.BindFramebuffer(AV_GL_FRAMEBUFFER, 0);
+    ok = v->gl.GetError() == 0 && (p->sync = v->gl.FenceSync(AV_GL_SYNC_GPU_COMMANDS_COMPLETE, 0)) != NULL;
+    v->gl.Flush();
+    av_own_leave(v, &cur);
+    if (!ok) {
+        if (p->sync) v->gl.DeleteSync(p->sync);
+        p->sync = NULL;
+        return 0;
+    }
+    /* and the frame's context's next drawing after ours (the GPU waits, not
+     * the CPU): a present one frame behind reads the frame as presented */
+    v->gl.WaitSync(p->sync, 0, AV_GL_TIMEOUT_IGNORED);
+    p->direct = wi + 1;
+    return 1;
+}
+
+/* A direct present no longer wanted (dropped): what the GPU writes stays. */
+static void av_direct_drop(struct acvirgl *v, struct av_pres *p)
+{
+    if (p->sync && v->egl_current && v->egl_current()) v->gl.DeleteSync(p->sync);
+    p->direct = 0; p->sync = NULL;
+}
+
+/* Waits for the GPU's writing and makes the window's pages the CPU's
+ * again (its lines invalidated); 0 when that failed. */
+static int av_direct_wait(struct acvirgl *v, struct av_pres *p)
+{
+    int ok = 1, fd = v->vw[p->direct - 1].fd;
+    if (p->sync && (v->egl_current() || av_current(v, p->ctx))) {
+        if (v->gl.ClientWaitSync(p->sync, 0, 4000000000ull) == AV_GL_WAIT_FAILED) ok = 0;
+        v->gl.DeleteSync(p->sync);
+    }
+    p->sync = NULL;
+    p->direct = 0;
+    if (fd >= 0) {
+        av_dmabuf_sync(fd, AV_SYNC_READ);  /* waits for its writer too */
+        av_dmabuf_sync(fd, AV_SYNC_READ | AV_SYNC_END);
+    }
+    return ok;
+}
 #else
 static int av_stage_start(struct acvirgl *v, struct av_pres *p) { (void)v; (void)p; return 0; }
 static void av_stage_drop(struct acvirgl *v, struct av_pres *p) { (void)v; (void)p; }
+static int av_direct_start(struct acvirgl *v, struct av_pres *p) { (void)v; (void)p; return 0; }
+static void av_direct_drop(struct acvirgl *v, struct av_pres *p) { (void)v; (void)p; }
 #endif
 
 /* ---- depth/stencil invalidation (struct av_zs) -------------------------------------- */
@@ -1129,6 +1556,22 @@ static int32_t av_present_finish(struct acvirgl *v, uint8_t *(*map)(void *, uint
     uint8_t *dst;
     uint64_t pixels, ts = av_ns(), t0 = ts, t1;
 #ifdef AV_HAVE_DMABUF
+    /* straight into video RAM by the GPU, when it can (acvirgl_video_ram) */
+    if (!p->pbo && !p->stage && !p->direct && av_direct_start(v, p)) {
+        t1 = av_ns();
+        v->st.present_issue_ns += t1 - t0;
+        t0 = t1;
+    }
+    if (p->direct) {
+        int ok = av_direct_wait(v, p);
+        t1 = av_ns();
+        v->st.present_read_ns += t1 - t0;
+        if (!p->done) v->st.present_wait_ns += t1 - t0;
+        if (!ok) return ACV_ERR_RENDERER;
+        pixels = (uint64_t)(p->rect[0][2] - p->rect[0][0]) * (uint64_t)(p->rect[0][3] - p->rect[0][1]);
+        v->st.direct++;
+        goto counted;
+    }
     /* read back now (at once, or deferred): through a stage when there is one */
     if (!p->pbo && !p->stage && av_stage_start(v, p)) {
         t1 = av_ns();
@@ -1197,6 +1640,9 @@ static int32_t av_present_finish(struct acvirgl *v, uint8_t *(*map)(void *, uint
         pixels = av_present_write(p, dst, v->tmp, (size_t)box.w * 4, lr, lg, lb, la, 0);
         v->st.present_conv_ns += av_ns() - t1;
     }
+#ifdef AV_HAVE_DMABUF
+counted:
+#endif
     v->st.presents++; v->st.present_rects += (uint64_t)p->nr; v->st.present_pixels += pixels;
     v->st.present_ns += av_ns() - ts;
     av_parts_say(v);
@@ -1290,7 +1736,9 @@ static int av_settle_if(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uin
             else v->st.deferred_forced++;
             if (av_present_finish(v, map, mu, p) < 0) v->st.errors++;
             n++;
-        } else if (p->stage)
+        } else if (p->direct)
+            av_direct_drop(v, p);
+        else if (p->stage)
             av_stage_drop(v, p);
         else if (p->pbo)
             av_pool_put(v, p->pbo, p->pbo_bytes, 0);     /* its copy forgotten; the buffer kept for the next */
@@ -1303,8 +1751,8 @@ static int av_m_all(const struct av_pres *p, const void *arg) { (void)p; (void)a
 static int av_m_done(const struct av_pres *p, const void *arg) { (void)arg; return p->done; }
 static int av_m_ctx(const struct av_pres *p, const void *arg) { return p->ctx == *(const uint32_t *)arg; }
 /* those still to read back from the resource: deferred, not behind (whose copy is made) */
-static int av_m_ctx_read(const struct av_pres *p, const void *arg) { return !p->pbo && !p->stage && p->ctx == *(const uint32_t *)arg; }
-static int av_m_handle_read(const struct av_pres *p, const void *arg) { return !p->pbo && !p->stage && p->handle == *(const uint32_t *)arg; }
+static int av_m_ctx_read(const struct av_pres *p, const void *arg) { return !p->pbo && !p->stage && !p->direct && p->ctx == *(const uint32_t *)arg; }
+static int av_m_handle_read(const struct av_pres *p, const void *arg) { return !p->pbo && !p->stage && !p->direct && p->handle == *(const uint32_t *)arg; }
 /* a present into the same target whose rectangles meet the new one's */
 static int av_m_overlap(const struct av_pres *p, const void *arg)
 {
@@ -1337,6 +1785,26 @@ void acvirgl_behind_presents(struct acvirgl *v, int (*ok)(void *map_user, uint32
 
 int acvirgl_pending(const struct acvirgl *v) { return v ? v->npend : 0; }
 
+void acvirgl_video_ram(struct acvirgl *v, int fd, uint32_t base, uint32_t size,
+                       int (*ok)(void *user, uint32_t addr, uint32_t bytes), void *user)
+{
+    if (!v) return;
+#ifdef AV_HAVE_DMABUF
+    if (v->vr_fd >= 0) close(v->vr_fd);
+    v->vr_fd = -1;
+    if (fd >= 0 && (v->vr_fd = fcntl(fd, F_DUPFD_CLOEXEC, 3)) < 0) v->vr_fd = -1;
+#else
+    (void)fd;
+#endif
+    v->vr_base = base; v->vr_size = size; v->vr_ok = ok; v->vr_user = user;
+    acvirgl_video_ram_forget(v);            /* another file: the windows on the old one go */
+}
+
+void acvirgl_video_ram_forget(struct acvirgl *v)
+{
+    if (v) __atomic_add_fetch(&v->vr_gen, 1, __ATOMIC_RELEASE);
+}
+
 int acvirgl_settle(struct acvirgl *v, uint8_t *(*map)(void *map_user, uint32_t address, uint32_t length), void *map_user, int how)
 {
     if (!v || !v->npend) return 0;
@@ -1361,7 +1829,7 @@ static int32_t av_present(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, u
     av_zs_discard(v, &p);                   /* before anything flushes the frame's job */
     if (v->behind_ok && v->npend < AV_PEND && v->behind_ok(mu, p.addr, p.span)) {
         uint64_t t0 = av_ns(), t1;
-        if (av_stage_start(v, &p) || av_behind_start(v, &p)) {
+        if (av_direct_start(v, &p) || av_stage_start(v, &p) || av_behind_start(v, &p)) {
             p.fence = ++v->fence_seq;
             t1 = av_ns();
             if (!v->vr.context_create_fence(p.ctx, 0, 0, p.fence)) {

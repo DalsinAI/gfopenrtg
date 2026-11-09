@@ -48,6 +48,8 @@ struct acvirgl_stats {
     /* (ACVIRGL_HAS_STAGE) */
     uint64_t staged;                                /* presents the GPU blitted into memory the CPU caches (AC_VIRGL_STAGE) */
     uint64_t zs_discards;                           /* presents whose depth/stencil the GPU was told not to store (AC_VIRGL_ZDISCARD) */
+    /* (ACVIRGL_HAS_VRAM) */
+    uint64_t direct;                                /* presents the GPU wrote straight into video RAM (acvirgl_video_ram) */
 };
 /* Presents through a stage (9 Nov 2026): on V3D (the Pi's GPU, whose
  * memory the CPU reads uncached) the GPU blits each presented frame into a
@@ -115,6 +117,32 @@ int acvirgl_pending(const struct acvirgl *v);
 int acvirgl_block_scan(uint8_t *(*map)(void *map_user, uint32_t address, uint32_t length), void *map_user,
                        uint32_t addr, uint32_t bytes, uint32_t avoid, uint32_t avoid_len,
                        void (*present)(void *user, uint32_t address, uint32_t bytes), void *user);
+
+/* Video RAM as a file (9 Nov 2026; Design-GFOpenGPU-Virgl-Present-Stage-
+ * And-Scanout.md, part B). The guest's addresses [base, base + size) are
+ * the bytes [0, size) of the memfd fd, which must have been made with
+ * MFD_ALLOW_SEALING and sealed with F_SEAL_SHRINK (udmabuf takes no other).
+ * A present into XRGB32 or ARGB32 with one rectangle, wholly in there,
+ * that ok(user, address, bytes) allows, is then written by the GPU itself:
+ * the target's pages made a dmabuf (udmabuf), imported into EGL as a linear
+ * R, G, B, A image, and a shader in a GL context of acvirgl's own (sharing
+ * virglrenderer's objects; none of its state is touched) writes X or A,
+ * R, G, B there the right way up. No read back, no conversion. The CPU's
+ * caches are cleaned before and invalidated after (DMA_BUF_IOCTL_SYNC).
+ * Anything else goes as before (a stage, or a read back), as does every
+ * present when something it needs is missing (said once in the log).
+ * AC_VIRGL_DIRECT=1 asks for it on any GPU, 0 turns it off; unset, it is on
+ * where it measured faster. acvirgl keeps a duplicate of fd; fd -1 lets go.
+ * Call on virglrenderer's thread or before it runs. */
+#define ACVIRGL_HAS_VRAM 1
+void acvirgl_video_ram(struct acvirgl *v, int fd, uint32_t base, uint32_t size,
+                       int (*ok)(void *user, uint32_t addr, uint32_t bytes), void *user);
+/* The file's pages are about to change under the GPU (a hole punched in it,
+ * another file placed over it): the GPU lets go of them; the next direct
+ * present takes them again. Any thread; the images go on virglrenderer's
+ * thread at its next present. Nothing written directly may be in flight
+ * (settle or drop presents first). */
+void acvirgl_video_ram_forget(struct acvirgl *v);
 
 /* "GL" or "GLES": the kind of context virglrenderer is drawing with. */
 const char *acvirgl_api(const struct acvirgl *v);

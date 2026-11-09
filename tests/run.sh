@@ -175,6 +175,10 @@ if [ -n "${ACVIRGL_LIB:-}" ] && [ -f "${VIRGL_SRC:-/nonexistent}/virgl_protocol.
     # presents through a stage (AC_VIRGL_STAGE, on by default only on V3D), and without one
     AC_VIRGL_STAGE=1 "$OUT/test_acvirgl"
     AC_VIRGL_STAGE=0 AC_VIRGL_ZDISCARD=0 "$OUT/test_acvirgl"
+    # presents written by the GPU straight into "video RAM" (AC_VIRGL_DIRECT, on by default
+    # on V3D and radeonsi), asked for anywhere, and off
+    AC_VIRGL_DIRECT=1 "$OUT/test_acvirgl"
+    AC_VIRGL_DIRECT=0 "$OUT/test_acvirgl"
     # what a present costs (not run: tests/acvirgl_present_bench.c says how)
     cc -std=gnu11 -O2 -Wall -Wextra -Werror -I"$VIRGL_SRC" -o "$OUT/acvirgl_present_bench" "$HERE/acvirgl_present_bench.c" \
         "$HERE/../host/virgl/acvirgl.c" -ldl

@@ -200,8 +200,10 @@ static BPTR lib_expunge(REG(a6, struct MGLBase *base))
 /* ---- preferences ---------------------------------------------------------------------------- */
 
 /* ENV:MiniGL/ (read at each open and each new context):
- *   Driver          Auto, CPU, GFOpenGPU or Virgl: where triangles are drawn
- *                   (Virgl: the host's GPU through virgl, else as Auto)
+ *   Driver          Auto, Virgl, GFOpenGPU or CPU: where triangles are drawn
+ *                   (Auto and Virgl: the host's GPU through virgl when
+ *                   gfopengpu.library carries it, else GFOpenGPU's 3D ops
+ *                   when its back end isn't this 68k, else the 68k)
  *   Flip            1: a screen changes buffers instead of blitting the frame
  *   MaxTextureSize  what glGetIntegerv(GL_MAX_TEXTURE_SIZE) answers (default 1024)
  *   Trace           n: n lines of trace to the serial port */

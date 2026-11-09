@@ -908,6 +908,43 @@ static void f_arrays(void)
     glDisableClientState(GL_VERTEX_ARRAY);
 }
 
+/* Big primitives: past the arena (2 MB: arena overflow mid-primitive and
+ * mid-frame sends), past 65532 vertices (quads in parts), lit and not;
+ * never truncated (spec 9.1). */
+static void f_big(void)
+{
+    static GLfloat va[140000 * 2];
+    int i, j, k, n = 0;
+    /* 25,600 one-pixel quads, twice over: 102,400 vertices in one glBegin */
+    glBegin(GL_QUADS);
+    for (k = 0; k < 2; k++)
+        for (j = 0; j < 100; j++)
+            for (i = 0; i < 128; i++) {
+                glColor3f(i / 128.0f, j / 100.0f, k * 0.5f + 0.25f);
+                glVertex2f((float)i, (float)j); glVertex2f(i + 1.0f, (float)j);
+                glVertex2f(i + 1.0f, j + 1.0f); glVertex2f((float)i, j + 1.0f);
+            }
+    glEnd();
+    /* a lit strip of 150,000 vertices (48 bytes each: the arena fills three times) */
+    {
+        static const GLfloat white[4] = { 1, 1, 1, 1 };
+        glEnable(GL_LIGHTING); glEnable(GL_LIGHT0);
+        glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, (GLfloat *)white);
+        glNormal3f(0, 0, 1);
+        glBegin(GL_TRIANGLE_STRIP);
+        for (i = 0; i < 150000; i++) glVertex2f((float)(i % 2) * 8 + 100 + (i / 2) * (20.0f / 75000), 100 + (float)(i / 2) * (28.0f / 75000) + (i % 2) * 2);
+        glEnd();
+        glDisable(GL_LIGHTING);
+    }
+    /* glDrawArrays, a quad strip of 140,000 vertices */
+    for (i = 0; i < 70000; i++) { va[n++] = (float)(i * (90.0f / 70000)); va[n++] = 104; va[n++] = (float)(i * (90.0f / 70000)); va[n++] = 124; }
+    glColor3f(0.9f, 0.4f, 0.1f);
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glVertexPointer(2, GL_FLOAT, 0, va);
+    glDrawArrays(GL_QUAD_STRIP, 0, 140000);
+    glDisableClientState(GL_VERTEX_ARRAY);
+}
+
 /* Draws fn on both routes, 128 x 128, and counts the pixels off (a pixel's shift allowed). */
 static void feature(const char *name, void (*fn)(void), int pct)
 {
@@ -1021,6 +1058,7 @@ static void test_features(void)
     feature("texcoord", f_texcoord, 1);
     feature("rename", f_rename, 2);   /* texel edges; the texels themselves are checked by f_rename's pictures */
     feature("arrays", f_arrays, 1);
+    feature("big", f_big, 1);
 }
 
 static int virgl_main(const char *ppm)

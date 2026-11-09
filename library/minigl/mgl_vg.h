@@ -453,6 +453,7 @@ ULONG vg_fs_text(ULONG key, char *buf, ULONG cap);
 
 /* ---- drawing (mgl_vg_draw.c) ---------------------------------------------------------------- */
 
+#define VG_IM_MAX 65532                 /* vertices a quad primitive is drawn in at most (16-bit indices) */
 void mgl_vg_begin(GLcontext c);         /* after GLBegin's checks */
 void mgl_vg_vertex(GLcontext c, float x, float y, float z, float w);
 void mgl_vg_end(GLcontext c);

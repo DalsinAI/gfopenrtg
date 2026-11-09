@@ -181,7 +181,7 @@ static void im_overflow(GLcontext c)
     }
     for (k = keep_from; k < n && nkeep < 4; k++, nkeep++) move_down(keep + nkeep * stride, first + k * stride, stride);
     emit(c, mode, v->im_first, draw, v->im_lay, 0, 0);
-    v->grow_va = v->cva * 2;
+    if (v->nva + stride > v->cva) v->grow_va = v->cva * 2;
     vg_send(c, 0);
     v->im_first = align(v, stride);
     move_down(v->va + v->nva, keep, nkeep * stride);
@@ -195,7 +195,9 @@ void mgl_vg_vertex(GLcontext c, float x, float y, float z, float w)
     struct mgl_vg *v = c->vg;
     struct vg_layout *l = v->im_lay;
     UBYTE *p;
-    if (v->nva + l->stride > v->cva) im_overflow(c);
+    /* a primitive goes in parts past the arena's end, and at 65532 vertices
+     * (its 16-bit relative indices, when it becomes triangles) */
+    if (v->nva + l->stride > v->cva || v->im_n >= VG_IM_MAX) im_overflow(c);
     p = v->va + v->nva;
     VG_A32(p, vg_fbits(x)); VG_A32(p + 4, vg_fbits(y)); VG_A32(p + 8, vg_fbits(z)); VG_A32(p + 12, vg_fbits(w));
     if (!v->im_colok || c->color[0] != v->im_col[0] || c->color[1] != v->im_col[1] || c->color[2] != v->im_col[2] || c->color[3] != v->im_col[3]) {
@@ -329,6 +331,15 @@ void mgl_vg_draw_arrays(GLcontext c, GLenum mode, GLint first, GLsizei count)
     struct vg_layout *l;
     int swz;
     ULONG base, n = (ULONG)count;
+    if (n > VG_IM_MAX && (mode == GL_QUADS || mode == GL_QUAD_STRIP)) {
+        /* in parts whose triangles' 16-bit indices fit; a strip's parts share two */
+        ULONG step = VG_IM_MAX, back = mode == GL_QUAD_STRIP ? 2 : 0;
+        while (n > step) {
+            mgl_vg_draw_arrays(c, mode, first, (GLsizei)step);
+            first += (GLint)(step - back);
+            n -= step - back;
+        }
+    }
     l = array_layout(c, &swz);
     vg_need(c, (n + 1) * l->stride, indices_for(c, mode, n));
     l = array_layout(c, &swz);          /* the same, if the send made it again */

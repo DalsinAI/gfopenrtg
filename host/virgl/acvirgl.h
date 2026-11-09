@@ -45,7 +45,19 @@ struct acvirgl_stats {
     uint64_t present_conv_ns;                       /* turning it into the target's format */
     uint64_t present_issue_ns;                      /* behind: asking the GPU for the frame's copy */
     uint64_t present_wait_ns;                       /* behind: of present_read_ns, mapping a frame not yet ready (it waited) */
+    /* (ACVIRGL_HAS_STAGE) */
+    uint64_t staged;                                /* presents the GPU blitted into memory the CPU caches (AC_VIRGL_STAGE) */
+    uint64_t zs_discards;                           /* presents whose depth/stencil the GPU was told not to store (AC_VIRGL_ZDISCARD) */
 };
+/* Presents through a stage (9 Nov 2026): on V3D (the Pi's GPU, whose
+ * memory the CPU reads uncached) the GPU blits each presented frame into a
+ * dmabuf of ordinary, cached pages (udmabuf, else a DMA heap) and the CPU
+ * converts it from there; for presents at once and one frame behind alike.
+ * AC_VIRGL_STAGE=1 asks for it on any GPU, 0 turns it off; when anything
+ * it needs is missing, presents go the old way. And at a present, a depth/
+ * stencil buffer the context cleared since its last one is invalidated, so
+ * a tiler doesn't store it (AC_VIRGL_ZDISCARD=0: not). */
+#define ACVIRGL_HAS_STAGE 1
 void acvirgl_stats(const struct acvirgl *v, struct acvirgl_stats *s);
 
 /* Presents left to finish (7 Nov 2026). ACV_PRESENT reads the frame back

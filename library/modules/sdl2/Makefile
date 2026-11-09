@@ -234,6 +234,12 @@ tests: $(STATIC_TESTS) $(MODULE_TESTS)
 OWN_TESTS += fullscreen
 tests: $(TEST_DIR)/fullscreen $(TEST_DIR)/fullscreen.m
 
+# fsrestore: the Workbench back in its mode, and the window with its border,
+# after real full screen and FULLSCREEN_DESKTOP and after quitting from full
+# screen (tests/sdl2/fsrestore.c)
+OWN_TESTS += fsrestore
+tests: $(TEST_DIR)/fsrestore $(TEST_DIR)/fsrestore.m
+
 SDLTEST_OBJS = $(addprefix $(TEST_DIR)/obj/,$(addsuffix .o,$(TESTS)))
 OWNTEST_OBJS = $(addprefix $(TEST_DIR)/obj/,$(addsuffix .o,$(OWN_TESTS)))
 TEST_RUN = $(TEST_DIR)/obj/testutils.o $(TEST_DIR)/obj/sdltest_run.o

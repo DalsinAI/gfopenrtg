@@ -15,6 +15,13 @@ mkdir -p "$OUT"
 cc -m32 -std=gnu99 -DMGL_HOST -I"$HERE/host-include" -I"$ROOT/include" -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter \
     -fsanitize=address,undefined -fno-sanitize-recover=undefined -o "$OUT/test_minigl" "$HERE/test_minigl.c" \
     "$M/mgl_math.c" "$M/mgl_state.c" "$M/mgl_matrix.c" "$M/mgl_vertex.c" "$M/mgl_pipe.c" "$M/mgl_texture.c" \
-    "$M/mgl_out.c" "$M/mgl_list.c" "$M/mgl_glu.c" "$M/mgl_glut.c" "$M/mgl_table.c" "$M/mgl_static.c" \
+    "$M/mgl_out.c" "$M/mgl_list.c" "$M/mgl_glu.c" "$M/mgl_glut.c" "$M/mgl_choose.c" "$M/mgl_table.c" "$M/mgl_static.c" \
     "$O/ogpu_core.c" "$O/ogpu_dwt.c" "$O/ogpu_3d.c" "$O/ogpu_build.c" "$O/ogpu_build3d.c" -lm
 "$OUT/test_minigl" "$HERE/golden/minigl-scene.txt" ${1:-} -o "$OUT/minigl-scene.ppm"
+# The interface files are what the spec makes, and the table is laid out as
+# the spec's section 8 says (its own reading of the spec, then offsetof).
+python3 "$M/gen_api.py" --check
+python3 "$M/gen_api.py" --expect "$OUT/mgl_spec_expect.h"
+cc -m32 -std=gnu99 -DMGL_HOST -I"$HERE/host-include" -I"$ROOT/include" -I"$OUT" -Wall -Wextra -Werror -Wno-unused-parameter \
+    -o "$OUT/test_minigl_abi" "$HERE/test_minigl_abi.c"
+"$OUT/test_minigl_abi" "$ROOT/docs/design/MiniGL-Compatible-Spec.md"

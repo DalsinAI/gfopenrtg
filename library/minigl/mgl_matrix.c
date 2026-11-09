@@ -224,33 +224,30 @@ void GLRotated(GLcontext c, GLdouble angle, GLdouble x, GLdouble y, GLdouble z)
     GLRotatef(c, (float)angle, (float)x, (float)y, (float)z);
 }
 
-static void axis_of(GLint xyz, float *x, float *y, float *z)
+/* glRotatefEXT's axis: 0, 1 or 2 for x, y or z (spec 9.1; black-box test
+ * B6 confirms the numbering). Anything else: x. */
+static void axis_of(GLint axis, float *x, float *y, float *z)
 {
-    *x = (xyz & GLROT_100) ? 1.0f : 0.0f;
-    *y = (xyz & GLROT_010) ? 1.0f : 0.0f;
-    *z = (xyz & GLROT_001) ? 1.0f : 0.0f;
-    if (xyz == GLROT_011) { *x = 0; *y = 1; *z = 1; }
-    else if (xyz == GLROT_101) { *x = 1; *y = 0; *z = 1; }
-    else if (xyz == GLROT_110) { *x = 1; *y = 1; *z = 0; }
-    else if (xyz == GLROT_111) { *x = 1; *y = 1; *z = 1; }
-    if (*x == 0 && *y == 0 && *z == 0) *x = 1;
+    *x = axis == 1 || axis == 2 ? 0.0f : 1.0f;
+    *y = axis == 1 ? 1.0f : 0.0f;
+    *z = axis == 2 ? 1.0f : 0.0f;
 }
 
-void GLRotatefEXT(GLcontext c, GLfloat angle, const GLint xyz)
+void GLRotatefEXT(GLcontext c, GLfloat angle, const GLint axis)
 {
     float x, y, z;
-    axis_of(xyz, &x, &y, &z);
+    axis_of(axis, &x, &y, &z);
     GLRotatef(c, angle, x, y, z);
 }
 
-void GLRotatefEXTs(GLcontext c, GLfloat sin_an, GLfloat cos_an, const GLint xyz)
+void GLRotatefEXTs(GLcontext c, GLfloat sine, GLfloat cosine, const GLint axis)
 {
     float x, y, z;
     if (!c) return;
-    axis_of(xyz, &x, &y, &z);
+    axis_of(axis, &x, &y, &z);
     if (c->compiling) {
         /* a list keeps the angle */
-        float deg = 0.0f, s = sin_an, k = cos_an;
+        float deg = 0.0f, s = sine, k = cosine;
         /* atan2 by halving: good enough for a recorded call */
         int q;
         float lo = -180.0f, hi = 180.0f;
@@ -263,7 +260,7 @@ void GLRotatefEXTs(GLcontext c, GLfloat sin_an, GLfloat cos_an, const GLint xyz)
         GLRotatef(c, deg, x, y, z);
         return;
     }
-    rotate_sc(c, sin_an, cos_an, x, y, z);
+    rotate_sc(c, sine, cosine, x, y, z);
 }
 
 void GLScalef(GLcontext c, GLfloat x, GLfloat y, GLfloat z)

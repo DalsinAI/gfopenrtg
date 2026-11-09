@@ -8,7 +8,7 @@
  * GLU calls without a context argument use the current context. */
 #include "mgl_internal.h"
 
-struct GLUquadricObj_t {
+struct GLUquadric {
     GLenum normals;                 /* GLU_NONE, GLU_FLAT, GLU_SMOOTH */
     GLboolean texture;
     GLenum style;                   /* GLU_FILL, GLU_LINE, GLU_SILHOUETTE, GLU_POINT */

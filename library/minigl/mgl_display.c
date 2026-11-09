@@ -11,7 +11,10 @@
  *   - A bitmap the program owns (mglCreateContextFromBitMap).
  * R5G6B5 and A8R8G8B8 are drawn in place; other formats through an ARGB32
  * copy written back with WritePixelArray. mglMainLoop gives the program's
- * key, mouse and idle functions their turn. */
+ * key, mouse and idle functions their turn.
+ *
+ * What each mgl* call does follows the clean-room spec's section 9.2
+ * (docs/design/MiniGL-Compatible-Spec.md; see PROVENANCE.md). */
 #include <exec/memory.h>
 #include <intuition/intuition.h>
 #include <intuition/screens.h>
@@ -31,10 +34,6 @@
 
 extern struct Library *CyberGfxBase;
 
-/* Warp3D's names for drawing formats, which MGLLockInfo has always carried. */
-#define W3D_FMT_R5G6B5   (1 << 5)
-#define W3D_FMT_A8R8G8B8 (1 << 11)
-
 enum { MODE_SCREEN, MODE_WINDOW, MODE_APPWINDOW, MODE_BITMAP };
 
 struct mgl_display {
@@ -49,17 +48,21 @@ struct mgl_display {
     int direct;
     struct BitMap *appbm;
     APTR lock;                      /* LockBitMapTags while a batch runs */
-    APTR backlock;                  /* mglLockBack's */
+    ULONG *lockbuf;                 /* mglLockBack's copy of the frame (R, G, B, A bytes), or 0 */
+    int locked;                     /* mglLockDisplay's flag */
     UWORD *blank;                   /* the empty pointer (chip memory) */
     int ox, oy;                     /* the frame's place in the window */
-    ULONG buttons;
+    int waits;                      /* buffers asked for (mglChooseNumberOfBuffers): more than 1 waits */
+    int closed_wb;                  /* mglProposeCloseDesktop closed the Workbench */
 };
 
 /* The bitmap the next frame is drawn into. */
 static struct BitMap *back_bitmap(struct mgl_display *d)
 {
     switch (d->mode) {
-    case MODE_SCREEN: return d->off ? d->off : d->nbuf ? d->sb[d->back]->sb_BitMap : d->screen->RastPort.BitMap;
+    case MODE_SCREEN:
+        if (!d->screen) return 0;           /* a resize that failed: no display */
+        return d->off ? d->off : d->nbuf ? d->sb[d->back]->sb_BitMap : d->screen->RastPort.BitMap;
     case MODE_BITMAP: return d->appbm;
     }
     return d->off;
@@ -86,7 +89,6 @@ int mgl_disp_lock(GLcontext c)
         c->bpr = d->argbbpr;
         return 1;
     }
-    if (d->backlock) return 1;                  /* mglLockBack has it */
     {
         ULONG base = 0, bpr = 0;
         d->lock = LockBitMapTags(bm, LBMI_BASEADDRESS, (ULONG)&base, LBMI_BYTESPERROW, (ULONG)&bpr, TAG_DONE);
@@ -111,21 +113,33 @@ void mgl_disp_unlock(GLcontext c)
 
 /* ---- opening -------------------------------------------------------------------------------- */
 
-static void close_display(struct mgl_display *d)
+/* What the library opened for the display (not what the program gave it). */
+static void close_parts(struct mgl_display *d)
 {
     int i;
-    if (!d) return;
-    if (d->backlock) { UnLockBitMap(d->backlock); d->backlock = 0; }
+    mgl_free(d->lockbuf);
+    d->lockbuf = 0;
     if (d->window && d->mode != MODE_APPWINDOW) {
         ClearPointer(d->window);
         CloseWindow(d->window);
     }
+    if (d->mode != MODE_BITMAP) d->window = 0;
     if (d->screen && d->mode == MODE_SCREEN) {
         for (i = d->nbuf - 1; i >= 0; i--) if (d->sb[i]) FreeScreenBuffer(d->screen, d->sb[i]);
         CloseScreen(d->screen);
+        d->screen = 0;
     }
-    if (d->off) { WaitBlit(); FreeBitMap(d->off); }
+    d->nbuf = 0;
+    if (d->off) { WaitBlit(); FreeBitMap(d->off); d->off = 0; }
     mgl_free(d->argb);
+    d->argb = 0;
+}
+
+static void close_display(struct mgl_display *d)
+{
+    if (!d) return;
+    close_parts(d);
+    if (d->closed_wb) OpenWorkBench();
     if (d->blank) FreeVec(d->blank);
     mgl_free(d);
 }
@@ -145,15 +159,21 @@ static int setup_area(GLcontext c)
     return 1;
 }
 
-static ULONG idcmp_flags(void)
+/* The input window's messages, added by the main loops (spec 9.2: the window
+ * opens with none; a program that reads it itself adds its own). */
+void mgl_input_on(GLcontext c)
 {
-    return IDCMP_VANILLAKEY | IDCMP_RAWKEY | IDCMP_MOUSEBUTTONS | IDCMP_MOUSEMOVE | IDCMP_CLOSEWINDOW;
+    struct Window *w = c->disp->window;
+    ULONG f = IDCMP_VANILLAKEY | IDCMP_RAWKEY | IDCMP_MOUSEBUTTONS | IDCMP_MOUSEMOVE;
+    if (!w) return;
+    if (w->Flags & WINDOWCLOSE) f |= IDCMP_CLOSEWINDOW;
+    if ((w->IDCMPFlags & f) != f) ModifyIDCMP(w, w->IDCMPFlags | f);
 }
 
 static int open_screen(GLcontext c, struct mgl_display *d, ULONG id, int w, int h)
 {
-    int depth = mgl_prefs.depth <= 16 ? 16 : 32, i;
-    if (id == (ULONG)INVALID_ID || !id || id == MGL_SM_BESTMODE)
+    int depth = 32, i;                          /* mglChoosePixelDepth is accepted and ignored */
+    if (id == (ULONG)INVALID_ID || !id || id == MGL_SCREENMODE_BEST)
         id = BestCModeIDTags(CYBRBIDTG_NominalWidth, w, CYBRBIDTG_NominalHeight, h, CYBRBIDTG_Depth, depth, TAG_DONE);
     if (id == (ULONG)INVALID_ID) { mgl_log("mglCreateContext: no %ldx%ld %ld-bit mode", (long)w, (long)h, (long)depth); return 0; }
     if (IsCyberModeID(id)) depth = (int)GetCyberIDAttr(CYBRIDATTR_DEPTH, id);
@@ -162,7 +182,7 @@ static int open_screen(GLcontext c, struct mgl_display *d, ULONG id, int w, int 
         ULONG err = 0;
         d->screen = OpenScreenTags(0, SA_DisplayID, id, SA_Width, w, SA_Height, h, SA_Depth, depth,
                                    SA_Quiet, TRUE, SA_ShowTitle, FALSE, SA_Type, CUSTOMSCREEN,
-                                   SA_Title, (ULONG)"MiniGL", SA_ErrorCode, (ULONG)&err, TAG_DONE);
+                                   SA_Title, (ULONG)"AmiCradle GL", SA_ErrorCode, (ULONG)&err, TAG_DONE);
         if (!d->screen) {
             mgl_log("mglCreateContext: no screen (mode %lx, depth %ld, error %ld)", (unsigned long)id, (long)depth, (long)err);
             return 0;
@@ -170,9 +190,11 @@ static int open_screen(GLcontext c, struct mgl_display *d, ULONG id, int w, int 
     }
     d->window = OpenWindowTags(0, WA_CustomScreen, (ULONG)d->screen, WA_Left, 0, WA_Top, 0, WA_Width, w, WA_Height, h,
                                WA_Backdrop, TRUE, WA_Borderless, TRUE, WA_Activate, TRUE, WA_RMBTrap, TRUE,
-                               WA_ReportMouse, TRUE, WA_IDCMP, idcmp_flags(), WA_SimpleRefresh, TRUE,
+                               WA_ReportMouse, TRUE, WA_IDCMP, 0, WA_SimpleRefresh, TRUE,
                                WA_NoCareRefresh, TRUE, TAG_DONE);
     if (!d->window) { mgl_log("mglCreateContext: no window"); return 0; }
+    if (mgl_prefs.close_desktop) d->closed_wb = CloseWorkBench() != 0;
+    mgl_prefs.close_desktop = 0;                /* consumed when a display opens */
     c->width = w; c->height = h;
     /* A frame is drawn off screen and copied onto the screen in one blit:
      * on RTG that is quicker than changing screen buffers, which waits for
@@ -197,7 +219,7 @@ static int open_screen(GLcontext c, struct mgl_display *d, ULONG id, int w, int 
     return 1;
 }
 
-static int open_window(GLcontext c, struct mgl_display *d, int x, int y, int w, int h, struct Window *app)
+static int open_window(GLcontext c, struct mgl_display *d, int x, int y, int w, int h, struct Window *app, int closable)
 {
     struct Screen *pub = 0;
     if (app) {
@@ -205,12 +227,14 @@ static int open_window(GLcontext c, struct mgl_display *d, int x, int y, int w, 
         d->mode = MODE_APPWINDOW;
         w = app->Width - app->BorderLeft - app->BorderRight;
         h = app->Height - app->BorderTop - app->BorderBottom;
+        if (w < 1 || h < 1) return 0;           /* no inner area */
     } else {
         pub = LockPubScreen(0);
         if (!pub) return 0;
         d->window = OpenWindowTags(0, WA_PubScreen, (ULONG)pub, WA_Left, x, WA_Top, y, WA_InnerWidth, w, WA_InnerHeight, h,
-                                   WA_Title, (ULONG)"MiniGL", WA_DragBar, TRUE, WA_DepthGadget, TRUE, WA_CloseGadget, TRUE,
-                                   WA_Activate, TRUE, WA_RMBTrap, TRUE, WA_ReportMouse, TRUE, WA_IDCMP, idcmp_flags(),
+                                   WA_Title, (ULONG)"AmiCradle GL", WA_DragBar, TRUE, WA_DepthGadget, TRUE,
+                                   WA_CloseGadget, closable ? TRUE : FALSE,
+                                   WA_Activate, TRUE, WA_RMBTrap, TRUE, WA_ReportMouse, TRUE, WA_IDCMP, 0,
                                    WA_SimpleRefresh, TRUE, WA_NoCareRefresh, TRUE, TAG_DONE);
         UnlockPubScreen(0, pub);
         if (!d->window) return 0;
@@ -244,44 +268,61 @@ static GLcontext finish(GLcontext c)
         return 0;
     }
     c->no_mip = mgl_prefs.no_mip;
+    c->disp->waits = mgl_prefs.buffers;
     mgl_init_state(c);
+    /* MiniGL's clear colour after creation is opaque white (spec 9.2). */
+    c->clear_color[0] = c->clear_color[1] = c->clear_color[2] = c->clear_color[3] = 1.0f;
+    if (c->disp->mode == MODE_SCREEN) MGLSetPointer(c);    /* the display's pointer is blanked */
     mgl_current = c;
     mgl_log("mglCreateContext %ldx%ld route %ld fmt %ld direct %ld", (long)c->width, (long)c->height, (long)c->route,
             (long)c->fmt, (long)c->disp->direct);
     return c;
 }
 
-static GLcontext create(ULONG id, int x, int y, int w, int h, int window)
+static GLcontext create(ULONG id, int x, int y, int w, int h, int window, int closable)
 {
     GLcontext c = new_context();
     int ok;
     if (!c) return 0;
     if (w < 1) w = 640;
     if (h < 1) h = 480;
-    if (window) ok = open_window(c, c->disp, x, y, w, h, 0);
+    if (window) ok = open_window(c, c->disp, x, y, w, h, 0, closable);
     else { c->disp->mode = MODE_SCREEN; ok = open_screen(c, c->disp, id, w, h); }
     if (!ok) { close_display(c->disp); mgl_free(c); return 0; }
     return finish(c);
 }
 
-void *MGLCreateContext(int offx, int offy, int w, int h)
+/* x, y: the viewport's first origin (spec 9.2); the window, when there is
+ * one, opens at the Workbench's top left with a drag bar and a depth gadget. */
+void *MGLCreateContext(int x, int y, int w, int h)
 {
-    return create((ULONG)INVALID_ID, offx, offy, w, h, mgl_prefs.window);
+    GLcontext c = create((ULONG)INVALID_ID, 0, 0, w, h, mgl_prefs.window, 0);
+    if (c && (x || y)) GLViewport(c, x, y, c->width, c->height);
+    return c;
 }
 
-void *MGLCreateContextFromID(GLint ID, GLint *w, GLint *h)
+/* GLUT's window: where GLUT says, with a close gadget. */
+GLcontext mgl_create_window(int x, int y, int w, int h)
+{
+    return create((ULONG)INVALID_ID, x, y, w, h, 1, 1);
+}
+
+/* The compatible answer is NULL; AmiCradle opens the modes that
+ * mglGetSupportedScreenModes offers (spec 9.2). */
+void *MGLCreateContextFromID(GLint id, GLint *w, GLint *h)
 {
     GLcontext c;
     int ww = w && *w > 0 ? *w : 640, hh = h && *h > 0 ? *h : 480;
-    if ((ULONG)ID == MGL_SM_WINDOWMODE) c = create((ULONG)INVALID_ID, 0, 0, ww, hh, 1);
+    if ((ULONG)id == MGL_SCREENMODE_WINDOW) c = create((ULONG)INVALID_ID, 0, 0, ww, hh, 1, 0);
     else {
-        if ((ULONG)ID != MGL_SM_BESTMODE && IsCyberModeID((ULONG)ID)) {
-            ww = (int)GetCyberIDAttr(CYBRIDATTR_WIDTH, (ULONG)ID);
-            hh = (int)GetCyberIDAttr(CYBRIDATTR_HEIGHT, (ULONG)ID);
+        if ((ULONG)id != MGL_SCREENMODE_BEST && IsCyberModeID((ULONG)id)) {
+            ww = (int)GetCyberIDAttr(CYBRIDATTR_WIDTH, (ULONG)id);
+            hh = (int)GetCyberIDAttr(CYBRIDATTR_HEIGHT, (ULONG)id);
         }
-        c = create((ULONG)ID, 0, 0, ww, hh, 0);
+        c = create((ULONG)id, 0, 0, ww, hh, 0, 0);
     }
     if (c) { if (w) *w = c->width; if (h) *h = c->height; }
+    else { if (w) *w = 0; if (h) *h = 0; }
     return c;
 }
 
@@ -291,7 +332,7 @@ void *MGLCreateContextFromWindow(struct Window *window)
     if (!window) return 0;
     c = new_context();
     if (!c) return 0;
-    if (!open_window(c, c->disp, 0, 0, 0, 0, window)) { close_display(c->disp); mgl_free(c); return 0; }
+    if (!open_window(c, c->disp, 0, 0, 0, 0, window, 0)) { close_display(c->disp); mgl_free(c); return 0; }
     return finish(c);
 }
 
@@ -321,44 +362,80 @@ void MGLDeleteContext(GLcontext c)
     close_display(c->disp);
     if (mgl_current == c) mgl_current = 0;
     mgl_free(c);
+    mgl_prefs_defaults();                       /* one program's choices don't reach the next */
 }
 
 void mgl_disp_free(GLcontext c) { close_display(c->disp); c->disp = 0; }
 
 /* ---- frames ----------------------------------------------------------------------------------- */
 
-GLboolean MGLLockDisplay(GLcontext c) { return c ? GL_TRUE : GL_FALSE; }
+/* mglLockBack's copy back into the drawing area: R, G, B, A bytes to the
+ * area's format. */
+static void lockbuf_release(GLcontext c)
+{
+    struct mgl_display *d = c->disp;
+    ULONG *p = d->lockbuf, n = (ULONG)c->width * (ULONG)c->height, i;
+    int x, y;
+    if (!p) return;
+    for (i = 0; i < n; i++) p[i] = (p[i] >> 8) | (p[i] << 24);     /* to A, R, G, B */
+    if (mgl_disp_lock(c)) {
+        for (y = 0; y < c->height; y++) {
+            const ULONG *s = p + (ULONG)y * (ULONG)c->width;
+            if (c->fmt == OGPU_FMT_RGB565) {
+                UWORD *o = (UWORD *)(c->base + (ULONG)y * c->bpr);
+                for (x = 0; x < c->width; x++)
+                    o[x] = (UWORD)(((s[x] >> 8) & 0xF800) | ((s[x] >> 5) & 0x07E0) | ((s[x] >> 3) & 0x001F));
+            } else mgl_copy(c->base + (ULONG)y * c->bpr, s, (ULONG)c->width * 4);
+        }
+        mgl_disp_unlock(c);
+    }
+    mgl_free(p);
+    d->lockbuf = 0;
+}
+
+/* Rendering never needs it: a flag. */
+GLboolean MGLLockDisplay(GLcontext c)
+{
+    if (!c) return GL_FALSE;
+    c->disp->locked = 1;
+    return GL_TRUE;
+}
 
 void MGLUnlockDisplay(GLcontext c)
 {
     if (!c) return;
-    if (c->disp->backlock) { UnLockBitMap(c->disp->backlock); c->disp->backlock = 0; }
+    lockbuf_release(c);
+    c->disp->locked = 0;
 }
 
-void MGLLockMode(GLcontext c, GLenum lockMode) { if (c) c->lock_mode = lockMode; }
-void MGLEnableSync(GLcontext c, GLboolean enable) { if (c) c->sync = enable; }
-
+/* The frame so far as R, G, B, A bytes, top row first, until
+ * mglUnlockDisplay (or mglSwitchDisplay) puts it back. */
 GLboolean MGLLockBack(GLcontext c, MGLLockInfo *info)
 {
     struct mgl_display *d;
-    ULONG base = 0, bpr = 0;
+    ULONG n, i, *p;
     if (!c) return GL_FALSE;
     d = c->disp;
+    if (info) {
+        info->width = (GLuint)c->width;
+        info->height = (GLuint)c->height;
+        info->depth = 32;
+        info->format = MGL_LOCK_FORMAT_RGBA8;
+        info->address = 0;
+        info->bytes_per_row = 0;
+    }
+    if (d->lockbuf) return GL_FALSE;            /* already held */
     mgl_pipe_flush(c);
     mgl_flush(c);
-    if (!d->backlock) {
-        d->backlock = LockBitMapTags(back_bitmap(d), LBMI_BASEADDRESS, (ULONG)&base, LBMI_BYTESPERROW, (ULONG)&bpr, TAG_DONE);
-        if (!d->backlock) return GL_FALSE;
-        c->base = (UBYTE *)base;
-        c->bpr = bpr;
-    }
+    n = (ULONG)c->width * (ULONG)c->height;
+    p = mgl_alloc(n * 4);
+    if (!p) return GL_FALSE;
+    mgl_readback(c, 0, 0, c->width, c->height, p, c->width);
+    for (i = 0; i < n; i++) p[i] = (p[i] << 8) | (p[i] >> 24);     /* A, R, G, B to R, G, B, A */
+    d->lockbuf = p;
     if (info) {
-        info->width = (ULONG)c->width;
-        info->height = (ULONG)c->height;
-        info->depth = c->fmt == OGPU_FMT_RGB565 ? 16 : 32;
-        info->pixel_format = c->fmt == OGPU_FMT_RGB565 ? W3D_FMT_R5G6B5 : W3D_FMT_A8R8G8B8;
-        info->base_address = c->base;
-        info->pitch = c->bpr;
+        info->address = p;
+        info->bytes_per_row = (GLuint)c->width * 4;
     }
     return GL_TRUE;
 }
@@ -375,21 +452,21 @@ void MGLSwitchDisplay(GLcontext c)
     c->frames++;
     switch (d->mode) {
     case MODE_SCREEN:
+        if (!d->screen) break;
         if (d->off) {
-            if (c->sync) WaitTOF();
+            if (c->sync || d->waits > 1) WaitTOF();
             BltBitMapRastPort(d->off, 0, 0, &d->screen->RastPort, 0, 0, c->width, c->height, 0xC0);
         } else if (d->nbuf) {
             /* shown at the next display change; when the last change is still
              * waiting, this frame's buffer stays the one drawn into */
             ULONG t0 = mgl_trace > 0 ? mgl_millis() : 0;
-            if (c->sync) WaitTOF();
+            if (c->sync || d->waits > 1) WaitTOF();
             if (ChangeScreenBuffer(d->screen, d->sb[d->back])) d->back = (d->back + 1) % d->nbuf;
             if (mgl_trace > 0) mgl_log("change: %ld ms", (long)(mgl_millis() - t0));
             else mgl_log("mglSwitchDisplay: the last change is still waiting");
         }
         break;
     case MODE_WINDOW: case MODE_APPWINDOW:
-        if (c->sync) WaitTOF();
         BltBitMapRastPort(d->off, 0, 0, d->window->RPort, d->ox, d->oy, c->width, c->height, 0xC0);
         break;
     default:
@@ -397,40 +474,37 @@ void MGLSwitchDisplay(GLcontext c)
     }
 }
 
+/* Fullscreen: the display opened again at the new size, textures and GL
+ * state kept, the viewport and depth range set again. Windows and bitmaps:
+ * nothing (spec 9.2). */
 GLboolean MGLResizeContext(GLcontext c, GLsizei width, GLsizei height)
 {
     struct mgl_display *d;
-    struct BitMap *nb;
     UBYTE *nz;
-    ULONG *na = 0;
-    if (!c || width < 1 || height < 1) return GL_FALSE;
+    if (!c) return GL_FALSE;
+    if (width <= 0 || height <= 0) { mgl_error(c, GL_INVALID_VALUE); return GL_FALSE; }
     d = c->disp;
-    if (d->mode != MODE_WINDOW && d->mode != MODE_APPWINDOW) return GL_FALSE;
+    if (d->mode != MODE_SCREEN) return GL_TRUE;
     mgl_pipe_flush(c);
     mgl_flush(c);
-    nb = AllocBitMap(width, height, 16, BMF_MINPLANES | BMF_CLEAR, d->window->RPort->BitMap);
-    nz = mgl_alloc((ULONG)width * height * (c->zfmt == OGPU_FMT_Z32 ? 4 : 2));
-    if (!d->direct) na = mgl_alloc((ULONG)width * height * 4);
-    if (!nb || !nz || (!d->direct && !na)) {
-        if (nb) FreeBitMap(nb);
-        mgl_free(nz); mgl_free(na);
+    lockbuf_release(c);
+    close_parts(d);
+    nz = mgl_alloc((ULONG)width * (ULONG)height * (c->zfmt == OGPU_FMT_Z32 ? 4 : 2));
+    if (!nz || !open_screen(c, d, (ULONG)INVALID_ID, width, height) || !setup_area(c)) {
+        mgl_free(nz);
+        close_parts(d);                         /* no display until a resize works */
         return GL_FALSE;
     }
-    if (d->mode == MODE_WINDOW)
-        ChangeWindowBox(d->window, d->window->LeftEdge, d->window->TopEdge,
-                        width + d->window->BorderLeft + d->window->BorderRight,
-                        height + d->window->BorderTop + d->window->BorderBottom);
-    WaitBlit();
-    FreeBitMap(d->off);
-    d->off = nb;
     mgl_free(c->zbuf);
     c->zbuf = nz;
     c->zbpr = (ULONG)width * (c->zfmt == OGPU_FMT_Z32 ? 4 : 2);
-    if (!d->direct) { mgl_free(d->argb); d->argb = na; d->argbbpr = (ULONG)width * 4; }
     c->width = width; c->height = height;
     if (!(c->en & EN_SCISSOR)) { c->sc_w = width; c->sc_h = height; }
+    c->vp_x = c->vp_y = 0; c->vp_w = width; c->vp_h = height;
+    c->depth_near = 0.0; c->depth_far = 1.0;
     mgl_viewport_changed(c);
     c->clip_dirty = 1;
+    MGLSetPointer(c);
     return GL_TRUE;
 }
 
@@ -443,22 +517,18 @@ void MGLSetPointer(GLcontext c)
     struct mgl_display *d;
     if (!c) return;
     d = c->disp;
+    if (!d) return;
     if (!d->blank) d->blank = AllocVec(16, MEMF_CHIP | MEMF_CLEAR);
     if (d->window && d->blank) SetPointer(d->window, d->blank, 1, 1, 0, 0);
 }
 
 void MGLClearPointer(GLcontext c)
 {
-    if (c && c->disp->window) ClearPointer(c->disp->window);
+    if (c && c->disp && c->disp->window) ClearPointer(c->disp->window);
 }
 
 /* ---- the main loop ---------------------------------------------------------------------------- */
 
-void MGLIdleFunc(GLcontext c, IdleFn i) { if (c) c->idle = i; }
-void MGLKeyFunc(GLcontext c, KeyHandlerFn k) { if (c) c->key = k; }
-void MGLMouseFunc(GLcontext c, MouseHandlerFn m) { if (c) c->mouse = m; }
-void MGLSpecialFunc(GLcontext c, SpecialHandlerFn s) { if (c) c->special = s; }
-void MGLExit(GLcontext c) { if (c) c->quit = 1; }
 
 /* One round of the window's messages; 0 when the window was closed. */
 int mgl_events(GLcontext c, void (*glut_key)(int key), void (*glut_special)(int key))
@@ -469,8 +539,11 @@ int mgl_events(GLcontext c, void (*glut_key)(int key), void (*glut_special)(int 
     if (!d->window) return 1;
     while ((m = (struct IntuiMessage *)GetMsg(d->window->UserPort)) != 0) {
         ULONG cls = m->Class;
-        UWORD code = m->Code;
-        WORD mx = m->MouseX - d->ox, my = m->MouseY - d->oy;
+        UWORD code = m->Code, q = m->Qualifier;
+        /* GL's window coordinates: y up from the bottom */
+        GLint mx = m->MouseX - d->ox, my = c->height - 1 - (m->MouseY - d->oy);
+        GLbitfield buttons = ((q & IEQUALIFIER_LEFTBUTTON) ? MGL_MOUSE_LEFT : 0) | ((q & IEQUALIFIER_RBUTTON) ? MGL_MOUSE_RIGHT : 0)
+                           | ((q & IEQUALIFIER_MIDBUTTON) ? MGL_MOUSE_MIDDLE : 0);
         ReplyMsg(&m->ExecMessage);
         switch (cls) {
         case IDCMP_VANILLAKEY:
@@ -479,11 +552,11 @@ int mgl_events(GLcontext c, void (*glut_key)(int key), void (*glut_special)(int 
             break;
         case IDCMP_RAWKEY: {
             int sp = -1;
-            if (code >= 0x50 && code <= 0x59) sp = MGLKEY_F1 + (code - 0x50);
-            else if (code == 0x4C) sp = MGLKEY_CUP;
-            else if (code == 0x4D) sp = MGLKEY_CDOWN;
-            else if (code == 0x4E) sp = MGLKEY_CRIGHT;
-            else if (code == 0x4F) sp = MGLKEY_CLEFT;
+            if (code >= 0x50 && code <= 0x59) sp = MGL_KEY_F1 + (code - 0x50);
+            else if (code == 0x4C) sp = MGL_KEY_UP;
+            else if (code == 0x4D) sp = MGL_KEY_DOWN;
+            else if (code == 0x4E) sp = MGL_KEY_RIGHT;
+            else if (code == 0x4F) sp = MGL_KEY_LEFT;
             if (sp >= 0) {
                 if (glut_special) glut_special(sp);
                 else if (c->special) c->special((MGLspecial)sp);
@@ -491,17 +564,8 @@ int mgl_events(GLcontext c, void (*glut_key)(int key), void (*glut_special)(int 
             break;
         }
         case IDCMP_MOUSEBUTTONS:
-            switch (code) {
-            case SELECTDOWN: d->buttons |= MGL_BUTTON_LEFT; break;
-            case SELECTUP: d->buttons &= ~MGL_BUTTON_LEFT; break;
-            case MENUDOWN: d->buttons |= MGL_BUTTON_RIGHT; break;
-            case MENUUP: d->buttons &= ~MGL_BUTTON_RIGHT; break;
-            case MIDDLEDOWN: d->buttons |= MGL_BUTTON_MID; break;
-            case MIDDLEUP: d->buttons &= ~MGL_BUTTON_MID; break;
-            }
-            /* fall through */
         case IDCMP_MOUSEMOVE:
-            if (c->mouse) c->mouse(mx, my, d->buttons);
+            if (c->mouse) c->mouse(mx, my, buttons);
             break;
         case IDCMP_CLOSEWINDOW:
             alive = 0;
@@ -518,7 +582,8 @@ ULONG mgl_event_signal(GLcontext c)
 
 void MGLMainLoop(GLcontext c)
 {
-    if (!c) return;
+    if (!c || !c->disp->window) return;         /* no input window: at once */
+    mgl_input_on(c);
     c->quit = 0;
     while (!c->quit) {
         if (!mgl_events(c, 0, 0)) break;
@@ -532,48 +597,33 @@ void MGLMainLoop(GLcontext c)
     }
 }
 
-/* ---- choices before a context ---------------------------------------------------------------- */
-
-void LIB_mglChoosePixelDepth(int depth) { mgl_prefs.depth = depth; }
-void LIB_mglChooseNumberOfBuffers(int number) { mgl_prefs.buffers = number; }
-void LIB_mglChooseWindowMode(GLboolean flag) { mgl_prefs.window = flag ? 1 : 0; }
-void LIB_mglChooseZBufferDepth(int bits) { mgl_prefs.zbits = bits >= 24 ? 32 : 16; }
-void LIB_mglChooseVertexBufferSize(int size) { (void)size; }
-void LIB_mglChooseTextureBufferSize(int size) { (void)size; }
-void LIB_mglChooseMtexBufferSize(int size) { (void)size; }
-void LIB_mglChooseGuardBand(GLboolean flag) { mgl_prefs.guard = flag; }
-void LIB_mglProhibitAlphaFallback(GLboolean flag) { mgl_prefs.alpha_fallback = !flag; }
-void LIB_mglProhibitMipMapping(GLboolean flag) { mgl_prefs.no_mip = flag ? 1 : 0; if (mgl_current) mgl_current->no_mip = mgl_prefs.no_mip; }
-void LIB_mglProposeCloseDesktop(GLboolean closeme) { mgl_prefs.close_desktop = closeme; }
-
-/* A second texture unit is drawn as each triangle comes: there is no buffer to draw. */
-void MGLDrawMultitexBuffer(GLcontext c, GLenum BSrc, GLenum BDst, GLenum TexEnv) { (void)c; (void)BSrc; (void)BDst; (void)TexEnv; }
-
-GLint LIB_mglGetSupportedScreenModes(MGLScreenModeCallback CallbackFn)
+/* The compatible answer is "best" without a call; AmiCradle offers its RTG
+ * modes until the callback takes one (spec 9.2). */
+GLint MGLGetSupportedScreenModes(MGLScreenModeCallback cb)
 {
     ULONG id = INVALID_ID;
-    if (!CallbackFn) return (GLint)MGL_SM_BESTMODE;
+    if (!cb) return (GLint)MGL_SCREENMODE_BEST;
     while ((id = NextDisplayInfo(id)) != (ULONG)INVALID_ID) {
         MGLScreenMode sm;
         struct NameInfo ni;
         int i;
         if (!IsCyberModeID(id)) continue;
-        sm.bit_depth = (GLint)GetCyberIDAttr(CYBRIDATTR_DEPTH, id);
-        if (sm.bit_depth < 15) continue;
-        sm.id = (GLint)id;
+        sm.bits = (GLint)GetCyberIDAttr(CYBRIDATTR_DEPTH, id);
+        if (sm.bits < 15) continue;
+        sm.mode_id = (GLint)id;
         sm.width = (GLint)GetCyberIDAttr(CYBRIDATTR_WIDTH, id);
         sm.height = (GLint)GetCyberIDAttr(CYBRIDATTR_HEIGHT, id);
-        sm.mode_name[0] = 0;
+        sm.name[0] = 0;
         if (GetDisplayInfoData(0, (UBYTE *)&ni, sizeof ni, DTAG_NAME, id) > 0)
-            for (i = 0; i < MGL_MAX_MODE - 1 && ni.Name[i]; i++) sm.mode_name[i] = (char)ni.Name[i], sm.mode_name[i + 1] = 0;
-        if (CallbackFn(&sm) == GL_TRUE) return sm.id;
+            for (i = 0; i < MGL_MODE_NAME_LEN - 1 && ni.Name[i]; i++) sm.name[i] = (char)ni.Name[i], sm.name[i + 1] = 0;
+        if (cb(&sm) == GL_TRUE) return sm.mode_id;
     }
-    return (GLint)MGL_SM_BESTMODE;
+    return (GLint)MGL_SCREENMODE_BEST;
 }
 
 /* ---- a picture of the frame -------------------------------------------------------------------- */
 
-void MGLWriteShotPPM(GLcontext c, char *filename)
+void MGLWriteShotPPM(GLcontext c, char *name)
 {
     BPTR f;
     ULONG *row;
@@ -581,10 +631,10 @@ void MGLWriteShotPPM(GLcontext c, char *filename)
     char head[32];
     int y, x, n = 0;
     LONG v;
-    if (!c || !filename) return;
+    if (!c || !name) return;
     row = mgl_alloc((ULONG)c->width * 4);
     out = mgl_alloc((ULONG)c->width * 3);
-    f = Open((STRPTR)filename, MODE_NEWFILE);
+    f = Open((STRPTR)name, MODE_NEWFILE);
     if (!row || !out || !f) { if (f) Close(f); mgl_free(row); mgl_free(out); return; }
     /* "P6\n<w> <h>\n255\n" */
     head[n++] = 'P'; head[n++] = '6'; head[n++] = '\n';

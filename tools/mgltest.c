@@ -7,7 +7,7 @@
  *   MGLTest [CPU|GPU|AUTO] [W] [H] [DEPTH] [FRAMES] [SNAP]
  *           (FRAMES n, SECONDS n and SNAP file also work by name)
  * Started plainly (a Shell name, or the Workbench icon) it shows the scene in
- * a Workbench window, until its close gadget, Esc or Ctrl-C ends it, then
+ * a Workbench window, until Esc or Ctrl-C ends it, then
  * frees everything and exits. Giving FRAMES or SECONDS (or SNAP) makes it the
  * measuring run, as it always was, full screen, printing the frame rate.
  * CPU or GPU sets ENV:MiniGL/Driver for this run (GFOpenRTG's library reads
@@ -38,7 +38,7 @@
 #define MGLTEST_NO_LIBM
 #include "mgltest_scene.c"
 
-static const char version[] __attribute__((used)) = "$VER: MGLTest 1.0 (8.10.2026) GFOpenRTG MiniGL, AmiCradle Team";
+static const char version[] __attribute__((used)) = "$VER: MGLTest 1.1 (9.11.2026) for minigl.library, AmiCradle Team";
 
 /* sin and cos without the maths library (whose 68040 code traps). */
 static float reduce(float x, int *k)
@@ -110,7 +110,7 @@ int main(int argc, char **argv)
     INFO("MGLTest: %s %ld.%ld, %dx%d, %d bits\n", MiniGLBase->lib_Node.ln_Name, (long)MiniGLBase->lib_Version,
            (long)MiniGLBase->lib_Revision, w, h, depth);
     mglChoosePixelDepth(depth);
-    if (!timed) mglChooseWindowMode(GL_TRUE);       /* the demo is a window, with a close gadget */
+    if (!timed) mglChooseWindowMode(GL_TRUE);       /* the demo is a window */
     if (!mglCreateContext(0, 0, w, h)) { printf("MGLTest: no context\n"); MiniGLClose(); return 10; }
     if (!stricmp(drv, "CPU") || !stricmp(drv, "GPU")) {
         if (had) SetVar((STRPTR)"MiniGL/Driver", (STRPTR)old, -1, GVF_GLOBAL_ONLY);

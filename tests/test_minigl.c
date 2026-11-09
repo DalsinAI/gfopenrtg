@@ -5,8 +5,9 @@
  * AmigaOS parts, mgl_lib.c and mgl_display.c) built 32-bit with MGL_HOST,
  * a drawing area in memory standing in for the display, and the calls made
  * through the table (mgl_static.c over mgl_table.c), as a program makes
- * them. Checks OpenGL's behaviour piece by piece, then draws the test scene
- * and compares its checksum with the golden one.
+ * them. Checks OpenGL's behaviour piece by piece, the interface's behaviour
+ * as the clean-room spec states it (docs/design/MiniGL-Compatible-Spec.md),
+ * then draws the test scene and compares its checksum with the golden one.
  *   test_minigl [golden-file] [-o picture.ppm] [-update]
  */
 #define MINIGL_LIBRARY_BUILD
@@ -21,7 +22,7 @@
 /* ---- what mgl_lib.c and mgl_display.c give on the Amiga -------------------------------------- */
 
 GLcontext mgl_current;
-struct mgl_prefs mgl_prefs = { 16, 2, 0, 16, 0, 0, 0, 0, ROUTE_CPU, 0, 0, 0 };
+struct mgl_prefs mgl_prefs = { 16, 2, 0, 16, 0, 0, 0, 0, ROUTE_CPU, 0, 0, 0, 1, 1024, 4096, 0, 0 };
 long mgl_trace;
 struct Library *MiniGLBase;
 const MGLDispatchTable *MiniGLDispatch;
@@ -75,8 +76,6 @@ void MGLDeleteContext(GLcontext c)
 }
 GLboolean MGLLockDisplay(GLcontext c) { (void)c; return GL_TRUE; }
 void MGLUnlockDisplay(GLcontext c) { (void)c; }
-void MGLLockMode(GLcontext c, GLenum m) { (void)c; (void)m; }
-void MGLEnableSync(GLcontext c, GLboolean e) { (void)c; (void)e; }
 GLboolean MGLLockBack(GLcontext c, MGLLockInfo *info) { (void)c; (void)info; return GL_FALSE; }
 void MGLSwitchDisplay(GLcontext c) { if (c) { mgl_pipe_flush(c); mgl_flush(c); c->frames++; } }
 GLboolean MGLResizeContext(GLcontext c, GLsizei w, GLsizei h) { (void)c; (void)w; (void)h; return GL_FALSE; }
@@ -84,25 +83,10 @@ void *MGLGetWindowHandle(GLcontext c) { (void)c; return 0; }
 void *MGLGetInputWindowHandle(GLcontext c) { (void)c; return 0; }
 void MGLSetPointer(GLcontext c) { (void)c; }
 void MGLClearPointer(GLcontext c) { (void)c; }
-void MGLIdleFunc(GLcontext c, IdleFn i) { if (c) c->idle = i; }
-void MGLKeyFunc(GLcontext c, KeyHandlerFn k) { if (c) c->key = k; }
-void MGLMouseFunc(GLcontext c, MouseHandlerFn m) { if (c) c->mouse = m; }
-void MGLSpecialFunc(GLcontext c, SpecialHandlerFn s) { if (c) c->special = s; }
-void MGLExit(GLcontext c) { if (c) c->quit = 1; }
 void MGLMainLoop(GLcontext c) { (void)c; }
-void LIB_mglChoosePixelDepth(int depth) { mgl_prefs.depth = depth; }
-void LIB_mglChooseNumberOfBuffers(int n) { (void)n; }
-void LIB_mglChooseWindowMode(GLboolean f) { (void)f; }
-void LIB_mglChooseZBufferDepth(int bits) { mgl_prefs.zbits = bits >= 24 ? 32 : 16; }
-void LIB_mglChooseVertexBufferSize(int s) { (void)s; }
-void LIB_mglChooseTextureBufferSize(int s) { (void)s; }
-void LIB_mglChooseMtexBufferSize(int s) { (void)s; }
-void LIB_mglChooseGuardBand(GLboolean f) { (void)f; }
-void LIB_mglProhibitAlphaFallback(GLboolean f) { (void)f; }
-void LIB_mglProhibitMipMapping(GLboolean f) { mgl_prefs.no_mip = f; }
-void LIB_mglProposeCloseDesktop(GLboolean f) { (void)f; }
-void MGLDrawMultitexBuffer(GLcontext c, GLenum a, GLenum b, GLenum e) { (void)c; (void)a; (void)b; (void)e; }
-GLint LIB_mglGetSupportedScreenModes(MGLScreenModeCallback cb) { (void)cb; return (GLint)MGL_SM_BESTMODE; }
+GLint MGLGetSupportedScreenModes(MGLScreenModeCallback cb) { (void)cb; return (GLint)MGL_SCREENMODE_BEST; }
+GLcontext mgl_create_window(int x, int y, int w, int h) { (void)x; (void)y; return MGLCreateContext(0, 0, w, h); }
+void mgl_input_on(GLcontext c) { (void)c; }
 void MGLWriteShotPPM(GLcontext c, char *f) { (void)c; (void)f; }
 
 /* ---- checks ------------------------------------------------------------------------------------- */
@@ -372,6 +356,110 @@ static void test_textures_lists_arrays(void)
     mglDeleteContext();
 }
 
+/* ---- the interface, as the spec states it ------------------------------------------------------------ */
+
+static void test_interface(void)
+{
+    GLboolean b[4];
+    GLint v[4];
+    GLfloat f[16];
+    const char *ext;
+    unsigned char p[3];
+    GLcontext c;
+    static const GLfloat le_va[] = { 0, 0, 32, 0, 0, 32 };
+    GLfloat swapped[6];
+    int i;
+    /* 4.1: the table's header, and no NULL entry */
+    {
+        const MGLDispatchTable *t = MiniGLDispatch;
+        void *const *e = (void *const *)&t->glActiveTextureARB;
+        CHECK(t->abi_version == 5 && t->table_size == 840 && t->backend_flags == MGL_BACKEND_AMICRADLE && t->reserved == 0
+              && t->current_context == &mgl_current, "the table's header");
+        for (i = 0; i < MGL_DISPATCH_ENTRIES && e[i]; i++) ;
+        CHECK(i == 205, "entry %d is NULL", i + 1);
+    }
+    /* 4.3: a call without a current context does nothing */
+    CHECK(*MiniGLDispatch->current_context == 0, "no current context at the start");
+    glClearDepth(0.5); glBegin(GL_TRIANGLES); glEnd(); glGetFloatv(GL_MODELVIEW_MATRIX, f);
+    CHECK(glGetError() == 0 && glIsEnabled(GL_BLEND) == GL_FALSE && glGetString(GL_VERSION) == 0, "NULL context: nothing");
+    gluPerspective(60.0, 1.0, 1.0, 10.0);
+    /* 4.3: creating writes the variable; the client's delete clears it first */
+    mglChoosePixelDepth(32);
+    c = (GLcontext)mglCreateContext(0, 0, 32, 32);
+    CHECK(c && *MiniGLDispatch->current_context == c && mgl_current == c, "mglCreateContext makes the context current");
+    /* 9.1: strings and limits */
+    CHECK(!strcmp((const char *)glGetString(GL_VERSION), "1.1"), "GL_VERSION is exactly 1.1");
+    ext = (const char *)glGetString(GL_EXTENSIONS);
+    CHECK(strstr(ext, "GL_ARB_multitexture") && strstr(ext, "GL_EXT_compiled_vertex_array") && strstr(ext, "GL_EXT_paletted_texture")
+          && strstr(ext, "GL_EXT_shared_texture_palette") && strstr(ext, "GL_EXT_color_table"), "the extensions: %s", ext);
+    CHECK(!strstr((const char *)glGetString(GL_RENDERER), "MiniGL") && !strstr((const char *)glGetString(GL_VENDOR), "MiniGL"),
+          "no MiniGL name in the strings");
+    glGetIntegerv(GL_MAX_TEXTURE_UNITS_ARB, v);
+    CHECK(v[0] == 2, "two texture units");
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, v);
+    CHECK(v[0] == 1024, "GL_MAX_TEXTURE_SIZE 1024 (%d)", v[0]);
+    /* 6: GLboolean is four bytes */
+    memset(b, 0xAA, sizeof b);
+    glGetBooleanv(GL_COLOR_WRITEMASK, b);
+    CHECK(sizeof(GLboolean) == 4 && b[0] == GL_TRUE && b[3] == GL_TRUE, "glGetBooleanv writes four-byte booleans");
+    /* 7.2: MiniGL's capabilities and refusals */
+    CHECK(glIsEnabled(MGL_ARRAY_TRANSFORMATIONS) == GL_TRUE && glIsEnabled(MGL_PERSPECTIVE_MAPPING) == GL_FALSE, "MiniGL's capability defaults");
+    glEnable(MGL_PERSPECTIVE_MAPPING);
+    CHECK(glIsEnabled(MGL_PERSPECTIVE_MAPPING) == GL_TRUE && glGetError() == GL_NO_ERROR, "perspective mapping is state");
+    glEnable(GL_POLYGON_OFFSET);
+    CHECK(glIsEnabled(GL_POLYGON_OFFSET_FILL) == GL_TRUE, "0x7001 is GL_POLYGON_OFFSET_FILL");
+    glDisable(GL_POLYGON_OFFSET_FILL);
+    glBegin(MGL_WITHDRAWN_PRIM_1);
+    CHECK(glGetError() == GL_INVALID_OPERATION, "the withdrawn primitives are refused");
+    CHECK(c->lock_mode == MGL_LOCK_MANUAL, "manual lock mode by default");
+    /* 8.1: glFogi carries the mode as a float, glTexParameterf as an integer */
+    glFogi(GL_FOG_MODE, GL_EXP2);
+    glGetIntegerv(GL_FOG_MODE, v);
+    CHECK(v[0] == GL_EXP2 && glGetError() == GL_NO_ERROR, "glFogi through glFogf");
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, (GLfloat)GL_NEAREST);
+    CHECK(glGetError() == GL_NO_ERROR && c->bound[0]->min == GL_NEAREST, "glTexParameterf through glTexParameteri");
+    /* 9.1: little-endian arrays when MGL_ARRAY_TRANSFORMATIONS is off */
+    for (i = 0; i < 6; i++) {
+        union { GLfloat f; unsigned char b[4]; } u, w;
+        u.f = le_va[i];
+        w.b[0] = u.b[3]; w.b[1] = u.b[2]; w.b[2] = u.b[1]; w.b[3] = u.b[0];
+        swapped[i] = w.f;
+    }
+    glMatrixMode(GL_PROJECTION); glLoadIdentity(); glOrtho(0, 32, 0, 32, -1, 1);
+    glMatrixMode(GL_MODELVIEW); glLoadIdentity();
+    glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT);
+    glColor3f(1, 1, 1);
+    glDisable(MGL_ARRAY_TRANSFORMATIONS);
+    glVertexPointer(2, GL_FLOAT, 0, swapped);
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glDisableClientState(GL_VERTEX_ARRAY);
+    glEnable(MGL_ARRAY_TRANSFORMATIONS);
+    glReadPixels(4, 4, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, p);
+    CHECK(p[0] == 255, "a little-endian array draws (%d)", p[0]);
+    /* 9.1: glRotatefEXT turns about axis 0, 1 or 2 */
+    glLoadIdentity(); glRotatefEXT(90.0f, 2); glGetFloatv(GL_MODELVIEW_MATRIX, f);
+    CHECK(f[1] > 0.99f && f[10] > 0.99f, "glRotatefEXT about z");
+    glLoadIdentity();
+    /* 9.2: mglDrawMultitexBuffer sets unit 1's environment, or refuses */
+    mglDrawMultitexBuffer(GL_ONE, GL_ONE, GL_DECAL);
+    CHECK(c->env_mode[1] == GL_DECAL && c->blend_src == GL_ONE && c->active == 0, "mglDrawMultitexBuffer");
+    mglDrawMultitexBuffer(GL_ONE, GL_ONE, GL_BLEND);
+    CHECK(glGetError() == GL_INVALID_ENUM && c->env_mode[1] == GL_DECAL, "mglDrawMultitexBuffer refuses GL_BLEND");
+    /* 9.2: the texture-name limit, and the requests' defaults */
+    mglChooseTextureBufferSize(16);
+    glBindTexture(GL_TEXTURE_2D, 20);
+    CHECK(glGetError() == GL_INVALID_VALUE && glIsTexture(20) == GL_FALSE, "a name above mglChooseTextureBufferSize");
+    glBindTexture(GL_TEXTURE_2D, 0);
+    mgl_prefs_defaults();
+    CHECK(mgl_prefs.tex_names == 4096 && mgl_prefs.zbits == 32 && mgl_prefs.buffers == 1 && mgl_prefs.window == 0
+          && mgl_prefs.prohibit_mip == 1, "the requests' defaults");
+    mgl_prefs.zbits = 16;
+    mglDeleteContext();
+    CHECK(*MiniGLDispatch->current_context == 0, "mglDeleteContext clears the current context");
+    mglDeleteContext();                         /* nothing current: nothing done */
+}
+
 /* ---- the scene ------------------------------------------------------------------------------------- */
 
 #define MGLTEST_GL_HEADER <mgl/gl.h>
@@ -415,6 +503,7 @@ int main(int argc, char **argv)
         else golden = argv[i];
     }
     MiniGLOpen();
+    test_interface();
     test_basics();
     test_depth_blend();
     test_clip_light_fog();

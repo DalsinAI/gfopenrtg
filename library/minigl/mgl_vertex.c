@@ -85,6 +85,8 @@ void GLBegin(GLcontext c, GLenum mode)
     ULONG a = mode;
     MGL_REC(c, OP_BEGIN, 1, &a);
     if (c->prim != PRIM_NONE) { mgl_error(c, GL_INVALID_OPERATION); return; }
+    /* MiniGL's withdrawn flat fan and strip (spec 7.2) */
+    if (mode == MGL_WITHDRAWN_PRIM_1 || mode == MGL_WITHDRAWN_PRIM_2) { mgl_error(c, GL_INVALID_OPERATION); return; }
     if (!valid_mode(mode)) { mgl_error(c, GL_INVALID_ENUM); return; }
     c->prim = mode;
     c->nv = 0;
@@ -366,11 +368,24 @@ void GLUnlockArrays(GLcontext c)
     c->lock_count = 0;
 }
 
+/* An array element little-endian (MGL_ARRAY_TRANSFORMATIONS off, spec 9.1):
+ * its values in the 68k's order, in buf. */
+static const UBYTE *from_le(const UBYTE *p, int sz, int count, UBYTE *buf)
+{
+    int k, b;
+    if (sz < 2) return p;
+    for (k = 0; k < count; k++)
+        for (b = 0; b < sz; b++) buf[k * sz + b] = p[k * sz + sz - 1 - b];
+    return buf;
+}
+
 /* One element of an array, as floats. */
-static void fetch(const struct mgl_array *a, ULONG i, float *out, int n, int normalise)
+static void fetch(const struct mgl_array *a, ULONG i, float *out, int n, int normalise, int le)
 {
     int k, sz = type_size(a->type);
     const UBYTE *p = a->ptr + i * (ULONG)(a->stride ? a->stride : a->size * sz);
+    ULONG buf[8];
+    if (le && a->size <= 4) p = from_le(p, sz, a->size, (UBYTE *)buf);
     for (k = 0; k < n && k < a->size; k++) {
         switch (a->type) {
         case GL_FLOAT: { union { ULONG u; float f; } x; x.u = *(const ULONG *)(p + k * 4); out[k] = x.f; break; }
@@ -395,13 +410,14 @@ static void array_values(GLcontext c, ULONG i, float *obj, float *col, float *nr
 {
     int u;
     obj[0] = obj[1] = obj[2] = 0.0f; obj[3] = 1.0f;
-    fetch(&c->va, i, obj, 4, 0);
-    if (c->client & CL_COLOR) { col[3] = 1.0f; fetch(&c->ca, i, col, 4, 1); }
+    int le = !c->array_be;
+    fetch(&c->va, i, obj, 4, 0, le);
+    if (c->client & CL_COLOR) { col[3] = 1.0f; fetch(&c->ca, i, col, 4, 1, le); }
     else { col[0] = c->color[0]; col[1] = c->color[1]; col[2] = c->color[2]; col[3] = c->color[3]; }
-    if (c->client & CL_NORMAL) fetch(&c->na, i, nrm, 3, 1);
+    if (c->client & CL_NORMAL) fetch(&c->na, i, nrm, 3, 1, le);
     else { nrm[0] = c->normal[0]; nrm[1] = c->normal[1]; nrm[2] = c->normal[2]; }
     for (u = 0; u < MGL_TEX_UNITS; u++) {
-        if (c->client & (u ? CL_TEX1 : CL_TEX0)) { tc[u][0] = tc[u][1] = tc[u][2] = 0.0f; tc[u][3] = 1.0f; fetch(&c->ta[u], i, tc[u], 4, 0); }
+        if (c->client & (u ? CL_TEX1 : CL_TEX0)) { tc[u][0] = tc[u][1] = tc[u][2] = 0.0f; tc[u][3] = 1.0f; fetch(&c->ta[u], i, tc[u], 4, 0, le); }
         else { tc[u][0] = c->tc[u][0]; tc[u][1] = c->tc[u][1]; tc[u][2] = c->tc[u][2]; tc[u][3] = c->tc[u][3]; }
     }
 }

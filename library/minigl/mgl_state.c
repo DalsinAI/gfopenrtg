@@ -76,7 +76,8 @@ void mgl_init_state(GLcontext c)
     c->next_name = 1;
     c->next_list = 1;
     c->prim = PRIM_NONE;
-    c->lock_mode = MGL_LOCK_AUTOMATIC;
+    c->lock_mode = MGL_LOCK_MANUAL;
+    c->array_be = GL_TRUE;
     c->sc_w = c->width; c->sc_h = c->height;
     GLViewport(c, 0, 0, c->width, c->height);
     c->r3d_dirty = c->clip_dirty = 1;
@@ -98,12 +99,15 @@ const GLubyte *GLGetString(GLcontext c, GLenum name)
     switch (name) {
     case GL_VENDOR: return (const GLubyte *)"AmiCradle Team (GFOpenRTG)";
     case GL_RENDERER:
-        return (const GLubyte *)(c && c->route == ROUTE_GPU ? "GFOpenRTG MiniGL on GFOpenGPU" : "GFOpenRTG MiniGL on the 68k");
-    case GL_VERSION: return (const GLubyte *)"1.1 MiniGL 29.10";
+        return (const GLubyte *)(c && c->route == ROUTE_GPU ? "AmiCradle GL 1.1 for minigl.library programs, on GFOpenGPU"
+                                                          : "AmiCradle GL 1.1 for minigl.library programs, on the 68k");
+    case GL_VERSION: return (const GLubyte *)"1.1";     /* exactly (spec 9.1) */
     case GL_EXTENSIONS:
-        return (const GLubyte *)"GL_ARB_multitexture GL_EXT_paletted_texture GL_EXT_shared_texture_palette "
-                                "GL_EXT_compiled_vertex_array GL_EXT_texture_env_add GL_SGIS_texture_edge_clamp "
-                                "GL_EXT_bgra GL_MGL_ARGB";
+        /* spec 9.1: multitexture under the published library's name, which a
+         * substring test still finds; GL_ADD is drawn, so texture_env_add */
+        return (const GLubyte *)"GL_MGL_ARB_multitexture GL_EXT_compiled_vertex_array GL_EXT_paletted_texture "
+                                "GL_EXT_shared_texture_palette GL_EXT_color_table GL_EXT_texture_env_add "
+                                "GL_SGIS_texture_edge_clamp GL_EXT_bgra";
     }
     mgl_error(c, GL_INVALID_ENUM);
     return 0;
@@ -146,7 +150,7 @@ static int cap_known(GLenum cap)
     switch (cap) {
     case GL_STENCIL_TEST: case GL_LOGIC_OP: case GL_COLOR_LOGIC_OP: case GL_LINE_STIPPLE:
     case GL_POLYGON_STIPPLE: case GL_AUTO_NORMAL: case GL_TEXTURE_1D: case GL_POLYGON_OFFSET_LINE:
-    case GL_POLYGON_OFFSET_POINT: case MGL_PERSPECTIVE_MAPPING: case MGL_ARRAY_TRANSFORMATIONS:
+    case GL_POLYGON_OFFSET_POINT:
     case GL_CLIP_PLANE0: case GL_CLIP_PLANE1: case GL_CLIP_PLANE2: case GL_CLIP_PLANE3:
     case GL_CLIP_PLANE4: case GL_CLIP_PLANE5:
         return 1;
@@ -161,6 +165,9 @@ void MGLSetState(GLcontext c, GLenum cap, GLboolean state)
     a[0] = cap; a[1] = state;
     MGL_REC(c, OP_SETSTATE, 2, a);
     if (c->prim != PRIM_NONE) { mgl_error(c, GL_INVALID_OPERATION); return; }
+    /* MiniGL's own capabilities kept as state (spec 7.2, 9.1) */
+    if (cap == MGL_PERSPECTIVE_MAPPING) { c->persp_mapping = state ? GL_TRUE : GL_FALSE; return; }
+    if (cap == MGL_ARRAY_TRANSFORMATIONS) { c->array_be = state ? GL_TRUE : GL_FALSE; return; }
     bit = cap_bit(c, cap);
     if (!bit) {
         if (!cap_known(cap)) mgl_error(c, GL_INVALID_ENUM);
@@ -180,6 +187,8 @@ GLboolean GLIsEnabled(GLcontext c, GLenum cap)
     case GL_COLOR_ARRAY: return (c->client & CL_COLOR) != 0;
     case GL_NORMAL_ARRAY: return (c->client & CL_NORMAL) != 0;
     case GL_TEXTURE_COORD_ARRAY: return (c->client & (c->client_active ? CL_TEX1 : CL_TEX0)) != 0;
+    case MGL_PERSPECTIVE_MAPPING: return c->persp_mapping;
+    case MGL_ARRAY_TRANSFORMATIONS: return c->array_be;
     }
     bit = cap_bit(c, cap);
     if (!bit) {
@@ -679,7 +688,7 @@ static int get_values(GLcontext c, GLenum pname, float *v)
     case GL_COLOR_MATERIAL_PARAMETER: v[0] = (float)c->colormat_mode; return 1;
     case GL_PERSPECTIVE_CORRECTION_HINT: v[0] = (float)c->hint_persp; return 1;
     case GL_FOG_HINT: v[0] = (float)c->hint_fog; return 1;
-    case GL_MAX_TEXTURE_SIZE: v[0] = 2048; return 1;
+    case GL_MAX_TEXTURE_SIZE: v[0] = (float)(mgl_prefs.max_tex ? mgl_prefs.max_tex : 1024); return 1;   /* spec 9.1 */
     case GL_MAX_LIGHTS: v[0] = 8; return 1;
     case GL_MAX_CLIP_PLANES: v[0] = 0; return 1;
     case GL_MAX_VIEWPORT_DIMS: v[0] = 4096; v[1] = 4096; return 2;
@@ -721,6 +730,7 @@ static int get_values(GLcontext c, GLenum pname, float *v)
     case GL_TEXTURE_COORD_ARRAY_TYPE: v[0] = (float)c->ta[c->client_active].type; return 1;
     case GL_TEXTURE_COORD_ARRAY_STRIDE: v[0] = (float)c->ta[c->client_active].stride; return 1;
     case GL_VERTEX_ARRAY: case GL_COLOR_ARRAY: case GL_NORMAL_ARRAY: case GL_TEXTURE_COORD_ARRAY:
+    case MGL_PERSPECTIVE_MAPPING: case MGL_ARRAY_TRANSFORMATIONS:
         v[0] = GLIsEnabled(c, pname) ? 1.0f : 0.0f; return 1;
     }
     bit = cap_bit(c, pname);

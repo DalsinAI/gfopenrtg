@@ -82,6 +82,9 @@ void GLGenTextures(GLcontext c, GLsizei n, GLuint *textures)
     }
 }
 
+/* Names at or above mglChooseTextureBufferSize's number (spec 9.2). */
+static int name_refused(GLuint name) { return mgl_prefs.tex_names && name >= mgl_prefs.tex_names; }
+
 void GLDeleteTextures(GLcontext c, GLsizei n, const GLuint *textures)
 {
     GLsizei i;
@@ -89,7 +92,7 @@ void GLDeleteTextures(GLcontext c, GLsizei n, const GLuint *textures)
     if (!c || !textures) return;
     for (i = 0; i < n; i++) {
         struct mgl_tex **pp, *t;
-        if (!textures[i]) continue;
+        if (!textures[i] || name_refused(textures[i])) continue;
         for (pp = &c->tex_hash[textures[i] & 63]; (t = *pp) != 0; pp = &t->next)
             if (t->name == textures[i]) break;
         if (!t) continue;
@@ -108,6 +111,7 @@ void GLBindTexture(GLcontext c, GLenum target, GLuint texture)
     a[0] = target; a[1] = texture;
     MGL_REC(c, OP_BIND, 2, a);
     if (target != GL_TEXTURE_2D) { mgl_error(c, GL_INVALID_ENUM); return; }
+    if (name_refused(texture)) { mgl_error(c, GL_INVALID_VALUE); return; }
     if (!texture) t = &c->tex0[c->active];
     else if (!(t = find(c, texture)) && !(t = make(c, texture))) return;
     if (c->bound[c->active] != t) {
@@ -118,7 +122,7 @@ void GLBindTexture(GLcontext c, GLenum target, GLuint texture)
 
 GLboolean GLIsTexture(GLcontext c, GLuint texture)
 {
-    return c && texture && find(c, texture) ? GL_TRUE : GL_FALSE;
+    return c && texture && !name_refused(texture) && find(c, texture) ? GL_TRUE : GL_FALSE;
 }
 
 GLboolean GLAreTexturesResident(GLcontext c, GLsizei n, const GLuint *textures, GLboolean *residences)
@@ -139,11 +143,11 @@ void GLPrioritizeTextures(GLcontext c, GLsizei n, const GLuint *textures, const 
     }
 }
 
-void MGLTexMemStat(GLcontext c, GLint *Current, GLint *Peak)
+void MGLTexMemStat(GLcontext c, GLint *cur, GLint *peak)
 {
     if (!c) return;
-    if (Current) *Current = (GLint)c->tex_bytes;
-    if (Peak) *Peak = (GLint)c->tex_peak;
+    if (cur) *cur = (GLint)c->tex_bytes;
+    if (peak) *peak = (GLint)c->tex_peak;
 }
 
 /* The texture a unit draws with, or 0 (disabled, or no texels). */

@@ -6,7 +6,8 @@
 # the 68k, its link libraries and its test program, with the os32 stove
 # (bebbo's m68k-amigaos-gcc).
 #   library/minigl/build.sh [OUT_DIR]     (default build/)
-#   library/minigl/build.sh api           remake the interface files from minigl_api.txt
+#   library/minigl/build.sh api           remake the interface files from the spec
+#                                         (docs/design/MiniGL-Compatible-Spec.md, gen_api.py)
 # The library runs on any 68040 and uses the FPU when there is one: its front
 # end (every mgl_*.c but mgl_lib.c) is built twice, for the FPU (-m68881)
 # and soft (tools/m68k-soft-m68040.specs: libnix's soft libm020, through the
@@ -39,7 +40,7 @@ WARN="-Wall -Wextra -Werror -Wno-unused-parameter"
 SOFT="-m68040 -specs=$ROOT/tools/m68k-soft-m68040.specs"
 FPU="-m68040 -m68881"
 FLAGS="-mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -ffixed-a4 -fno-builtin $WARN -I$ROOT/include ${MGL_CFLAGS:-}"
-HOT="mgl_math mgl_state mgl_matrix mgl_vertex mgl_pipe mgl_texture mgl_out mgl_list mgl_glu mgl_glut mgl_display mgl_table"
+HOT="mgl_math mgl_state mgl_matrix mgl_vertex mgl_pipe mgl_texture mgl_out mgl_list mgl_glu mgl_glut mgl_display mgl_choose mgl_table"
 # $1 the half (fpu or soft), $2 its symbol prefix, $3 its CPU flags, the rest
 # the archives it links (its libgcc, and soft, libnix's libm): OBJ/<half>/ren,
 # its objects and those archives with every global they define renamed, so
@@ -76,7 +77,7 @@ done
 OGPU="$ROOT/library/opengpu"
 # The cores as gfopengpu.library builds them (-m68040, no FPU code): one copy,
 # which both halves call (no float crosses).
-for f in ogpu_core ogpu_3d ogpu_build ogpu_build3d; do
+for f in ogpu_core ogpu_dwt ogpu_3d ogpu_build ogpu_build3d; do
     "$CC" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -ffixed-a4 -fno-builtin $WARN -I"$ROOT/include" \
         -c -o "$OBJ/$f.o" "$OGPU/$f.c"
 done
@@ -88,7 +89,7 @@ build_half fpu mglF_ "$FPU" "$GCCDIR/libm020/libm881/libgcc.a"
 build_half soft mglS_ "$SOFT" "$NIXDIR/libm020/libm.a" "$GCCDIR/libm020/libgcc.a"
 "$CC" $SOFT $FLAGS -fno-toplevel-reorder -nostartfiles -nostdlib -o "$OUT/minigl.library" \
     "$HERE/mgl_lib.c" $(for f in $HOT; do echo "$OBJ/fpu/ren/$f.o"; done) $(for f in $HOT; do echo "$OBJ/soft/ren/$f.o"; done) \
-    "$OBJ/ogpu_core.o" "$OBJ/ogpu_3d.o" "$OBJ/ogpu_build.o" "$OBJ/ogpu_build3d.o" "$OBJ/string.o" \
+    "$OBJ/ogpu_core.o" "$OBJ/ogpu_dwt.o" "$OBJ/ogpu_3d.o" "$OBJ/ogpu_build.o" "$OBJ/ogpu_build3d.o" "$OBJ/string.o" \
     "$OBJ"/fpu/ren/lib*.a "$OBJ"/soft/ren/lib*.a -lgcc
 und=$("$NM" -u "$OUT/minigl.library" || true)
 [ -z "$und" ] || { echo "minigl.library: undefined $und" >&2; exit 1; }
@@ -106,15 +107,13 @@ for f in "$HERE"/mgl_*.c; do
 done
 python3 "$ROOT/tests/scan_68k_branches.py" "$OBJ"/fpu/mgl_*.s "$OBJ"/soft/mgl_*.s
 # libminigl.a: MiniGLOpen and the table, for programs that include <proto/minigl.h>.
-"$CC" -m68040 -O2 -fno-delete-null-pointer-checks $WARN -I"$ROOT/include" -c -o "$OBJ/minigl_base.o" "$HERE/client/minigl_base.c"
 "$CC" -m68040 -O2 -fno-delete-null-pointer-checks $WARN -I"$ROOT/include" -c -o "$OBJ/minigl_open.o" "$HERE/client/minigl_open.c"
-"$CC" -m68040 -c -o "$OBJ/minigl_getdispatch.o" "$HERE/client/minigl_getdispatch.s"
-
-"$AR" rcs "$OUT/libminigl.a" "$OBJ/minigl_base.o" "$OBJ/minigl_open.o" "$OBJ/minigl_getdispatch.o"
+rm -f "$OUT/libminigl.a" "$OUT/libmgl.a"
+"$AR" rcs "$OUT/libminigl.a" "$OBJ/minigl_open.o"
 echo "$OUT/libminigl.a"
 # libmgl.a: every call as a function, for programs written for the linked-in MiniGL.
 "$CC" -m68040 -O2 -fno-delete-null-pointer-checks $WARN -I"$ROOT/include" -c -o "$OBJ/mgl_static.o" "$HERE/mgl_static.c"
-"$AR" rcs "$OUT/libmgl.a" "$OBJ/mgl_static.o" "$OBJ/minigl_base.o" "$OBJ/minigl_open.o" "$OBJ/minigl_getdispatch.o"
+"$AR" rcs "$OUT/libmgl.a" "$OBJ/mgl_static.o" "$OBJ/minigl_open.o"
 echo "$OUT/libmgl.a"
 # MGLTest, the test scene: soft float, so it runs on any 68040 (the library
 # chooses its own table).

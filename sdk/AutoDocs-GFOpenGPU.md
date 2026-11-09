@@ -321,9 +321,11 @@ The `glA...` forms (`glASwapBuffers()` and the rest) pass the program's
 
 - **Warp3D** (`include/Warp3D/`, `proto/Warp3D.h`): Warp3D's API, drawn by
   GFOpenGPU's 3D (gfopenrtg `DESIGN.md`, section 6).
-- **MiniGL** (`include/mgl/`, `libraries/minigl.h`, `proto/minigl.h`):
-  OpenGL 1.1 on the same 3D. `libminigl.a` holds its stubs, `libmgl.a` the
-  GLUT-style helpers.
+- **minigl.library-compatible** (`include/mgl/`, `libraries/minigl.h`,
+  `proto/minigl.h`): OpenGL 1.1 on the same 3D, for programs of
+  minigl.library (ABI 5). `libminigl.a` holds `MiniGLOpen`/`MiniGLClose`
+  (calls inline through the table), `libmgl.a` every call as a function.
+  Clean-room: gfopenrtg `library/minigl/PROVENANCE.md`.
 - **gfopengpu.library** (`include/gfopengpu/`, `proto/gfopengpu.h`,
   `sfd/gfopengpu_lib.sfd`): `OGPU_Query` (what a back end does, per operation
   and pixel format; from gfopengpu.library 0.21 also whether it draws it on a

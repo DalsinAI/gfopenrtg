@@ -41,6 +41,8 @@ What is in it
                           few GLU calls
   include/SDL/            SDL 1.2: sdl12-compat's headers (only in a kit
                           built with it)
+  include/AL/             OpenAL 1.1: al.h, alc.h, alext.h (the Team's,
+                          written from the specification)
   lib/libSDL2.a           SDL 2 (the program's half: SDL2.module does the work)
   lib/libSDL2main.a       empty: SDL needs no main of its own here; it is
                           there for build systems that link -lSDL2main
@@ -66,10 +68,15 @@ What is in it
   lib/libSDL.a            SDL 1.2: sdl12-compat, on SDL 2, with SDL 2's
                           link library inside it (only in a kit built with it)
   lib/libSDL_gl.a         SDL 1.2's OpenGL calls (sdl-config --gl)
+  lib/libopenal.a         OpenAL 1.1 (the program's half: OpenAL.module in
+                          LIBS:GFOpenGPU/ does the work, on AHI or ACAHI's
+                          voices; no EFX, no capture). Built -m68040 -m68881
+  lib/libopenal_static.a  the same, all of OpenAL inside the program
   lib/pkgconfig/          sdl2, SDL2_image, SDL2_mixer, SDL2_ttf, SDL2_net,
                           gl, glesv2, egl and tinygl (and sdl, with SDL 1.2;
-                          glu and glut, with GLUT)
-  lib/cmake/              find_package(SDL2) and the satellites
+                          glu and glut, with GLUT; openal)
+  lib/cmake/              find_package(SDL2) and the satellites, and
+                          find_package(OpenAL) (OpenAL::OpenAL)
   cross/                  a CMake toolchain file and a meson cross file
   examples/               a sprite program, an SDL_GL program, a GLA one,
                           an EGL one and a TinyGL one (and an SDL 1.2 one,

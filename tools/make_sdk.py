@@ -6,7 +6,7 @@ pkg-config and CMake files, examples, notices and documents for building
 programs on GFOpenGPU (gfopengpu.library, SDL2.module and GL.module) with bebbo's
 m68k-amigaos-gcc, on the PC or on the Amiga.
 
-    tools/make_sdk.py --build BUILD --gl GL_OUT [--mesa MESA_SRC] [--sdl12 SDL12_OUT] [--glfw GLFW_OUT] [--version 0.6] OUT_DIR [--archives]
+    tools/make_sdk.py --build BUILD --gl GL_OUT [--mesa MESA_SRC] [--sdl12 SDL12_OUT] [--glfw GLFW_OUT] [--openal OPENAL_OUT] [--version 0.6] OUT_DIR [--archives]
 
 BUILD    library/build.sh's output (the SDL 2 libraries and headers, its
          sdl2-work/ with the pinned sources' notices, libminigl.a, libmgl.a,
@@ -21,6 +21,10 @@ SDL12_OUT SDL 1.2 (sdl12-compat on GFOpenGPU's SDL 2): library/modules/sdl12's
 GLFW_OUT GLFW 3.4 on GLA: library/modules/glfw's output, laid out as the kit
          (include/GLFW/, lib/libglfw3.a, lib/pkgconfig/glfw3.pc,
          lib/cmake/glfw3/, LICENSE.md); default BUILD/glfw when it is there.
+
+OPENAL_OUT OpenAL.module's developer files: library/modules/openal/build.sh's
+         output (include/AL/, libopenal.a, libopenal_static.a); default
+         BUILD/openal when it is there. Without it the kit has no OpenAL.
 
 GLU and GLUT come from BUILD/glu and BUILD/glut (library/modules/glu and
 glut's build.sh) when they are there: GL/glu.h, libGLU.a, GL/glut.h and
@@ -273,6 +277,29 @@ PC = {
     "tinygl": ("tinygl", "TinyGL's interface on GFOpenGPU's GL (libtinygl.a, LIBS:GFOpenGPU/GL.module)", "53.1", "gl",
                "-L${libdir} -ltinygl", "-I${includedir}"),
 }
+# Only with OpenAL's build (--openal, or BUILD/openal).
+PC_OPENAL = {
+    "openal": ("openal", "OpenAL 1.1 on GFOpenGPU (AmigaOS 3.2, LIBS:GFOpenGPU/OpenAL.module; AHI, or ACAHI's voices)", "1.1", "",
+               "-L${libdir} -lopenal -lm -lamiga", "-I${includedir}"),
+}
+
+# find_package(OpenAL): the target OpenAL::OpenAL, and CMake's FindOpenAL names.
+CMAKE_OPENAL = """# GFOpenGPU developer kit: OpenAL 1.1 (LIBS:GFOpenGPU/OpenAL.module).
+get_filename_component(_ogpu_prefix "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
+set(OpenAL_FOUND TRUE)
+set(OPENAL_FOUND TRUE)
+set(OpenAL_VERSION "1.1")
+set(OPENAL_INCLUDE_DIR "${_ogpu_prefix}/include/AL")
+set(OPENAL_LIBRARY "${_ogpu_prefix}/lib/libopenal.a;m;amiga")
+if(NOT TARGET OpenAL::OpenAL)
+    add_library(OpenAL::OpenAL STATIC IMPORTED)
+    set_target_properties(OpenAL::OpenAL PROPERTIES
+        IMPORTED_LOCATION "${_ogpu_prefix}/lib/libopenal.a"
+        INTERFACE_INCLUDE_DIRECTORIES "${_ogpu_prefix}/include;${_ogpu_prefix}/include/AL"
+        INTERFACE_LINK_LIBRARIES "m;amiga")
+endif()
+"""
+
 # Only with --sdl12.
 PC_SDL12 = {
     "sdl": ("sdl", "Simple DirectMedia Layer 1.2 on GFOpenGPU: sdl12-compat on SDL 2", SDL12_VERSION, "",
@@ -290,7 +317,7 @@ PC_GLUT = {
 
 
 def pc_text(name: str) -> str:
-    n, desc, ver, req, libs, cflags = {**PC, **PC_SDL12, **PC_GLUT}[name]
+    n, desc, ver, req, libs, cflags = {**PC, **PC_SDL12, **PC_GLUT, **PC_OPENAL}[name]
     return ("# GFOpenGPU developer kit. The kit's prefix is two levels up from this file:\n"
             "# the kit's own, or a stove's prefix/m68k-amigaos.\n"
             "prefix=${pcfiledir}/../..\nexec_prefix=${prefix}\nlibdir=${prefix}/lib\nincludedir=${prefix}/include\n\n"
@@ -373,6 +400,9 @@ def make_kit(args) -> Path:
         sdl12 = build / "sdl12"
     glu, glut = build / "glu", build / "glut"
     has_glut = (glu / "lib" / "libGLU.a").is_file() and (glut / "lib" / "libglut.a").is_file()
+    openal = Path(args.openal).resolve() if args.openal else None
+    if not openal and (build / "openal" / "libopenal.a").is_file():
+        openal = build / "openal"
     glfw = Path(args.glfw).resolve() if args.glfw else None
     if not glfw and (build / "glfw" / "lib" / "libglfw3.a").is_file():
         glfw = build / "glfw"
@@ -468,6 +498,20 @@ def make_kit(args) -> Path:
         copy(glu / "lib" / "libGLU.a", lib / "libGLU.a")
         copy(glut / "lib" / "libglut.a", lib / "libglut.a")
 
+    # 3e. OpenAL 1.1 (the Team's, MIT: written from the specification), when
+    #     given: AL/ headers, libopenal.a (OpenAL.module's stub) and
+    #     libopenal_static.a (all of OpenAL inside the program).
+    if openal:
+        for f in ("include/AL/al.h", "include/AL/alc.h", "include/AL/alext.h", "libopenal.a", "libopenal_static.a"):
+            if not (openal / f).is_file():
+                die(f"no {f} in {openal}")
+        for f in sorted((openal / "include" / "AL").glob("*.h")):
+            if licence_of(f) != "MIT (AmiCradle Team)":
+                die(f"{f}: not the Team's MIT notice")
+            copy(f, inc / "AL" / f.name)
+        copy(openal / "libopenal.a", lib / "libopenal.a")
+        copy(openal / "libopenal_static.a", lib / "libopenal_static.a")
+
     # 4. The libraries. One set serves both stoves: the GCC 16 builds link
     #    with GCC 6.5's libnix too (same libnix, a.out objects, FPU ABI).
     for name in LIBS:
@@ -487,7 +531,8 @@ def make_kit(args) -> Path:
         cfg = kit / "bin" / "sdl-config"
         cfg.write_text(SDL_CONFIG.replace("@CPU@", CPU).replace("@VERSION@", SDL12_VERSION))
         cfg.chmod(0o755)
-    for name in list(PC) + (list(PC_SDL12) if sdl12 else []) + (list(PC_GLUT) if has_glut else []):
+    for name in (list(PC) + (list(PC_SDL12) if sdl12 else []) + (list(PC_GLUT) if has_glut else [])
+                 + (list(PC_OPENAL) if openal else [])):
         p = lib / "pkgconfig" / f"{name}.pc"
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(pc_text(name))
@@ -503,6 +548,11 @@ def make_kit(args) -> Path:
         text = CMAKE_SAT.replace("@NAME@", name).replace("@VERSION@", ver).replace("@EXTRA@", extra)
         (d / f"{name}Config.cmake").write_text(text)
         (d / f"{name.lower()}-config.cmake").write_text(text)
+    if openal:
+        d = lib / "cmake" / "OpenAL"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "OpenALConfig.cmake").write_text(CMAKE_OPENAL)
+        (d / "openal-config.cmake").write_text(CMAKE_OPENAL)
 
     # 6. Examples, the readme and the reference.
     left_out = ([] if sdl12 else ["sdl12"]) + ([] if has_glut else ["glut"])
@@ -516,6 +566,8 @@ def make_kit(args) -> Path:
     L = kit / "Licences"
     L.mkdir()
     copy(ROOT / "LICENSE", L / "OpenGPU.txt")
+    if openal:
+        notices.append(("OpenAL 1.1: AL/ headers, libopenal.a, libopenal_static.a, openal.pc and lib/cmake/OpenAL (written by the Team from the OpenAL 1.1 specification)", "MIT, AmiCradle Team (OpenGPU.txt)"))
     notices.append(("GFOpenGPU, GFOpenRTG, Warp3D, MiniGL, TinyGL, GLA and EGL headers; libGL.a, libminigl.a, libmgl.a, libtinygl.a, libEGL.a; libSDL2.a's SDL2_gl.o; sdl2-config, sdl-config, the pkg-config and CMake files, the cross files; the examples", "MIT, AmiCradle Team (OpenGPU.txt)"))
     if sdl12:
         copy(sdl12 / "LICENSE.txt", L / "sdl12-compat.txt")
@@ -621,6 +673,7 @@ def main() -> int:
     ap.add_argument("--mesa")
     ap.add_argument("--sdl12", help="sdl12-compat's build (include/SDL/, libSDL.a, LICENSE.txt); default BUILD/sdl12")
     ap.add_argument("--glfw", help="library/modules/glfw's build (include/GLFW/, lib/libglfw3.a ...); default BUILD/glfw")
+    ap.add_argument("--openal", help="library/modules/openal's build (include/AL/, libopenal.a, libopenal_static.a); default BUILD/openal")
     ap.add_argument("--version", default="0.6")
     ap.add_argument("--stove", default=os.environ.get("STOVE16", str(Path.home() / "AmiCradle/stoves/os32-gcc16/prefix")),
                     help="a stove prefix, for m68k-amigaos-ar when it isn't on PATH")

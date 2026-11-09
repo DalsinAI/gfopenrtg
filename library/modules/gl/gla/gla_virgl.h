@@ -20,4 +20,15 @@ extern int gla_virgl_batch_wanted;
 extern unsigned long gla_virgl_batch_errors;    /* queued commands the host refused */
 extern unsigned long gla_virgl_blocks;          /* request blocks sent */
 
+/* Pipelined (with batching): a block sent where nothing needs its results
+ * yet is not waited for. A transport that can do that sets send (0: sent,
+ * *ticket to wait for it with) and wait (0, or an error: the block failed);
+ * blocks run in the order sent, run or not. gla_virgl_pipeline_wanted as
+ * gla_virgl_batch_wanted (HELLO's ACV_HOST_NO_PIPELINE, AC_VIRGL_PIPELINE=0;
+ * on OS 3.2 ENV:GFOpenGPU/GLPipeline). */
+extern int gla_virgl_pipeline_wanted;
+extern int (*gla_virgl_send)(void *user, void *block, unsigned long bytes, unsigned long *ticket);
+extern int (*gla_virgl_wait)(void *user, unsigned long ticket);
+extern unsigned long gla_virgl_unwaited;        /* blocks sent without waiting */
+
 #endif

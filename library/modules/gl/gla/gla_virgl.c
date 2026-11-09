@@ -97,26 +97,65 @@
 #define ARENA_BYTES (1024u * 1024u)     /* the copies */
 #define NOW_WORDS 64u                   /* a command that runs at once, unbatched */
 
+/* Pipelining (9 Nov 2026, Design-VIRGL-Transport option C's guest half).
+ * The Cradle's runtime runs virgl's blocks on the ACRTG ring's worker
+ * thread (gfosmotherboards #36), so the 68k only waits for a block when it
+ * waits for the FENCE after it. GL.module waited for every block. With a
+ * transport that can send without waiting (gla_virgl_send/gla_virgl_wait,
+ * which OS 3.2's sets), a block sent at a cap or before a frame presented
+ * straight into the display is not waited for: the queue moves to the other
+ * of NSLOTS slots (each its own queue and arena), and the 68k builds the
+ * next commands, the next frame, while the host draws. A slot is waited for
+ * (its results read, its copies and the memory freed meanwhile let go) when
+ * the queue comes back to it, and everything sent is waited for wherever
+ * results are needed (GET, CAPS, a fence, a busy resource, a context gone).
+ * Ring order keeps the host's order. Off: ENV:GFOpenGPU/GLPipeline 0, or the
+ * runtime's AC_VIRGL_PIPELINE=0 (HELLO's ACV_HOST_NO_PIPELINE). */
+#define NSLOTS 2
+/* Pipelining unless asked for (GLPipeline 1): off until a lab shows it
+ * faster. A frame's commands mostly go in one block at its present, and
+ * the present itself (gfopenrtg.library's ORTG_PresentVirgl) waits on the
+ * same ring, so only a frame's blocks before the present can overlap. */
+#define PIPELINE_DEFAULT 0
+
 int gla_virgl_batch_wanted = -1;        /* -1 the runtime's choice, 0 off, 1 on (ENV:GFOpenGPU/GLBatch) */
+int gla_virgl_pipeline_wanted = -1;     /* the same for pipelining (ENV:GFOpenGPU/GLPipeline) */
+int (*gla_virgl_send)(void *user, void *block, unsigned long bytes, unsigned long *ticket);
+int (*gla_virgl_wait)(void *user, unsigned long ticket);
 unsigned long gla_virgl_batch_errors;   /* queued commands the host refused */
 unsigned long gla_virgl_blocks;         /* request blocks sent */
+unsigned long gla_virgl_unwaited;       /* ... of them sent without waiting (pipelined) */
 
-struct gv_free { void *ptr; struct gv_free *next; };
+struct gv_free { void *ptr; uint32_t seq; struct gv_free *next; };
+
+/* A queue: words and the arena of copies they read, both where the host reaches them. */
+struct gv_slot {
+    uint32_t *q;
+    uint8_t *arena;
+    unsigned words;             /* sent: its words */
+    uint32_t seq;               /* ... and its block's number */
+    unsigned long ticket;       /* ... the transport's, to wait for */
+    int inflight;               /* sent, not yet waited for */
+};
 
 struct gv_ws {
     struct virgl_winsys base;
     struct sw_winsys *sws;
     struct gla_virgl_transport t;
-    uint32_t *q;                /* the request block, in memory the host reaches */
+    struct gv_slot slot[NSLOTS];
+    unsigned cur;               /* the slot being filled */
+    uint32_t *q;                /* its request block */
     unsigned at;                /* words in it */
     unsigned ncmds;             /* commands in it */
     uint32_t qbytes;            /* data its commands read */
-    uint8_t *arena;             /* copies its commands read (the host reaches it) */
+    uint8_t *arena;             /* its copies */
     uint32_t arena_used;
-    uint32_t seq;               /* blocks run; the queue is block seq + 1 */
+    uint32_t seq;               /* blocks sent; the queue is block seq + 1 */
+    uint32_t done;              /* blocks waited for: everything up to it has run */
     int batch;                  /* 1 queue, 0 a block a command */
+    int pipeline;               /* 1 send without waiting where nothing needs the results */
     int32_t first_err;
-    struct gv_free *later;      /* memory to free once the queue has run */
+    struct gv_free *later;      /* memory to free once the block that reads it has run */
     uint32_t next_handle;
     uint32_t ctx_id;
     uint32_t host_flags;        /* HELLO's: ACV_HOST_ */
@@ -150,20 +189,16 @@ static struct gv_ws *gv(struct virgl_winsys *w) { return (struct gv_ws *)w; }
 
 /* ---- request blocks (the mutex held) ---- */
 
-/* The queue run: its commands' results looked at, its copies and the
- * memory freed meanwhile let go. 0, or the transport's error. */
-static int q_run(struct gv_ws *w)
+/* A block that has run: its commands' results looked at (r: the
+ * transport's error), and the memory freed meanwhile that it read let go. */
+static void q_ran(struct gv_ws *w, const uint32_t *q, unsigned words, uint32_t seq, int r)
 {
     unsigned i;
-    int r;
-    struct gv_free *f;
-    if (!w->at) return 0;
-    r = w->t.run(w->t.user, w->q, w->at * 4);
-    gla_virgl_blocks++;
-    for (i = 0; i + 1 < w->at; ) {
-        uint32_t hdr = util_be32_to_cpu(w->q[i]);
+    struct gv_free *f, **pp;
+    for (i = 0; i + 1 < words; ) {
+        uint32_t hdr = util_be32_to_cpu(q[i]);
         unsigned cmd = ACV_HDR_CMD(hdr), len = ACV_HDR_WORDS(hdr);
-        int32_t res = (int32_t)util_be32_to_cpu(w->q[i + 1]);
+        int32_t res = (int32_t)util_be32_to_cpu(q[i + 1]);
         if (len < 2) break;
         if ((r || res < 0) && cmd != ACV_HELLO && cmd != ACV_CAPS && cmd != ACV_CAPSET_INFO) {
             if (!w->first_err) w->first_err = r ? -1 : res;
@@ -171,13 +206,65 @@ static int q_run(struct gv_ws *w)
         }
         i += len;
     }
-    w->seq++;
+    if ((int32_t)(seq - w->done) > 0) w->done = seq;
+    for (pp = &w->later; (f = *pp) != NULL; )
+        if ((int32_t)(f->seq - w->done) <= 0) { *pp = f->next; w->t.free(w->t.user, f->ptr); FREE(f); }
+        else pp = &f->next;
+}
+
+/* A slot sent without waiting, waited for now. */
+static void slot_wait(struct gv_ws *w, struct gv_slot *s)
+{
+    int r;
+    if (!s->inflight) return;
+    r = gla_virgl_wait(w->t.user, s->ticket);
+    s->inflight = 0;
+    q_ran(w, s->q, s->words, s->seq, r);
+}
+
+/* Every slot sent, waited for, oldest first. */
+static void q_wait_all(struct gv_ws *w)
+{
+    unsigned k;
+    for (k = 1; k <= NSLOTS; k++) slot_wait(w, &w->slot[(w->cur + k) % NSLOTS]);
+}
+
+/* The queue sent: waited for (0, or the transport's error), or with
+ * nowait and pipelining, not (the next slot then takes the queue). */
+static int q_send(struct gv_ws *w, int nowait)
+{
+    struct gv_slot *s = &w->slot[w->cur];
+    int r;
+    if (!w->at) return 0;
+    s->words = w->at;
+    s->seq = ++w->seq;
+    gla_virgl_blocks++;
+    if (nowait && w->pipeline && !gla_virgl_send(w->t.user, w->q, w->at * 4, &s->ticket)) {
+        s->inflight = 1;
+        gla_virgl_unwaited++;
+        w->cur = (w->cur + 1) % NSLOTS;
+        s = &w->slot[w->cur];
+        slot_wait(w, s);                /* the slot taken next: its block run */
+        w->q = s->q;
+        w->arena = s->arena;
+        r = 0;
+    } else {
+        r = w->t.run(w->t.user, w->q, w->at * 4);
+        q_wait_all(w);                  /* older blocks: done before this one (ring order); their results */
+        q_ran(w, w->q, w->at, s->seq, r);
+    }
     w->at = 0;
     w->ncmds = 0;
     w->qbytes = 0;
     w->arena_used = 0;
-    while ((f = w->later)) { w->later = f->next; w->t.free(w->t.user, f->ptr); FREE(f); }
     return r;
+}
+
+/* The queue run and everything sent waited for: 0, or the transport's error. */
+static int q_run(struct gv_ws *w)
+{
+    if (!w->at) { q_wait_all(w); return 0; }
+    return q_send(w, 0);
 }
 
 /* A command into the queue (after running it when the command doesn't fit);
@@ -185,7 +272,7 @@ static int q_run(struct gv_ws *w)
 static unsigned q_cmd(struct gv_ws *w, unsigned cmd, unsigned n, const uint32_t *args)
 {
     unsigned here, i;
-    if (w->at + n + 2 > (w->batch ? Q_WORDS : NOW_WORDS)) q_run(w);
+    if (w->at + n + 2 > (w->batch ? Q_WORDS : NOW_WORDS)) q_send(w, 1);
     here = w->at;
     w->q[w->at++] = util_cpu_to_be32(ACV_HDR(cmd, n + 2));
     w->q[w->at++] = 0;
@@ -197,7 +284,8 @@ static unsigned q_cmd(struct gv_ws *w, unsigned cmd, unsigned n, const uint32_t 
 /* After a command that may wait: unbatched, or over a cap, the queue runs now. */
 static void q_after(struct gv_ws *w)
 {
-    if (!w->batch || w->ncmds >= Q_CMDS || w->qbytes >= Q_BYTES) q_run(w);
+    if (!w->batch) q_run(w);
+    else if (w->ncmds >= Q_CMDS || w->qbytes >= Q_BYTES) q_send(w, 1);
 }
 
 /* Room for n bytes of copies in the arena (running the queue to make it), or NULL. */
@@ -206,7 +294,7 @@ static uint8_t *q_room(struct gv_ws *w, uint32_t n)
     uint8_t *p;
     n = (n + 3) & ~3u;
     if (!w->arena || n > ARENA_BYTES) return NULL;
-    if (w->arena_used + n > ARENA_BYTES) q_run(w);
+    if (w->arena_used + n > ARENA_BYTES) q_send(w, 1);
     p = w->arena + w->arena_used;
     w->arena_used += n;
     return p;
@@ -216,7 +304,7 @@ static uint8_t *q_room(struct gv_ws *w, uint32_t n)
  * (call it before q_room: a run then would forget the arena under a copy). */
 static void q_reserve(struct gv_ws *w, unsigned n)
 {
-    if (w->at + n + 2 > (w->batch ? Q_WORDS : NOW_WORDS)) q_run(w);
+    if (w->at + n + 2 > (w->batch ? Q_WORDS : NOW_WORDS)) q_send(w, 1);
 }
 
 /* A command that runs now: queued behind the rest, the whole block run;
@@ -231,16 +319,26 @@ static int32_t q_now(struct gv_ws *w, unsigned cmd, unsigned n, const uint32_t *
 static uint32_t q_word(struct gv_ws *w, unsigned at) { return util_be32_to_cpu(w->q[at]); }
 
 /* Memory the host may still read (a queued PUT in place): freed once the queue has run. */
-static void q_free_later(struct gv_ws *w, void *p)
+static void q_free_later(struct gv_ws *w, void *p, uint32_t seq)
 {
     struct gv_free *f = CALLOC_STRUCT(gv_free);
     if (!f) { q_run(w); w->t.free(w->t.user, p); return; }
     f->ptr = p;
+    f->seq = seq;
     f->next = w->later;
     w->later = f;
 }
 
-static int res_busy(struct gv_ws *w, const struct virgl_hw_res *res) { return (int32_t)(res->busy_seq - w->seq) > 0; }
+static int res_busy(struct gv_ws *w, const struct virgl_hw_res *res) { return (int32_t)(res->busy_seq - w->done) > 0; }
+
+/* Everything up to block seq run: the queue sent and waited for when seq is
+ * still in it, else the slots sent waited for. */
+static void q_wait_for(struct gv_ws *w, uint32_t seq)
+{
+    if ((int32_t)(seq - w->done) <= 0) return;
+    if ((int32_t)(seq - w->seq) > 0) q_run(w);
+    else q_wait_all(w);
+}
 
 /* ---- byte order ---- */
 
@@ -343,7 +441,7 @@ static void res_destroy(struct gv_ws *w, struct virgl_hw_res *res)
     mtx_lock(&w->mutex);
     q_cmd(w, ACV_RES_UNREF, 1, a);      /* after the queued draws that use it */
     if (res->ptr && res_busy(w, res)) {
-        q_free_later(w, res->ptr);      /* a queued PUT reads it in place */
+        q_free_later(w, res->ptr, res->busy_seq);   /* a PUT queued or sent reads it in place */
         res->ptr = NULL;
     }
     q_after(w);
@@ -418,7 +516,7 @@ static void gv_resource_wait(struct virgl_winsys *vws, struct virgl_hw_res *res)
 {
     struct gv_ws *w = gv(vws);
     mtx_lock(&w->mutex);
-    if (res_busy(w, res)) q_run(w);
+    if (res_busy(w, res)) q_wait_for(w, res->busy_seq);
     mtx_unlock(&w->mutex);
 }
 
@@ -613,7 +711,7 @@ static bool gv_fence_wait(struct virgl_winsys *vws, struct pipe_fence_handle *_f
     struct gv_fence *f = (struct gv_fence *)_f;
     (void)timeout;
     mtx_lock(&w->mutex);
-    if (f && (int32_t)(f->seq - w->seq) > 0) q_run(w);
+    if (f) q_wait_for(w, f->seq);
     mtx_unlock(&w->mutex);
     return true;
 }
@@ -642,7 +740,10 @@ static void gv_flush_frontbuffer(struct virgl_winsys *vws, struct virgl_cmd_buf 
     (void)cb;
     if (!res->dt) return;
     mtx_lock(&w->mutex);
-    q_run(w);                           /* the frame's commands before its present */
+    /* the frame's commands before its present: a present straight into the
+     * display comes after them on the ring, so they need not be waited for
+     * here (pipelined); one read back waits for them (its GET) */
+    q_send(w, (w->host_flags & ACV_HOST_PRESENT) && pv && level == 0 && layer == 0);
     mtx_unlock(&w->mutex);
     gla_counts.frames++;
     gla_counts.direct_state = !(w->host_flags & ACV_HOST_PRESENT) ? GLA_DIRECT_NO_HOST
@@ -685,11 +786,29 @@ static void gv_destroy(struct virgl_winsys *vws)
 {
     struct gv_ws *w = gv(vws);
     uint32_t a[1] = { CTX_ID };
-    q_now(w, ACV_CTX_DESTROY, 1, a, NULL);      /* after everything queued */
-    w->t.free(w->t.user, w->q);
-    if (w->arena) w->t.free(w->t.user, w->arena);
+    unsigned k;
+    q_now(w, ACV_CTX_DESTROY, 1, a, NULL);      /* after everything queued, everything sent waited for */
+    for (k = 0; k < NSLOTS; k++) {
+        if (w->slot[k].q) w->t.free(w->t.user, w->slot[k].q);
+        if (w->slot[k].arena) w->t.free(w->t.user, w->slot[k].arena);
+    }
     mtx_destroy(&w->mutex);
     FREE(w);
+}
+
+/* Pipelining on (with batching) where the transport sends without waiting,
+ * unless the program (ENV:GFOpenGPU/GLPipeline 0) or the runtime
+ * (AC_VIRGL_PIPELINE=0: HELLO's ACV_HOST_NO_PIPELINE) says no. */
+static int want_pipeline(uint32_t host_flags)
+{
+    if (!gla_virgl_send || !gla_virgl_wait || gla_virgl_pipeline_wanted == 0) return 0;
+    if (gla_virgl_pipeline_wanted == 1) return 1;
+#ifdef ACV_HOST_NO_PIPELINE
+    if (host_flags & ACV_HOST_NO_PIPELINE) return 0;
+#else
+    (void)host_flags;
+#endif
+    return PIPELINE_DEFAULT;
 }
 
 /* Batching on unless the program (ENV:GFOpenGPU/GLBatch 0) or the runtime
@@ -719,7 +838,7 @@ struct virgl_winsys *gla_virgl_winsys_create(struct sw_winsys *sws, const struct
     w->next_handle = 1;
     w->ctx_id = NEW_CTX_ID(w);
     (void)mtx_init(&w->mutex, mtx_plain);
-    if (!(w->q = w->t.alloc(w->t.user, Q_WORDS * 4 + 64))) { gla_note_why("no memory for virgl's request block"); FREE(w); return NULL; }
+    if (!(w->q = w->slot[0].q = w->t.alloc(w->t.user, Q_WORDS * 4 + 64))) { gla_note_why("no memory for virgl's request block"); FREE(w); return NULL; }
     nm = (char *)(w->q + Q_WORDS);
     memcpy(nm, name, sizeof name);
     a[0] = 0;
@@ -739,7 +858,15 @@ struct virgl_winsys *gla_virgl_winsys_create(struct sw_winsys *sws, const struct
     }
     w->host_flags = q_word(w, rh + 1);
     /* the arena for queued copies, once; without it, each command its own block */
-    if (want_batch(w->host_flags) && (w->arena = w->t.alloc(w->t.user, ARENA_BYTES)) != NULL) w->batch = 1;
+    if (want_batch(w->host_flags) && (w->arena = w->slot[0].arena = w->t.alloc(w->t.user, ARENA_BYTES)) != NULL) {
+        unsigned k;
+        w->batch = 1;
+        /* pipelined: the other slots' queues and arenas, once */
+        w->pipeline = want_pipeline(w->host_flags);
+        for (k = 1; w->pipeline && k < NSLOTS; k++)
+            if (!(w->slot[k].q = w->t.alloc(w->t.user, Q_WORDS * 4 + 64)) || !(w->slot[k].arena = w->t.alloc(w->t.user, ARENA_BYTES)))
+                w->pipeline = 0;            /* the slots made are freed with the winsys */
+    }
     w->base.transfer_put = gv_transfer_put;
     w->base.transfer_get = gv_transfer_get;
     w->base.resource_create = gv_resource_create;

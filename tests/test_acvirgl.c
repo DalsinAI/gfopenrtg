@@ -76,6 +76,10 @@ int main(void)
         int off = e && !strcmp(e, "0");
         CHECK(!(rbe(ch + 8) & ACV_HOST_NO_BATCH) == !off, "hello's no-batch flag %s with AC_VIRGL_BATCH=%s (flags %08x)",
               off ? "set" : "clear", e ? e : "(unset)", rbe(ch + 8));
+        e = getenv("AC_VIRGL_PIPELINE");
+        off = e && !strcmp(e, "0");
+        CHECK(!(rbe(ch + 8) & ACV_HOST_NO_PIPELINE) == !off, "hello's no-pipeline flag %s with AC_VIRGL_PIPELINE=%s (flags %08x)",
+              off ? "set" : "clear", e ? e : "(unset)", rbe(ch + 8));
     }
     CHECK(rbe(ci + 12) >= 1 && rbe(ci + 16) > 0, "capset 2: version %u, %u bytes", rbe(ci + 12), rbe(ci + 16));
     CHECK(result(cc) > 0 && rbe(0x20000) >= 1, "caps: %d bytes, max_version %u (the first word, in the Amiga's order)", result(cc), rbe(0x20000));

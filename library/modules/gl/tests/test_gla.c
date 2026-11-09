@@ -298,7 +298,8 @@ static unsigned long t_blocks;          /* request blocks the transport ran */
 
 /* DRAW_FRAMES frames of a mode on display d, the last one's picture in keep;
  * the request blocks a frame (the transport's count) in *per_frame. */
-static int run_draws(struct gla_display *d, int mode, unsigned char *keep, double *per_frame)
+static int run_draws(struct gla_display *d, int mode, unsigned char *keep, double *per_frame,
+                     long (*direct)(void *, const struct gla_virgl_frame *))
 {
     static const struct gla_config cfg = { GLA_COMPAT, 0, 0, 1, 0, 0, 0 };
     struct gla_present hook = { present, NULL };
@@ -307,7 +308,7 @@ static int run_draws(struct gla_display *d, int mode, unsigned char *keep, doubl
     GLuint vbo = 0, tex = 0;
     unsigned long b0 = 0;
     int f, before = presents;
-    gla_present_set_virgl(present, NULL);
+    gla_present_set_virgl(present, direct);     /* NULL: read back */
     if (!c || !b || !gla_make_current(c, b)) { printf("draws: no context\n"); return -1; }
     if (get_procs()) return -1;
     *(void **)&pBufferSubData = gla_get_proc_address("glBufferSubData");
@@ -388,7 +389,34 @@ static void *t_alloc(void *u, unsigned long n)
 static void t_free(void *u, void *p) { (void)u; (void)p; }
 static unsigned long t_addr(void *u, const void *p) { (void)u; return BASE + (unsigned long)((const unsigned char *)p - arena); }
 static uint8_t *t_map(void *u, uint32_t a, uint32_t len) { (void)u; return a >= BASE && a - BASE <= ARENA && len <= ARENA - (a - BASE) ? arena + (a - BASE) : NULL; }
-static int t_run(void *u, void *block, unsigned long bytes) { (void)u; t_blocks++; return acvirgl_run(host, t_map, NULL, (uint32_t)t_addr(NULL, block), (uint32_t)bytes); }
+static int t_run1(void *block, unsigned long bytes) { t_blocks++; return acvirgl_run(host, t_map, NULL, (uint32_t)t_addr(NULL, block), (uint32_t)bytes); }
+
+/* Blocks sent without waiting (gla_virgl_send, 9 Nov 2026): run only when
+ * waited for, or before the next block that is run, in the order sent, as
+ * late as the ring's worker could: the 68k's side has gone on meanwhile, so
+ * any memory a block reads that GL.module wrote again shows in the picture. */
+#define TPEND 16
+static struct { void *block; unsigned long bytes, ticket; } t_pend[TPEND];
+static int t_npend;
+static unsigned long t_tickets, t_deferred, t_late_err;
+static void t_run_pending(unsigned long upto)
+{
+    while (t_npend && t_pend[0].ticket <= upto) {
+        if (t_run1(t_pend[0].block, t_pend[0].bytes)) t_late_err++;
+        memmove(t_pend, t_pend + 1, sizeof t_pend[0] * (size_t)--t_npend);
+    }
+}
+static int t_send(void *u, void *block, unsigned long bytes, unsigned long *ticket)
+{
+    (void)u;
+    if (t_npend == TPEND) t_run_pending(t_pend[0].ticket);
+    t_pend[t_npend].block = block; t_pend[t_npend].bytes = bytes; t_pend[t_npend].ticket = *ticket = ++t_tickets;
+    t_npend++;
+    t_deferred++;
+    return 0;
+}
+static int t_wait(void *u, unsigned long ticket) { (void)u; t_run_pending(ticket); return 0; }
+static int t_run(void *u, void *block, unsigned long bytes) { (void)u; t_run_pending(~0ul); return t_run1(block, bytes); }
 
 /* The direct present (ACV_PRESENT) as gfopenrtg.library sends it, into an
  * XRGB32 "screen" in the arena: one rectangle, the frame's changed part. */
@@ -533,7 +561,7 @@ int main(int argc, char **argv)
         static unsigned char keep[W * H * 3];
         double pf;
         for (i = 0; i < 3; i++) {
-            if ((r = run_draws(d, i, keep, &pf)) < 0) return 1;
+            if ((r = run_draws(d, i, keep, &pf, NULL)) < 0) return 1;
             fails += r;
             memcpy(soft_draws[i], keep, sizeof keep);
         }
@@ -615,33 +643,64 @@ int main(int argc, char **argv)
              * batched (gla_virgl.c, 9 Nov 2026): the same pictures, byte for
              * byte, both near softpipe's, and fewer blocks batched */
             {
-                static unsigned char pic[2][3][W * H * 3];
-                double per[2][3];
-                int b, m;
-                for (b = 0; b < 2; b++) {
-                    gla_virgl_batch_wanted = b;
-                    if (!(d = gla_display_create_virgl(&t))) { printf("gla: virgl: no display (batch %d)\n", b); fails++; break; }
+                /* 0 a block a command; 1 batched; then batched and pipelined
+                 * (9 Nov 2026), blocks sent without waiting run as late as
+                 * they may (t_send), 2 read back, 3 presented straight in */
+                static const char *const how[4] = { "a command apart", "batched", "pipelined", "pipelined, direct" };
+                static unsigned char pic[4][3][W * H * 3];
+                double per[4][3];
+                int b, m, nb = 2;
+#if !defined(__amigaos__)
+                nb = screen ? 4 : 3;
+#endif
+                for (b = 0; b < nb; b++) {
+                    gla_virgl_batch_wanted = b ? 1 : 0;
+#if !defined(__amigaos__)
+                    gla_virgl_send = b >= 2 ? t_send : NULL;
+                    gla_virgl_wait = b >= 2 ? t_wait : NULL;
+                    gla_virgl_pipeline_wanted = b >= 2 ? 1 : -1;
+                    t_deferred = 0;
+#endif
+                    if (!(d = gla_display_create_virgl(&t))) { printf("gla: virgl: no display (%s)\n", how[b]); fails++; nb = b; break; }
                     for (m = 0; m < 3; m++) {
-                        if ((r = run_draws(d, m, pic[b][m], &per[b][m])) < 0) return 1;
+#if !defined(__amigaos__)
+                        if ((r = run_draws(d, m, pic[b][m], &per[b][m], b == 3 ? present_direct : NULL)) < 0) return 1;
+#else
+                        if ((r = run_draws(d, m, pic[b][m], &per[b][m], NULL)) < 0) return 1;
+#endif
                         fails += r;
                     }
                     gla_display_destroy(d);
+#if !defined(__amigaos__)
+                    if (b >= 2) {
+                        printf("gla: %s: %lu blocks sent without waiting, run late; %lu of them failed\n", how[b], t_deferred, t_late_err);
+                        if (!t_deferred || t_late_err) fails++;
+                    }
+#endif
                 }
                 gla_virgl_batch_wanted = -1;
-                for (m = 0; b == 2 && m < 3; m++) {
-                    int c0 = closeness(pic[0][m], soft_draws[m]), c1 = closeness(pic[1][m], soft_draws[m]);
-                    int same = !memcmp(pic[0][m], pic[1][m], sizeof pic[0][m]);
-                    printf("draws %s: %d a frame; request blocks a frame %.1f a command apart, %.1f batched; "
-                           "pictures %s, %d.%d%% and %d.%d%% softpipe's\n", draw_modes[m], NDRAWS, per[0][m], per[1][m],
-                           same ? "the same" : "DIFFER", c0 / 10, c0 % 10, c1 / 10, c1 % 10);
-                    if (!same || c0 < 990 || c1 < 990) fails++;
-                    if (per[1][m] > per[0][m]) { printf("draws %s: more blocks batched\n", draw_modes[m]); fails++; }
+                gla_virgl_pipeline_wanted = -1;
+                gla_virgl_send = NULL;
+                gla_virgl_wait = NULL;
+                for (m = 0; m < 3; m++) {
+                    char line[400];
+                    int k = 0, c0 = closeness(pic[0][m], soft_draws[m]);
+                    k += snprintf(line + k, sizeof line - (size_t)k, "draws %s: %d a frame, %d.%d%% softpipe's; request blocks a frame:",
+                                  draw_modes[m], NDRAWS, c0 / 10, c0 % 10);
+                    if (c0 < 990) fails++;
+                    for (b = 0; b < nb; b++) {
+                        int same = !memcmp(pic[0][m], pic[b][m], sizeof pic[0][m]);
+                        k += snprintf(line + k, sizeof line - (size_t)k, " %.1f %s%s", per[b][m], how[b], same ? "" : " (PICTURE DIFFERS)");
+                        if (!same) fails++;
+                        if (b && per[b][m] > per[0][m]) fails++;
+                    }
+                    printf("%s\n", line);
                 }
 #if !defined(__amigaos__)
                 /* where Mesa flushes at every draw, batching must take the blocks a frame far down */
-                if (b == 2 && per[1][1] * 4 > per[0][1]) { printf("draws buffersubdata: batching kept %.1f of %.1f blocks a frame\n", per[1][1], per[0][1]); fails++; }
+                if (nb >= 2 && per[1][1] * 4 > per[0][1]) { printf("draws buffersubdata: batching kept %.1f of %.1f blocks a frame\n", per[1][1], per[0][1]); fails++; }
 #endif
-                printf("gla: batched blocks: %lu, queued commands refused: %lu\n", gla_virgl_blocks, gla_virgl_batch_errors);
+                printf("gla: blocks: %lu, %lu of them unwaited; queued commands refused: %lu\n", gla_virgl_blocks, gla_virgl_unwaited, gla_virgl_batch_errors);
                 if (gla_virgl_batch_errors) fails++;
             }
         }

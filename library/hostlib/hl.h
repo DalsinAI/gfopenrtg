@@ -78,7 +78,7 @@ typedef uint32_t hl_addr;
  *   int hl_host_aliased(hl_addr at, uint32_t n)    1: some of it may show other memory
  *   void hl_host_written(hl_addr at, uint32_t n)   about to be written (the JIT's code under it)
  */
-#define HL_RANGES 8
+#define HL_RANGES 12
 /* why the host gave a call back to the 68k code (jit_bodies.h's MD_* numbers) */
 enum { HL_OK = 0, HL_WHY_MEMORY = 4, HL_WHY_SIZE = 5, HL_WHY_OVERLAP = 6, HL_WHY_INPUT = 8 };
 #ifndef HL_MAX
@@ -135,6 +135,14 @@ static inline int hl_find(struct hl_ctx *hl, hl_addr a, uint32_t n, int write)
         if (a - hl->rlo[i] < hl->rn[i] && hl->rn[i] - (a - hl->rlo[i]) >= n) { hl->rclo = hl->rlo[i]; hl->rcn = hl->rn[i]; return 1; }
     return 0;
 }
+/* mem may be deliberately biased so that adding a 32-bit guest address
+ * reaches the runtime's allocation. Do that addition as an integer: C
+ * pointer arithmetic on the biased value is undefined, and AArch64 UBSan
+ * diagnoses it even when the resulting address is valid. */
+static inline uint8_t *hl_mem_at(struct hl_ctx *hl, hl_addr a)
+{
+    return (uint8_t *)((uintptr_t)hl->mem + (uintptr_t)a);
+}
 /* an access outside them gives the call back: it reads 0 and writes nothing from then on */
 static inline uint32_t hl_rd(struct hl_ctx *hl, hl_addr a, uint32_t n)
 {
@@ -144,7 +152,7 @@ static inline uint32_t hl_rd(struct hl_ctx *hl, hl_addr a, uint32_t n)
         /* not in the last read's range, nor in the last write's (a read back of what it writes) */
         if (hl->why || !hl_find(hl, a, n, 0)) { if (!hl->why) hl->why = HL_WHY_INPUT; return 0; }
     }
-    p = hl->mem + a;
+    p = hl_mem_at(hl, a);
     return n == 1 ? p[0] : n == 2 ? (uint32_t)p[0] << 8 | p[1]
                                   : (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
 }
@@ -154,7 +162,7 @@ static inline void hl_wr8(struct hl_ctx *hl, hl_addr a, uint32_t v)
     if (hl->why || !(o < hl->wcn)) {
         if (hl->why || !hl_find(hl, a, 1, 1)) { if (!hl->why) hl->why = HL_WHY_INPUT; return; }
     }
-    hl->mem[a] = (uint8_t)v;
+    *hl_mem_at(hl, a) = (uint8_t)v;
 }
 /* [a, a + n) wholly inside one declared range (a write range for w), for HL_PTR_R/HL_PTR_W */
 static inline int hl_span(struct hl_ctx *hl, hl_addr a, uint32_t n, int w)
@@ -184,8 +192,8 @@ static inline void hl_declared(struct hl_ctx *hl)
 #define HL_RD16(a) hl_rd(hl_, (hl_addr)(a), 2)
 #define HL_RD32(a) hl_rd(hl_, (hl_addr)(a), 4)
 #define HL_WR8(a, v) hl_wr8(hl_, (hl_addr)(a), (uint32_t)(v))
-#define HL_PTR_R(var, a, n) do { if (!hl_span(hl_, (hl_addr)(a), (uint32_t)(n), 0)) return 0; (var) = hl_->mem + (hl_addr)(a); } while (0)
-#define HL_PTR_W(var, a, n) do { if (!hl_span(hl_, (hl_addr)(a), (uint32_t)(n), 1)) return 0; (var) = hl_->mem + (hl_addr)(a); } while (0)
+#define HL_PTR_R(var, a, n) do { if (!hl_span(hl_, (hl_addr)(a), (uint32_t)(n), 0)) return 0; (var) = hl_mem_at(hl_, (hl_addr)(a)); } while (0)
+#define HL_PTR_W(var, a, n) do { if (!hl_span(hl_, (hl_addr)(a), (uint32_t)(n), 1)) return 0; (var) = hl_mem_at(hl_, (hl_addr)(a)); } while (0)
 #endif
 
 /* the block's long number n (at byte 4 n) */

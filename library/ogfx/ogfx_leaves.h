@@ -2,7 +2,7 @@
 #ifndef OGFX_LEAVES_H
 #define OGFX_LEAVES_H
 /* GFOpenGfx's leaves (SPD-11, first slice): graphics.library's drawing work
- * on a bitmap's own memory, as magic functions (ac_magic.h).
+ * on a bitmap's own memory, as hostlib magic functions (ac_magic.h).
  * On AmiCradle's AC090 a call runs as host code; on a real Amiga, a
  * PiStorm or another emulator the C in ogfx_leaves.c runs. Each takes one
  * parameter block (32-bit fields, the Amiga's byte order) and returns how
@@ -15,9 +15,11 @@
  *
  * Coordinates are inclusive (x0 <= x1, y0 <= y1) and never negative; a
  * block that breaks that draws nothing. Arithmetic is 32-bit, as the 68k's.
- * The C bodies here are the reference: AC090's host versions must give the
- * same memory and the same result for every block, and AC090_MAGIC=verify
- * checks it call by call. */
+ * On m68k the first four bodies come from the pinned `library/hostlib/`
+ * sources; their public functions are stable wrappers around those tagged
+ * entries. Native tests keep the former C as an independent pixel reference.
+ * AC090's host versions must give the same memory and result for every block,
+ * and AC090_MAGIC=verify checks it call by call. */
 #include <stdint.h>
 
 /* RectFill on a planar bitmap (AGA and older chip RAM displays). For each

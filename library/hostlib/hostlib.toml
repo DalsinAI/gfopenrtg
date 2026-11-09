@@ -18,9 +18,46 @@
 abi = 1
 
 [[function]]
+name = "hostlib_ogfx_planar_rect"
+id = 0x00010100
+id_name = "OGFX_PLANAR_RECT"
+version = 1
+source = "ogfx/planar_rect.c"
+header = "ogfx/leaves.h"
+callers = "gfopenrtg.library GFOpenGfx planar RectFill"
+
+[[function]]
+name = "hostlib_ogfx_chunky_rect"
+id = 0x00010101
+id_name = "OGFX_CHUNKY_RECT"
+version = 1
+source = "ogfx/chunky_rect.c"
+header = "ogfx/leaves.h"
+callers = "gfopenrtg.library GFOpenGfx chunky RectFill"
+
+[[function]]
+name = "hostlib_ogfx_chunky_copy"
+id = 0x00010102
+id_name = "OGFX_CHUNKY_COPY"
+version = 1
+source = "ogfx/chunky_copy.c"
+header = "ogfx/leaves.h"
+callers = "gfopenrtg.library GFOpenGfx chunky BltBitMap/ScrollRaster"
+
+[[function]]
+name = "hostlib_ogfx_planar_blit"
+id = 0x00010103
+id_name = "OGFX_PLANAR_BLIT"
+version = 1
+source = "ogfx/planar_blit.c"
+header = "ogfx/leaves.h"
+callers = "gfopenrtg.library GFOpenGfx planar BltBitMap"
+
+[[function]]
 name = "hostlib_text_strip"
 id = 0x00010105
 id_name = "OGFX_TEXT_STRIP"
 version = 1
 source = "text/text_strip.c"
+header = "text/text_strip.h"
 callers = "gfopenrtg.library's Text (library/text_strip.h, ts_build)"

@@ -119,6 +119,9 @@ echo "$OUT/libmgl.a"
 # chooses its own table).
 "$CC" $SOFT -O2 -fno-delete-null-pointer-checks $WARN -noixemul -I"$ROOT/include" -o "$OUT/MGLTest" "$ROOT/tools/mgltest.c" -L"$OUT" -lminigl -lm
 echo "$OUT/MGLTest ($(wc -c < "$OUT/MGLTest") bytes)"
+# MGLGears: MGLTest's program with the gears (lists, flat quads and strips, lighting).
+"$CC" $SOFT -O2 -fno-delete-null-pointer-checks $WARN -noixemul -DMGLTEST_SCENE='"mglgears_scene.c"' -I"$ROOT/include" -o "$OUT/MGLGears" "$ROOT/tools/mgltest.c" -L"$OUT" -lminigl -lm
+echo "$OUT/MGLGears ($(wc -c < "$OUT/MGLGears") bytes)"
 "$CC" $SOFT -O2 -fno-delete-null-pointer-checks $WARN -noixemul -DMGLTEST_STATIC -I"$ROOT/include" -o "$OUT/MGLTestStatic" "$ROOT/tools/mgltest.c" -L"$OUT" -lmgl -lm
 echo "$OUT/MGLTestStatic ($(wc -c < "$OUT/MGLTestStatic") bytes)"
 "$CC" $SOFT -O2 -fno-delete-null-pointer-checks $WARN -noixemul -I"$ROOT/include" -o "$OUT/MGLGlutTest" "$ROOT/tools/mglgluttest.c" -L"$OUT" -lminigl -lm

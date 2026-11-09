@@ -36,7 +36,11 @@
 
 #define MGLTEST_GL_HEADER <mgl/gl.h>
 #define MGLTEST_NO_LIBM
+#ifdef MGLTEST_SCENE                   /* MGLGears: another scene, the same program */
+#include MGLTEST_SCENE
+#else
 #include "mgltest_scene.c"
+#endif
 
 static const char version[] __attribute__((used)) = "$VER: MGLTest 1.1 (9.11.2026) for minigl.library, AmiCradle Team";
 

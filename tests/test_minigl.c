@@ -604,6 +604,425 @@ static void write_ppm(const char *name, int w, int h, const unsigned char *px)
     fclose(f);
 }
 
+/* ---- the virgl route's features against the 68k route's (plan M4) ----------------------------- */
+
+static GLuint ftex[4];
+
+static void ftex_make(void)
+{
+    static GLubyte rgba[16 * 16 * 4], l[16 * 16];
+    int i;
+    for (i = 0; i < 256; i++) {
+        int x = i & 15, y = i >> 4, k = ((x >> 2) ^ (y >> 2)) & 1;
+        rgba[i * 4] = (GLubyte)(k ? 230 : 40); rgba[i * 4 + 1] = (GLubyte)(x * 16); rgba[i * 4 + 2] = (GLubyte)(y * 16);
+        rgba[i * 4 + 3] = (GLubyte)(k ? 255 : 90);
+        l[i] = (GLubyte)(x * 12 + y * 3);
+    }
+    glGenTextures(4, ftex);
+    for (i = 0; i < 4; i++) {
+        glBindTexture(GL_TEXTURE_2D, ftex[i]);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        if (i == 0) glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 16, 16, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+        else if (i == 1) glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 16, 16, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+        else if (i == 2) glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, 16, 16, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, l);
+        else glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, 16, 16, 0, GL_ALPHA, GL_UNSIGNED_BYTE, l);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    }
+}
+
+static void fquad(float x0, float y0, float x1, float y1)
+{
+    glBegin(GL_QUADS);
+    glTexCoord2f(0, 0); glVertex2f(x0, y0);
+    glTexCoord2f(1, 0); glVertex2f(x1, y0);
+    glTexCoord2f(1, 1); glVertex2f(x1, y1);
+    glTexCoord2f(0, 1); glVertex2f(x0, y1);
+    glEnd();
+}
+
+/* Every texture environment on each base format, on unit 0. */
+static void f_env(void)
+{
+    static const GLenum env[5] = { GL_MODULATE, GL_REPLACE, GL_DECAL, GL_BLEND, GL_ADD };
+    static const GLfloat ec[4] = { 0.2f, 0.9f, 0.4f, 1.0f };
+    int e, t;
+    glEnable(GL_TEXTURE_2D);
+    glTexEnvfv(GL_TEXTURE_ENV, GL_TEXTURE_ENV_COLOR, (GLfloat *)ec);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    for (e = 0; e < 5; e++)
+        for (t = 0; t < 4; t++) {
+            if (env[e] == GL_DECAL && t >= 2) continue;     /* undefined in GL 1.1 */
+            glBindTexture(GL_TEXTURE_2D, ftex[t]);
+            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, (GLint)env[e]);
+            glColor4f(0.8f, 0.5f, 0.3f, 0.7f);
+            fquad(e * 25.0f, t * 25.0f, e * 25.0f + 24, t * 25.0f + 24);
+        }
+    glDisable(GL_BLEND);
+    glDisable(GL_TEXTURE_2D);
+}
+
+/* Two units in one pass (ARB_multitexture). */
+static void f_multi(void)
+{
+    static const GLenum env[4] = { GL_MODULATE, GL_DECAL, GL_REPLACE, GL_ADD };
+    int e;
+    glActiveTextureARB(GL_TEXTURE0_ARB);
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, ftex[1]);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+    glActiveTextureARB(GL_TEXTURE1_ARB);
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, ftex[2]);
+    for (e = 0; e < 4; e++) {
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, (GLint)env[e]);
+        glColor4f(1, 1, 1, 1);
+        glBegin(GL_QUADS);
+        glMultiTexCoord2fARB(GL_TEXTURE0_ARB, 0, 0); glMultiTexCoord2fARB(GL_TEXTURE1_ARB, 0, 0); glVertex2f(e * 30.0f, 0);
+        glMultiTexCoord2fARB(GL_TEXTURE0_ARB, 1, 0); glMultiTexCoord2fARB(GL_TEXTURE1_ARB, 2, 0); glVertex2f(e * 30.0f + 28, 0);
+        glMultiTexCoord2fARB(GL_TEXTURE0_ARB, 1, 1); glMultiTexCoord2fARB(GL_TEXTURE1_ARB, 2, 2); glVertex2f(e * 30.0f + 28, 120);
+        glMultiTexCoord2fARB(GL_TEXTURE0_ARB, 0, 1); glMultiTexCoord2fARB(GL_TEXTURE1_ARB, 0, 2); glVertex2f(e * 30.0f, 120);
+        glEnd();
+    }
+    glDisable(GL_TEXTURE_2D);
+    glActiveTextureARB(GL_TEXTURE0_ARB);
+    glDisable(GL_TEXTURE_2D);
+}
+
+/* Fog's three modes on flat quads (one eye depth each: per vertex and per fragment agree). */
+static void f_fog(void)
+{
+    static const GLfloat fc[4] = { 0.1f, 0.3f, 0.9f, 1 };
+    int m, k;
+    glMatrixMode(GL_PROJECTION); glLoadIdentity(); glOrtho(0, 128, 0, 128, 0, 100); glMatrixMode(GL_MODELVIEW);
+    glFogfv(GL_FOG_COLOR, (GLfloat *)fc);
+    glFogf(GL_FOG_START, 2); glFogf(GL_FOG_END, 60); glFogf(GL_FOG_DENSITY, 0.04f);
+    glEnable(GL_FOG);
+    for (m = 0; m < 3; m++) {
+        glFogi(GL_FOG_MODE, m == 0 ? GL_LINEAR : m == 1 ? GL_EXP : GL_EXP2);
+        for (k = 0; k < 4; k++) {
+            float z = -(5.0f + k * 15.0f);
+            glColor3f(1, 0.6f, 0.2f);
+            glBegin(GL_QUADS); glVertex3f(m * 40.0f, k * 30.0f, z); glVertex3f(m * 40.0f + 38, k * 30.0f, z);
+            glVertex3f(m * 40.0f + 38, k * 30.0f + 28, z); glVertex3f(m * 40.0f, k * 30.0f + 28, z); glEnd();
+        }
+    }
+    glDisable(GL_FOG);
+}
+
+/* The alpha test's functions, blend factors and equations, the colour mask. */
+static void f_fragment(void)
+{
+    static const GLenum af[4] = { GL_GREATER, GL_LESS, GL_EQUAL, GL_GEQUAL };
+    static const GLenum bf[6][2] = { { GL_ONE, GL_ONE }, { GL_DST_COLOR, GL_ZERO }, { GL_ONE_MINUS_DST_COLOR, GL_ONE },
+                                     { GL_SRC_ALPHA, GL_ONE }, { GL_ZERO, GL_ONE_MINUS_SRC_COLOR }, { GL_ONE_MINUS_SRC_ALPHA, GL_SRC_ALPHA } };
+    int i;
+    glColor3f(0.3f, 0.5f, 0.7f);
+    fquad(0, 0, 128, 128);
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, ftex[0]);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+    glEnable(GL_ALPHA_TEST);
+    for (i = 0; i < 4; i++) { glAlphaFunc(af[i], 90.0f / 255.0f); fquad(i * 30.0f, 0, i * 30.0f + 28, 28); }
+    glDisable(GL_ALPHA_TEST);
+    glDisable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    for (i = 0; i < 6; i++) {
+        glBlendFunc(bf[i][0], bf[i][1]);
+        glColor4f(0.9f, 0.4f, 0.1f, 0.6f);
+        fquad(i * 21.0f, 40, i * 21.0f + 20, 80);
+    }
+    glDisable(GL_BLEND);
+    glColorMask(GL_TRUE, GL_FALSE, GL_TRUE, GL_TRUE);
+    glColor3f(1, 1, 1);
+    fquad(0, 90, 60, 120);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+}
+
+/* Polygon offset: a coplanar decal drawn over with GL_LESS shows only with the offset. */
+static void f_offset(void)
+{
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glColor3f(0.2f, 0.2f, 0.8f);
+    fquad(10, 10, 118, 118);
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(-1.0f, -2.0f);
+    glColor3f(0.9f, 0.9f, 0.1f);
+    fquad(30, 30, 98, 98);
+    glDisable(GL_POLYGON_OFFSET_FILL);
+    glColor3f(0.9f, 0.1f, 0.1f);
+    fquad(50, 50, 78, 78);              /* no offset: hidden */
+    glDisable(GL_DEPTH_TEST);
+}
+
+/* Lines, strips, loops and points; flat shading on polygons, quads, fans. */
+static void f_prims(void)
+{
+    int i;
+    glShadeModel(GL_FLAT);
+    glBegin(GL_QUAD_STRIP);
+    for (i = 0; i < 5; i++) { glColor3f(i * 0.25f, 1 - i * 0.25f, 0.5f); glVertex2f(70.0f + i * 12, 10); glVertex2f(70.0f + i * 12, 50); }
+    glEnd();
+    glShadeModel(GL_SMOOTH);
+    glBegin(GL_TRIANGLE_FAN);
+    glColor3f(1, 1, 1); glVertex2f(30, 90);
+    for (i = 0; i <= 6; i++) { glColor3f(i / 6.0f, 0.3f, 1 - i / 6.0f); glVertex2f(30 + 25 * COS(i * 1.047f), 90 + 25 * SIN(i * 1.047f)); }
+    glEnd();
+    glColor3f(1, 1, 1);
+    glBegin(GL_LINE_LOOP); glVertex2f(70, 70); glVertex2f(120, 72); glVertex2f(110, 120); glEnd();
+    glBegin(GL_LINES); glVertex2f(64, 64); glVertex2f(64, 125); glEnd();
+    glPointSize(3);
+    glBegin(GL_POINTS); for (i = 0; i < 8; i++) glVertex2f(75.0f + i * 6, 100); glEnd();
+    glPointSize(1);
+}
+
+/* Lighting: a spot, attenuation, local viewer, colour material, specular. */
+static void f_light(void)
+{
+    static const GLfloat pos[4] = { 0, 0, 2, 1 }, dir[3] = { 0, 0, -1 }, spec[4] = { 1, 1, 1, 1 }, amb[4] = { 0.1f, 0.1f, 0.1f, 1 };
+    int i, j;
+    glMatrixMode(GL_PROJECTION); glLoadIdentity(); glFrustum(-1, 1, -1, 1, 1, 10); glMatrixMode(GL_MODELVIEW); glLoadIdentity();
+    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, (GLfloat *)amb);
+    glLightModelf(GL_LIGHT_MODEL_LOCAL_VIEWER, 1.0f);
+    glLightfv(GL_LIGHT0, GL_POSITION, (GLfloat *)pos);
+    glLightfv(GL_LIGHT0, GL_SPOT_DIRECTION, (GLfloat *)dir);
+    glLightf(GL_LIGHT0, GL_SPOT_CUTOFF, 40.0f);
+    glLightf(GL_LIGHT0, GL_SPOT_EXPONENT, 4.0f);
+    glLightf(GL_LIGHT0, GL_LINEAR_ATTENUATION, 0.2f);
+    glLightfv(GL_LIGHT0, GL_SPECULAR, (GLfloat *)spec);
+    glMaterialfv(GL_FRONT, GL_SPECULAR, (GLfloat *)spec);
+    glMaterialf(GL_FRONT, GL_SHININESS, 20.0f);
+    glEnable(GL_LIGHTING); glEnable(GL_LIGHT0);
+    glEnable(GL_COLOR_MATERIAL);
+    glColorMaterial(GL_FRONT, GL_AMBIENT_AND_DIFFUSE);
+    glNormal3f(0, 0, 1);
+    /* a fine grid: per-vertex lighting comes close to the 68k route's */
+    for (j = 0; j < 16; j++) {
+        glBegin(GL_TRIANGLE_STRIP);
+        for (i = 0; i <= 16; i++) {
+            glColor3f(0.9f, 0.6f + j * 0.02f, 0.3f);
+            glVertex3f(-2 + i * 0.25f, -2 + j * 0.25f, -2.5f);
+            glVertex3f(-2 + i * 0.25f, -2 + (j + 1) * 0.25f, -2.5f);
+        }
+        glEnd();
+    }
+    glDisable(GL_COLOR_MATERIAL);
+    glDisable(GL_LIGHTING);
+    glLightModelf(GL_LIGHT_MODEL_LOCAL_VIEWER, 0.0f);
+}
+
+/* Texture coordinates: the texture matrix, object- and eye-linear generation. */
+static void f_texcoord(void)
+{
+    static const GLfloat sp[4] = { 0.05f, 0, 0, 0 }, tp[4] = { 0, 0.05f, 0, 0.2f };
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, ftex[1]);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+    glMatrixMode(GL_TEXTURE); glLoadIdentity(); glTranslatef(0.25f, 0, 0); glScalef(2, 2, 1); glMatrixMode(GL_MODELVIEW);
+    fquad(0, 0, 60, 60);
+    glMatrixMode(GL_TEXTURE); glLoadIdentity(); glMatrixMode(GL_MODELVIEW);
+    glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_OBJECT_LINEAR); glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, GL_OBJECT_LINEAR);
+    glTexGenfv(GL_S, GL_OBJECT_PLANE, (GLfloat *)sp); glTexGenfv(GL_T, GL_OBJECT_PLANE, (GLfloat *)tp);
+    glEnable(GL_TEXTURE_GEN_S); glEnable(GL_TEXTURE_GEN_T);
+    fquad(64, 0, 124, 60);
+    glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR); glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
+    glTexGenfv(GL_S, GL_EYE_PLANE, (GLfloat *)sp); glTexGenfv(GL_T, GL_EYE_PLANE, (GLfloat *)tp);
+    glPushMatrix(); glTranslatef(3, 64, 0);
+    fquad(0, 0, 60, 60);
+    glPopMatrix();
+    glDisable(GL_TEXTURE_GEN_S); glDisable(GL_TEXTURE_GEN_T);
+    glDisable(GL_TEXTURE_2D);
+}
+
+/* A texture changed between two draws of a frame: the first keeps the old texels (renaming). */
+static void f_rename(void)
+{
+    static GLubyte red[4 * 4 * 4], green[2 * 2 * 4];
+    int i;
+    GLuint t;
+    for (i = 0; i < 16; i++) { red[i * 4] = 255; red[i * 4 + 1] = 0; red[i * 4 + 2] = 0; red[i * 4 + 3] = 255; }
+    for (i = 0; i < 4; i++) { green[i * 4] = 0; green[i * 4 + 1] = 255; green[i * 4 + 2] = 0; green[i * 4 + 3] = 255; }
+    glGenTextures(1, &t);
+    glBindTexture(GL_TEXTURE_2D, t);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 4, 4, 0, GL_RGBA, GL_UNSIGNED_BYTE, red);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glEnable(GL_TEXTURE_2D);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+    fquad(0, 0, 60, 60);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 2, 2, GL_RGBA, GL_UNSIGNED_BYTE, green);
+    fquad(64, 0, 124, 60);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 2, 2, 2, 2, GL_RGBA, GL_UNSIGNED_BYTE, green);
+    fquad(0, 64, 60, 124);
+    glDisable(GL_TEXTURE_2D);
+    glDeleteTextures(1, &t);
+}
+
+/* Arrays: locked, drawn by elements several times; interleaved; MiniGL's ARGB and BGRA colours. */
+static void f_arrays(void)
+{
+    static GLfloat v[25 * 2];
+    static GLubyte c[25 * 4], argb[25 * 4], bgra[25 * 4];
+    static GLushort ix[16 * 6];
+    static const GLfloat il[4 * 6] = { 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0 };
+    int i, j, n = 0;
+    for (j = 0; j < 5; j++)
+        for (i = 0; i < 5; i++) {
+            int k = j * 5 + i;
+            v[k * 2] = i * 14.0f; v[k * 2 + 1] = j * 14.0f;
+            c[k * 4] = (GLubyte)(i * 60); c[k * 4 + 1] = (GLubyte)(j * 60); c[k * 4 + 2] = 128; c[k * 4 + 3] = 255;
+            argb[k * 4] = 255; argb[k * 4 + 1] = c[k * 4]; argb[k * 4 + 2] = c[k * 4 + 1]; argb[k * 4 + 3] = 128;
+            bgra[k * 4] = 128; bgra[k * 4 + 1] = c[k * 4 + 1]; bgra[k * 4 + 2] = c[k * 4]; bgra[k * 4 + 3] = 255;
+        }
+    for (j = 0; j < 4; j++)
+        for (i = 0; i < 4; i++) {
+            int k = j * 5 + i;
+            ix[n++] = (GLushort)k; ix[n++] = (GLushort)(k + 1); ix[n++] = (GLushort)(k + 6);
+            ix[n++] = (GLushort)k; ix[n++] = (GLushort)(k + 6); ix[n++] = (GLushort)(k + 5);
+        }
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glEnableClientState(GL_COLOR_ARRAY);
+    glVertexPointer(2, GL_FLOAT, 0, v);
+    glColorPointer(4, GL_UNSIGNED_BYTE, 0, c);
+    glLockArrays(0, 25);
+    glDrawElements(GL_TRIANGLES, 48, GL_UNSIGNED_SHORT, ix);
+    glPushMatrix(); glTranslatef(64, 0, 0);
+    glDrawElements(GL_TRIANGLES, 48, GL_UNSIGNED_SHORT, ix + 48);
+    glPopMatrix();
+    glUnlockArrays();
+    glPushMatrix(); glTranslatef(0, 64, 0);
+    glColorPointer(4, MGL_UBYTE_ARGB, 0, argb);
+    glDrawElements(GL_TRIANGLES, 96, GL_UNSIGNED_SHORT, ix);
+    glTranslatef(64, 0, 0);
+    glColorPointer(4, MGL_UBYTE_BGRA, 0, bgra);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 10);
+    glPopMatrix();
+    glDisableClientState(GL_COLOR_ARRAY);
+    glPushMatrix(); glTranslatef(64, 64, 0); glScalef(50, 50, 1);
+    glInterleavedArrays(GL_C3F_V3F, 0, il);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glPopMatrix();
+    glDisableClientState(GL_VERTEX_ARRAY);
+}
+
+/* Draws fn on both routes, 128 x 128, and counts the pixels off (a pixel's shift allowed). */
+static void feature(const char *name, void (*fn)(void), int pct)
+{
+    unsigned char *px[2];
+    int r, i, w = 128, h = 128, off = 0;
+    for (r = 0; r < 2; r++) {
+        px[r] = malloc((size_t)w * h * 3);
+        mgl_prefs.route = r ? ROUTE_CPU : ROUTE_VIRGL;
+        mglChoosePixelDepth(32);
+        mglCreateContext(0, 0, w, h);
+        ortho(w, h);
+        glClearColor(0.05f, 0.05f, 0.05f, 1);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        ftex_make();
+        fn();
+        glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, px[r]);
+        CHECK(glGetError() == GL_NO_ERROR, "%s: no error", name);
+        glDeleteTextures(4, ftex);
+        mglDeleteContext();
+    }
+    mgl_prefs.route = ROUTE_VIRGL;
+    for (i = 0; i < w * h; i++) {
+        int x = i % w, y = i / w, dx, dy, ok = 0;
+        for (dy = -1; dy <= 1 && !ok; dy++)
+            for (dx = -1; dx <= 1 && !ok; dx++) {
+                int j = (y + dy) * w + (x + dx), k, near_one = 1;
+                if (x + dx < 0 || x + dx >= w || y + dy < 0 || y + dy >= h) continue;
+                for (k = 0; k < 3; k++) { int d = px[0][i * 3 + k] - px[1][j * 3 + k]; if (d > 10 || d < -10) near_one = 0; }
+                ok = near_one;
+            }
+        if (!ok) off++;
+    }
+    printf("minigl virgl feature %-10s %5d of %d pixels off\n", name, off, w * h);
+    CHECK(off * 100 <= pct * w * h, "feature %s matches the 68k route's (%d pixels off)", name, off);
+    if (getenv("MGL_VG_FEATURE_PPM")) {
+        char fn2[64];
+        sprintf(fn2, "/tmp/feat-%s-vg.ppm", name); write_ppm(fn2, w, h, px[0]);
+        sprintf(fn2, "/tmp/feat-%s-cpu.ppm", name); write_ppm(fn2, w, h, px[1]);
+    }
+    free(px[0]); free(px[1]);
+}
+
+/* A flat polygon takes its first vertex's colour (OpenGL 1.1 table 2.8). The
+ * 68k route colours each of its fan's triangles by the triangle's own last
+ * vertex, so this is checked against GL, not against that route. */
+static void test_flat_polygon(void)
+{
+    unsigned char p[3];
+    mglChoosePixelDepth(32);
+    mglCreateContext(0, 0, 64, 64);
+    ortho(64, 64);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glShadeModel(GL_FLAT);
+    glBegin(GL_POLYGON);
+    glColor3f(1, 0, 0); glVertex2f(10, 10); glColor3f(0, 1, 0); glVertex2f(50, 10);
+    glColor3f(0, 0, 1); glVertex2f(60, 40); glColor3f(1, 1, 0); glVertex2f(30, 60); glColor3f(0, 1, 1); glVertex2f(5, 40);
+    glEnd();
+    pixel(30, 30, p);
+    CHECK(p[0] == 255 && p[1] == 0 && p[2] == 0, "a flat polygon has its first vertex's colour %d %d %d", p[0], p[1], p[2]);
+    pixel(52, 35, p);
+    CHECK(p[0] == 255 && p[1] == 0 && p[2] == 0, "... all over %d %d %d", p[0], p[1], p[2]);
+    glShadeModel(GL_SMOOTH);
+    mglDeleteContext();
+}
+
+/* glTexSubImage2D between two draws of a frame changes only the later one
+ * (OpenGL 1.1's order; plan 3.3: the virgl route renames the texture). */
+static void test_rename(void)
+{
+    static GLubyte red[4 * 4 * 4], green[4 * 4 * 4];
+    unsigned char p[3];
+    GLuint t;
+    int i;
+    for (i = 0; i < 16; i++) { red[i * 4] = 255; red[i * 4 + 3] = 255; green[i * 4 + 1] = 255; green[i * 4 + 3] = 255; }
+    mglChoosePixelDepth(32);
+    mglCreateContext(0, 0, 64, 64);
+    ortho(64, 64);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glGenTextures(1, &t);
+    glBindTexture(GL_TEXTURE_2D, t);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 4, 4, 0, GL_RGBA, GL_UNSIGNED_BYTE, red);
+    glEnable(GL_TEXTURE_2D);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+    fquad(0, 0, 30, 30);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 4, 4, GL_RGBA, GL_UNSIGNED_BYTE, green);
+    fquad(32, 0, 62, 30);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 4, 4, GL_RGBA, GL_UNSIGNED_BYTE, red);
+    fquad(0, 32, 30, 62);
+    mglSwitchDisplay();
+    pixel(15, 15, p);
+    CHECK(p[0] == 255 && p[1] == 0, "the draw before the change keeps the old texels %d %d %d", p[0], p[1], p[2]);
+    pixel(47, 15, p);
+    CHECK(p[0] == 0 && p[1] == 255, "the draw after it has the new ones %d %d %d", p[0], p[1], p[2]);
+    pixel(15, 47, p);
+    CHECK(p[0] == 255 && p[1] == 0, "and after a second change, those %d %d %d", p[0], p[1], p[2]);
+    glDeleteTextures(1, &t);
+    mglDeleteContext();
+}
+
+static void test_features(void)
+{
+    test_flat_polygon();
+    test_rename();
+    feature("env", f_env, 1);
+    feature("multi", f_multi, 3);     /* the second unit's texel edges, a pixel or two over */
+    feature("fog", f_fog, 1);
+    feature("fragment", f_fragment, 1);
+    feature("offset", f_offset, 1);
+    feature("prims", f_prims, 3);     /* lines and wide points: rasterisers place them differently */
+    feature("light", f_light, 3);
+    feature("texcoord", f_texcoord, 1);
+    feature("rename", f_rename, 2);   /* texel edges; the texels themselves are checked by f_rename's pictures */
+    feature("arrays", f_arrays, 1);
+}
+
 static int virgl_main(const char *ppm)
 {
     int level = getenv("MGL_VG_LEVEL") ? atoi(getenv("MGL_VG_LEVEL")) : 9, w = 320, h = 240, i, off = 0, shifted = 0;
@@ -613,6 +1032,7 @@ static int virgl_main(const char *ppm)
     if (level >= 2) { test_basics(); test_depth_blend(); }
     if (level >= 3) test_textures_lists_arrays();
     if (level >= 4) test_clip_light_fog();
+    if (level >= 5) test_features();
     if (level >= 2) {
         unsigned char *pv = malloc((size_t)w * h * 3), *pc = malloc((size_t)w * h * 3);
         scene_pixels(w, h, 0.0f, pv);

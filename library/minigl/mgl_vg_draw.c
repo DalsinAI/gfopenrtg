@@ -69,7 +69,7 @@ static void emit(GLcontext c, GLenum mode, ULONG first, ULONG n, struct vg_layou
     case GL_TRIANGLES: n -= n % 3; prim = VG_PRIM_TRIANGLES; break;
     case GL_TRIANGLE_STRIP: prim = VG_PRIM_TRIANGLE_STRIP; if (n < 3) return; break;
     case GL_TRIANGLE_FAN: prim = VG_PRIM_TRIANGLE_FAN; if (n < 3) return; break;
-    case GL_POLYGON: prim = VG_PRIM_TRIANGLE_FAN; if (n < 3) return; break;
+    case GL_POLYGON: prim = c->shade_model == GL_FLAT ? VG_PRIM_TRIANGLES : VG_PRIM_TRIANGLE_FAN; if (n < 3) return; break;
     case GL_QUADS: n &= ~3UL; prim = VG_PRIM_TRIANGLES; break;
     case GL_QUAD_STRIP: n &= ~1UL; prim = VG_PRIM_TRIANGLES; if (n < 4) return; break;
     default: return;
@@ -88,7 +88,7 @@ static void emit(GLcontext c, GLenum mode, ULONG first, ULONG n, struct vg_layou
             v->nva = bytes;
         } else return;                  /* callers reserve room for index lists (vg_need) */
     }
-    vg_prepare(c, lay, swz, mode == GL_POLYGON && c->shade_model == GL_FLAT);
+    vg_prepare(c, lay, swz, 0);         /* GL's provoking vertex is the last: a flat polygon's triangles end in its first */
     if (!need) { vg_draw(c, prim, first, n, 0, 0); return; }
     start = v->nia;
     o = v->ia + v->nia;

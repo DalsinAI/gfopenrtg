@@ -77,6 +77,11 @@ deals with byte order in these places:
   - 0007-0011 are for virgl.
   - 0012 declares Mesa's disk_cache calls for GL.module's shader cache
     (below).
+  - 0013 lets virgl read a resource the host has never written (vertex and
+    index buffers) without flushing first. The index widening of 0010 and
+    u_vbuf's vertex widening (0011) read buffers at every draw, so before it
+    a program drawing from buffer objects sent each draw as a request block
+    of its own (Neverball: 29 submits and 29 puts a frame, now 1 and 1).
 
 ## GL.module and libGL.a
 

@@ -91,5 +91,10 @@ if [ -x "$CC65" ]; then
     "$CC65" -O2 -noixemul -m68040 -m68881 -fno-delete-null-pointer-checks -Wall -Wextra -Werror -I"$SRC/include" -I"$OUT/include" \
         -o "$OUT/tests/GLArrays-gcc65" "$GL/tests/glarrays.c" -L"$OUT" -lGL -lm
 fi
+# GLDraws (tests/gldraws.c): 300 draws a frame three ways, timed, with the
+# request blocks a frame (the virgl transport's batching, 9 Nov 2026).
+$CC -O2 -noixemul -m68040 -m68881 -fno-delete-null-pointer-checks -Wall -Wextra -Werror -I"$SRC/include" -I"$OUT/include" \
+    -o "$OUT/tests/GLDraws" "$GL/tests/gldraws.c" -L"$OUT" -lGL -lm
+python3 "$REPO/tools/fpcr_check.py" "${CC%gcc}objdump" "$OUT/tests/GLDraws"
 python3 "$REPO/tools/fpcr_check.py" "${CC%gcc}objdump" "$OUT/tests/"GLArrays*
 echo "built $OUT/tests/GLArrays (run it on an Amiga: GLArrays, then GLArrays CPU)"

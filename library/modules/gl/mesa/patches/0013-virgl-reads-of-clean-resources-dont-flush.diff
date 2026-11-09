@@ -1,0 +1,30 @@
+virgl: a read of a level the host has never written (clean_mask) needs
+neither a flush nor a wait. Patch 0010 reads index buffers and u_vbuf
+(0011) reads vertex buffers at every draw on the 68k; each read of a
+buffer the command buffer already named flushed it, so every draw went
+to the host as a request block of its own.
+
+diff --git a/src/gallium/drivers/virgl/virgl_resource.c b/src/gallium/drivers/virgl/virgl_resource.c
+--- a/src/gallium/drivers/virgl/virgl_resource.c
++++ b/src/gallium/drivers/virgl/virgl_resource.c
+@@ -204,6 +204,20 @@ virgl_resource_transfer_prepare(struct virgl_context *vctx,
+       wait = false;
+    }
+ 
++   /* A read of a level the host has never written (clean: the guest's
++    * storage holds what the host has) waits for nothing: the queued
++    * commands can only read it. u_vbuf's vertex translation and the 32-bit
++    * index widening map vertex and index buffers this way at every draw;
++    * a flush there sent each draw to the host on its own.
++    */
++   if (!(xfer->base.usage & PIPE_MAP_WRITE) &&
++       (res->clean_mask & (1 << xfer->base.level)) &&
++       likely(!(virgl_debug & VIRGL_DEBUG_XFER))) {
++      flush = false;
++      readback = false;
++      wait = false;
++   }
++
+    /* When the resource is busy but its content can be discarded, we can
+     * replace its HW resource or use a staging buffer to avoid waiting.
+     */

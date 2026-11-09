@@ -179,7 +179,7 @@ if [ -n "${ACVIRGL_LIB:-}" ] && [ -f "${VIRGL_SRC:-/nonexistent}/virgl_protocol.
     cc -std=gnu11 -O2 -Wall -Wextra -Werror -I"$VIRGL_SRC" -o "$OUT/acvirgl_present_bench" "$HERE/acvirgl_present_bench.c" \
         "$HERE/../host/virgl/acvirgl.c" -ldl
     # and with AC_VIRGL_BATCH=0: HELLO asks GL.module for a block a command
-    AC_VIRGL_BATCH=0 "$OUT/test_acvirgl"
+    AC_VIRGL_BATCH=0 AC_VIRGL_PIPELINE=0 "$OUT/test_acvirgl"
 else
     echo "no ACVIRGL_LIB and VIRGL_SRC; the virgl run is skipped"
 fi

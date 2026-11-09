@@ -38,15 +38,18 @@ void gla_note_why(const char *why) { noted = why; }
 const char *gla_last_why(void) { return noted; }
 
 /* gla_notice_os3.c's three, faked: the environment, what was said, the board */
-static const char *env_gldriver, *env_ogles3, *env_glbatch;
+static const char *env_gldriver, *env_ogles3, *env_glbatch, *env_glpipe;
 static char said[8][512];
 static int nsaid;
 static const char *board_says;
 int gla_virgl_batch_wanted = 7;         /* gla_virgl.c's: what the transport sets it to */
+int gla_virgl_pipeline_wanted = 7;
+int (*gla_virgl_send)(void *user, void *block, unsigned long bytes, unsigned long *ticket);
+int (*gla_virgl_wait)(void *user, unsigned long ticket);
 int gla_os3_getenv(const char *name, char *buf, int size)
 {
     const char *v = !strcmp(name, "GFOpenGPU/GLDriver") ? env_gldriver : !strcmp(name, "OGLES3/Driver") ? env_ogles3
-                  : !strcmp(name, "GFOpenGPU/GLBatch") ? env_glbatch : NULL;
+                  : !strcmp(name, "GFOpenGPU/GLBatch") ? env_glbatch : !strcmp(name, "GFOpenGPU/GLPipeline") ? env_glpipe : NULL;
     if (!v) return -1;
     snprintf(buf, (size_t)size, "%s", v);
     return (int)strlen(buf);
@@ -78,9 +81,11 @@ LONG OGPU_Submit(APTR stream, ULONG words, ULONG *fence)
     *fence = ++next_fence;
     return OGPU_OK;
 }
+static ULONG last_waited;
 LONG OGPU_Wait(ULONG fence)
 {
     nwaits++;
+    last_waited = fence;
     if (fence == OGPU_FENCE_ALL) { waited_all++; batches_done = 1; return OGPU_OK; }
     if (nanswers) {
         LONG a = answers[0];
@@ -170,6 +175,23 @@ int main(void)
     env_glbatch = "maybe";
     CHECK(gla_os3_virgl_transport(&t) && gla_virgl_batch_wanted == -1, "GLBatch maybe: as the runtime asks (%d)", gla_virgl_batch_wanted);
     env_glbatch = NULL;
+    /* ENV:GFOpenGPU/GLPipeline, and the send/wait pair the winsys pipelines with */
+    env_glpipe = "1";
+    CHECK(gla_os3_virgl_transport(&t) && gla_virgl_pipeline_wanted == 1 && gla_virgl_send && gla_virgl_wait,
+          "GLPipeline 1: pipelined, with a send and a wait (%d)", gla_virgl_pipeline_wanted);
+    env_glpipe = "off";
+    CHECK(gla_os3_virgl_transport(&t) && gla_virgl_pipeline_wanted == 0, "GLPipeline off (%d)", gla_virgl_pipeline_wanted);
+    env_glpipe = NULL;
+    CHECK(gla_os3_virgl_transport(&t) && gla_virgl_pipeline_wanted == -1, "GLPipeline unset: as the runtime asks (%d)", gla_virgl_pipeline_wanted);
+    {
+        /* a block sent without waiting, waited for later: the fence the library gave */
+        unsigned long ticket = 0;
+        static ULONG blk[4];
+        nanswers = 0; nwaits = 0;
+        CHECK(gla_virgl_send(NULL, blk, sizeof blk, &ticket) == 0 && ticket == next_fence && nwaits == 0,
+              "send: the submit's fence is the ticket (%lu), nothing waited for (%d)", ticket, nwaits);
+        CHECK(gla_virgl_wait(NULL, ticket) == 0 && last_waited == ticket && nwaits == 1, "wait: that fence waited for");
+    }
     printf("test_gla_virgl_os3: %d of %d checks passed\n", checks - fails, checks);
     return fails != 0;
 }

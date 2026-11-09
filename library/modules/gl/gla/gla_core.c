@@ -16,7 +16,9 @@
 #include "pipe/p_context.h"
 #include "frontend/api.h"
 #include "frontend/sw_winsys.h"
+#ifndef GLA_NO_SOFTPIPE
 #include "softpipe/sp_public.h"
+#endif
 #include "virgl/virgl_public.h"
 #include "gla_virgl.h"
 #include "state_tracker/st_context.h"
@@ -26,7 +28,9 @@
 #include "util/u_memory.h"
 #include "util/u_math.h"
 #include "util/u_endian.h"
+#ifndef GLA_NO_SOFTPIPE
 #include "util/disk_cache.h"
+#endif
 
 #include "glapi/glapi.h"
 
@@ -347,7 +351,10 @@ const char *gla_last_why(void) { return virgl_why; }
 /* Softpipe's shader cache (gla_shader_cache.c); virgl makes its own. One
  * for all of a program's softpipe screens, made with the first and gone
  * with the last. With it, Mesa's state tracker keeps linked programs as NIR
- * and skips compiling and linking what it has seen. */
+ * and skips compiling and linking what it has seen. A build with
+ * GL_DRIVERS=virgl defines GLA_NO_SOFTPIPE: there is no softpipe, and
+ * gla_display_create refuses rather than drawing on the CPU. */
+#ifndef GLA_NO_SOFTPIPE
 static struct disk_cache *softpipe_cache;
 static int softpipe_cache_users;
 
@@ -356,9 +363,16 @@ static struct disk_cache *softpipe_get_disk_shader_cache(struct pipe_screen *scr
     (void)screen;
     return softpipe_cache;
 }
+#endif
 
 struct gla_display *gla_display_create(void)
 {
+#ifdef GLA_NO_SOFTPIPE
+    gla_note_why("softpipe is not in this build");
+    if (softpipe_hook)
+        softpipe_hook(virgl_why);
+    return NULL;
+#else
     struct gla_display *d;
     if (softpipe_hook && softpipe_hook(virgl_why))
         return NULL;                    /* softpipe refused (OS 3.2: ENV:GFOpenGPU/GLDriver gpu) */
@@ -378,6 +392,7 @@ struct gla_display *gla_display_create(void)
     d->fscreen.screen->get_disk_shader_cache = softpipe_get_disk_shader_cache;
     d->fscreen.get_param = fs_get_param;
     return d;
+#endif
 }
 
 struct gla_display *gla_display_create_virgl(const struct gla_virgl_transport *t)
@@ -418,10 +433,12 @@ void gla_display_destroy(struct gla_display *d)
     d->fscreen.screen->destroy(d->fscreen.screen);   /* softpipe and virgl destroy their winsys too */
     if (d->virgl)
         d->ws->destroy(d->ws);                       /* virgl's display targets' */
+#ifndef GLA_NO_SOFTPIPE
     else if (!--softpipe_cache_users) {
         disk_cache_destroy(softpipe_cache);
         softpipe_cache = NULL;
     }
+#endif
     FREE(d);
 }
 

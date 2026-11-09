@@ -7,10 +7,27 @@
 #   mesa/build.sh [WORKDIR]                  for this machine
 #   CROSS=mesa/cross/m68k-linux.ini mesa/build.sh   big-endian 68040 Linux (the test runs under qemu-m68k)
 #   CROSS=mesa/cross/m68k-amigaos.ini mesa/build.sh AmigaOS 3.2 (the os32-gcc16 stove's bin/ first on PATH)
+#   GL_DRIVERS=virgl mesa/build.sh            no softpipe: a GPU host's set
+#   GL_DRIVERS=softpipe,virgl                 the default, both drivers
 # Meson may come from a venv: the Python that runs Mesa's generators is picked
 # below (PYTHON, else python3 on PATH, else /usr/bin/python3), the first that
 # has mako, packaging and yaml.
 set -eu
+# softpipe,virgl is every build so far. virgl alone is a GPU host's module:
+# Dale's rule is no CPU fallback when a GPU is present, and gla_display_create
+# then refuses instead of drawing. softpipe alone is not built here; the
+# virgl objects are still required.
+DRIVERS=${GL_DRIVERS:-softpipe,virgl}
+case ",$DRIVERS," in
+*,virgl,*) ;;
+*) echo "mesa: GL_DRIVERS must include virgl"; exit 1 ;;
+esac
+SOFT=
+case ",$DRIVERS," in
+*,softpipe,*) SOFT=1 ;;
+esac
+rest=$(printf '%s' ",$DRIVERS," | sed 's/,softpipe,/,/g; s/,virgl,/,/g; s/,,//g; s/^,//; s/,$//')
+[ -z "$rest" ] || { echo "mesa: GL_DRIVERS has '$rest'; only softpipe and virgl"; exit 1; }
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 TOP=$(CDPATH= cd -- "$HERE/.." && pwd)
 REPO=$(CDPATH= cd -- "$TOP/../../.." && pwd)          # gfopenrtg: include/gfopengpu, host/virgl
@@ -71,15 +88,22 @@ else
     NAME=host; XARG= PYARG=--native-file
 fi
 B=$WORK/mesa-build-$NAME
+if [ -f "$B/build.ninja" ] && [ "$(cat "$B/.gla-drivers" 2>/dev/null)" != "$DRIVERS" ]; then
+    rm -rf "$B"
+fi
 if [ ! -f "$B/build.ninja" ]; then
-    # Only what GLA needs: softpipe and virgl, GL and GLES 2/3, no window systems or LLVM.
+    # Only what GLA needs. The default is softpipe and virgl. GL_DRIVERS=virgl
+    # leaves softpipe out. No window systems or LLVM.
     meson setup "$B" "$SRC" $XARG $PYARG "$WORK/python.ini" --buildtype=release \
-        -Dgallium-drivers=softpipe,virgl -Dvulkan-drivers= -Dllvm=disabled -Dplatforms= \
+        -Dgallium-drivers=$DRIVERS -Dvulkan-drivers= -Dllvm=disabled -Dplatforms= \
         -Degl=disabled -Dglx=disabled -Dgbm=disabled -Dgles1=disabled -Dgles2=enabled \
         -Dopengl=true -Dvalgrind=disabled -Dlibunwind=disabled -Dzstd=disabled \
         -Dexpat=disabled -Dzlib=disabled -Dshader-cache=disabled -Dspirv-tools=disabled
+    echo "$DRIVERS" > "$B/.gla-drivers"
 fi
-LIBS="src/mesa/libmesa.a src/gallium/drivers/softpipe/libsoftpipe.a src/gallium/drivers/virgl/libvirgl.a src/gallium/auxiliary/libgallium.a src/gallium/auxiliary/libgalliumvl_stub.a
+SP=
+[ -n "$SOFT" ] && SP="src/gallium/drivers/softpipe/libsoftpipe.a"
+LIBS="src/mesa/libmesa.a $SP src/gallium/drivers/virgl/libvirgl.a src/gallium/auxiliary/libgallium.a src/gallium/auxiliary/libgalliumvl_stub.a
  src/compiler/glsl/libglsl.a src/compiler/glsl/glcpp/libglcpp.a src/compiler/spirv/libvtn.a
  src/compiler/nir/libnir.a src/compiler/libcompiler.a src/mesa/glapi/glapi/libglapi_bridge.a
  src/mesa/glapi/shared-glapi/libglapi.a src/util/libxmlconfig.a src/util/libmesa_util.a
@@ -141,8 +165,10 @@ case " $LFLAGS " in *" -fbaserel32 "*)
 esac
 CC=$(sed -n "s/^c = \[*'\{0,1\}\([^]']*\).*/\1/p" "${CROSS:+$TOP/$CROSS}" 2>/dev/null | head -1)
 CC=${CC:-cc}
+SOFTDEF=
+[ -n "$SOFT" ] || SOFTDEF=-DGLA_NO_SOFTPIPE
 cd "$B"
-eval "$CC $FLAGS -I$SRC/src/gallium/drivers -I$SRC/src/mesa/glapi -O2 -c $TOP/gla/gla_core.c -o gla_core.o"
+eval "$CC $FLAGS $SOFTDEF -I$SRC/src/gallium/drivers -I$SRC/src/mesa/glapi -O2 -c $TOP/gla/gla_core.c -o gla_core.o"
 eval "$CC $FLAGS -I$SRC/src/gallium/drivers -I$SRC/src/virtio -I$REPO/include -O2 -c $TOP/gla/gla_virgl.c -o gla_virgl.o"
 # The shader cache (gla/gla_shader_cache.c, patch 0012): its entries are
 # keyed on this build, Mesa's version and the patches' sum, as there is no

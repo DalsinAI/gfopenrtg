@@ -776,6 +776,21 @@ static void gv_flush_frontbuffer(struct virgl_winsys *vws, struct virgl_cmd_buf 
     map = w->sws->displaytarget_map(w->sws, res->dt, PIPE_MAP_WRITE);
     if (map) {
         util_copy_rect(map, res->format, res->dt_stride, box.x, box.y, box.width, box.height, res->ptr, res->stride, box.x, box.y);
+#if UTIL_ARCH_BIG_ENDIAN
+        /* The transfer has already turned each pixel round. B,G,R,X becomes
+         * the Amiga's X,R,G,B. R,G,B,X becomes X,B,G,R, so red and blue swap. */
+        if (res->format == PIPE_FORMAT_R8G8B8A8_UNORM || res->format == PIPE_FORMAT_R8G8B8X8_UNORM) {
+            unsigned y, x;
+            for (y = 0; y < box.height; y++) {
+                uint8_t *p = (uint8_t *)map + (size_t)(box.y + y) * res->dt_stride + (size_t)box.x * 4;
+                for (x = 0; x < box.width; x++, p += 4) {
+                    uint8_t b = p[1], r = p[3];
+                    p[1] = r;
+                    p[3] = b;
+                }
+            }
+        }
+#endif
         w->sws->displaytarget_unmap(w->sws, res->dt);
     }
     gla_counts.readback_pixels += (unsigned long)box.width * (unsigned long)box.height;

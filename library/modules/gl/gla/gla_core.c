@@ -54,7 +54,16 @@ static void ws_destroy(struct sw_winsys *ws) { FREE(ws); }
 static bool ws_format_ok(struct sw_winsys *ws, unsigned usage, enum pipe_format f)
 {
     (void)ws; (void)usage;
-    return f == FMT_ALPHA || f == FMT_NOALPHA;
+    if (f == FMT_ALPHA || f == FMT_NOALPHA)
+        return true;
+#if UTIL_ARCH_BIG_ENDIAN
+    /* A GLES virgl host has no X8R8G8B8. These are the ones visual_from
+     * may pick instead, and the display target is made in that format. */
+    return f == PIPE_FORMAT_B8G8R8A8_UNORM || f == PIPE_FORMAT_B8G8R8X8_UNORM
+        || f == PIPE_FORMAT_R8G8B8A8_UNORM || f == PIPE_FORMAT_R8G8B8X8_UNORM;
+#else
+    return false;
+#endif
 }
 
 static struct sw_displaytarget *ws_dt_create(struct sw_winsys *ws, unsigned usage,
@@ -269,6 +278,34 @@ static enum pipe_format depth_format(struct pipe_screen *screen, const enum pipe
     return PIPE_FORMAT_NONE;
 }
 
+static int format_renders(struct pipe_screen *screen, enum pipe_format f)
+{
+    unsigned bind = PIPE_BIND_RENDER_TARGET | PIPE_BIND_DISPLAY_TARGET;
+    return !screen || screen->is_format_supported(screen, f, PIPE_TEXTURE_2D, 0, 0, bind);
+}
+
+/* The colour buffer. Big-endian stays on X8R8G8B8 where the screen can
+ * make one (desktop GL, softpipe): the readback is then the Amiga's
+ * A, R, G, B. A GLES virgl host cannot, so the next is B8G8R8X8, whose
+ * bytes are the same after the transfer's 32-bit swap, then R8G8B8X8,
+ * which the readback has to swizzle (gla_virgl.c). */
+static enum pipe_format color_format(struct pipe_screen *screen, int alpha)
+{
+    enum pipe_format native = alpha ? FMT_ALPHA : FMT_NOALPHA;
+#if UTIL_ARCH_BIG_ENDIAN
+    enum pipe_format bgra = alpha ? PIPE_FORMAT_B8G8R8A8_UNORM : PIPE_FORMAT_B8G8R8X8_UNORM;
+    enum pipe_format rgba = alpha ? PIPE_FORMAT_R8G8B8A8_UNORM : PIPE_FORMAT_R8G8B8X8_UNORM;
+    if (format_renders(screen, native))
+        return native;
+    if (format_renders(screen, bgra))
+        return bgra;
+    if (format_renders(screen, rgba))
+        return rgba;
+#endif
+    (void)screen;
+    return native;
+}
+
 static void visual_from(struct st_visual *v, const struct gla_config *cfg, struct pipe_screen *screen)
 {
     static const enum pipe_format with_stencil[] = {
@@ -282,7 +319,7 @@ static void visual_from(struct st_visual *v, const struct gla_config *cfg, struc
         PIPE_FORMAT_Z16_UNORM, PIPE_FORMAT_Z24X8_UNORM, PIPE_FORMAT_X8Z24_UNORM, PIPE_FORMAT_Z32_FLOAT, PIPE_FORMAT_NONE
     };
     memset(v, 0, sizeof *v);
-    v->color_format = cfg->alpha ? FMT_ALPHA : FMT_NOALPHA;
+    v->color_format = color_format(screen, cfg->alpha);
     if (cfg->stencil)
         v->depth_stencil_format = depth_format(screen, with_stencil);
     else if (cfg->depth > 16)

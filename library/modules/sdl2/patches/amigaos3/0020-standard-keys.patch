@@ -39,16 +39,17 @@ index 8c859de..7e131c2 100644
  static const AudioBootStrap *const bootstrap[] = {
  #ifdef SDL_AUDIO_DRIVER_PULSEAUDIO
 diff --git a/src/timer/amigaos3/SDL_systimer.c b/src/timer/amigaos3/SDL_systimer.c
-index 3d8e647..ca1817c 100644
+index 3d8e647..5229464 100644
 --- a/src/timer/amigaos3/SDL_systimer.c
 +++ b/src/timer/amigaos3/SDL_systimer.c
-@@ -48,6 +48,43 @@ static ULONG eclock_freq = 0;       /* E-Clock ticks per second */
+@@ -48,6 +48,44 @@ static ULONG eclock_freq = 0;       /* E-Clock ticks per second */
  static struct EClockVal eclock_start; /* value at SDL_TicksInit */
  static int timer_initialized = 0;
  
 +/* Open (2026): Right Amiga + P (video/amigaos3/SDL_os3keys.c) stops the
 +   game's clock: the time spent paused is left out of SDL_GetTicks and the
 +   performance counter, so a game that runs by the clock doesn't jump on. */
++void SDL_TicksInit(void);
 +static Uint64 os3_paused_total = 0;  /* E-Clock ticks */
 +static Uint64 os3_paused_at = 0;     /* while paused, when it began */
 +static int os3_paused = 0;
@@ -86,7 +87,7 @@ index 3d8e647..ca1817c 100644
  
  /* Combine EClockVal hi/lo into a 64-bit value */
  static SDL_INLINE Uint64 eclock_to_u64(const struct EClockVal *ev)
-@@ -133,10 +170,9 @@ Uint64 SDL_GetTicks64(void)
+@@ -133,10 +171,9 @@ Uint64 SDL_GetTicks64(void)
          return 0;
      }
  
@@ -99,7 +100,7 @@ index 3d8e647..ca1817c 100644
      delta_ticks = current - start;
  
      /* Convert to milliseconds.
-@@ -166,8 +202,8 @@ Uint64 SDL_GetPerformanceCounter(void)
+@@ -166,8 +203,8 @@ Uint64 SDL_GetPerformanceCounter(void)
          return 0;
      }
  

@@ -6,7 +6,7 @@ pkg-config and CMake files, examples, notices and documents for building
 programs on GFOpenGPU (gfopengpu.library, SDL2.module and GL.module) with bebbo's
 m68k-amigaos-gcc, on the PC or on the Amiga.
 
-    tools/make_sdk.py --build BUILD --gl GL_OUT [--mesa MESA_SRC] [--sdl12 SDL12_OUT] [--glfw GLFW_OUT] [--openal OPENAL_OUT] [--version 0.6] OUT_DIR [--archives]
+    tools/make_sdk.py --build BUILD --gl GL_OUT [--mesa MESA_SRC] [--sdl12 SDL12_OUT] [--glfw GLFW_OUT] [--openal OPENAL_OUT] [--physfs PHYSFS_OUT] [--version 0.6] OUT_DIR [--archives]
 
 BUILD    library/build.sh's output (the SDL 2 libraries and headers, its
          sdl2-work/ with the pinned sources' notices, libminigl.a, libmgl.a,
@@ -25,6 +25,15 @@ GLFW_OUT GLFW 3.4 on GLA: library/modules/glfw's output, laid out as the kit
 OPENAL_OUT OpenAL.module's developer files: library/modules/openal/build.sh's
          output (include/AL/, libopenal.a, libopenal_static.a); default
          BUILD/openal when it is there. Without it the kit has no OpenAL.
+
+PHYSFS_OUT physfs.library's developer files: gfopenphysfs build-amiga.sh's
+         output (sdk/include/{physfs.h,proto/physfs.h,inline/physfs.h},
+         sdk/include-static/physfs.h, sdk/lib/libphysfs_auto.a,
+         sdk/lib/libphysfs.a, sdk/fd/physfs_lib.fd), with PhysicsFS's
+         LICENSE.txt and a COMMIT file naming the gfopenphysfs commit it was
+         built from beside them (GFOpenUp's pack build writes both); the
+         commit must be PHYSFS_COMMIT. Default BUILD/physfs when it is there.
+         Without it the kit has no PhysicsFS.
 
 GLU and GLUT come from BUILD/glu and BUILD/glut (library/modules/glu and
 glut's build.sh) when they are there: GL/glu.h, libGLU.a, GL/glut.h and
@@ -283,6 +292,43 @@ PC_OPENAL = {
                "-L${libdir} -lopenal -lm -lamiga", "-I${includedir}"),
 }
 
+# Only with physfs.library's build (--physfs, or BUILD/physfs): gfopenphysfs at this commit (main after its #1 and
+# #2: physfs.library 1.1, zip members inflated through LIBS:z.library). A kit names one physfs.library ABI, so a
+# newer gfopenphysfs is a change here, with its own check.
+PHYSFS_COMMIT = "21cfa03d8cbff7ddad62c8a2fbba4c7fd0589e20"
+PHYSFS_VERSION = "1.1"
+PC_PHYSFS = {
+    "physfs": ("physfs", "PhysicsFS 3.2.0 through LIBS:physfs.library 1.1 (one copy of its state per program; zip through LIBS:z.library)",
+               "3.2.0", "", "-L${libdir} -lphysfs_auto", "-I${includedir}"),
+}
+
+# find_package(PhysFS): PhysicsFS's own config names (PhysFS::PhysFS, PhysFS::PhysFS-static) and CMake's FindPhysFS
+# ones (PHYSFS_LIBRARY, PHYSFS_INCLUDE_DIR).
+CMAKE_PHYSFS = """# GFOpenGPU developer kit: PhysicsFS 3.2.0 (LIBS:physfs.library 1.1).
+get_filename_component(_ogpu_prefix "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
+set(PhysFS_FOUND TRUE)
+set(PHYSFS_FOUND TRUE)
+set(PhysFS_VERSION "3.2.0")
+set(PHYSFS_INCLUDE_DIR "${_ogpu_prefix}/include")
+set(PHYSFS_LIBRARY "${_ogpu_prefix}/lib/libphysfs_auto.a")
+if(NOT TARGET PhysFS::PhysFS)
+    add_library(PhysFS::PhysFS STATIC IMPORTED)
+    set_target_properties(PhysFS::PhysFS PROPERTIES
+        IMPORTED_LOCATION "${_ogpu_prefix}/lib/libphysfs_auto.a"
+        INTERFACE_INCLUDE_DIRECTORIES "${_ogpu_prefix}/include")
+endif()
+if(NOT TARGET PhysFS::PhysFS-static)
+    add_library(PhysFS::PhysFS-static STATIC IMPORTED)
+    set_target_properties(PhysFS::PhysFS-static PROPERTIES
+        IMPORTED_LOCATION "${_ogpu_prefix}/lib/libphysfs.a"
+        INTERFACE_INCLUDE_DIRECTORIES "${_ogpu_prefix}/include-static")
+endif()
+"""
+
+PHYSFS_FILES = ("sdk/include/physfs.h", "sdk/include/proto/physfs.h", "sdk/include/inline/physfs.h",
+                "sdk/include-static/physfs.h", "sdk/lib/libphysfs_auto.a", "sdk/lib/libphysfs.a",
+                "sdk/fd/physfs_lib.fd", "LICENSE.txt", "COMMIT")
+
 # find_package(OpenAL): the target OpenAL::OpenAL, and CMake's FindOpenAL names.
 CMAKE_OPENAL = """# GFOpenGPU developer kit: OpenAL 1.1 (LIBS:GFOpenGPU/OpenAL.module).
 get_filename_component(_ogpu_prefix "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
@@ -317,7 +363,7 @@ PC_GLUT = {
 
 
 def pc_text(name: str) -> str:
-    n, desc, ver, req, libs, cflags = {**PC, **PC_SDL12, **PC_GLUT, **PC_OPENAL}[name]
+    n, desc, ver, req, libs, cflags = {**PC, **PC_SDL12, **PC_GLUT, **PC_OPENAL, **PC_PHYSFS}[name]
     return ("# GFOpenGPU developer kit. The kit's prefix is two levels up from this file:\n"
             "# the kit's own, or a stove's prefix/m68k-amigaos.\n"
             "prefix=${pcfiledir}/../..\nexec_prefix=${prefix}\nlibdir=${prefix}/lib\nincludedir=${prefix}/include\n\n"
@@ -391,6 +437,26 @@ def copy_cross(dst: Path) -> None:
     (dst / "m68k-amigaos.ini").write_text(ini)
 
 
+def copy_physfs(physfs: Path, kit: Path) -> None:
+    """physfs.library's developer files into the kit, from gfopenphysfs build-amiga.sh's output at PHYSFS_COMMIT."""
+    for f in PHYSFS_FILES:
+        if not (physfs / f).is_file():
+            die(f"no {f} in {physfs}")
+    got = (physfs / "COMMIT").read_text().strip()
+    if got != PHYSFS_COMMIT:
+        die(f"{physfs} was built from gfopenphysfs {got}, not {PHYSFS_COMMIT} (PHYSFS_COMMIT)")
+    if licence_of(physfs / "LICENSE.txt") != "Zlib":
+        die(f"{physfs / 'LICENSE.txt'}: not PhysicsFS's zlib licence")
+    sdk, inc, lib = physfs / "sdk", kit / "include", kit / "lib"
+    copy(sdk / "include" / "physfs.h", inc / "physfs.h")
+    copy(sdk / "include" / "proto" / "physfs.h", inc / "proto" / "physfs.h")
+    copy(sdk / "include" / "inline" / "physfs.h", inc / "inline" / "physfs.h")
+    copy(sdk / "include-static" / "physfs.h", kit / "include-static" / "physfs.h")
+    copy(sdk / "lib" / "libphysfs_auto.a", lib / "libphysfs_auto.a")
+    copy(sdk / "lib" / "libphysfs.a", lib / "libphysfs.a")
+    copy(sdk / "fd" / "physfs_lib.fd", kit / "fd" / "physfs_lib.fd")
+
+
 def make_kit(args) -> Path:
     build, gl = Path(args.build).resolve(), Path(args.gl).resolve()
     work = build / "sdl2-work"
@@ -403,6 +469,9 @@ def make_kit(args) -> Path:
     openal = Path(args.openal).resolve() if args.openal else None
     if not openal and (build / "openal" / "libopenal.a").is_file():
         openal = build / "openal"
+    physfs = Path(args.physfs).resolve() if args.physfs else None
+    if not physfs and (build / "physfs" / "sdk" / "lib" / "libphysfs_auto.a").is_file():
+        physfs = build / "physfs"
     glfw = Path(args.glfw).resolve() if args.glfw else None
     if not glfw and (build / "glfw" / "lib" / "libglfw3.a").is_file():
         glfw = build / "glfw"
@@ -512,6 +581,12 @@ def make_kit(args) -> Path:
         copy(openal / "libopenal.a", lib / "libopenal.a")
         copy(openal / "libopenal_static.a", lib / "libopenal_static.a")
 
+    # 3f. PhysicsFS 3.2.0 through physfs.library 1.1 (gfopenphysfs at PHYSFS_COMMIT; Zlib), when given: physfs.h
+    #     with proto/ and inline/ (the calls through PhysFSBase), libphysfs_auto.a (opens the library before main),
+    #     and PhysicsFS linked in instead: libphysfs.a with its own header in include-static/; fd/physfs_lib.fd.
+    if physfs:
+        copy_physfs(physfs, kit)
+
     # 4. The libraries. One set serves both stoves: the GCC 16 builds link
     #    with GCC 6.5's libnix too (same libnix, a.out objects, FPU ABI).
     for name in LIBS:
@@ -532,7 +607,7 @@ def make_kit(args) -> Path:
         cfg.write_text(SDL_CONFIG.replace("@CPU@", CPU).replace("@VERSION@", SDL12_VERSION))
         cfg.chmod(0o755)
     for name in (list(PC) + (list(PC_SDL12) if sdl12 else []) + (list(PC_GLUT) if has_glut else [])
-                 + (list(PC_OPENAL) if openal else [])):
+                 + (list(PC_OPENAL) if openal else []) + (list(PC_PHYSFS) if physfs else [])):
         p = lib / "pkgconfig" / f"{name}.pc"
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(pc_text(name))
@@ -553,6 +628,11 @@ def make_kit(args) -> Path:
         d.mkdir(parents=True, exist_ok=True)
         (d / "OpenALConfig.cmake").write_text(CMAKE_OPENAL)
         (d / "openal-config.cmake").write_text(CMAKE_OPENAL)
+    if physfs:
+        d = lib / "cmake" / "PhysFS"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "PhysFSConfig.cmake").write_text(CMAKE_PHYSFS)
+        (d / "physfs-config.cmake").write_text(CMAKE_PHYSFS)
 
     # 6. Examples, the readme and the reference.
     left_out = ([] if sdl12 else ["sdl12"]) + ([] if has_glut else ["glut"])
@@ -568,6 +648,9 @@ def make_kit(args) -> Path:
     copy(ROOT / "LICENSE", L / "OpenGPU.txt")
     if openal:
         notices.append(("OpenAL 1.1: AL/ headers, libopenal.a, libopenal_static.a, openal.pc and lib/cmake/OpenAL (written by the Team from the OpenAL 1.1 specification)", "MIT, AmiCradle Team (OpenGPU.txt)"))
+    if physfs:
+        copy(physfs / "LICENSE.txt", L / "PhysicsFS.txt")
+        notices.append((f"PhysicsFS 3.2.0 (physfs.library {PHYSFS_VERSION}, gfopenphysfs {PHYSFS_COMMIT[:12]}): physfs.h, proto/ and inline/physfs.h, include-static/physfs.h, libphysfs_auto.a, libphysfs.a, fd/physfs_lib.fd, physfs.pc and lib/cmake/PhysFS; the AmigaOS platform and the library glue are the Team's, also Zlib", "Zlib (PhysicsFS.txt)"))
     notices.append(("GFOpenGPU, GFOpenRTG, Warp3D, MiniGL, TinyGL, GLA and EGL headers; libGL.a, libminigl.a, libmgl.a, libtinygl.a, libEGL.a; libSDL2.a's SDL2_gl.o; sdl2-config, sdl-config, the pkg-config and CMake files, the cross files; the examples", "MIT, AmiCradle Team (OpenGPU.txt)"))
     if sdl12:
         copy(sdl12 / "LICENSE.txt", L / "sdl12-compat.txt")
@@ -674,6 +757,8 @@ def main() -> int:
     ap.add_argument("--sdl12", help="sdl12-compat's build (include/SDL/, libSDL.a, LICENSE.txt); default BUILD/sdl12")
     ap.add_argument("--glfw", help="library/modules/glfw's build (include/GLFW/, lib/libglfw3.a ...); default BUILD/glfw")
     ap.add_argument("--openal", help="library/modules/openal's build (include/AL/, libopenal.a, libopenal_static.a); default BUILD/openal")
+    ap.add_argument("--physfs", help="gfopenphysfs build-amiga.sh's output with LICENSE.txt and COMMIT (sdk/include/physfs.h, "
+                    "sdk/lib/libphysfs_auto.a ...); default BUILD/physfs")
     ap.add_argument("--version", default="0.6")
     ap.add_argument("--stove", default=os.environ.get("STOVE16", str(Path.home() / "AmiCradle/stoves/os32-gcc16/prefix")),
                     help="a stove prefix, for m68k-amigaos-ar when it isn't on PATH")

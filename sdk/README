@@ -43,6 +43,12 @@ What is in it
                           built with it)
   include/AL/             OpenAL 1.1: al.h, alc.h, alext.h (the Team's,
                           written from the specification)
+  include/physfs.h proto/physfs.h inline/physfs.h
+                          PhysicsFS 3.2.0 through LIBS:physfs.library 1.1
+                          (each program gets its own PhysicsFS state)
+  include-static/physfs.h PhysicsFS's header for libphysfs.a (put it first
+                          with -I to link PhysicsFS in instead)
+  fd/physfs_lib.fd        physfs.library's calls
   lib/libSDL2.a           SDL 2 (the program's half: SDL2.module does the work)
   lib/libSDL2main.a       empty: SDL needs no main of its own here; it is
                           there for build systems that link -lSDL2main
@@ -72,11 +78,20 @@ What is in it
                           LIBS:GFOpenGPU/ does the work, on AHI or ACAHI's
                           voices; no EFX, no capture). Built -m68040 -m68881
   lib/libopenal_static.a  the same, all of OpenAL inside the program
+  lib/libphysfs_auto.a    opens physfs.library 1 before main() (link
+                          -lphysfs_auto); without the library in LIBS: the
+                          program says so and stops. Zip members inflate
+                          through LIBS:z.library. GFOpenUp's GFOpenGPU part
+                          installs both
+  lib/libphysfs.a         PhysicsFS linked into the program instead (with
+                          include-static/physfs.h)
   lib/pkgconfig/          sdl2, SDL2_image, SDL2_mixer, SDL2_ttf, SDL2_net,
                           gl, glesv2, egl and tinygl (and sdl, with SDL 1.2;
-                          glu and glut, with GLUT; openal)
+                          glu and glut, with GLUT; openal; physfs)
   lib/cmake/              find_package(SDL2) and the satellites, and
-                          find_package(OpenAL) (OpenAL::OpenAL)
+                          find_package(OpenAL) (OpenAL::OpenAL) and
+                          find_package(PhysFS) (PhysFS::PhysFS,
+                          PhysFS::PhysFS-static)
   cross/                  a CMake toolchain file and a meson cross file
   examples/               a sprite program, an SDL_GL program, a GLA one,
                           an EGL one and a TinyGL one (and an SDL 1.2 one,

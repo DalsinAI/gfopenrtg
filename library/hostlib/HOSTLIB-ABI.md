@@ -69,6 +69,26 @@ Each hostlib function is one portable C file under `hostlib/`, written with `hl.
 
 ## 5. The functions
 
+### GFOpenGfx leaves, `$00010100` to `$00010103`, version 1
+
+The four existing GFOpenGfx contracts are now built from `hostlib/ogfx/`:
+
+- `hostlib_ogfx_planar_rect`: planar RectFill, set or invert, returning the
+  planes drawn;
+- `hostlib_ogfx_chunky_rect`: one- to four-byte chunky RectFill, store or XOR,
+  returning pixels drawn;
+- `hostlib_ogfx_chunky_copy`: overlap-safe chunky rectangle copy, returning
+  pixels copied;
+- `hostlib_ogfx_planar_blit`: planar source/destination minterm BltBitMap,
+  returning destination planes involved.
+
+Their big-endian block layouts remain the structs documented by
+GFOpenRTG's `library/ogfx/ogfx_leaves.h`; `hostlib/ogfx/leaves.h` names each
+long. The host takes only complete ranges in plain guest memory, validates all
+tables and spans before its first write, and declines blocks that wrap or whose
+destinations overlap their block or plane tables. The IDs and results are the
+same contracts formerly implemented by hand in the runtime.
+
 ### OGFX_TEXT_STRIP, `$00010105`, version 1: `hostlib_text_strip(block)`
 
 Text's glyphs gathered into one 1-bit strip. Called by gfopenrtg.library's Text (`library/text_strip.h`).

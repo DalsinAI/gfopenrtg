@@ -13,6 +13,7 @@
  * one access once the pointer is even (the 68000 needs that too). The
  * longs alias the bytes, which C allows only through may_alias. */
 typedef uint32_t __attribute__((may_alias)) ogfx_u32a;
+#if !defined(__m68k__)
 static void ogfx_set(uint8_t *p, uint32_t n, uint8_t v)
 {
     if (n >= 8) {
@@ -31,6 +32,7 @@ static void ogfx_xor(uint8_t *p, uint32_t n, uint8_t v)
     }
     while (n--) *p++ ^= v;
 }
+#endif
 static void ogfx_move(uint8_t *d, const uint8_t *s, uint32_t n)
 {
     if (d == s || !n) return;
@@ -50,6 +52,35 @@ static void ogfx_move(uint8_t *d, const uint8_t *s, uint32_t n)
     }
 }
 
+#if defined(__m68k__)
+/* ABI 1 production leaves: the same portable sources are compiled into the
+ * library and the runtime. The public GFOpenGfx calls remain stable wrappers;
+ * the ACMF tags live on the hostlib entries one call below them. */
+#define HL_VENDORED 1
+#include "../hostlib/ogfx/planar_rect.c"
+#include "../hostlib/ogfx/chunky_rect.c"
+#include "../hostlib/ogfx/chunky_copy.c"
+#include "../hostlib/ogfx/planar_blit.c"
+
+uint32_t ogfx_planar_rect(const struct ogfx_planar_rect *r)
+{
+    return hostlib_ogfx_planar_rect((hl_addr)(uintptr_t)r);
+}
+uint32_t ogfx_chunky_rect(const struct ogfx_chunky_rect *r)
+{
+    return hostlib_ogfx_chunky_rect((hl_addr)(uintptr_t)r);
+}
+uint32_t ogfx_chunky_copy(const struct ogfx_chunky_copy *r)
+{
+    return hostlib_ogfx_chunky_copy((hl_addr)(uintptr_t)r);
+}
+uint32_t ogfx_planar_blit(const struct ogfx_planar_blit *r)
+{
+    return hostlib_ogfx_planar_blit((hl_addr)(uintptr_t)r);
+}
+
+#else
+/* Kept as an independent native reference for the 32-bit host tests. */
 AC_MAGIC(ogfx_planar_rect, AC_MAGIC_OGFX_PLANAR_RECT)
 AC_MAGIC_KEEP uint32_t AC_MAGIC_BODY(ogfx_planar_rect)(const struct ogfx_planar_rect *r)
 {
@@ -203,6 +234,7 @@ AC_MAGIC_KEEP uint32_t AC_MAGIC_BODY(ogfx_planar_blit)(const struct ogfx_planar_
 
     return planes;
 }
+#endif
 
 /* ---- ogfx_scale_copy: old apps scaled whole ---- */
 static uint32_t ogfx_planar_bit(uint32_t plane, uint32_t bpr, int32_t x, int32_t y)

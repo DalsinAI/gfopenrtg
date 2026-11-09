@@ -131,6 +131,12 @@
  * int32_t ocm_ecdsa_verify(curve, qx, qy, r, s, hash, hlen) */
 #define AC_MAGIC_OC_RSA_PUBLIC       0x0001020b
 #define AC_MAGIC_OC_ECDSA_VERIFY     0x0001020c
+/* int32_t ocm_ec_mul(point, curve, point_length, scalar, scalar_length):
+ * point (04 || x || y) = scalar . point, in place. 1, or 0.
+ * int32_t ocm_ec_mulgen(point, curve, scalar, scalar_length):
+ * point = scalar . G. The point's length, or 0. */
+#define AC_MAGIC_OC_EC_MUL           0x0001020d
+#define AC_MAGIC_OC_EC_MULGEN        0x0001020e
 /* The open libraries' LVO bodies (libraries/OPEN_LIBRARIES.md, section 3):
  * a library in bits 15-8, the LVO's slot (-LVO / 6) in bits 7-0. Each takes
  * its arguments in the registers its .lvo table names and answers in D0

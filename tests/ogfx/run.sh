@@ -61,7 +61,7 @@ if [ -x "$CC68K" ]; then
     [ -z "$und" ] || { echo "FAIL os32: the ROM build calls the core: $und"; fail=1; }
     und=$("${P}nm" -u "$OUT/ogfx_leaves.o" | awk '{print $2}' | grep -v '^___mulsi3$' | tr '\n' ' ' || true)
     [ -z "$und" ] || { echo "FAIL os32: the leaves call $und"; fail=1; }
-    for f in "ogfx_planar_rect 00010100" "ogfx_chunky_rect 00010101" "ogfx_chunky_copy 00010102" "ogfx_planar_blit 00010103"; do
+    for f in "hostlib_ogfx_planar_rect 00010100" "hostlib_ogfx_chunky_rect 00010101" "hostlib_ogfx_chunky_copy 00010102" "hostlib_ogfx_planar_blit 00010103"; do
         set -- $f
         # the tag: BRA.S *+12, 'ACMF', version 1, the id, then JMP
         addr=$("${P}nm" "$OUT/ogfx_leaves.o" | awk -v s="_$1" '$3 == s { print $1 }')

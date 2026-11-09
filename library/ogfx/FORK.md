@@ -50,6 +50,14 @@ The old library is kept in amicradle-guest, archived in place (`libraries/opengf
 
 ## Since the merge
 
+- **Hostlib ABI 1 (9 November 2026): one production source for the bitmap
+  leaves.** Planar/chunky `RectFill`, chunky copy and planar `BltBitMap` now
+  compile on m68k from the `library/hostlib/ogfx/` sources pinned by
+  `library/hostlib/FROM`; GFOSMotherboards compiles the same files for the
+  host. The public `ogfx_*` calls remain stable wrappers, while the frozen
+  `$00010100` to `$00010103` tags sit on the shared entries. The former C
+  bodies remain only as the independent 32-bit native-test reference.
+
 - **gfopengpu.library 0.7 (8 October 2026): the look hook.** `OGFX_RegisterLook` and `OGFX_UnregisterLook` (LVOs 150 and 156, `struct OGFXLookV1` in `include/gfopengpu/gfx.h`). A look is asked first on `RectFill` and `Text`, so GFOpenLook draws window frames here instead of patching the two calls on top of GFOpenGfx. The state's new fields come after the patch entries, so `old[]` stays where it was. `OGFX_Version` answers 1.3; `OGFX_Status` adds `OGFX_STATUS_LOOK` and `OGFX_STATUS_LOOK_BUSY`. OpenGfxCheck checks the hook when no other look is in.
 
 - **gfopengpu.library 0.8 (8 October 2026): every drawing call.** GFOpenGfx 1.4 patches 22 `graphics.library` calls: the eight, then `BltPattern`, `SetRast`, `Draw`, `PolyDraw`, `WritePixel`, `ReadPixel`, `BltBitMapRastPort`, `BltMaskBitMapRastPort`, `ClipBlit`, `WriteChunkyPixels`, `WritePixelArray8`, `WritePixelLine8`, `ReadPixelLine8` and `ReadPixelArray8`. Each asks the provider (a `struct OGFXProviderAll`, which starts with the v1 record) and otherwise calls `graphics.library`'s code with the registers as they came; there is no native path for them yet, and no LVOs. `old[]` and the entries grow to 22, `old[]` still just before the entries. gfopenrtg.library 0.13 provides the fourteen and stops patching them when `OGFX_Version()` is 1.4 or later.

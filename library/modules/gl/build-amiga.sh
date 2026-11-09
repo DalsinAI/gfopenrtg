@@ -47,7 +47,7 @@ printf '#!/bin/sh\nexec "%s" -j%s "$@"\n' "$(command -v ninja)" "$JOBS" > "$W/bi
 chmod +x "$W/bin/ninja"
 
 # Mesa, the GLA core, GL.module, libGL.a and GLArrays.
-PATH="$W/bin:$PATH" PYTHON=$PY GL_WORK=$W/gl STOVE16=$P STOVE=$W/no-gcc65-stove \
+GL_DRIVERS=${GL_DRIVERS:-virgl} PATH="$W/bin:$PATH" PYTHON=$PY GL_WORK=$W/gl STOVE16=$P STOVE=$W/no-gcc65-stove \
     sh "$HERE/module/build.sh" "$W/out"
 
 mkdir -p "$OUT/libs/GFOpenGPU" "$OUT/lib" "$OUT/c"

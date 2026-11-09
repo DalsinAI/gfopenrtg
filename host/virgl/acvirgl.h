@@ -12,7 +12,10 @@
  * makes its own GL context (EGL, surfaceless) on the thread that calls
  * acvirgl_run; every call must come from that thread. Desktop GL first,
  * else GLES (a Pi's V3D); AC_VIRGL_GLES=1 or 0 picks one, and
- * AC_VIRGL_DRIVER names Mesa's driver (zink: GL over the host's Vulkan). */
+ * AC_VIRGL_DRIVER names Mesa's driver (zink: GL over the host's Vulkan).
+ * Unset, the GPU's own driver is used. When that does not start, and
+ * AC_VIRGL_SOFTWARE is not 0, it tries llvmpipe and then zink on lavapipe.
+ * GL.module's guest side does not change. */
 #ifndef ACVIRGL_H
 #define ACVIRGL_H
 

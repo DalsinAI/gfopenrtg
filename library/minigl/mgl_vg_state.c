@@ -260,6 +260,12 @@ int vg_vs_consts(ULONG key)
     return VSC_CONST + 1;
 }
 
+static void clear_slots(float *k, int from, int n)
+{
+    int i;
+    for (i = from * 4; i < (from + n) * 4; i++) k[i] = 0.0f;
+}
+
 static void vs_constants(GLcontext c, ULONG key, const int *lights, int nl)
 {
     float k[VSC_END * 4];
@@ -279,6 +285,21 @@ static void vs_constants(GLcontext c, ULONG key, const int *lights, int nl)
     copy4(k + VSC_TC1 * 4, c->tc[1]);
     k[VSC_NORMAL * 4] = c->normal[0]; k[VSC_NORMAL * 4 + 1] = c->normal[1]; k[VSC_NORMAL * 4 + 2] = c->normal[2]; k[VSC_NORMAL * 4 + 3] = 0.0f;
     k[VSC_CONST * 4] = 0.0f; k[VSC_CONST * 4 + 1] = 1.0f; k[VSC_CONST * 4 + 2] = 0.5f; k[VSC_CONST * 4 + 3] = 2.0f;
+    /* slots the variant doesn't read stay 0, so that the current values a
+     * glBegin/glEnd leaves behind (colour, coordinates, normal) don't make
+     * every draw send its constants again */
+    {
+        int eye = (key & (VS_LIGHT | VS_FOG)) || VS_GEN0(key) >= 2 || VS_GEN1(key) >= 2;
+        int nrm = (key & VS_LIGHT) || VS_GEN0(key) == 3 || VS_GEN1(key) == 3;
+        if (key & VS_COL_ATTR) clear_slots(k, VSC_COLOR, 1);
+        if (!eye) clear_slots(k, VSC_MV, 3);
+        if (!nrm) clear_slots(k, VSC_NM, 3);
+        if (!(key & VS_TC0_MAT)) clear_slots(k, VSC_TEX0, 4);
+        if (!(key & VS_TC1_MAT)) clear_slots(k, VSC_TEX1, 4);
+        if (!(key & VS_TC0) || (key & VS_TC0_ATTR)) clear_slots(k, VSC_TC0, 1);
+        if (!(key & VS_TC1) || (key & VS_TC1_ATTR)) clear_slots(k, VSC_TC1, 1);
+        if (!nrm || (key & VS_NRM_ATTR)) clear_slots(k, VSC_NORMAL, 1);
+    }
     if (n > VSC_SCENE) {
         for (i = 0; i < 4; i++) k[VSC_SCENE * 4 + i] = 0.0f;
         copy4(k + VSC_MAT * 4, c->mat[0].ambient);

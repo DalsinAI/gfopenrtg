@@ -129,7 +129,10 @@ int mgl_out_open(GLcontext c)
     if (!c->cmdmem || !c->vmem || !c->zbuf) { mgl_out_close(c); return 0; }
     c->list_at = -1;
     c->sent_pass = -1;
-    if (mgl_prefs.route == ROUTE_VIRGL) {
+    /* Virgl, and Auto too: the host's GPU through virgl where gfopengpu.library
+     * carries it (faster than the 3D ops on every machine measured: plan M5),
+     * else as before. CPU or GFOpenGPU choose those routes. */
+    if (mgl_prefs.route == ROUTE_VIRGL || mgl_prefs.route < 0) {
         if (mgl_vg_open(c)) { c->route = ROUTE_VIRGL; return 1; }
         mgl_log("MiniGL: no virgl route, as Auto");    /* why: in the log above */
     }

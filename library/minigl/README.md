@@ -15,7 +15,9 @@ for changing it.
 - **Through functions.** A program includes `<mgl/gl.h>`, links `libmgl.a`,
   and calls `MGLInit()` and `MGLTerm()`.
 - **Routes.** `ENV:MiniGL/Driver`: `CPU` (the 3D core on the 68k), `GFOpenGPU`
-  (gfopengpu.library's 3D), or `Auto`.
+  (gfopengpu.library's 3D ops), `Virgl` (the host's GPU through GFOpenGPU's
+  virgl path: `mgl_vg*.c`, docs/design/MiniGL-Compatible-Plan.md), or `Auto`
+  (virgl where gfopengpu.library carries it, else as GFOpenGPU or CPU).
 - **Preferences.** `ENV:MiniGL/Flip`, `ENV:MiniGL/MaxTextureSize` (default
   1024), `ENV:MiniGL/Trace`, `ENV:MINIGL_FORCE_SOFT`.
 

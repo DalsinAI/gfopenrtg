@@ -378,6 +378,7 @@ static void lockbuf_release(GLcontext c)
     int x, y;
     if (!p) return;
     for (i = 0; i < n; i++) p[i] = (p[i] >> 8) | (p[i] << 24);     /* to A, R, G, B */
+    if (c->vg) { mgl_vg_writeback(c, p); mgl_free(p); d->lockbuf = 0; return; }
     if (mgl_disp_lock(c)) {
         for (y = 0; y < c->height; y++) {
             const ULONG *s = p + (ULONG)y * (ULONG)c->width;

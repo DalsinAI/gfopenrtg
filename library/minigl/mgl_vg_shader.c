@@ -169,7 +169,7 @@ ULONG vg_vs_text(ULONG key, ULONG spots, char *buf, ULONG cap)
         vcol[tb.n] = 0;
     }
     if (!lit) {
-        s(&b, "MOV OUT[1], "); s(&b, vcol); s(&b, "\n");
+        s(&b, "MOV_SAT OUT[1], "); s(&b, vcol); s(&b, "\n");
     } else {
         int cm = (key & VS_COLMAT) ? (int)VS_COLMAT_MODE(key) : -1;
         struct sb tb;
@@ -184,8 +184,9 @@ ULONG vg_vs_text(ULONG key, ULONG spots, char *buf, ULONG cap)
         /* emission + the global ambient times the material's ambient */
         s(&b, "MAD TEMP[9], "); cst(&b, VSC_GAMB); s(&b, ", "); s(&b, ma); s(&b, ", "); s(&b, me); s(&b, "\n");
         for (k = 0; k < nl; k++) light(&b, key, (int)((spots >> k) & 1), VSC_LIGHT + k * VSC_LIGHT_N, ma, md, ms);
-        s(&b, "MOV OUT[1].xyz, TEMP[9]\n");
-        s(&b, "MOV OUT[1].w, "); s(&b, md); s(&b, ".wwww\n");
+        /* clamped to [0, 1] (2.13.6): the rasterizer's clamp bit isn't kept by core-profile hosts */
+        s(&b, "MOV_SAT OUT[1].xyz, TEMP[9]\n");
+        s(&b, "MOV_SAT OUT[1].w, "); s(&b, md); s(&b, ".wwww\n");
     }
     /* texture coordinates: the arena's or the current ones, generated, through the texture matrix */
     for (k = 0; k < 2; k++) {

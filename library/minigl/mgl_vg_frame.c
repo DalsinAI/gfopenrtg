@@ -80,23 +80,53 @@ static int arenas(GLcontext c, ULONG va, ULONG ia, ULONG cmd)
     if (ia != v->cia && !(nia = mgl_alloc(ia * 2))) { mgl_free(nva); return 0; }
     if (cmd != v->ccmd && !(ncmd = mgl_alloc(cmd * 4))) { mgl_free(nva); mgl_free(nia); return 0; }
     if (nva) {
-        struct vg_res *r = vg_res_create(c, VG_TARGET_BUFFER, VG_FMT_R8_UNORM, VG_BIND_VERTEX_BUFFER, va, 1, 1);
+        struct vg_res *r = vg_res_create(c, VG_TARGET_BUFFER, VG_FMT_R8_UNORM, VG_BIND_VERTEX_BUFFER, va * VG_RING, 1, 1);
         if (!r) { mgl_free(nva); mgl_free(nia); mgl_free(ncmd); return 0; }
         if (v->vbuf) vg_res_release(c, v->vbuf);
         mgl_free(v->va);
         v->va = nva; v->cva = va; v->vbuf = r;
+        v->vb_off = 0; v->vb_size = va * VG_RING;
         v->dirty |= VG_D_VBUF;
     }
     if (nia) {
-        struct vg_res *r = vg_res_create(c, VG_TARGET_BUFFER, VG_FMT_R8_UNORM, VG_BIND_INDEX_BUFFER, ia * 2, 1, 1);
+        struct vg_res *r = vg_res_create(c, VG_TARGET_BUFFER, VG_FMT_R8_UNORM, VG_BIND_INDEX_BUFFER, ia * 2 * VG_RING, 1, 1);
         if (!r) { mgl_free(nia); mgl_free(ncmd); return 0; }
         if (v->ibuf) vg_res_release(c, v->ibuf);
         mgl_free(v->ia);
         v->ia = nia; v->cia = ia; v->ibuf = r;
+        v->ib_base = 0; v->ib_size = ia * 2 * VG_RING;
         v->dirty |= VG_D_IBUF;
     }
     if (ncmd) { mgl_free(v->cmd); v->cmd = ncmd; v->ccmd = cmd; }
     return 1;
+}
+
+/* After a block: the next arenas go after this one's in vbuf and ibuf, or,
+ * with no room left for a whole arena there, into new buffers (the old ones
+ * let go of after the next block's stream; virglrenderer keeps them for the
+ * draws that still read them). Never a PUT over what an earlier block's
+ * draws read: virglrenderer writes buffers unsynchronized. */
+static void vg_ring(GLcontext c, ULONG va_bytes, ULONG ia_bytes)
+{
+    struct mgl_vg *v = c->vg;
+    struct vg_res *r;
+    if (va_bytes && v->vbuf) {
+        v->vb_off += (va_bytes + 255) & ~255UL;
+        v->dirty |= VG_D_VBUF;
+        if (v->vb_off + v->cva > v->vb_size) {
+            r = vg_res_create(c, VG_TARGET_BUFFER, VG_FMT_R8_UNORM, VG_BIND_VERTEX_BUFFER, v->cva * VG_RING, 1, 1);
+            if (r) { vg_res_release(c, v->vbuf); v->vbuf = r; v->vb_size = v->cva * VG_RING; }
+            v->vb_off = 0;              /* no memory for a new one: over the old (as before) */
+        }
+    }
+    if (ia_bytes && v->ibuf) {
+        v->ib_base += (ia_bytes + 255) & ~255UL;
+        if (v->ib_base + v->cia * 2 > v->ib_size) {
+            r = vg_res_create(c, VG_TARGET_BUFFER, VG_FMT_R8_UNORM, VG_BIND_INDEX_BUFFER, v->cia * 2 * VG_RING, 1, 1);
+            if (r) { vg_res_release(c, v->ibuf); v->ibuf = r; v->ib_size = v->cia * 2 * VG_RING; }
+            v->ib_base = 0;
+        }
+    }
 }
 
 /* ---- sending ----------------------------------------------------------------------------------- */
@@ -106,18 +136,19 @@ void vg_send(GLcontext c, int present)
     struct mgl_vg *v = c->vg;
     ULONG *blk = v->blk, at = v->npre, a[14], submit_at = 0xFFFFFFFFUL, present_at = 0xFFFFFFFFUL, i;
     struct vg_res *r;
-    ULONG t0 = mgl_trace > 0 ? mgl_millis() : 0;
+    ULONG t0 = mgl_trace > 0 ? mgl_millis() : 0, sent_va, sent_ia;
     if (!at && !v->ncmd && !v->nva && !v->npost && !present) return;
     if (v->nva) {
         a[0] = v->vbuf->handle; a[1] = v->ctx_id; a[2] = 0; a[3] = 0; a[4] = 0;
-        a[5] = 0; a[6] = 0; a[7] = 0; a[8] = v->nva; a[9] = 1; a[10] = 1;
+        a[5] = v->vb_off; a[6] = 0; a[7] = 0; a[8] = v->nva; a[9] = 1; a[10] = 1;
         a[11] = ADDR(v->va); a[12] = v->nva; a[13] = VG_SW32;
         vg_blk_cmd(blk + at, ACV_PUT, 14, a);
         at += VG_BLK_WORDS(14);
         v->va_bytes += v->nva;
     }
     if (v->nia) {
-        a[0] = v->ibuf->handle; a[8] = v->nia * 2; a[11] = ADDR(v->ia); a[12] = v->nia * 2; a[13] = VG_SW16;
+        a[0] = v->ibuf->handle; a[1] = v->ctx_id; a[2] = 0; a[3] = 0; a[4] = 0;
+        a[5] = v->ib_base; a[6] = 0; a[7] = 0; a[8] = v->nia * 2; a[9] = 1; a[10] = 1; a[11] = ADDR(v->ia); a[12] = v->nia * 2; a[13] = VG_SW16;
         vg_blk_cmd(blk + at, ACV_PUT, 14, a);
         at += VG_BLK_WORDS(14);
     }
@@ -156,11 +187,15 @@ void vg_send(GLcontext c, int present)
         mgl_log("virgl block: %ld words, stream %ld, vertices %ld bytes, %ld indices, %ld draws: %ld ms",
                 (long)at, (long)v->ncmd, (long)v->nva, (long)v->nia, (long)v->draws, (long)(mgl_millis() - t0));
     while ((r = v->dead) != 0) { v->dead = r->next_dead; mgl_free(r); }
+    sent_va = v->nva; sent_ia = v->nia * 2;
     v->npre = 0; v->ncmd = 0; v->nva = 0; v->nia = 0; v->npost = 0;
     v->seq++;
     v->lk_valid = 0;
+    v->dirty |= VG_D_IBUF;              /* the index arena starts again at 0 */
     /* after the reset: a present that falls back reads the frame back */
     if (present) vg_os_presented(c, present_at != 0xFFFFFFFFUL ? blk : 0, present_at);
+    /* after that (a new buffer's create goes where this block was) */
+    vg_ring(c, sent_va, sent_ia);
 }
 
 /* Room for a draw: va_bytes in the vertex arena, ia_count indices and the

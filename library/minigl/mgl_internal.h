@@ -498,6 +498,10 @@ void mgl_vg_end(GLcontext c);
 void mgl_vg_draw_arrays(GLcontext c, GLenum mode, GLint first, GLsizei count);
 void mgl_vg_draw_elements(GLcontext c, GLenum mode, GLsizei count, GLenum type, const GLvoid *indices);
 void mgl_vg_lock(GLcontext c);      /* the locked range changed */
+void mgl_vg_tex_changed(GLcontext c, struct mgl_tex *t, int level, int x, int y, int w, int h);
+void mgl_vg_tex_before(GLcontext c, struct mgl_tex *t);
+void mgl_vg_tex_free(GLcontext c, struct mgl_tex *t);
+void mgl_vg_writeback(GLcontext c, const ULONG *argb);   /* mglLockBack's pixels back */
 
 /* ---- display lists (mgl_list.c) --------------------------------------------------------- */
 

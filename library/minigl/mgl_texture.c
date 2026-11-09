@@ -40,6 +40,7 @@ static void before_change(GLcontext c, struct mgl_tex *t)
 {
     if (c->body && t->used_in == c->batch_no) { mgl_pipe_flush(c); mgl_flush(c); }
     if (c->sent_tex == t) c->sent_tex = 0;
+    if (c->vg) mgl_vg_tex_before(c, t);
 }
 
 static void free_levels(GLcontext c, struct mgl_tex *t, int from)
@@ -54,6 +55,7 @@ static void free_levels(GLcontext c, struct mgl_tex *t, int from)
 
 static void free_tex(GLcontext c, struct mgl_tex *t)
 {
+    mgl_vg_tex_free(c, t);
     free_levels(c, t, 0);
     mgl_free(t->pal);
     t->pal = 0;
@@ -363,6 +365,7 @@ void mgl_tex_store(GLcontext c, struct mgl_tex *t, int level, int w, int h, GLen
         if (!t->index[level]) { mgl_error(c, GL_OUT_OF_MEMORY); return; }
     }
     t->generation++;
+    if (c->vg) mgl_vg_tex_changed(c, t, level, x0, y0, sub ? w : t->lw[level], sub ? h : t->lh[level]);
     if (!src) return;                           /* storage only */
     rowlen = c->unpack_row ? (ULONG)c->unpack_row : (ULONG)w;
     rowbytes = rowlen * (ULONG)pb;
@@ -522,6 +525,7 @@ void GLTexParameteri(GLcontext c, GLenum target, GLenum pname, GLint param)
     default: mgl_error(c, GL_INVALID_ENUM); return;
     }
     if (c->sent_tex == t) c->sent_tex = 0;
+    if (c->vg) mgl_vg_tex_before(c, t);
 }
 
 void GLTexEnvi(GLcontext c, GLenum target, GLenum pname, GLint param)

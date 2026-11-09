@@ -34,6 +34,9 @@ static struct {
 void GLUTInit(int *argcp, char **argv)
 {
     (void)argcp; (void)argv;
+    /* the library is resident: nothing of the last GLUT program stays */
+    glut.display = 0; glut.idle = 0; glut.keyboard = 0; glut.reshape = 0;
+    glut.redisplay = 0; glut.game_active = 0;
     glut.start = mgl_millis();
     if (!glut.w) glut.w = 300;
     if (!glut.h) glut.h = 300;
@@ -55,6 +58,7 @@ int GLUTCreateWindow(const char *title)
     /* the library makes the context current: a GLUT program writes no variable (spec 9.3) */
     c = mgl_create_window(glut.x, glut.y, glut.w > 0 ? glut.w : 300, glut.h > 0 ? glut.h : 300);
     if (!c) return 0;
+    glut.shown_w = glut.shown_h = -1;          /* the reshape function sees the new window */
 #ifndef MGL_HOST
     if (title && c->disp && MGLGetWindowHandle(c)) SetWindowTitles((struct Window *)MGLGetWindowHandle(c), (STRPTR)title, (STRPTR)-1);
 #else

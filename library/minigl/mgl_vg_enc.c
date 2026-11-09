@@ -105,19 +105,28 @@ void vg_set_vertex_buffer(GLcontext c, ULONG stride)
     c->vg->stride = stride;
 }
 
-void vg_set_index_buffer(GLcontext c)
+/* virglrenderer draws indexed from the index buffer's offset (its DRAW_VBO
+ * start is not read for indexed draws, as Mesa's virgl folds it in here):
+ * set again whenever a draw starts elsewhere in the index arena. */
+void vg_set_index_buffer(GLcontext c, ULONG offset)
 {
     ULONG *p = vg_cmd(c, 4);
     if (!p) return;
     VG_W(p, VG_CMD0(VG_CCMD_SET_INDEX_BUFFER, 0, 3));
     VG_W(p, c->vg->ibuf->handle);
     VG_W(p, 2);
-    VG_W(p, 0);
+    VG_W(p, offset);
+    c->vg->ib_off = offset;
 }
 
 void vg_draw(GLcontext c, ULONG prim, ULONG start, ULONG count, int indexed, LONG bias)
 {
-    ULONG *p = vg_cmd(c, 13);
+    ULONG *p;
+    if (indexed) {
+        if (start * 2 != c->vg->ib_off || (c->vg->dirty & VG_D_IBUF)) { vg_set_index_buffer(c, start * 2); c->vg->dirty &= ~VG_D_IBUF; }
+        start = 0;
+    }
+    p = vg_cmd(c, 13);
     if (!p) return;
     VG_W(p, VG_CMD0(VG_CCMD_DRAW_VBO, 0, 12));
     VG_W(p, start);
@@ -133,6 +142,7 @@ void vg_draw(GLcontext c, ULONG prim, ULONG start, ULONG count, int indexed, LON
     VG_W(p, 0xFFFFFFFFUL);              /* max index */
     VG_W(p, 0);
     c->vg->draws++;
+    if (mgl_trace > 2) mgl_log("draw prim %ld start %ld count %ld idx %ld bias %ld (nva %ld nia %ld ncmd %ld)", (long)prim, (long)start, (long)count, (long)indexed, (long)bias, (long)c->vg->nva, (long)c->vg->nia, (long)c->vg->ncmd);
 }
 
 void vg_constants(GLcontext c, int shader, const float *v, int vec4s)
@@ -140,6 +150,7 @@ void vg_constants(GLcontext c, int shader, const float *v, int vec4s)
     ULONG n = (ULONG)vec4s * 4, *p = vg_cmd(c, n + 3), i;
     const ULONG *src = (const ULONG *)v;
     if (!p) return;
+    if (mgl_trace > 2) mgl_log("consts %ld: %ld vec4, mvp row0 %ld %ld %ld %ld", (long)shader, (long)vec4s, (long)(v[0]*1000), (long)(v[1]*1000), (long)(v[2]*1000), (long)(v[3]*1000));
     VG_W(p, VG_CMD0(VG_CCMD_SET_CONSTANT_BUFFER, 0, n + 2));
     VG_W(p, (ULONG)shader);
     VG_W(p, 0);

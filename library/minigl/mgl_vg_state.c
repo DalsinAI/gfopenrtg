@@ -356,6 +356,16 @@ static void viewport_scissor(GLcontext c)
     }
 }
 
+/* Unit u's coordinate generation as a key: S and T both on, one mode. */
+int vg_gen_of(GLcontext c, int u)
+{
+    ULONG bits = u ? (EN_GENS1 | EN_GENT1) : (EN_GENS0 | EN_GENT0);
+    GLenum m;
+    if ((c->en & bits) != bits) return 0;
+    m = c->gen_mode[u][0];
+    return m == GL_OBJECT_LINEAR ? 1 : m == GL_EYE_LINEAR ? 2 : m == GL_SPHERE_MAP ? 3 : 0;
+}
+
 /* ---- a draw's state ------------------------------------------------------------------------------- */
 
 void vg_prepare(GLcontext c, struct vg_layout *lay, int colswz, int flat_first)
@@ -394,6 +404,35 @@ void vg_prepare(GLcontext c, struct vg_layout *lay, int colswz, int flat_first)
         vk |= VS_FOG;
         fk |= FS_FOG_SET(c->fog_mode == GL_EXP ? 2 : c->fog_mode == GL_EXP2 ? 3 : 1);
     }
+    /* the texture units (OpenGL 1.1 3.7.5, ARB_multitexture) */
+    {
+        ULONG views[MGL_TEX_UNITS], samps[MGL_TEX_UNITS];
+        int u, vch = 0, sch = 0;
+        for (u = 0; u < MGL_TEX_UNITS; u++) {
+            struct mgl_tex *t = mgl_tex_unit(c, u);
+            views[u] = samps[u] = 0;
+            if (t && (views[u] = vg_tex_view(c, t)) != 0) {
+                GLenum m = c->env_mode[u];
+                int e = m == GL_REPLACE ? FS_ENV_REPLACE : m == GL_DECAL ? FS_ENV_DECAL : m == GL_BLEND ? FS_ENV_BLEND
+                      : m == GL_ADD ? FS_ENV_ADD : FS_ENV_MODULATE;
+                int rgb = t->base != OGPU_TEXBASE_ALPHA, a = t->base == OGPU_TEXBASE_RGBA || t->base == OGPU_TEXBASE_ALPHA
+                        || t->base == OGPU_TEXBASE_LUM_ALPHA || t->base == OGPU_TEXBASE_INTENSITY;
+                samps[u] = vg_tex_sampler(c, t);
+                fk |= u ? FS_ENV1_SET(e) | (rgb ? FS_RGB1 : 0) | (a ? FS_A1 : 0) : FS_ENV0_SET(e) | (rgb ? FS_RGB0 : 0) | (a ? FS_A0 : 0);
+                vk |= u ? VS_TC1 : VS_TC0;
+                if ((lay->key >> ((VG_A_TC0 + u) * 4)) & 15) vk |= u ? VS_TC1_ATTR : VS_TC0_ATTR;
+                if (!c->tex_identity[u]) vk |= u ? VS_TC1_MAT : VS_TC0_MAT;
+                vk |= u ? VS_GEN1_SET(vg_gen_of(c, 1)) : VS_GEN0_SET(vg_gen_of(c, 0));
+            }
+            if (views[u] != v->views[u]) vch = 1;
+            if (samps[u] != v->samps[u]) sch = 1;
+        }
+        if (VS_GEN0(vk) == 3 || VS_GEN1(vk) == 3) {
+            if ((lay->key >> (VG_A_NORMAL * 4)) & 15) vk |= VS_NRM_ATTR;
+        }
+        if (vch) { vg_sampler_views(c, MGL_TEX_UNITS, views); for (u = 0; u < MGL_TEX_UNITS; u++) v->views[u] = views[u]; }
+        if (sch) { vg_sampler_states(c, MGL_TEX_UNITS, samps); for (u = 0; u < MGL_TEX_UNITS; u++) v->samps[u] = samps[u]; }
+    }
     h = shader(c, VG_SHADER_VERTEX, vk, spots);
     if (h != v->b_vs) { vg_bind_shader(c, h, VG_SHADER_VERTEX); v->b_vs = h; }
     h = shader(c, VG_SHADER_FRAGMENT, fk, 0);
@@ -401,7 +440,6 @@ void vg_prepare(GLcontext c, struct vg_layout *lay, int colswz, int flat_first)
     /* the layout and the buffers */
     if (lay->ve != v->b_ve) { vg_bind(c, VG_OBJ_VERTEX_ELEMENTS, lay->ve); v->b_ve = lay->ve; }
     if (lay->stride != v->stride || (v->dirty & VG_D_VBUF)) { vg_set_vertex_buffer(c, lay->stride); v->dirty &= ~VG_D_VBUF; }
-    if (v->dirty & VG_D_IBUF) { vg_set_index_buffer(c); v->dirty &= ~VG_D_IBUF; }
     vs_constants(c, vk, lights, nl);
     fs_constants(c);
 }

@@ -157,6 +157,8 @@ struct vg_tex {
     struct vg_res *res;                 /* the current version */
     ULONG gen;                          /* the texels' generation it holds */
     ULONG used;                         /* the stream sequence that last drew with it */
+    ULONG put;                          /* ... that has a PUT of it waiting */
+    ULONG boxgen;                       /* the generation the dirty boxes describe */
     ULONG view;                         /* its sampler view (object handle), 0 none */
     int w, h, levels;
     int dx0[MGL_MAX_LEVELS], dy0[MGL_MAX_LEVELS], dx1[MGL_MAX_LEVELS], dy1[MGL_MAX_LEVELS];   /* dirty, per level */
@@ -244,6 +246,7 @@ struct mgl_vg {
     ULONG dirty;
     ULONG b_blend, b_dsa, b_rs, b_vs, b_fs, b_ve;
     ULONG stride;                       /* the vertex buffer's, as set */
+    ULONG ib_off;                       /* the index buffer's offset, as set */
     struct vg_cache blend, dsa, rs, samp;
     ULONG vs_key[VG_SHADERS * 2], fs_key[VG_SHADERS * 2];   /* key, spot lights */
     char *text;                         /* a shader's text, being made */
@@ -279,8 +282,11 @@ struct mgl_vg {
     struct vg_layout *lk_lay;
     int lk_valid;
 
+    /* sampler states, by key */
+    ULONG samp_key[32][2], samp_h[32];
+    int nsamp;
     /* statistics (ENV:MiniGL/Trace) */
-    ULONG draws, objects, frames, blocks, words, va_bytes, puts;
+    ULONG draws, objects, frames, blocks, words, va_bytes, puts, renames;
 };
 
 /* ---- the encoder (mgl_vg_enc.c) --------------------------------------------------------------- */
@@ -295,7 +301,7 @@ void vg_set_scissor(GLcontext c, int x0, int y0, int x1, int y1);
 void vg_set_framebuffer(GLcontext c);
 void vg_clear(GLcontext c, ULONG buffers, const float *rgba, float depth);
 void vg_set_vertex_buffer(GLcontext c, ULONG stride);
-void vg_set_index_buffer(GLcontext c);
+void vg_set_index_buffer(GLcontext c, ULONG offset);
 void vg_draw(GLcontext c, ULONG prim, ULONG start, ULONG count, int indexed, LONG bias);
 void vg_constants(GLcontext c, int shader, const float *v, int vec4s);
 void vg_shader(GLcontext c, ULONG handle, int type, const char *text, ULONG len);
@@ -453,5 +459,9 @@ ULONG vg_tex_view(GLcontext c, struct mgl_tex *t);      /* its sampler view, the
 ULONG vg_tex_sampler(GLcontext c, struct mgl_tex *t);   /* a sampler state for its parameters */
 void mgl_vg_tex_changed(GLcontext c, struct mgl_tex *t, int level, int x, int y, int w, int h);
 void mgl_vg_tex_free(GLcontext c, struct mgl_tex *t);
+void mgl_vg_tex_before(GLcontext c, struct mgl_tex *t);
+void mgl_vg_writeback(GLcontext c, const ULONG *argb);
+/* A texgen mode's key (VS_GEN): 0 none, 1 object, 2 eye, 3 sphere. */
+int vg_gen_of(GLcontext c, int unit);
 
 #endif

@@ -40,7 +40,7 @@ WARN="-Wall -Wextra -Werror -Wno-unused-parameter"
 SOFT="-m68040 -specs=$ROOT/tools/m68k-soft-m68040.specs"
 FPU="-m68040 -m68881"
 FLAGS="-mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -ffixed-a4 -fno-builtin $WARN -I$ROOT/include ${MGL_CFLAGS:-}"
-HOT="mgl_math mgl_state mgl_matrix mgl_vertex mgl_pipe mgl_texture mgl_out mgl_list mgl_glu mgl_glut mgl_display mgl_choose mgl_table mgl_vg_enc mgl_vg_frame mgl_vg_state mgl_vg_shader mgl_vg_draw mgl_vg_os3"
+HOT="mgl_math mgl_state mgl_matrix mgl_vertex mgl_pipe mgl_texture mgl_out mgl_list mgl_glu mgl_glut mgl_display mgl_choose mgl_table mgl_vg_enc mgl_vg_frame mgl_vg_state mgl_vg_shader mgl_vg_draw mgl_vg_tex mgl_vg_os3"
 # $1 the half (fpu or soft), $2 its symbol prefix, $3 its CPU flags, the rest
 # the archives it links (its libgcc, and soft, libnix's libm): OBJ/<half>/ren,
 # its objects and those archives with every global they define renamed, so

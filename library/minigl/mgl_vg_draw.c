@@ -123,14 +123,20 @@ static void emit(GLcontext c, GLenum mode, ULONG first, ULONG n, struct vg_layou
 
 /* ---- glBegin / glEnd ------------------------------------------------------------------------------- */
 
+/* A sphere map needs the normal even unlit. */
+static int needs_normal(GLcontext c)
+{
+    return (mgl_tex_unit(c, 0) && vg_gen_of(c, 0) == 3) || (mgl_tex_unit(c, 1) && vg_gen_of(c, 1) == 3);
+}
+
 static struct vg_layout *im_layout(GLcontext c)
 {
     UBYTE f[VG_ATTRS];
     f[VG_A_POS] = VG_AF_F4;
     f[VG_A_COLOR] = VG_AF_UB4;
-    f[VG_A_NORMAL] = (c->en & EN_LIGHTING) ? VG_AF_F3 : VG_AF_NONE;
-    f[VG_A_TC0] = VG_AF_NONE;
-    f[VG_A_TC1] = VG_AF_NONE;
+    f[VG_A_NORMAL] = (c->en & EN_LIGHTING) || needs_normal(c) ? VG_AF_F3 : VG_AF_NONE;
+    f[VG_A_TC0] = mgl_tex_unit(c, 0) ? VG_AF_F4 : VG_AF_NONE;
+    f[VG_A_TC1] = mgl_tex_unit(c, 1) ? VG_AF_F4 : VG_AF_NONE;
     return vg_layout_of(c, f);
 }
 
@@ -202,6 +208,15 @@ void mgl_vg_vertex(GLcontext c, float x, float y, float z, float w)
         UBYTE *q = p + l->off[VG_A_NORMAL];
         VG_A32(q, vg_fbits(c->normal[0])); VG_A32(q + 4, vg_fbits(c->normal[1])); VG_A32(q + 8, vg_fbits(c->normal[2]));
     }
+    {
+        int u;
+        for (u = 0; u < MGL_TEX_UNITS; u++)
+            if ((l->key >> ((VG_A_TC0 + u) * 4)) & 15) {
+                UBYTE *q = p + l->off[VG_A_TC0 + u];
+                VG_A32(q, vg_fbits(c->tc[u][0])); VG_A32(q + 4, vg_fbits(c->tc[u][1]));
+                VG_A32(q + 8, vg_fbits(c->tc[u][2])); VG_A32(q + 12, vg_fbits(c->tc[u][3]));
+            }
+    }
     v->nva += l->stride;
     v->im_n++;
 }
@@ -260,9 +275,9 @@ static struct vg_layout *array_layout(GLcontext c, int *swz)
     f[VG_A_POS] = (UBYTE)(VG_AF_F1 + (c->va.size - 1));
     f[VG_A_COLOR] = (c->client & CL_COLOR) ? VG_AF_UB4 : VG_AF_NONE;
     if (c->client & CL_COLOR) *swz = c->ca.type == MGL_UBYTE_ARGB ? 1 : c->ca.type == MGL_UBYTE_BGRA ? 2 : 0;
-    f[VG_A_NORMAL] = (c->en & EN_LIGHTING) && (c->client & CL_NORMAL) ? VG_AF_F3 : VG_AF_NONE;
-    f[VG_A_TC0] = VG_AF_NONE;
-    f[VG_A_TC1] = VG_AF_NONE;
+    f[VG_A_NORMAL] = ((c->en & EN_LIGHTING) || needs_normal(c)) && (c->client & CL_NORMAL) ? VG_AF_F3 : VG_AF_NONE;
+    f[VG_A_TC0] = mgl_tex_unit(c, 0) && (c->client & CL_TEX0) ? (UBYTE)(VG_AF_F1 + (c->ta[0].size - 1)) : VG_AF_NONE;
+    f[VG_A_TC1] = mgl_tex_unit(c, 1) && (c->client & CL_TEX1) ? (UBYTE)(VG_AF_F1 + (c->ta[1].size - 1)) : VG_AF_NONE;
     return vg_layout_of(c, f);
 }
 
@@ -272,7 +287,13 @@ static void copy_range(GLcontext c, struct vg_layout *l, ULONG first, ULONG n, U
     ULONG vs = stride_of(&c->va), cs = stride_of(&c->ca), ns = stride_of(&c->na), i;
     const UBYTE *vp = c->va.ptr + first * vs, *cp = c->ca.ptr + first * cs, *np = c->na.ptr + first * ns;
     int psize = c->va.size, k, col = (int)((l->key >> (VG_A_COLOR * 4)) & 15), nrm = (int)((l->key >> (VG_A_NORMAL * 4)) & 15);
+    int u, tcn[MGL_TEX_UNITS];
+    ULONG ts[MGL_TEX_UNITS];
     int ctype = c->ca.type, raw = col && (ctype == GL_UNSIGNED_BYTE || ctype == MGL_UBYTE_ARGB || ctype == MGL_UBYTE_BGRA) && c->ca.size == 4;
+    for (u = 0; u < MGL_TEX_UNITS; u++) {
+        tcn[u] = (int)((l->key >> ((VG_A_TC0 + u) * 4)) & 15);
+        ts[u] = stride_of(&c->ta[u]);
+    }
     for (i = 0; i < n; i++, dst += l->stride, vp += vs) {
         if (c->va.type == GL_FLOAT) for (k = 0; k < psize; k++) VG_A32(dst + k * 4, ((const ULONG *)vp)[k]);
         else for (k = 0; k < psize; k++) VG_A32(dst + k * 4, vg_fbits(comp(vp, c->va.type, k, 0)));
@@ -292,6 +313,13 @@ static void copy_range(GLcontext c, struct vg_layout *l, ULONG first, ULONG n, U
             for (k = 0; k < 3; k++) VG_A32(q + k * 4, vg_fbits(comp(np, c->na.type, k, 1)));
             np += ns;
         }
+        for (u = 0; u < MGL_TEX_UNITS; u++)
+            if (tcn[u]) {
+                const UBYTE *tp = c->ta[u].ptr + (first + i) * ts[u];
+                UBYTE *q = dst + l->off[VG_A_TC0 + u];
+                if (c->ta[u].type == GL_FLOAT) for (k = 0; k < tcn[u]; k++) VG_A32(q + k * 4, ((const ULONG *)tp)[k]);
+                else for (k = 0; k < tcn[u]; k++) VG_A32(q + k * 4, vg_fbits(comp(tp, c->ta[u].type, k, 0)));
+            }
     }
 }
 

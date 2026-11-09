@@ -159,6 +159,7 @@ void vg_send(GLcontext c, int present)
     v->npre = 0; v->ncmd = 0; v->nva = 0; v->nia = 0; v->npost = 0;
     v->seq++;
     v->lk_valid = 0;
+    v->dirty |= VG_D_IBUF;              /* the index arena starts again at 0 */
     /* after the reset: a present that falls back reads the frame back */
     if (present) vg_os_presented(c, present_at != 0xFFFFFFFFUL ? blk : 0, present_at);
 }

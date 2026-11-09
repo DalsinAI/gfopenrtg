@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 #include <sys/uio.h>
 #if defined(__linux__)
 #include <errno.h>
@@ -393,6 +394,118 @@ static int av_has_lib(const char *a, const char *b)
     return h != NULL;
 }
 
+/* Desktop GL, else GLES, as acvirgl_create has always done. 1 when a
+ * context exists. */
+static int av_start(struct acvirgl *v, const char *gles, char *err, int errlen)
+{
+    if ((!gles || strcmp(gles, "1")) && av_has_lib("libOpenGL.so.0", "libGL.so.1")
+        && !v->vr.init(v, VR_USE_EGL | VR_USE_SURFACELESS, &v->cb)) {
+        v->api = "GL";
+        return 1;
+    }
+    if ((!gles || strcmp(gles, "0")) && av_has_lib("libGLESv2.so.2", NULL)
+        && !v->vr.init(v, VR_USE_EGL | VR_USE_SURFACELESS | VR_USE_GLES, &v->cb)) {
+        v->api = "GLES";
+        return 1;
+    }
+    snprintf(err, (size_t)errlen, "virgl_renderer_init failed (no EGL with surfaceless %s contexts, or no libOpenGL/libGLESv2?)",
+             !gles ? "GL or GLES" : !strcmp(gles, "1") ? "GLES" : "GL");
+    return 0;
+}
+
+/* lavapipe's Vulkan ICD, where Mesa installs it. NULL when this host has none. */
+static const char *av_lvp_icd(void)
+{
+    static const char *paths[] = {
+        "/usr/share/vulkan/icd.d/lvp_icd.x86_64.json",
+        "/usr/share/vulkan/icd.d/lvp_icd.aarch64.json",
+        "/usr/share/vulkan/icd.d/lvp_icd.json",
+        NULL
+    };
+    int i;
+    for (i = 0; paths[i]; i++)
+        if (access(paths[i], R_OK) == 0) return paths[i];
+    return NULL;
+}
+
+/* A fresh dlopen each time, so Mesa reads the driver name at load. */
+static int av_bind(struct acvirgl *v, const char *path, char *err, int errlen);
+
+/* One environment variable as it was, so a software try can put it back.
+ * Mesa reads these when virglrenderer is opened. Left set, one failed GPU
+ * start would pin the rest of this process to software GL, or to lavapipe
+ * alone for Vulkan. */
+struct av_saved {
+    const char *name;
+    char *old;
+    int set;
+};
+
+static int av_save(struct av_saved *s, const char *name)
+{
+    const char *v = getenv(name);
+    s->name = name;
+    s->set = v != NULL;
+    s->old = v ? strdup(v) : NULL;
+    return !v || s->old != NULL;
+}
+
+static void av_restore(struct av_saved *s)
+{
+    if (s->set && s->old) setenv(s->name, s->old, 1);
+    else unsetenv(s->name);
+    free(s->old);
+    s->old = NULL;
+    s->set = 0;
+}
+
+/* The GPU's own driver did not start. Try llvmpipe, then zink on lavapipe.
+ * The four driver variables are what they were on the way in, whether or
+ * not a context was made. */
+static int av_software(struct acvirgl *v, const char *path, const char *gles, char *err, int errlen)
+{
+    char first[320];
+    const char *icd;
+    struct av_saved saved[4];
+    static const char *names[4] = {
+        "MESA_LOADER_DRIVER_OVERRIDE",
+        "GALLIUM_DRIVER",
+        "LIBGL_ALWAYS_SOFTWARE",
+        "VK_DRIVER_FILES"
+    };
+    int i, n = 0, started = 0;
+
+    snprintf(first, sizeof first, "%s", err[0] ? err : "the host GPU did not start");
+    for (; n < 4; n++)
+        if (!av_save(&saved[n], names[n])) goto out;
+    setenv("MESA_LOADER_DRIVER_OVERRIDE", "llvmpipe", 1);
+    setenv("GALLIUM_DRIVER", "llvmpipe", 1);
+    setenv("LIBGL_ALWAYS_SOFTWARE", "1", 1);
+    if (!av_bind(v, path, err, errlen)) goto out;
+    if (av_start(v, gles, err, errlen)) {
+        fprintf(stderr, "ACVIRGL: the host GPU did not start (%s); drawing with llvmpipe\n", first);
+        started = 1;
+        goto out;
+    }
+    unsetenv("LIBGL_ALWAYS_SOFTWARE");
+    unsetenv("GALLIUM_DRIVER");
+    setenv("MESA_LOADER_DRIVER_OVERRIDE", "zink", 1);
+    icd = av_lvp_icd();
+    if (icd) setenv("VK_DRIVER_FILES", icd, 1);
+    if (!av_bind(v, path, err, errlen)) goto out;
+    if (av_start(v, gles, err, errlen)) {
+        fprintf(stderr, "ACVIRGL: llvmpipe did not start; drawing with zink on %s\n",
+                icd ? "lavapipe" : "whatever Vulkan device is listed");
+        started = 1;
+        goto out;
+    }
+    snprintf(err, (size_t)errlen, "%s; llvmpipe and lavapipe did not start either", first);
+out:
+    for (i = 0; i < n; i++) av_restore(&saved[i]);
+    if (!started && n < 4) snprintf(err, (size_t)errlen, "no memory");
+    return started;
+}
+
 /* The host's renderer as virglrenderer tells the guest: capset 2 (struct
  * virgl_caps_v2 in virglrenderer's virgl_hw.h, an ABI shared with Mesa)
  * carries the host GL_RENDERER at byte 696, 64 bytes, e.g. "V3D 7.1". */
@@ -407,14 +520,15 @@ static void av_renderer(struct acvirgl *v)
     memcpy(v->renderer, v->tmp + AV_CAPS_RENDERER, sizeof v->renderer - 1);
 }
 
-struct acvirgl *acvirgl_create(const char *lib, char *err, int errlen)
+static int av_bind(struct acvirgl *v, const char *path, char *err, int errlen)
 {
-    struct acvirgl *v = calloc(1, sizeof *v);
-    const char *path = lib ? lib : getenv("ACVIRGL_LIB"), *drv, *gles;
-    if (!v) { snprintf(err, (size_t)errlen, "no memory"); return NULL; }
-    if (!path) { snprintf(err, (size_t)errlen, "no virglrenderer (ACVIRGL_LIB not set)"); free(v); return NULL; }
-    if (!(v->dl = dlopen(path, RTLD_NOW | RTLD_LOCAL))) { snprintf(err, (size_t)errlen, "%s", dlerror()); free(v); return NULL; }
-#define SYM(field, name) if (!(*(void **)&v->vr.field = dlsym(v->dl, name))) { snprintf(err, (size_t)errlen, "%s: no %s", path, name); goto fail; }
+    if (v->dl) { dlclose(v->dl); v->dl = NULL; }
+    memset(&v->vr, 0, sizeof v->vr);
+    if (!(v->dl = dlopen(path, RTLD_NOW | RTLD_LOCAL))) {
+        snprintf(err, (size_t)errlen, "%s", dlerror());
+        return 0;
+    }
+#define SYM(field, name) if (!(*(void **)&v->vr.field = dlsym(v->dl, name))) { snprintf(err, (size_t)errlen, "%s: no %s", path, name); dlclose(v->dl); v->dl = NULL; return 0; }
     SYM(init, "virgl_renderer_init")
     SYM(cleanup, "virgl_renderer_cleanup")
     SYM(get_cap_set, "virgl_renderer_get_cap_set")
@@ -441,36 +555,38 @@ struct acvirgl *acvirgl_create(const char *lib, char *err, int errlen)
     *(void **)&v->vr.context_create_fence = dlsym(v->dl, "virgl_renderer_context_create_fence");
     *(void **)&v->vr.poll = dlsym(v->dl, "virgl_renderer_poll");
     *(void **)&v->vr.force_ctx_0 = dlsym(v->dl, "virgl_renderer_force_ctx_0");
-    /* Context 0 before every command, as QEMU does. Around context creation
-     * only (#198) cured the contexts lost with "glBindVertexArray(non-gen
-     * name)", but some still died with GL_INVALID_FRAMEBUFFER_OPERATION
-     * (1286) at a draw: in t4-gl1286, 4 rounds of three ogles3 demos
-     * started staggered a run, 6 contexts in 6 runs (2 of the runs with the
-     * ring on the C core) against 0 in 6 runs with this. Some other vrend
-     * path leaves its record of the current context and the GL context
-     * really current apart; QEMU never meets it because it forces context 0
-     * before everything. It costs two eglMakeCurrent calls a command, and
-     * three demos at VSYNC kept 49 fps. AC_VIRGL_CTX0=create goes back to
-     * #198's way, for comparing. */
-    { const char *c0 = getenv("AC_VIRGL_CTX0"); v->ctx0_every = !(c0 && !strcmp(c0, "create")) && v->vr.force_ctx_0; }
+    /* Context 0 before every command, as QEMU does. AC_VIRGL_CTX0=create
+     * goes back to forcing it only around context creation. */
+    {
+        const char *c0 = getenv("AC_VIRGL_CTX0");
+        v->ctx0_every = !(c0 && !strcmp(c0, "create")) && v->vr.force_ctx_0;
+    }
     v->cb.version = v->vr.context_create_fence && v->vr.poll ? 3 : 1;
     v->cb.write_fence = av_no_fence;
     v->cb.write_context_fence = av_context_fence;
+    return 1;
+}
+
+struct acvirgl *acvirgl_create(const char *lib, char *err, int errlen)
+{
+    struct acvirgl *v = calloc(1, sizeof *v);
+    const char *path = lib ? lib : getenv("ACVIRGL_LIB"), *drv, *gles, *soft;
+    if (!v) { snprintf(err, (size_t)errlen, "no memory"); return NULL; }
+    if (!path) { snprintf(err, (size_t)errlen, "no virglrenderer (ACVIRGL_LIB not set)"); free(v); return NULL; }
+    if (!av_bind(v, path, err, errlen)) { free(v); return NULL; }
     /* AC_VIRGL_DRIVER names Mesa's driver for the context, e.g. zink (GL
-     * over the host's Vulkan, as on a Pi 5's V3DV); unset: the GPU's own. */
-    if ((drv = getenv("AC_VIRGL_DRIVER")) && *drv) setenv("MESA_LOADER_DRIVER_OVERRIDE", drv, 1);
+     * over the host's Vulkan, as on a Pi 5's V3DV); unset: the GPU's own,
+     * and when that does not start, llvmpipe then lavapipe. */
+    drv = getenv("AC_VIRGL_DRIVER");
+    if (drv && *drv) setenv("MESA_LOADER_DRIVER_OVERRIDE", drv, 1);
     /* Desktop GL, else GLES: a Pi's V3D gives GLES 3.1 where its desktop GL
      * may not make the context virglrenderer asks for. AC_VIRGL_GLES=1
      * asks for GLES only, AC_VIRGL_GLES=0 for desktop GL only. */
     gles = getenv("AC_VIRGL_GLES");
-    if ((!gles || strcmp(gles, "1")) && av_has_lib("libOpenGL.so.0", "libGL.so.1")
-        && !v->vr.init(v, VR_USE_EGL | VR_USE_SURFACELESS, &v->cb)) v->api = "GL";
-    else if ((!gles || strcmp(gles, "0")) && av_has_lib("libGLESv2.so.2", NULL)
-             && !v->vr.init(v, VR_USE_EGL | VR_USE_SURFACELESS | VR_USE_GLES, &v->cb)) v->api = "GLES";
-    else {
-        snprintf(err, (size_t)errlen, "virgl_renderer_init failed (no EGL with surfaceless %s contexts, or no libOpenGL/libGLESv2?)",
-                 !gles ? "GL or GLES" : !strcmp(gles, "1") ? "GLES" : "GL");
-        goto fail;
+    soft = getenv("AC_VIRGL_SOFTWARE");
+    if (!av_start(v, gles, err, errlen)) {
+        if ((drv && *drv) || (soft && !strcmp(soft, "0")) || !av_software(v, path, gles, err, errlen))
+            goto fail;
     }
     av_renderer(v);
     {
@@ -492,7 +608,7 @@ struct acvirgl *acvirgl_create(const char *lib, char *err, int errlen)
     }
     return v;
 fail:
-    dlclose(v->dl);
+    if (v->dl) dlclose(v->dl);
     free(v);
     return NULL;
 }
@@ -2107,3 +2223,55 @@ int acvirgl_run(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), 
     }
     return OGPU_OK;
 }
+
+#ifdef AV_ENV_TEST
+/* cc -DAV_ENV_TEST -o av_env_test host/virgl/acvirgl.c -ldl
+ * A stub libvirglrenderer whose init fails, and a stub libGL.so.1, on
+ * LD_LIBRARY_PATH. The software try must see llvmpipe and then zink, and
+ * the process's own driver variables must be what they were afterwards. */
+static int av_env_is(const char *name, const char *want)
+{
+    const char *v = getenv(name);
+    if (!want) return v == NULL;
+    return v && !strcmp(v, want);
+}
+
+int main(void)
+{
+    struct acvirgl *v = calloc(1, sizeof *v);
+    char err[320];
+    int bad = 0;
+    if (!v) return 1;
+    setenv("MESA_LOADER_DRIVER_OVERRIDE", "iris", 1);
+    unsetenv("GALLIUM_DRIVER");
+    setenv("LIBGL_ALWAYS_SOFTWARE", "0", 1);
+    setenv("VK_DRIVER_FILES", "/keep/icd.json", 1);
+    snprintf(err, sizeof err, "the host GPU did not start");
+    if (av_software(v, "libvirglrenderer.so.1", NULL, err, (int)sizeof err)) {
+        fprintf(stderr, "the stub context was not supposed to start\n");
+        bad = 1;
+    }
+    if (!av_env_is("MESA_LOADER_DRIVER_OVERRIDE", "iris")) {
+        fprintf(stderr, "MESA_LOADER_DRIVER_OVERRIDE left as %s\n",
+                getenv("MESA_LOADER_DRIVER_OVERRIDE") ? getenv("MESA_LOADER_DRIVER_OVERRIDE") : "(unset)");
+        bad = 1;
+    }
+    if (!av_env_is("GALLIUM_DRIVER", NULL)) {
+        fprintf(stderr, "GALLIUM_DRIVER left as %s\n", getenv("GALLIUM_DRIVER"));
+        bad = 1;
+    }
+    if (!av_env_is("LIBGL_ALWAYS_SOFTWARE", "0")) {
+        fprintf(stderr, "LIBGL_ALWAYS_SOFTWARE left as %s\n",
+                getenv("LIBGL_ALWAYS_SOFTWARE") ? getenv("LIBGL_ALWAYS_SOFTWARE") : "(unset)");
+        bad = 1;
+    }
+    if (!av_env_is("VK_DRIVER_FILES", "/keep/icd.json")) {
+        fprintf(stderr, "VK_DRIVER_FILES left as %s\n",
+                getenv("VK_DRIVER_FILES") ? getenv("VK_DRIVER_FILES") : "(unset)");
+        bad = 1;
+    }
+    free(v);
+    if (!bad) printf("software try put the driver variables back\n");
+    return bad;
+}
+#endif

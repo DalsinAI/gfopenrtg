@@ -91,6 +91,7 @@ void GLBegin(GLcontext c, GLenum mode)
     c->prim = mode;
     c->nv = 0;
     c->prim_count = 0;
+    if (c->vg) mgl_vg_begin(c);
 }
 
 /* The buffer is full in the middle of a primitive: draw what is complete
@@ -125,6 +126,7 @@ void mgl_vertex(GLcontext c, float x, float y, float z, float w)
 {
     float o[4];
     if (c->prim == PRIM_NONE) return;
+    if (c->vg) { mgl_vg_vertex(c, x, y, z, w); return; }
     o[0] = x; o[1] = y; o[2] = z; o[3] = w;
     if (c->nv >= MGL_VB) part(c);
     if (c->prim_count == 0) c->strip_odd = 0;
@@ -138,6 +140,7 @@ void mgl_end_prim(GLcontext c)
     GLenum p = c->prim;
     int whole = c->prim_count == c->nv;
     if (p == PRIM_NONE) return;
+    if (c->vg) { mgl_vg_end(c); c->prim = PRIM_NONE; c->nv = 0; return; }
     if (c->nv) {
         if (p == GL_POLYGON && !whole) assemble(c, GL_TRIANGLE_FAN, c->vb, 0, (ULONG)c->nv, 0);
         else assemble(c, p, c->vb, 0, (ULONG)c->nv, whole ? 0 : c->strip_odd);
@@ -360,12 +363,14 @@ void GLLockArrays(GLcontext c, GLuint first, GLsizei count)
     if (count < 0) { mgl_error(c, GL_INVALID_VALUE); return; }
     c->lock_first = (GLint)first;
     c->lock_count = count;
+    if (c->vg) mgl_vg_lock(c);
 }
 
 void GLUnlockArrays(GLcontext c)
 {
     if (!c) return;
     c->lock_count = 0;
+    if (c->vg) mgl_vg_lock(c);
 }
 
 /* An array element little-endian (MGL_ARRAY_TRANSFORMATIONS off, spec 9.1):
@@ -490,6 +495,7 @@ void GLDrawArrays(GLcontext c, GLenum mode, GLint first, GLsizei count)
     if (c->prim != PRIM_NONE) { mgl_error(c, GL_INVALID_OPERATION); return; }
     if (!(c->client & CL_VERTEX) || !count) return;
     if (c->compiling) { draw_immediate(c, mode, 0, (ULONG)first, (ULONG)count); return; }
+    if (c->vg) { mgl_vg_draw_arrays(c, mode, first, count); return; }
     while (count > 0) {
         /* in pieces of the cache's size, keeping what strips and fans need */
         ULONG n = (ULONG)count > 8192 ? 8192 : (ULONG)count;
@@ -525,6 +531,7 @@ void GLDrawElements(GLcontext c, GLenum mode, GLsizei count, GLenum type, const 
     if (type != GL_UNSIGNED_BYTE && type != GL_UNSIGNED_SHORT && type != GL_UNSIGNED_INT) { mgl_error(c, GL_INVALID_ENUM); return; }
     if (c->prim != PRIM_NONE) { mgl_error(c, GL_INVALID_OPERATION); return; }
     if (!(c->client & CL_VERTEX) || !count || !indices) return;
+    if (c->vg && !c->compiling) { mgl_vg_draw_elements(c, mode, count, type, indices); return; }
     if (!cache_room(c, n)) return;
     ix = c->cache_ix;
     for (k = 0; k < n; k++) {

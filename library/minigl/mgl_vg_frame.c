@@ -25,7 +25,7 @@
 #define BLK_SLACK   (64 + 2 * ACV_PRESENT_MAX + 16 + POST_WORDS)
 #define VA_BYTES    (2 * 1024 * 1024)   /* vertices */
 #define IA_COUNT    (256 * 1024)        /* 16-bit indices */
-#define DRAW_ROOM   4096                /* stream words a draw may need (state, a shader) */
+#define DRAW_ROOM   8192                /* stream words a draw may need (state, a shader) */
 
 /* ---- resources ----------------------------------------------------------------------------- */
 
@@ -192,6 +192,7 @@ static void free_vg(GLcontext c)
     struct vg_res *r;
     while ((r = v->dead) != 0) { v->dead = r->next_dead; mgl_free(r); }
     mgl_free(v->colour); mgl_free(v->depth); mgl_free(v->vbuf); mgl_free(v->ibuf);
+    mgl_free(v->text);
     mgl_free(v->blk); mgl_free(v->post); mgl_free(v->cmd); mgl_free(v->va); mgl_free(v->ia);
     mgl_free(v);
     c->vg = 0;
@@ -332,8 +333,12 @@ void mgl_vg_clear(GLcontext c, GLbitfield mask)
     if ((mask & GL_COLOR_BUFFER_BIT) && (c->cmask & 15)) b |= VG_CLEAR_COLOR0;
     if ((mask & GL_DEPTH_BUFFER_BIT) && c->depth_mask) b |= VG_CLEAR_DEPTH;
     if (!b) return;
+    if ((c->en & EN_SCISSOR) || ((b & VG_CLEAR_COLOR0) && (c->cmask & 15) != 15)) {
+        vg_clear_quad(c, mask);         /* virgl's CLEAR is the whole surface, all channels */
+        return;
+    }
     vg_need(c, 0, 0);
-    vg_prepare(c, 0, 0);                /* the framebuffer, as for a draw */
+    vg_prepare(c, 0, 0, 0);             /* the framebuffer, as for a draw */
     rgba[0] = c->clear_color[0]; rgba[1] = c->clear_color[1]; rgba[2] = c->clear_color[2]; rgba[3] = c->clear_color[3];
     vg_clear(c, b, rgba, (float)c->clear_depth);
 }
@@ -361,6 +366,6 @@ void mgl_vg_readback(GLcontext c, int x, int y, int w, int h, ULONG *argb, int s
     if (!vg_run(c, v->blk, VG_BLK_WORDS(14)) && !vg_result(v->blk, 0))
         for (j = y0; j < y1; j++)
             for (i = (ULONG)x0; i < (ULONG)x1; i++)
-                argb[(ULONG)(j - y) * stride + (i - (ULONG)x)] = buf[(ULONG)(j - y0) * (ULONG)(x1 - x0) + (i - (ULONG)x0)] | 0xFF000000UL;
+                argb[(ULONG)(j - y) * stride + (i - (ULONG)x)] = GETW(&buf[(ULONG)(j - y0) * (ULONG)(x1 - x0) + (i - (ULONG)x0)]) | 0xFF000000UL;
     mgl_free(buf);
 }

@@ -121,21 +121,24 @@ enum {                                  /* virgl_object_type */
 
 /* The command stream is little-endian words; the block, the Amiga's (big-
  * endian) words. Vertex, index and texel data stay in the 68k's order and
- * the host turns them round in ACV_PUT (VG_SW32, VG_SW16). A PC test is
- * little-endian already: there nothing is turned. */
+ * the host turns them round in ACV_PUT (VG_SW32, VG_SW16). A PC test keeps
+ * the arenas in the Amiga's order too (VG_A32, VG_A16 write them so), so
+ * that it reads every byte as the host does for the 68k. */
+#define VG_SW32 ACV_SWAP_32
+#define VG_SW16 ACV_SWAP_16
 #ifdef MGL_HOST
 #define VG_LE(v) ((ULONG)(v))
-#define VG_SW32 ACV_SWAP_NONE
-#define VG_SW16 ACV_SWAP_NONE
+#define VG_A32(p, v) (*(ULONG *)(p) = __builtin_bswap32((ULONG)(v)))
+#define VG_A16(p, v) (*(UWORD *)(p) = __builtin_bswap16((UWORD)(v)))
 #else
+#define VG_A32(p, v) (*(ULONG *)(p) = (ULONG)(v))
+#define VG_A16(p, v) (*(UWORD *)(p) = (UWORD)(v))
 static inline ULONG vg_swap32(ULONG v)
 {
     __asm__("rol.w #8,%0\n\tswap %0\n\trol.w #8,%0" : "+d"(v));
     return v;
 }
 #define VG_LE(v) vg_swap32((ULONG)(v))
-#define VG_SW32 ACV_SWAP_32
-#define VG_SW16 ACV_SWAP_16
 #endif
 
 /* ---- resources -------------------------------------------------------------------------------- */
@@ -165,7 +168,7 @@ struct vg_tex {
 #define VG_CACHE 64                     /* objects of one kind a context keeps */
 
 struct vg_cache {
-    ULONG key[VG_CACHE][3];
+    ULONG key[VG_CACHE][5];
     UWORD handle[VG_CACHE];
     UWORD n;
 };
@@ -242,7 +245,8 @@ struct mgl_vg {
     ULONG b_blend, b_dsa, b_rs, b_vs, b_fs, b_ve;
     ULONG stride;                       /* the vertex buffer's, as set */
     struct vg_cache blend, dsa, rs, samp;
-    ULONG vs_key[VG_SHADERS], fs_key[VG_SHADERS];
+    ULONG vs_key[VG_SHADERS * 2], fs_key[VG_SHADERS * 2];   /* key, spot lights */
+    char *text;                         /* a shader's text, being made */
     UWORD vs_h[VG_SHADERS], fs_h[VG_SHADERS];
     int nvs, nfs;
     struct vg_layout lay[VG_LAYOUTS];
@@ -262,7 +266,12 @@ struct mgl_vg {
     struct vg_layout *im_lay;
     ULONG im_first;                     /* the primitive's first vertex in the arena */
     ULONG im_n;
-    UBYTE im_flags;
+    GLenum im_mode;                     /* the primitive (a split loop goes on as a strip) */
+    int im_close;                       /* a split loop: im_v0 closes it */
+    UBYTE im_v0[64];
+    float im_col[4];                    /* the colour im_colw was made from */
+    ULONG im_colw;
+    int im_colok;
 
     /* glLockArrays: the locked range, once in the arena */
     ULONG lk_base;                      /* its first vertex there */
@@ -340,7 +349,11 @@ int mgl_disp_target(GLcontext c, struct RastPort **rp, struct BitMap **bm, int *
 /* ---- state (mgl_vg_state.c) ----------------------------------------------------------------- */
 
 void vg_state_reset(GLcontext c);       /* nothing is bound: a new context */
-void vg_prepare(GLcontext c, struct vg_layout *lay, int lines);   /* everything a draw needs, sent */
+/* Everything a draw needs, sent: lay 0 for a clear (the framebuffer only);
+ * colswz the colour attribute's byte order (VS_COL_SWZ); flat_first: flat
+ * shading takes the first vertex (a polygon's) */
+void vg_prepare(GLcontext c, struct vg_layout *lay, int colswz, int flat_first);
+int vg_vs_consts(ULONG key);
 struct vg_layout *vg_layout_of(GLcontext c, const UBYTE *fmt);   /* fmt[VG_ATTRS]: VG_AF_ */
 ULONG vg_mode(GLcontext c, GLenum mode);    /* GL's primitive to Gallium's, quads and polygons as 0xFF */
 
@@ -421,7 +434,7 @@ ULONG vg_mode(GLcontext c, GLenum mode);    /* GL's primitive to Gallium's, quad
 
 /* A shader's text for a key: into buf (cap bytes), its length with the
  * closing 0 returned. */
-ULONG vg_vs_text(ULONG key, char *buf, ULONG cap);
+ULONG vg_vs_text(ULONG key, ULONG spots, char *buf, ULONG cap);   /* spots: which lights are spots */
 ULONG vg_fs_text(ULONG key, char *buf, ULONG cap);
 
 /* ---- drawing (mgl_vg_draw.c) ---------------------------------------------------------------- */
@@ -432,6 +445,7 @@ void mgl_vg_end(GLcontext c);
 void mgl_vg_draw_arrays(GLcontext c, GLenum mode, GLint first, GLsizei count);
 void mgl_vg_draw_elements(GLcontext c, GLenum mode, GLsizei count, GLenum type, const GLvoid *indices);
 void mgl_vg_lock(GLcontext c);          /* glLockArrays, glUnlockArrays: the locked range changed */
+void vg_clear_quad(GLcontext c, GLbitfield mask);   /* a clear inside the scissor, through the colour mask */
 
 /* ---- textures (mgl_vg_tex.c) ---------------------------------------------------------------- */
 

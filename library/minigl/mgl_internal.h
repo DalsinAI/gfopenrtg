@@ -492,6 +492,12 @@ void mgl_vg_clear(GLcontext c, GLbitfield mask);
 void mgl_vg_readback(GLcontext c, int x, int y, int w, int h, ULONG *argb, int stride);
 void mgl_vg_switch(GLcontext c);    /* the frame to the host, and shown */
 void mgl_vg_finish(GLcontext c);    /* the frame so far to the host */
+void mgl_vg_begin(GLcontext c);     /* glBegin, after its checks */
+void mgl_vg_vertex(GLcontext c, float x, float y, float z, float w);
+void mgl_vg_end(GLcontext c);
+void mgl_vg_draw_arrays(GLcontext c, GLenum mode, GLint first, GLsizei count);
+void mgl_vg_draw_elements(GLcontext c, GLenum mode, GLsizei count, GLenum type, const GLvoid *indices);
+void mgl_vg_lock(GLcontext c);      /* the locked range changed */
 
 /* ---- display lists (mgl_list.c) --------------------------------------------------------- */
 

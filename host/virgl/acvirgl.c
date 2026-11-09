@@ -431,33 +431,79 @@ static const char *av_lvp_icd(void)
 /* A fresh dlopen each time, so Mesa reads the driver name at load. */
 static int av_bind(struct acvirgl *v, const char *path, char *err, int errlen);
 
-/* The GPU's own driver did not start. Try llvmpipe, then zink on lavapipe. */
+/* One environment variable as it was, so a software try can put it back.
+ * Mesa reads these when virglrenderer is opened. Left set, one failed GPU
+ * start would pin the rest of this process to software GL, or to lavapipe
+ * alone for Vulkan. */
+struct av_saved {
+    const char *name;
+    char *old;
+    int set;
+};
+
+static int av_save(struct av_saved *s, const char *name)
+{
+    const char *v = getenv(name);
+    s->name = name;
+    s->set = v != NULL;
+    s->old = v ? strdup(v) : NULL;
+    return !v || s->old != NULL;
+}
+
+static void av_restore(struct av_saved *s)
+{
+    if (s->set && s->old) setenv(s->name, s->old, 1);
+    else unsetenv(s->name);
+    free(s->old);
+    s->old = NULL;
+    s->set = 0;
+}
+
+/* The GPU's own driver did not start. Try llvmpipe, then zink on lavapipe.
+ * The four driver variables are what they were on the way in, whether or
+ * not a context was made. */
 static int av_software(struct acvirgl *v, const char *path, const char *gles, char *err, int errlen)
 {
     char first[320];
     const char *icd;
+    struct av_saved saved[4];
+    static const char *names[4] = {
+        "MESA_LOADER_DRIVER_OVERRIDE",
+        "GALLIUM_DRIVER",
+        "LIBGL_ALWAYS_SOFTWARE",
+        "VK_DRIVER_FILES"
+    };
+    int i, n = 0, started = 0;
+
     snprintf(first, sizeof first, "%s", err[0] ? err : "the host GPU did not start");
+    for (; n < 4; n++)
+        if (!av_save(&saved[n], names[n])) goto out;
     setenv("MESA_LOADER_DRIVER_OVERRIDE", "llvmpipe", 1);
     setenv("GALLIUM_DRIVER", "llvmpipe", 1);
     setenv("LIBGL_ALWAYS_SOFTWARE", "1", 1);
-    if (!av_bind(v, path, err, errlen)) return 0;
+    if (!av_bind(v, path, err, errlen)) goto out;
     if (av_start(v, gles, err, errlen)) {
         fprintf(stderr, "ACVIRGL: the host GPU did not start (%s); drawing with llvmpipe\n", first);
-        return 1;
+        started = 1;
+        goto out;
     }
     unsetenv("LIBGL_ALWAYS_SOFTWARE");
     unsetenv("GALLIUM_DRIVER");
     setenv("MESA_LOADER_DRIVER_OVERRIDE", "zink", 1);
     icd = av_lvp_icd();
     if (icd) setenv("VK_DRIVER_FILES", icd, 1);
-    if (!av_bind(v, path, err, errlen)) return 0;
+    if (!av_bind(v, path, err, errlen)) goto out;
     if (av_start(v, gles, err, errlen)) {
         fprintf(stderr, "ACVIRGL: llvmpipe did not start; drawing with zink on %s\n",
                 icd ? "lavapipe" : "whatever Vulkan device is listed");
-        return 1;
+        started = 1;
+        goto out;
     }
     snprintf(err, (size_t)errlen, "%s; llvmpipe and lavapipe did not start either", first);
-    return 0;
+out:
+    for (i = 0; i < n; i++) av_restore(&saved[i]);
+    if (!started && n < 4) snprintf(err, (size_t)errlen, "no memory");
+    return started;
 }
 
 /* The host's renderer as virglrenderer tells the guest: capset 2 (struct
@@ -2177,3 +2223,55 @@ int acvirgl_run(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), 
     }
     return OGPU_OK;
 }
+
+#ifdef AV_ENV_TEST
+/* cc -DAV_ENV_TEST -o av_env_test host/virgl/acvirgl.c -ldl
+ * A stub libvirglrenderer whose init fails, and a stub libGL.so.1, on
+ * LD_LIBRARY_PATH. The software try must see llvmpipe and then zink, and
+ * the process's own driver variables must be what they were afterwards. */
+static int av_env_is(const char *name, const char *want)
+{
+    const char *v = getenv(name);
+    if (!want) return v == NULL;
+    return v && !strcmp(v, want);
+}
+
+int main(void)
+{
+    struct acvirgl *v = calloc(1, sizeof *v);
+    char err[320];
+    int bad = 0;
+    if (!v) return 1;
+    setenv("MESA_LOADER_DRIVER_OVERRIDE", "iris", 1);
+    unsetenv("GALLIUM_DRIVER");
+    setenv("LIBGL_ALWAYS_SOFTWARE", "0", 1);
+    setenv("VK_DRIVER_FILES", "/keep/icd.json", 1);
+    snprintf(err, sizeof err, "the host GPU did not start");
+    if (av_software(v, "libvirglrenderer.so.1", NULL, err, (int)sizeof err)) {
+        fprintf(stderr, "the stub context was not supposed to start\n");
+        bad = 1;
+    }
+    if (!av_env_is("MESA_LOADER_DRIVER_OVERRIDE", "iris")) {
+        fprintf(stderr, "MESA_LOADER_DRIVER_OVERRIDE left as %s\n",
+                getenv("MESA_LOADER_DRIVER_OVERRIDE") ? getenv("MESA_LOADER_DRIVER_OVERRIDE") : "(unset)");
+        bad = 1;
+    }
+    if (!av_env_is("GALLIUM_DRIVER", NULL)) {
+        fprintf(stderr, "GALLIUM_DRIVER left as %s\n", getenv("GALLIUM_DRIVER"));
+        bad = 1;
+    }
+    if (!av_env_is("LIBGL_ALWAYS_SOFTWARE", "0")) {
+        fprintf(stderr, "LIBGL_ALWAYS_SOFTWARE left as %s\n",
+                getenv("LIBGL_ALWAYS_SOFTWARE") ? getenv("LIBGL_ALWAYS_SOFTWARE") : "(unset)");
+        bad = 1;
+    }
+    if (!av_env_is("VK_DRIVER_FILES", "/keep/icd.json")) {
+        fprintf(stderr, "VK_DRIVER_FILES left as %s\n",
+                getenv("VK_DRIVER_FILES") ? getenv("VK_DRIVER_FILES") : "(unset)");
+        bad = 1;
+    }
+    free(v);
+    if (!bad) printf("software try put the driver variables back\n");
+    return bad;
+}
+#endif

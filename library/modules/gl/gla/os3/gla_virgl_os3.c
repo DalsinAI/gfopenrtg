@@ -16,6 +16,7 @@
 #include <proto/gfopengpu.h>
 #include <gfopengpu/build.h>
 #include "gla_notice_os3.h"
+#include "../gla_virgl.h"                  /* gla_virgl_batch_wanted */
 
 struct Library *OpenGPUBase;
 
@@ -188,6 +189,16 @@ int gla_os3_virgl_transport(struct gla_virgl_transport *t)
     if ((why = library_why()) != NULL) {
         gla_note_why(why);
         return 0;
+    }
+    {
+        /* ENV:GFOpenGPU/GLBatch: 0 (or off) a block a command, 1 (or on)
+         * batched whatever the runtime asks; unset as the runtime asks */
+        char v[8];
+        gla_virgl_batch_wanted = -1;
+        if (gla_os3_getenv("GFOpenGPU/GLBatch", v, sizeof v) > 0) {
+            if (v[0] == '0' || word_is(v, "off")) gla_virgl_batch_wanted = 0;
+            else if (v[0] == '1' || word_is(v, "on")) gla_virgl_batch_wanted = 1;
+        }
     }
     if (!gla_timer_base && !OpenDevice((CONST_STRPTR)TIMERNAME, UNIT_ECLOCK, (struct IORequest *)&timer_io, 0)) {
         struct EClockVal e;

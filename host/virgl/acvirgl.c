@@ -242,6 +242,7 @@ struct av_zs {
 };
 
 struct acvirgl {
+    int no_batch;                       /* AC_VIRGL_BATCH=0: HELLO asks GL.module for a block a command (ACV_HOST_NO_BATCH) */
     int ctx0_every;                     /* context 0 before every command (QEMU's way); AC_VIRGL_CTX0=create: only around ACV_CTX_* */
     void *dl;
     struct vr_api vr;
@@ -359,6 +360,9 @@ struct acvirgl *acvirgl_create(const char *lib, char *err, int errlen)
     /* a resource's GL texture, for presents one frame behind; AC_VIRGL_PARTS=1 times a present's parts */
     *(void **)&v->vr.resource_get_info = dlsym(v->dl, "virgl_renderer_resource_get_info");
     v->parts = getenv("AC_VIRGL_PARTS") && !strcmp(getenv("AC_VIRGL_PARTS"), "1");
+    /* GL.module queues commands into one block until it needs their results
+     * (gla_virgl.c, 9 Nov 2026); AC_VIRGL_BATCH=0 asks it for a block a command, as before */
+    v->no_batch = getenv("AC_VIRGL_BATCH") && !strcmp(getenv("AC_VIRGL_BATCH"), "0");
     /* per-context fences, for presents left to finish (virglrenderer 1.0 and later) */
     *(void **)&v->vr.context_create_fence = dlsym(v->dl, "virgl_renderer_context_create_fence");
     *(void **)&v->vr.poll = dlsym(v->dl, "virgl_renderer_poll");
@@ -1526,7 +1530,7 @@ int acvirgl_run(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), 
         if (v->ctx0_every) v->vr.force_ctx_0();
         switch (cmd) {
         case ACV_HELLO:
-            av_put_be32(a, ACV_HOST_PRESENT);
+            av_put_be32(a, ACV_HOST_PRESENT | (v->no_batch ? ACV_HOST_NO_BATCH : 0));
             r = ACV_PROTOCOL;
             break;
         case ACV_CAPSET_INFO: {

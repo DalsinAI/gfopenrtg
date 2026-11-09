@@ -1,0 +1,238 @@
+diff -ruN a/src/video/amigaos3/SDL_os3video.c b/src/video/amigaos3/SDL_os3video.c
+--- a/src/video/amigaos3/SDL_os3video.c
++++ b/src/video/amigaos3/SDL_os3video.c
+@@ -349,6 +349,10 @@
+ 
+ static void OS3_VideoQuit(_THIS)
+ {
++    /* SDL has destroyed every window: a screen of ours Intuition would not
++       close then is closed now, or at least behind the Workbench (Open) */
++    OS3_ReleaseScreens();
++
+     OS3_QuitMouse();
+ 
+     if (KeymapBase) {
+diff -ruN a/src/video/amigaos3/SDL_os3window.c b/src/video/amigaos3/SDL_os3window.c
+--- a/src/video/amigaos3/SDL_os3window.c
++++ b/src/video/amigaos3/SDL_os3window.c
+@@ -22,6 +22,7 @@
+ #endif
+ #include <graphics/modeid.h>   /* BIDTAG_* for BestModeID (AGA mode selection) */
+ #include <graphics/displayinfo.h>  /* DisplayInfo, DimensionInfo for P96 fallback */
++#include <graphics/layers.h>       /* LAYERS_NOBACKFILL (OS3_BackToWorkbench) */
+ #ifdef WARPUP
+ #pragma pop
+ #endif
+@@ -119,9 +120,122 @@
+      WFLG_RMBTRAP    | \
+      WFLG_REPORTMOUSE)
+ 
++/* --- Internal: the screens of our own that Intuition would not close --- */
++/* Open (2026): CloseScreen fails while a window is still open on the
++ * screen, and another program's can be (a commodity that puts a window on
++ * the front screen). The result was not looked at: the screen stayed in
++ * front, in its own mode, with nothing left to close it (the grey screen,
++ * and the Workbench shown in the full screen's display mode). Such a screen
++ * now goes behind the Workbench and is closed as soon as Intuition lets us:
++ * on the next screen we close, and in OS3_ReleaseScreens (VideoQuit). */
++#define OS3_MAX_LEFTOVER_SCREENS 4
++static struct Screen *os3_leftover_screens[OS3_MAX_LEFTOVER_SCREENS];
++
++static void OS3_RetryLeftoverScreens(void)
++{
++    int i;
++
++    for (i = 0; i < OS3_MAX_LEFTOVER_SCREENS; i++) {
++        if (os3_leftover_screens[i] && CloseScreen(os3_leftover_screens[i])) {
++            os3_leftover_screens[i] = NULL;
++        }
++    }
++}
++
++static void OS3_CloseOwnScreen(struct Screen *screen)
++{
++    int i;
++
++    if (CloseScreen(screen)) {
++        return;
++    }
++    ScreenToBack(screen);
++    for (i = 0; i < OS3_MAX_LEFTOVER_SCREENS; i++) {
++        if (!os3_leftover_screens[i]) {
++            os3_leftover_screens[i] = screen;
++            return;
++        }
++    }
++}
++
++/* --- Internal: the Workbench back in front, in its own mode, repainted --- */
++/* Open (2026): after a screen of our own has closed. Intuition shows the
++ * next screen when one closes, but an RTG board was left in the closed
++ * screen's mode: a 640x480 full screen over an 800x600 Workbench left the
++ * Workbench as four squashed copies in stripes on AmigaOS 3.2.3, and SDL's
++ * SetDisplayMode has nothing to undo (the window owns its screen). So the
++ * Workbench is brought to the front and Intuition remakes the whole display,
++ * which sets the board's mode from the front screen again. Then a window
++ * over the whole Workbench, opened without drawing and closed at once, has
++ * Intuition and layers repaint everything under it: what the program drew
++ * full screen (FULLSCREEN_DESKTOP is in the Workbench's own mode) no longer
++ * stays on the Workbench outside the program's window. */
++static void OS3_BackToWorkbench(void)
++{
++    struct Screen *wb;
++    struct Window *cover;
++
++    OS3_RetryLeftoverScreens();
++    wb = LockPubScreen(NULL);
++    if (!wb) {
++        WBenchToFront();
++        RemakeDisplay();
++        return;
++    }
++    ScreenToFront(wb);
++    RemakeDisplay();
++    cover = OpenWindowTags(NULL,
++        WA_PubScreen,     (ULONG)wb,
++        WA_Left,          0,
++        WA_Top,           0,
++        WA_Width,         (ULONG)wb->Width,
++        WA_Height,        (ULONG)wb->Height,
++        WA_Borderless,    TRUE,
++        WA_Activate,      FALSE,
++        WA_RMBTrap,       TRUE,
++        WA_SimpleRefresh, TRUE,
++        WA_NoCareRefresh, TRUE,
++        WA_BackFill,      (ULONG)LAYERS_NOBACKFILL,
++        WA_IDCMP,         0,
++        TAG_DONE
++    );
++    if (cover) {
++        CloseWindow(cover);
++    }
++    UnlockPubScreen(NULL, wb);
++}
++
++/* VideoQuit: a screen Intuition would not close before, closed now if it
++   can be, else left behind the Workbench; the Workbench in front. */
++void OS3_ReleaseScreens(void)
++{
++    int i, any = 0;
++
++    for (i = 0; i < OS3_MAX_LEFTOVER_SCREENS; i++) {
++        if (os3_leftover_screens[i]) {
++            any = 1;
++        }
++    }
++    if (!any) {
++        return;
++    }
++    OS3_RetryLeftoverScreens();
++    for (i = 0; i < OS3_MAX_LEFTOVER_SCREENS; i++) {
++        if (os3_leftover_screens[i]) {
++            ScreenToBack(os3_leftover_screens[i]);
++            os3_leftover_screens[i] = NULL;
++        }
++    }
++    WBenchToFront();
++}
++
+ /* --- Internal: close window and screen, leaving driverdata allocated --- */
+-static void OS3_CloseWindowAndScreen(OS3_WindowData *data)
++/* Returns non-zero when the window had a screen of its own, which is then
++   closed (or, when Intuition refuses, sent behind the Workbench). */
++static int OS3_CloseWindowAndScreen(OS3_WindowData *data)
+ {
++    int had_screen = 0;
++
+     if (data->window) {
+         ClearPointer(data->window);
+         CloseWindow(data->window);
+@@ -133,10 +247,12 @@
+             FreeMem(data->screen->UserData, 6 * sizeof(UWORD));
+             data->screen->UserData = NULL;
+         }
+-        CloseScreen(data->screen);
++        OS3_CloseOwnScreen(data->screen);
+         data->screen = NULL;
++        had_screen = 1;
+     }
+     data->is_fullscreen = 0;
++    return had_screen;
+ }
+ 
+ /* --- Internal: open a custom screen + borderless window --- */
+@@ -349,6 +465,7 @@
+             WA_IDCMP,         (ULONG)OS3_IDCMP_WINDOWED,
+             WA_PubScreen,     (ULONG)NULL,
+             WA_GimmeZeroZero, TRUE,
++            WA_AutoAdjust,    TRUE,
+             WA_Title,         (ULONG)(window->title ? window->title : "SDL"),
+             TAG_DONE
+         );
+@@ -455,7 +572,7 @@
+ {
+     OS3_WindowData *data = (OS3_WindowData *)window->driverdata;
+     int w = 0, h = 0, depth = 32;
+-    int rc;
++    int rc, had_screen;
+ 
+     (void)display;
+     if (!data || window->is_destroying) {
+@@ -484,7 +601,7 @@
+     window->surface_valid = SDL_FALSE;
+ 
+     /* Window before screen -- mandatory order per ADCD */
+-    OS3_CloseWindowAndScreen(data);
++    had_screen = OS3_CloseWindowAndScreen(data);
+ 
+     if (fullscreen && CyberGfxBase) {
+         rc = OS3_OpenModeScreen(data, w, h, depth);
+@@ -502,7 +619,18 @@
+             window->w = window->windowed.w;
+             window->h = window->windowed.h;
+         }
++        /* Open (2026): the Workbench back in its own mode, in front and
++         * repainted, before the window goes back on it with its border
++         * (OS3_BackToWorkbench). Not on AGA, where the window has a screen
++         * of its own again. */
++        if (had_screen && CyberGfxBase) {
++            OS3_BackToWorkbench();
++        }
+         rc = OS3_OpenWindowed(data, window);
++        if (rc == 0 && data->window && !data->screen) {
++            WindowToFront(data->window);
++            ActivateWindow(data->window);
++        }
+     }
+     if (rc < 0) {
+         SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "OS3: %s", SDL_GetError());
+@@ -523,8 +651,14 @@
+     OS3_GL_DestroyWindow(_this, window);    /* its GL buffer (Open) */
+ #endif
+ 
+-    /* Close window before screen -- mandatory order per ADCD */
+-    OS3_CloseWindowAndScreen(data);
++    /* Close window before screen -- mandatory order per ADCD. A window that
++     * goes while full screen (SDL_DestroyWindow, SDL_Quit) leaves the
++     * Workbench in front, in its own mode and repainted, as leaving full
++     * screen does (Open, 2026): SetWindowFullscreen is not called for a
++     * window being destroyed. */
++    if (OS3_CloseWindowAndScreen(data)) {
++        OS3_BackToWorkbench();
++    }
+ 
+     SDL_free(data);
+     window->driverdata = NULL;
+diff -ruN a/src/video/amigaos3/SDL_os3window.h b/src/video/amigaos3/SDL_os3window.h
+--- a/src/video/amigaos3/SDL_os3window.h
++++ b/src/video/amigaos3/SDL_os3window.h
+@@ -18,6 +18,9 @@
+ extern void OS3_HideWindow(_THIS, SDL_Window *window);
+ extern void OS3_RaiseWindow(_THIS, SDL_Window *window);
+ 
++/* VideoQuit: screens of ours Intuition would not close before (Open, 2026) */
++extern void OS3_ReleaseScreens(void);
++
+ /* RTG mode fallback: walk display database manually when BestCModeIDTags fails */
+ extern ULONG OS3_FindRTGMode(int want_w, int want_h, int want_depth);
+ 

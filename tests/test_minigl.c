@@ -32,13 +32,69 @@ void mgl_free(void *p) { free(p); }
 void mgl_copy(void *d, const void *s, ULONG n) { memmove(d, s, n); }
 void mgl_zero(void *d, ULONG n) { memset(d, 0, n); }
 void mgl_read_prefs(void) { }
-void mgl_log(const char *fmt, ...) { (void)fmt; }
+void mgl_log(const char *fmt, ...)
+{
+    va_list ap;
+    if (!getenv("MGL_LOG")) return;
+    va_start(ap, fmt);
+    vprintf(fmt, ap);
+    va_end(ap);
+    printf("\n");
+}
 ULONG mgl_millis(void) { return 0; }
 
 BOOL MiniGLOpen(void) { MiniGLDispatch = &mgl_table; return TRUE; }
 void MiniGLClose(void) { MiniGLDispatch = 0; }
 
 struct mgl_display { UBYTE *pix; };
+
+/* ---- the virgl route's transport: minigl_vg_bridge, when it runs this test -------------------- */
+
+#include "../library/minigl/mgl_vg.h"
+#include <unistd.h>
+
+static int bridge_r = -1, bridge_w = -1;
+static int vg_presents;
+
+int vg_os_open(GLcontext c)
+{
+    const char *e = getenv("MGL_VG_BRIDGE");
+    (void)c;
+    if (!e || sscanf(e, "%d,%d", &bridge_r, &bridge_w) != 2) return 0;
+    return 1;
+}
+
+void vg_os_close(GLcontext c) { (void)c; }
+
+int vg_os_run(GLcontext c, ULONG *blk, ULONG bytes)
+{
+    ULONG req[2];
+    int r = -1;
+    (void)c;
+    req[0] = (ULONG)blk; req[1] = bytes;
+    if (write(bridge_w, req, sizeof req) != (ssize_t)sizeof req || read(bridge_r, &r, sizeof r) != (ssize_t)sizeof r) return -1;
+    return r;
+}
+
+/* The frame into the drawing area, as ACV_PRESENT writes a screen's bitmap
+ * (OGPU_FMT_ARGB32: A, R, G, B bytes). */
+ULONG vg_os_present(GLcontext c, ULONG *p, ULONG room)
+{
+    ULONG a[12];
+    if (room < 12 || c->fmt != OGPU_FMT_ARGB32) return 0;
+    a[0] = c->vg->ctx_id; a[1] = c->vg->colour->handle; a[2] = 0; a[3] = 0;
+    a[4] = (ULONG)c->disp->pix; a[5] = (ULONG)c->width * 4; a[6] = OGPU_FMT_ARGB32;
+    a[7] = ((ULONG)c->width << 16) | (ULONG)c->height; a[8] = 0; a[9] = 1;
+    a[10] = 0; a[11] = ((ULONG)c->width << 16) | (ULONG)c->height;
+    vg_blk_cmd(p, ACV_PRESENT, 12, a);
+    return VG_BLK_WORDS(12);
+}
+
+void vg_os_presented(GLcontext c, ULONG *blk, ULONG at)
+{
+    (void)c;
+    if (blk && vg_result(blk, at) > 0) vg_presents++;
+}
 
 int mgl_disp_lock(GLcontext c) { c->base = c->disp->pix; c->bpr = (ULONG)c->width * (c->fmt == OGPU_FMT_RGB565 ? 2 : 4); return 1; }
 void mgl_disp_unlock(GLcontext c) { (void)c; }
@@ -55,7 +111,7 @@ void *MGLCreateContext(int offx, int offy, int w, int h)
     c->fmt = mgl_prefs.depth <= 16 ? OGPU_FMT_RGB565 : OGPU_FMT_ARGB32;
     c->disp->pix = mgl_alloc((ULONG)w * h * 4);
     if (!mgl_out_open(c)) return 0;
-    c->route = ROUTE_CPU;
+    if (!c->vg) c->route = ROUTE_CPU;
     mgl_init_state(c);
     mgl_current = c;
     return c;
@@ -77,7 +133,12 @@ void MGLDeleteContext(GLcontext c)
 GLboolean MGLLockDisplay(GLcontext c) { (void)c; return GL_TRUE; }
 void MGLUnlockDisplay(GLcontext c) { (void)c; }
 GLboolean MGLLockBack(GLcontext c, MGLLockInfo *info) { (void)c; (void)info; return GL_FALSE; }
-void MGLSwitchDisplay(GLcontext c) { if (c) { mgl_pipe_flush(c); mgl_flush(c); c->frames++; } }
+void MGLSwitchDisplay(GLcontext c)
+{
+    if (!c) return;
+    mgl_pipe_flush(c); mgl_flush(c); c->frames++;
+    if (c->vg) mgl_vg_switch(c);
+}
 GLboolean MGLResizeContext(GLcontext c, GLsizei w, GLsizei h) { (void)c; (void)w; (void)h; return GL_FALSE; }
 void *MGLGetWindowHandle(GLcontext c) { (void)c; return 0; }
 void *MGLGetInputWindowHandle(GLcontext c) { (void)c; return 0; }
@@ -492,6 +553,85 @@ static unsigned long scene_sum(int w, int h, int depth, float t, const char *ppm
     return sum;
 }
 
+/* ---- the virgl route (run by minigl_vg_bridge, MGL_VIRGL set) -------------------------------- */
+
+/* A frame shown: ACV_PRESENT writes it into the drawing area. */
+static void test_present(void)
+{
+    UBYTE *px;
+    unsigned char p[3];
+    mglChoosePixelDepth(32);
+    CHECK(mglCreateContext(0, 0, 64, 48) != 0, "context");
+    CHECK(mgl_current->vg != 0, "the virgl route was taken");
+    if (!mgl_current->vg) { mglDeleteContext(); return; }
+    glClearColor(0.0f, 0.5f, 1.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    pixel(3, 3, p);
+    CHECK(p[0] == 0 && near(p[1], 128, 1) && p[2] == 255, "clear read back %d %d %d", p[0], p[1], p[2]);
+    mglSwitchDisplay();
+    px = mgl_current->disp->pix + (47 * 64 + 63) * 4;
+    CHECK(vg_presents == 1, "one frame presented (%d)", vg_presents);
+    CHECK(px[1] == 0 && near(px[2], 128, 1) && px[3] == 255, "the presented frame %d %d %d %d", px[0], px[1], px[2], px[3]);
+    glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    mglSwitchDisplay();
+    CHECK(px[1] == 255 && px[2] == 0 && px[3] == 0, "the next frame %d %d %d %d", px[0], px[1], px[2], px[3]);
+    mglDeleteContext();
+}
+
+/* The scene on the virgl route against the 68k route's: 99% of the pixels
+ * within 8 on every channel (GL.module's tolerance, plan section 7). */
+static void scene_pixels(int w, int h, float t, unsigned char *px)
+{
+    mglChoosePixelDepth(32);
+    mglCreateContext(0, 0, w, h);
+    scene_init(w, h);
+    scene_frame(t);
+    glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, px);
+    CHECK(glGetError() == GL_NO_ERROR, "the scene makes no error");
+    scene_done();
+    mglDeleteContext();
+}
+
+static void write_ppm(const char *name, int w, int h, const unsigned char *px)
+{
+    FILE *f = fopen(name, "wb");
+    int y;
+    if (!f) return;
+    fprintf(f, "P6\n%d %d\n255\n", w, h);
+    for (y = h - 1; y >= 0; y--) fwrite(px + (size_t)y * w * 3, 1, (size_t)w * 3, f);
+    fclose(f);
+}
+
+static int virgl_main(const char *ppm)
+{
+    int level = getenv("MGL_VG_LEVEL") ? atoi(getenv("MGL_VG_LEVEL")) : 9, w = 320, h = 240, i, off = 0;
+    mgl_prefs.route = ROUTE_VIRGL;
+    MiniGLOpen();
+    test_present();
+    if (level >= 2) { test_basics(); test_depth_blend(); }
+    if (level >= 3) test_textures_lists_arrays();
+    if (level >= 4) test_clip_light_fog();
+    if (level >= 2) {
+        unsigned char *pv = malloc((size_t)w * h * 3), *pc = malloc((size_t)w * h * 3);
+        scene_pixels(w, h, 0.0f, pv);
+        mgl_prefs.route = ROUTE_CPU;
+        scene_pixels(w, h, 0.0f, pc);
+        mgl_prefs.route = ROUTE_VIRGL;
+        for (i = 0; i < w * h; i++) {
+            int d0 = pv[i * 3] - pc[i * 3], d1 = pv[i * 3 + 1] - pc[i * 3 + 1], d2 = pv[i * 3 + 2] - pc[i * 3 + 2];
+            if (d0 > 8 || d0 < -8 || d1 > 8 || d1 < -8 || d2 > 8 || d2 < -8) off++;
+        }
+        printf("minigl virgl scene: %d of %d pixels differ by more than 8 from the 68k route's\n", off, w * h);
+        if (level >= 4) CHECK(off * 100 <= w * h, "the scene matches the 68k route's (%d pixels off)", off);
+        if (ppm) { write_ppm(ppm, w, h, pv); write_ppm("minigl-scene-cpu.ppm", w, h, pc); }
+        free(pv); free(pc);
+    }
+    MiniGLClose();
+    printf("minigl virgl: %d checks, %d failed\n", checks, failures);
+    return failures ? 1 : 0;
+}
+
 int main(int argc, char **argv)
 {
     const char *golden = 0, *ppm = 0;
@@ -502,6 +642,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "-update")) update = 1;
         else golden = argv[i];
     }
+    if (getenv("MGL_VIRGL")) return virgl_main(ppm);
     MiniGLOpen();
     test_interface();
     test_basics();

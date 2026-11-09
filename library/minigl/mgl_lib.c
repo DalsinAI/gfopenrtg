@@ -200,7 +200,8 @@ static BPTR lib_expunge(REG(a6, struct MGLBase *base))
 /* ---- preferences ---------------------------------------------------------------------------- */
 
 /* ENV:MiniGL/ (read at each open and each new context):
- *   Driver          Auto, CPU or GFOpenGPU: where triangles are drawn
+ *   Driver          Auto, CPU, GFOpenGPU or Virgl: where triangles are drawn
+ *                   (Virgl: the host's GPU through virgl, else as Auto)
  *   Flip            1: a screen changes buffers instead of blitting the frame
  *   MaxTextureSize  what glGetIntegerv(GL_MAX_TEXTURE_SIZE) answers (default 1024)
  *   Trace           n: n lines of trace to the serial port */
@@ -218,6 +219,7 @@ void mgl_read_prefs(void)
     mgl_prefs.route = -1;
     if (GetVar((STRPTR)"MiniGL/Driver", (STRPTR)v, sizeof v, GVF_GLOBAL_ONLY) > 0) {
         if (v[0] == 'C' || v[0] == 'c') mgl_prefs.route = ROUTE_CPU;
+        else if (v[0] == 'V' || v[0] == 'v') mgl_prefs.route = ROUTE_VIRGL;
         else if (v[0] == 'G' || v[0] == 'g' || v[0] == 'O' || v[0] == 'o') mgl_prefs.route = ROUTE_GPU;
     }
     mgl_prefs.flip = env_long("MiniGL/Flip", 0) != 0;

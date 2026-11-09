@@ -129,13 +129,19 @@ int mgl_out_open(GLcontext c)
     if (!c->cmdmem || !c->vmem || !c->zbuf) { mgl_out_close(c); return 0; }
     c->list_at = -1;
     c->sent_pass = -1;
-    if (mgl_prefs.route >= 0) c->route = mgl_prefs.route == ROUTE_GPU && mgl_prefs.gpu_3d ? ROUTE_GPU : ROUTE_CPU;
+    if (mgl_prefs.route == ROUTE_VIRGL) {
+        if (mgl_vg_open(c)) { c->route = ROUTE_VIRGL; return 1; }
+        mgl_log("MiniGL: no virgl route, as Auto");    /* why: in the log above */
+    }
+    if (mgl_prefs.route >= 0 && mgl_prefs.route != ROUTE_VIRGL)
+        c->route = mgl_prefs.route == ROUTE_GPU && mgl_prefs.gpu_3d ? ROUTE_GPU : ROUTE_CPU;
     else c->route = mgl_prefs.gpu_3d && mgl_prefs.gpu_host ? ROUTE_GPU : ROUTE_CPU;
     return 1;
 }
 
 void mgl_out_close(GLcontext c)
 {
+    if (c->vg) mgl_vg_close(c);
     mgl_free(c->cmdmem); c->cmdmem = 0;
     mgl_free(c->vmem); c->vmem = 0;
     mgl_free(c->zbuf); c->zbuf = 0;
@@ -389,6 +395,7 @@ void GLClear(GLcontext c, GLbitfield mask)
     MGL_REC(c, OP_CLEAR, 1, &a);
     if (c->prim != PRIM_NONE) { mgl_error(c, GL_INVALID_OPERATION); return; }
     mgl_pipe_flush(c);
+    if (c->vg) { mgl_vg_clear(c, mask); return; }
     mgl_clear(c, mask);
 }
 
@@ -399,6 +406,7 @@ void GLClear(GLcontext c, GLbitfield mask)
 void mgl_readback(GLcontext c, int x, int y, int w, int h, ULONG *argb, int stride)
 {
     int i, j;
+    if (c->vg) { mgl_vg_readback(c, x, y, w, h, argb, stride); return; }
     if (c->route == ROUTE_GPU) {
         begin(c);
         ogpu_clear3d(&c->b, OGPU_KIND_COLOUR | OGPU_KIND_READBACK, 0, 0, c->width, c->height, 0);

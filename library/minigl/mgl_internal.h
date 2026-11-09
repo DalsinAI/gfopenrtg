@@ -97,6 +97,7 @@ struct mgl_tex {
     ULONG bytes;                    /* what its levels take */
     ULONG used_in;                  /* the batch (batch_no) that last drew with it */
     ULONG *pal;                     /* its own palette (glColorTable on GL_TEXTURE_2D), or 0 */
+    struct vg_tex *vg;              /* the virgl route's host side (mgl_vg_tex.c), or 0 */
 };
 
 /* ---- vertices --------------------------------------------------------------------------- */
@@ -205,6 +206,7 @@ struct mgl_display;                 /* private to mgl_display.c */
 struct GLcontext_t {
     /* where it draws */
     struct mgl_display *disp;
+    struct mgl_vg *vg;              /* the virgl route (mgl_vg.h), or 0 */
     int width, height;              /* the drawing area */
     int route;                      /* ROUTE_ */
     int fmt;                        /* OGPU_FMT_ the core draws into */
@@ -368,6 +370,7 @@ struct GLcontext_t {
 /* Routes. */
 #define ROUTE_GPU 0                 /* gfopengpu.library */
 #define ROUTE_CPU 1                 /* the 3D core on this 68k */
+#define ROUTE_VIRGL 2               /* the host's GPU through virgl (mgl_vg.h) */
 
 /* ---- the library (mgl_lib.c) ------------------------------------------------------------ */
 
@@ -479,6 +482,16 @@ struct ovtx *mgl_vspace(GLcontext c, ULONG n);         /* room for n vertices, t
 void mgl_emit(GLcontext c, struct ovtx *d, ULONG n, int prim);
 void mgl_clear(GLcontext c, GLbitfield mask);
 void mgl_readback(GLcontext c, int x, int y, int w, int h, ULONG *argb, int stride);   /* top-left origin */
+
+/* ---- the virgl route (mgl_vg*.c, mgl_vg.h) ------------------------------------------------ */
+
+/* Each takes over from the route above when c->vg is set. */
+int mgl_vg_open(GLcontext c);       /* 1: the context draws through virgl */
+void mgl_vg_close(GLcontext c);
+void mgl_vg_clear(GLcontext c, GLbitfield mask);
+void mgl_vg_readback(GLcontext c, int x, int y, int w, int h, ULONG *argb, int stride);
+void mgl_vg_switch(GLcontext c);    /* the frame to the host, and shown */
+void mgl_vg_finish(GLcontext c);    /* the frame so far to the host */
 
 /* ---- display lists (mgl_list.c) --------------------------------------------------------- */
 

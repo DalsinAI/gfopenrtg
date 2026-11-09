@@ -570,4 +570,8 @@ void GLFlush(GLcontext c)
     mgl_flush(c);
 }
 
-void GLFinish(GLcontext c) { GLFlush(c); }
+void GLFinish(GLcontext c)
+{
+    GLFlush(c);
+    if (c && c->vg) mgl_vg_finish(c);
+}

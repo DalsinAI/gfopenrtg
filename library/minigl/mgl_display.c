@@ -450,6 +450,7 @@ void MGLSwitchDisplay(GLcontext c)
     mgl_flush(c);
     MGLUnlockDisplay(c);
     c->frames++;
+    if (c->vg) { mgl_vg_switch(c); return; }   /* the host shows it (mgl_vg_os3.c) */
     switch (d->mode) {
     case MODE_SCREEN:
         if (!d->screen) break;
@@ -655,4 +656,31 @@ void MGLWriteShotPPM(GLcontext c, char *name)
     Close(f);
     mgl_free(row);
     mgl_free(out);
+}
+
+/* ---- the virgl route's target ----------------------------------------------------------------- */
+
+#include "mgl_vg.h"
+
+/* Where a frame the host drew goes: a screen's visible bitmap (no copy
+ * through d->off), the program's bitmap, or a window's RastPort inside its
+ * borders. */
+int mgl_disp_target(GLcontext c, struct RastPort **rp, struct BitMap **bm, int *x, int *y)
+{
+    struct mgl_display *d = c->disp;
+    *x = *y = 0;
+    switch (d->mode) {
+    case MODE_SCREEN:
+        *rp = &d->screen->RastPort;
+        *bm = d->screen->RastPort.BitMap;
+        return MGL_TARGET_SCREEN;
+    case MODE_BITMAP:
+        *rp = 0;
+        *bm = d->appbm;
+        return MGL_TARGET_BITMAP;
+    }
+    *rp = d->window->RPort;
+    *bm = d->window->RPort->BitMap;
+    *x = d->ox; *y = d->oy;
+    return MGL_TARGET_WINDOW;
 }

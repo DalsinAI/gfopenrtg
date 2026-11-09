@@ -17,8 +17,18 @@
 #include "../include/gfopengpu/virgl.h"
 #include "virgl_protocol.h"     /* virglrenderer's, from its pinned source */
 
+#if defined(__linux__)
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <sys/syscall.h>
+#endif
+
 #define ARENA (1u << 20)
-static uint8_t arena[ARENA];
+/* the arena a sealed memfd where there is one, as the runtime's video RAM
+ * (direct presents write it through the file) */
+static uint8_t *arena;
+static int vram_fd = -1;
 static uint8_t *map(void *u, uint32_t a, uint32_t len) { (void)u; return a < ARENA && len <= ARENA - a ? arena + a : NULL; }
 
 static int defer_all(void *u, uint32_t a, uint32_t n) { (void)u; (void)a; (void)n; return 1; }
@@ -53,8 +63,17 @@ static uint32_t f32(float f) { uint32_t u; memcpy(&u, &f, 4); return u; }
 int main(void)
 {
     char err[256];
-    struct acvirgl *v = acvirgl_create(NULL, err, sizeof err);
+    struct acvirgl *v;
     uint32_t c, i;
+#if defined(__linux__)
+    vram_fd = (int)syscall(SYS_memfd_create, "test-vram", 1u /* MFD_CLOEXEC */ | 2u /* MFD_ALLOW_SEALING */);
+    if (vram_fd >= 0 && !ftruncate(vram_fd, ARENA) && fcntl(vram_fd, 1033 /* F_ADD_SEALS */, 2 /* F_SEAL_SHRINK */) == 0) {
+        void *m = mmap(NULL, ARENA, PROT_READ | PROT_WRITE, MAP_SHARED, vram_fd, 0);
+        arena = m == MAP_FAILED ? NULL : m;
+    }
+#endif
+    if (!arena) { vram_fd = -1; if (!(arena = calloc(1, ARENA))) return 1; }
+    v = acvirgl_create(NULL, err, sizeof err);
     if (!v) { printf("acvirgl: skipped (%s)\n", err); return 0; }
     printf("acvirgl: drawing with %s on %s\n", acvirgl_api(v), acvirgl_renderer(v));
     CHECK(strcmp(acvirgl_renderer(v), "unknown") != 0, "the host's renderer is unknown");
@@ -350,6 +369,101 @@ int main(void)
         printf("acvirgl: behind %llu of %llu presents\n", (unsigned long long)(s1.behind - s0.behind), (unsigned long long)(s1.presents - s0.presents));
         CHECK(s1.behind - s0.behind == 12, "behind: twelve presents one frame behind (%llu)", (unsigned long long)(s1.behind - s0.behind));
     }
+
+#ifdef ACVIRGL_HAS_VRAM
+    /* Direct presents (acvirgl_video_ram): the arena, a sealed memfd, as
+     * video RAM; the GPU writes a one-rectangle XRGB32 or ARGB32 present
+     * itself. Byte for byte as the ordinary way: both formats, flipped and
+     * not, from a resource stored either way up, at once, deferred and one
+     * frame behind (the frame as presented, though the resource is drawn
+     * over after it); a rectangle running off the resource and the target.
+     * Two rectangles go the ordinary way; after acvirgl_video_ram_forget
+     * the next ones are direct again. AC_VIRGL_DIRECT=0: none direct. */
+    if (vram_fd >= 0) {
+        /* rows 512 bytes apart: AMD's GPUs take a linear image's rows only 256-byte aligned */
+        enum { TW = 128, TH = 80, TB = TW * 4, T = 0x60000, R = 0x80000 };
+        uint32_t a_y0[12] = { 3, 2, 1, 2 | 8, 64, 64, 1, 1, 0, 0, 1 /* VIRGL_RESOURCE_Y_0_TOP */, 1 };
+        uint32_t a_put3[14] = { 3, 1, 0, 256, 0, 0, 0, 0, 64, 64, 1, 0x40000, 64 * 64 * 4, ACV_SWAP_NONE };
+        uint32_t a_put1[14] = { 1, 1, 0, 256, 0, 0, 0, 0, 64, 64, 1, 0x40000, 64 * 64 * 4, ACV_SWAP_NONE };
+        const char *dv = getenv("AC_VIRGL_DIRECT");
+        /* on by default where measured faster (acvirgl.c's AV_DIRECT_DEFAULT) */
+        int want = dv && *dv ? strcmp(dv, "0") != 0
+                             : !strncmp(acvirgl_renderer(v), "V3D", 3) || strstr(acvirgl_renderer(v), "radeonsi") != NULL;
+        int same = 1, k;
+        struct acvirgl_stats s0, s1;
+        uint32_t h, f, md, n_direct = 0;
+        acvirgl_stats(v, &s0);
+        begin(); c = cmd(ACV_RES_CREATE, 12, a_y0); cp = cmd(ACV_PUT, 14, a_put3);
+        acvirgl_run(v, map, NULL, BLK, at - BLK);
+        CHECK(result(c) == 0 && result(cp) == 0, "direct: a Y_0_TOP resource and its picture (%d, %d)", result(c), result(cp));
+        for (h = 1; h <= 3; h += 2)
+            for (f = 0; f < 4; f++)
+                for (md = 0; md < 3; md++) {
+                    /* f: bit 0 ARGB32, bit 1 flipped; md: at once, deferred, behind */
+                    uint32_t pa[12] = { 1, h, 0, (10u << 16) | 5u, R, TB, f & 1 ? OGPU_FMT_ARGB32 : OGPU_FMT_XRGB32,
+                                        ((uint32_t)TW << 16) | TH, f & 2 ? ACV_PRESENT_FLIP_Y : 0, 1, (8u << 16) | 3u, (70u << 16) | 70u };
+                    int32_t r0, r1;
+                    acvirgl_video_ram(v, -1, 0, 0, NULL, NULL);
+                    memset(arena + R, 0xEE, TB * TH);
+                    begin(); c = cmd(ACV_PRESENT, 12, pa);
+                    acvirgl_run(v, map, NULL, BLK, at - BLK);
+                    r0 = result(c);
+                    acvirgl_video_ram(v, vram_fd, 0, ARENA, defer_all, NULL);
+                    if (md == 1) acvirgl_defer_presents(v, defer_all);
+                    if (md == 2) acvirgl_behind_presents(v, defer_all);
+                    memset(arena + T, 0xEE, TB * TH);
+                    pa[4] = T;
+                    memset(arena + 0x48000, 0x11, 64 * 64 * 4);
+                    a_put1[0] = h; a_put1[11] = 0x48000;
+                    begin(); c = cmd(ACV_PRESENT, 12, pa);
+                    if (md == 2) cmd(ACV_PUT, 14, a_put1);  /* drawn over after it */
+                    acvirgl_run(v, map, NULL, BLK, at - BLK);
+                    r1 = result(c);
+                    acvirgl_settle(v, map, NULL, ACVIRGL_ALL);
+                    acvirgl_defer_presents(v, NULL);
+                    acvirgl_behind_presents(v, NULL);
+                    n_direct++;
+                    if (r0 != r1 || r0 != 64 * 64 || memcmp(arena + R, arena + T, TB * TH)) {
+                        same = 0;
+                        for (k = 0; k < TB * TH && arena[R + k] == arena[T + k]; k++) ;
+                        printf("acvirgl: direct differs: resource %u, case %u, mode %u: %d %d, first at byte %d (%02x against %02x)\n",
+                               h, f, md, r0, r1, k, k < TB * TH ? arena[T + k] : 0, k < TB * TH ? arena[R + k] : 0);
+                    }
+                    a_put1[11] = 0x40000;
+                    begin(); cmd(ACV_PUT, 14, h == 3 ? a_put3 : a_put1);
+                    acvirgl_run(v, map, NULL, BLK, at - BLK);
+                }
+        acvirgl_stats(v, &s1);
+        CHECK(same, "direct: the same pixels as the ordinary way, the frame as presented");
+        CHECK(s1.direct - s0.direct == (want ? n_direct : 0), "direct: %llu of %u presents written by the GPU",
+              (unsigned long long)(s1.direct - s0.direct), want ? n_direct : 0);
+        /* two rectangles: the ordinary way */
+        {
+            uint32_t pa[14] = { 1, 1, 0, 0, T, TB, OGPU_FMT_XRGB32, ((uint32_t)TW << 16) | TH, 0, 2,
+                                (2u << 16) | 3u, (16u << 16) | 8u, (30u << 16) | 30u, (8u << 16) | 8u };
+            acvirgl_stats(v, &s0);
+            begin(); c = cmd(ACV_PRESENT, 14, pa);
+            acvirgl_run(v, map, NULL, BLK, at - BLK);
+            acvirgl_stats(v, &s1);
+            CHECK(result(c) == 16 * 8 + 8 * 8 && s1.direct == s0.direct, "direct: two rectangles go the ordinary way (%d)", result(c));
+        }
+        /* forgotten (a hole punched): taken again at the next present */
+        {
+            uint32_t pa[12] = { 1, 1, 0, 0, T, TB, OGPU_FMT_XRGB32, ((uint32_t)TW << 16) | TH, 0, 1, (2u << 16) | 3u, (16u << 16) | 8u };
+            acvirgl_video_ram_forget(v);
+            memset(arena + T, 0xEE, TB * TH);
+            acvirgl_stats(v, &s0);
+            begin(); c = cmd(ACV_PRESENT, 12, pa);
+            acvirgl_run(v, map, NULL, BLK, at - BLK);
+            acvirgl_stats(v, &s1);
+            CHECK(result(c) == 16 * 8 && arena[T + 3 * TB + 2 * 4 + 1] != 0xEE && s1.direct - s0.direct == (uint64_t)want,
+                  "direct: after acvirgl_video_ram_forget (%d, %llu)", result(c), (unsigned long long)(s1.direct - s0.direct));
+        }
+        acvirgl_video_ram(v, -1, 0, 0, NULL, NULL);
+        begin(); h = 3; cmd(ACV_RES_UNREF, 1, &h);
+        acvirgl_run(v, map, NULL, BLK, at - BLK);
+    }
+#endif
 
     /* Handles as the Amiga makes them: GLA's resource addresses (sparse,
      * above 1 MiB). 600 display targets, every other one dropped again;

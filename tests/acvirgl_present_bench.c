@@ -10,7 +10,9 @@
  *
  *   acvirgl_present_bench [frames [width height [now|behind|defer]]]
  *
- * AC_VIRGL_STAGE (1, 0) and AC_VIRGL_ZDISCARD (0) choose as in the runtime.
+ * AC_VIRGL_STAGE (1, 0), AC_VIRGL_ZDISCARD (0) and AC_VIRGL_DIRECT (1, 0)
+ * choose as in the runtime; the "video RAM" is a sealed memfd, as the
+ * runtime's, so direct presents (acvirgl_video_ram) may write it.
  *
  * Built like test_acvirgl.c (virgl_protocol.h from virglrenderer's source):
  *   cc -O2 -I$VIRGL_SRC tests/acvirgl_present_bench.c host/virgl/acvirgl.c -ldl
@@ -23,6 +25,13 @@
 #include "../include/gfopengpu/stream.h"
 #include "../include/gfopengpu/virgl.h"
 #include "virgl_protocol.h"
+#if defined(__linux__)
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <sys/syscall.h>
+#endif
+static int vram_fd = -1;
 
 #define BLK 0x1000u
 #define CMDS 0x8000u
@@ -71,9 +80,21 @@ int main(int argc, char **argv)
     struct acvirgl_stats s0, s1;
     uint64_t t_pres = 0, t_all, t_max = 0;
     uint32_t c, bad = 0;
-    arena_size = VRAM + w * h * 4 + 4096;
-    if (!(arena = calloc(1, arena_size))) return 1;
+    arena_size = (VRAM + w * h * 4 + 4096 + 4095) & ~4095u;
+#if defined(ACVIRGL_HAS_VRAM) && defined(__linux__)
+    /* the "video RAM" a file, as the runtime's (a sealed memfd): direct
+     * presents (AC_VIRGL_DIRECT) may write it */
+    vram_fd = (int)syscall(SYS_memfd_create, "bench-vram", 1u /* MFD_CLOEXEC */ | 2u /* MFD_ALLOW_SEALING */);
+    if (vram_fd >= 0 && !ftruncate(vram_fd, arena_size) && fcntl(vram_fd, 1033 /* F_ADD_SEALS */, 2 /* F_SEAL_SHRINK */) == 0) {
+        void *m = mmap(NULL, arena_size, PROT_READ | PROT_WRITE, MAP_SHARED, vram_fd, 0);
+        arena = m == MAP_FAILED ? NULL : m;
+    }
+#endif
+    if (!arena && !(arena = calloc(1, arena_size))) return 1;
     if (!(v = acvirgl_create(NULL, err, sizeof err))) { printf("no virgl: %s\n", err); return 0; }
+#if defined(ACVIRGL_HAS_VRAM) && defined(__linux__)
+    if (vram_fd >= 0) acvirgl_video_ram(v, vram_fd, 0, arena_size, NULL, NULL);
+#endif
     printf("bench: %s on %s, %ux%u, %d frames, present %s\n", acvirgl_api(v), acvirgl_renderer(v), w, h, frames, mode);
     if (!strcmp(mode, "behind")) acvirgl_behind_presents(v, ok_all);
     else if (!strcmp(mode, "defer")) acvirgl_defer_presents(v, ok_all);
@@ -178,6 +199,9 @@ int main(int argc, char **argv)
 #ifdef ACVIRGL_HAS_STAGE
         printf("bench: staged %llu, depth/stencil not stored %llu\n", (unsigned long long)(s1.staged - s0.staged),
                (unsigned long long)(s1.zs_discards - s0.zs_discards));
+#endif
+#ifdef ACVIRGL_HAS_VRAM
+        printf("bench: written straight into video RAM by the GPU %llu\n", (unsigned long long)(s1.direct - s0.direct));
 #endif
     }
     acvirgl_destroy(v);

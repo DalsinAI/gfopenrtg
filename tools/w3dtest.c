@@ -4,7 +4,7 @@
  * W3DTest: a Warp3D program that draws a textured, Z-buffered, fogged
  * scene (a floor into the fog, two turning cubes, a see-through pane) and
  * reports frames a second, so drivers can be compared on the same pictures:
- *   W3DTest [CPU|GPU|AUTO] [W n] [H n] [DEPTH 16|32] [FRAMES n] [SECONDS n] [SNAP file]
+ *   W3DTest [CPU|GPU|AUTO] [W n] [H n] [DEPTH 16|32] [FRAMES n] [SECONDS n] [SNAP file] [CLIP]
  * Started plainly (a Shell name, or the Workbench icon) it runs until Esc, a
  * mouse button or Ctrl-C ends it (its screen has no title bar to hold a close
  * gadget), then frees everything and exits. FRAMES n draws n frames and
@@ -12,7 +12,8 @@
  * has, for measuring; SNAP alone keeps the old run of 100 frames. CPU asks for W3D_DRIVER_CPU, GPU for W3D_DRIVER_3DHW (GFOpenGPU), AUTO lets
  * Warp3D choose. SNAP writes the first frame as raw ARGB (8-byte header:
  * width, height) and prints its checksum: the same frame from two drivers
- * should match within the 3D tolerance. Uses only the Warp3D API, as a
+ * should match within the 3D tolerance. CLIP cuts the floor to the screen
+ * before drawing it, so no vertex lies off the screen. Uses only the Warp3D API, as a
  * game would, and only FPU instructions a 68040 has. */
 #include <exec/types.h>
 #include <intuition/intuition.h>
@@ -71,9 +72,66 @@ static void project(W3D_Vertex *v, float x, float y, float z, float u, float tv,
     v->l = 0;
 }
 
+/* CLIP: the floor cut to the screen in camera space first (each cell a fan), so no vertex lies off the screen.
+ * Without it the strips reach far past the screen's edges, as the scene always had. */
+static int clipfloor;
+struct cp { float x, y, z, u, v, r, g, b; };
+
+static int clip_plane(const struct cp *in, int n, struct cp *out, float sx, float sy)
+{
+    /* keeps sx * x + sy * y + z >= 0 (z scaled by the screen's half-extent over f) */
+    int i, m = 0;
+    for (i = 0; i < n; i++) {
+        const struct cp *a = &in[i], *b = &in[(i + 1) % n];
+        float da = sx * a->x + sy * a->y + a->z, db = sx * b->x + sy * b->y + b->z;
+        if (da >= 0) out[m++] = *a;
+        if ((da >= 0) != (db >= 0)) {
+            float t = da / (da - db);
+            struct cp *c = &out[m++];
+            c->x = a->x + t * (b->x - a->x); c->y = a->y + t * (b->y - a->y); c->z = a->z + t * (b->z - a->z);
+            c->u = a->u + t * (b->u - a->u); c->v = a->v + t * (b->v - a->v);
+            c->r = a->r + t * (b->r - a->r); c->g = a->g + t * (b->g - a->g); c->b = a->b + t * (b->b - a->b);
+        }
+    }
+    return m;
+}
+
+static void floor_cell(const struct cp q[4])
+{
+    struct cp a[12], b[12];
+    W3D_Vertex v[12];
+    W3D_Triangles t;
+    float f = (float)H * 0.9f, kx = f / ((float)W * 0.5f), ky = f / ((float)H * 0.5f);
+    int i, n;
+    for (i = 0; i < 4; i++) a[i] = q[i];
+    n = clip_plane(a, 4, b, kx, 0);         /* sx >= 0 */
+    n = clip_plane(b, n, a, -kx, 0);        /* sx <= W */
+    n = clip_plane(a, n, b, 0, ky);         /* sy <= H */
+    n = clip_plane(b, n, a, 0, -ky);        /* sy >= 0 */
+    if (n < 3) return;
+    for (i = 0; i < n; i++) project(&v[i], a[i].x, a[i].y, a[i].z, a[i].u, a[i].v, a[i].r, a[i].g, a[i].b, 1.0f);
+    t.vertexcount = n; t.v = v; t.tex = checker; t.st_pattern = 0;
+    W3D_DrawTriFan(ctx, &t);
+}
+
 static void floor_(void)
 {
     int i, j;
+    if (clipfloor) {
+        for (j = 0; j < 9; j++)
+            for (i = 0; i < 8; i++) {
+                struct cp q[4];
+                float x0 = -8.0f + i * 2.0f, z0 = 1.5f + j * 2.0f;
+                float s0 = 0.6f + 0.05f * (float)((i + j) & 3), s1 = 0.6f + 0.05f * (float)((i + 1 + j) & 3);
+                q[0].x = x0; q[0].z = z0; q[0].u = i * 64.0f; q[0].v = j * 64.0f; q[0].r = s0; q[0].g = s0; q[0].b = 1.0f;
+                q[1].x = x0 + 2; q[1].z = z0; q[1].u = (i + 1) * 64.0f; q[1].v = j * 64.0f; q[1].r = s1; q[1].g = s1; q[1].b = 1.0f;
+                q[2].x = x0 + 2; q[2].z = z0 + 2; q[2].u = (i + 1) * 64.0f; q[2].v = (j + 1) * 64.0f; q[2].r = 1.0f; q[2].g = s1; q[2].b = s1;
+                q[3].x = x0; q[3].z = z0 + 2; q[3].u = i * 64.0f; q[3].v = (j + 1) * 64.0f; q[3].r = 1.0f; q[3].g = s0; q[3].b = s0;
+                q[0].y = q[1].y = q[2].y = q[3].y = -1.2f;
+                floor_cell(q);
+            }
+        return;
+    }
     for (j = 0; j < 9; j++) {
         W3D_Vertex v[20];
         W3D_Triangles t;
@@ -199,6 +257,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "FRAMES") && i + 1 < argc) { frames = atoi(argv[++i]); timed = 1; }
         else if (!strcmp(argv[i], "SECONDS") && i + 1 < argc) { secs = atoi(argv[++i]); timed = 1; }
         else if (!strcmp(argv[i], "SNAP") && i + 1 < argc) snap = argv[++i];
+        else if (!strcmp(argv[i], "CLIP")) clipfloor = 1;
     }
     if (snap && !timed) { frames = 100; timed = 1; }       /* SNAP alone: as before */
     Warp3DBase = OpenLibrary("Warp3D.library", 4);

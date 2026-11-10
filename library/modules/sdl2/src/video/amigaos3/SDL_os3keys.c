@@ -411,6 +411,10 @@ static void OS3_ShowCard(SDL_Window *window)
     es.es_TextFormat = (UBYTE *)"%s";
     es.es_GadgetFormat = (UBYTE *)"Back to the game";
     EasyRequest(iwin, &es, NULL, (ULONG)text);
+    /* The card's window was the active one; when it closes, Intuition does
+       not always hand activation back (GFOpenBench gives it to Workbench),
+       so the game's keys, Right Amiga + Q among them, would go elsewhere. */
+    ActivateWindow(iwin);
     OS3_StopEverything(0);
     SDL_ResetKeyboard();
     SDL_free(text);

@@ -972,6 +972,7 @@ struct av_heap_alloc { uint64_t len; uint32_t fd, fd_flags; uint64_t heap_flags;
 struct av_dmabuf_sync { uint64_t flags; };
 #define AV_DMA_BUF_SYNC     _IOW('b', 0, struct av_dmabuf_sync)
 #define AV_SYNC_READ        1
+#define AV_SYNC_RW          3
 #define AV_SYNC_END         4
 
 static void av_dmabuf_sync(int fd, uint64_t flags)
@@ -1013,6 +1014,14 @@ static int av_dmabuf_alloc(struct acvirgl *v, size_t bytes, uint8_t **mem)
     if (fd < 0) return -1;
     if ((p = mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0)) == MAP_FAILED) { close(fd); return -1; }
     *mem = p;
+    /* The pages were zeroed by the CPU when they were made, and those lines
+     * may still sit dirty in its caches: written back now, before the GPU
+     * first writes the stage. Left there, they land over the GPU's pixels
+     * later (or are read in place of them): the Pi 5's first frames through
+     * a new stage came back with 16-pixel runs of black (64-byte lines),
+     * different on every boot (Warp3D's W3DTest, 10 November). */
+    av_dmabuf_sync(fd, AV_SYNC_RW);
+    av_dmabuf_sync(fd, AV_SYNC_RW | AV_SYNC_END);
     if (!v->stage_said) {
         v->stage_said = 1;
         fprintf(stderr, "ACVIRGL: frames read back through a stage in cached memory (%s)\n",
@@ -1186,7 +1195,6 @@ static int av_stage_wait(struct acvirgl *v, struct av_pres *p)
 
 /* ---- direct presents: the GPU writes video RAM itself (acvirgl_video_ram) ---------------- */
 
-#define AV_SYNC_RW                  3
 #define AV_GL_FRAGMENT_SHADER       0x8B30
 #define AV_GL_VERTEX_SHADER         0x8B31
 #define AV_GL_COMPILE_STATUS        0x8B81

@@ -370,6 +370,7 @@ static void bench_scene(int which, const char *ppm_dir)
 
 #define MX_W 320
 #define MX_H 240
+static int mx565;                               /* the mixed scene on an RGB565 bitmap (BlitzQuake's and W3DTest's 16 bits) */
 
 static ULONG mx_build(ogpu_u8 *buf, int side, int pass)
 {
@@ -381,9 +382,9 @@ static ULONG mx_build(ogpu_u8 *buf, int side, int pass)
     static const ULONG col[2][3] = { { 0xFFFF0000UL, 0xFF00FF00UL, 0xFF0000FFUL }, { 0x80FFFFFFUL, 0x80FFFF00UL, 0x8000FFFFUL } };
     int i;
     ogpu_batch_init(&b, buf, 4096);
-    ogpu_surface(&b, 0, tgt, MX_W * 4, MX_W, MX_H, OGPU_FMT_ARGB32);
+    ogpu_surface(&b, 0, tgt, MX_W * (mx565 ? 2 : 4), MX_W, MX_H, mx565 ? OGPU_FMT_RGB565 : OGPU_FMT_ARGB32);
     ogpu_target(&b, 0);
-    if (!pass) ogpu_fill(&b, 0, 0, MX_W, MX_H, 0xFF202040UL);
+    if (!pass) ogpu_fill(&b, 0, 0, MX_W, MX_H, mx565 ? 0x2188UL : 0xFF202040UL);
     memset(r3d, 0, sizeof r3d);
     r3d[0] = OGPU_R3D_GOURAUD | (pass ? OGPU_R3D_BLEND : 0);
     r3d[1] = 8; r3d[2] = 8; r3d[3] = pass ? (7 | 8UL << 16) : (2 | 1UL << 16);  /* W3D_SRC_ALPHA, W3D_ONE_MINUS_SRC_ALPHA on the second */
@@ -407,9 +408,14 @@ static void mx_cpu_2d(int side)
     int x, y;
     for (y = 60; y < 180; y++)
         for (x = 100; x < 220; x++) {
-            ogpu_u8 *p = mem[side][0] + (y * MX_W + x) * 4;
             int on = ((x / 8) ^ (y / 8)) & 1;
-            p[0] = 0xFF; p[1] = on ? 0xFF : 0x00; p[2] = on ? 0xC0 : 0x00; p[3] = 0x00;
+            if (mx565) {
+                ogpu_u8 *p = mem[side][0] + (y * MX_W + x) * 2;
+                p[0] = on ? 0xFE : 0x00; p[1] = 0x00;           /* big-endian RGB565 */
+            } else {
+                ogpu_u8 *p = mem[side][0] + (y * MX_W + x) * 4;
+                p[0] = 0xFF; p[1] = on ? 0xFF : 0x00; p[2] = on ? 0xC0 : 0x00; p[3] = 0x00;
+            }
         }
 }
 
@@ -439,9 +445,11 @@ static void mixed_scene(const char *ppm_dir)
     }
     w3dvg_stats(V, &st);
     memset(&sh, 0, sizeof sh);
-    sh.addr = (ULONG)(unsigned long)env[0].mem[0]; sh.bpr = MX_W * 4; sh.w = MX_W; sh.h = MX_H; sh.fmt = OGPU_FMT_ARGB32;
-    d = compare(&sh, 0, ppm_dir, "mixed");
-    printf("w3d virgl mixed 2D/3D scene: worst %d, %ld of %ld over %d, %ld with a pixel's shift; %ld loads, %ld presents, %ld declined, %ld refused\n",
+    sh.addr = (ULONG)(unsigned long)env[0].mem[0]; sh.bpr = MX_W * (mx565 ? 2 : 4); sh.w = MX_W; sh.h = MX_H;
+    sh.fmt = mx565 ? OGPU_FMT_RGB565 : OGPU_FMT_ARGB32;
+    d = compare(&sh, 0, ppm_dir, mx565 ? "mixed565" : "mixed");
+    printf("w3d virgl mixed 2D/3D scene%s:", mx565 ? " (RGB565)" : "");
+    printf(" worst %d, %ld of %ld over %d, %ld with a pixel's shift; %ld loads, %ld presents, %ld declined, %ld refused\n",
            d.worst, d.over, d.pixels, TOL, d.over_shift, (long)st.loads, (long)st.presents, (long)st.declined, (long)st.refused);
     CHECK(!r && !st.declined, "mixed scene ran on the route");
     CHECK(st.loads >= 1, "the CPU's 2D was loaded before the second 3D batch (%ld loads)", (long)st.loads);
@@ -624,6 +632,7 @@ int main(int argc, char **argv)
     if (getenv("W3D_ZONLY")) { z_scene(OGPU_FMT_Z16, 0, ppm_dir); z_scene(OGPU_FMT_Z32, 0, ppm_dir); z_scene(OGPU_FMT_Z16, 1, ppm_dir); z_scene(OGPU_FMT_Z32, 1, ppm_dir); w3dvg_close(V); printf("w3d virgl: %d checks, %d failed\n", checks, failures); return failures ? 1 : 0; }
     if (getenv("W3D_BENCH")) { bench_scene(atoi(getenv("W3D_BENCH")), ppm_dir); w3dvg_close(V); return 0; }
     mixed_scene(ppm_dir);
+    mx565 = 1; mixed_scene(ppm_dir); mx565 = 0;
     hold_scene(ppm_dir);
     z_scene(OGPU_FMT_Z16, 0, ppm_dir);
     z_scene(OGPU_FMT_Z32, 0, ppm_dir);

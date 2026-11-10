@@ -477,7 +477,13 @@ static struct virgl_hw_res *gv_resource_create(struct virgl_winsys *vws, enum pi
     }
     mtx_lock(&w->mutex);
     res->res_handle = NEW_RES_HANDLE(w, res);
+#if !defined(GLA_HAVE_VIRGL) || GLA_HAVE_VIRGL
     a[0] = res->res_handle; a[1] = target; a[2] = pipe_to_virgl_format(res->format); a[3] = bind;
+#else
+    /* GL_DRIVERS=softpipe: Mesa's virgl isn't linked, and nothing makes a
+     * virgl winsys (gla_display_create_virgl refuses), so never reached */
+    a[0] = res->res_handle; a[1] = target; a[2] = 0; a[3] = bind;
+#endif
     a[4] = width; a[5] = height; a[6] = depth; a[7] = array_size; a[8] = last_level; a[9] = nr_samples;
     a[10] = flags; a[11] = CTX_ID;
     if (w->batch) {

@@ -576,6 +576,34 @@ int main(void)
         if (getenv("AC_VIRGL_STAGE") && !strcmp(getenv("AC_VIRGL_STAGE"), "1"))
             CHECK(s2.staged > 0, "AC_VIRGL_STAGE=1: presents went through a stage (%llu)", (unsigned long long)s2.staged);
     }
+    {   /* a warm reset (task 13, 10 Nov 2026): the next boot makes the same
+         * context and the same handles again, as MiniGL's Amiga addresses do */
+        struct acvirgl_stats s0, s1;
+        uint32_t a_c7[3] = { 7, 0x30000, 12 };
+        uint32_t a_r[12] = { 0x5000, 2, 1, 2 | 8, 16, 16, 1, 1, 0, 0, 0, 7 };
+        uint32_t c7, cr7;
+        begin(); c7 = cmd(ACV_CTX_CREATE, 3, a_c7); cr7 = cmd(ACV_RES_CREATE, 12, a_r);
+        acvirgl_run(v, map, NULL, BLK, at - BLK);
+        CHECK(result(c7) == 0 && result(cr7) == 0, "boot 1: context 7 %d, resource 0x5000 %d", result(c7), result(cr7));
+        begin(); cr7 = cmd(ACV_RES_CREATE, 12, a_r);
+        acvirgl_run(v, map, NULL, BLK, at - BLK);
+        CHECK(result(cr7) != 0, "no reset: resource 0x5000 again is refused, as the next boot met it (%d)", result(cr7));
+        acvirgl_stats(v, &s0);
+        acvirgl_settle(v, map, NULL, ACVIRGL_DROP);
+        acvirgl_reset(v);
+        acvirgl_stats(v, &s1);
+        CHECK(s1.resets == s0.resets + 1, "a reset counted (%llu)", (unsigned long long)s1.resets);
+        begin(); c7 = cmd(ACV_CTX_CREATE, 3, a_c7); cr7 = cmd(ACV_RES_CREATE, 12, a_r);
+        c = cmd(ACV_RES_CREATE, 12, a_res);
+        acvirgl_run(v, map, NULL, BLK, at - BLK);
+        CHECK(result(c7) == 0 && result(cr7) == 0 && result(c) == 0,
+              "after a reset: context 7 %d, resource 0x5000 %d, resource 1 %d, all made again", result(c7), result(cr7), result(c));
+        acvirgl_reset(v);               /* and a second reset, of what this boot made */
+        begin(); cr7 = cmd(ACV_RES_CREATE, 12, a_r);
+        acvirgl_run(v, map, NULL, BLK, at - BLK);
+        CHECK(result(cr7) == 0, "after a second reset: resource 0x5000 %d", result(cr7));
+        printf("acvirgl: a warm reset lets go of the last boot's contexts and resources\n");
+    }
     acvirgl_destroy(v);
     printf("acvirgl: %d of %d checks passed\n", checks - fails, checks);
     return fails != 0;

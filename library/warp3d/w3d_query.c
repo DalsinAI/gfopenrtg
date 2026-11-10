@@ -59,7 +59,7 @@ ULONG w3d_texfmt_info(int route, ULONG format, ULONG destfmt)
 
 static int route_of(struct W3DBase *base, W3D_Driver *d)
 {
-    return d == &base->drv[ROUTE_GPU] ? ROUTE_GPU : ROUTE_CPU;
+    return d == &base->drv[ROUTE_GPU] ? ROUTE_GPU : d == &base->drv[ROUTE_VIRGL] ? ROUTE_VIRGL : ROUTE_CPU;
 }
 
 LIBCALL ULONG LIB_W3D_Query(REG(a0, W3D_Context *c), REG(d0, ULONG query), REG(d1, ULONG destfmt), REG(a6, struct W3DBase *libbase))

@@ -46,6 +46,7 @@ static const char lib_id[] = "Warp3D.library 5.0 (8.10.2026) GFOpenRTG Warp3D, A
 static const char lib_ver[] __attribute__((used)) = "\0$VER: Warp3D.library 5.0 (8.10.2026) GFOpenRTG Warp3D, AmiCradle Team";
 static char name_gpu[64] = "GFOpenGPU";
 static const char name_cpu[] = "CPU (GFOpenRTG's 3D core on this 68k)";
+static const char name_virgl[] = "virgl (the host's graphics chip, through GFOpenGPU)";
 
 static struct Library *lib_init(REG(d0, struct W3DBase *base), REG(a0, BPTR seglist), REG(a6, struct ExecBase *sys));
 static struct Library *lib_open(REG(a6, struct W3DBase *base));
@@ -109,7 +110,12 @@ static struct Library *lib_init(REG(d0, struct W3DBase *base), REG(a0, BPTR segl
     base->drv[ROUTE_CPU].ChipID = W3D_CHIP_UNKNOWN;
     base->drv[ROUTE_CPU].name = (char *)name_cpu;
     base->drv[ROUTE_CPU].swdriver = W3D_TRUE;
+    base->drv[ROUTE_VIRGL].ChipID = W3D_CHIP_UNKNOWN;
+    base->drv[ROUTE_VIRGL].name = (char *)name_virgl;
+    base->drv[ROUTE_VIRGL].swdriver = W3D_FALSE;
     base->drv[ROUTE_GPU].formats = base->drv[ROUTE_CPU].formats = W3D_GetDestFmt_all();
+    base->drv[ROUTE_VIRGL].formats = W3D_GetDestFmt_all();
+    base->virgl_chip = -1;
     return &base->lib;
 }
 
@@ -143,12 +149,17 @@ static int open_libs(struct W3DBase *base)
                 while (n && *n && i < 62) name_gpu[i++] = *n++;
                 name_gpu[i] = 0;
             }
+            base->gpu_virgl = OGPU_ANSWER(OGPU_Query(OGPU_OP_VIRGL, 0)) == OGPU_FULL;
         }
     }
     w3d_read_prefs(base);
-    base->drivers[0] = base->gpu_3d ? &base->drv[ROUTE_GPU] : &base->drv[ROUTE_CPU];
-    base->drivers[1] = base->gpu_3d ? &base->drv[ROUTE_CPU] : 0;
-    base->drivers[2] = 0;
+    {
+        int n = 0;
+        if (base->gpu_virgl) base->drivers[n++] = &base->drv[ROUTE_VIRGL];
+        if (base->gpu_3d) base->drivers[n++] = &base->drv[ROUTE_GPU];
+        base->drivers[n++] = &base->drv[ROUTE_CPU];
+        base->drivers[n] = 0;
+    }
     return 1;
 }
 
@@ -194,7 +205,9 @@ static BPTR lib_expunge(REG(a6, struct W3DBase *base))
 
 /* The preferences, in ENV:Warp3D/ (GFOpenPrefs' Acceleration page writes them;
  * C:Warp3DPrefs FROMWAZP3D carries Wazp3D's settings over):
- *   Driver      Auto, CPU or GFOpenGPU   which driver W3D_DRIVER_BEST gets
+ *   Driver      Auto, virgl, GFOpenGPU or CPU   which driver W3D_DRIVER_BEST gets
+ *               (Auto: virgl when the host draws it on a graphics chip, else
+ *               GFOpenGPU when its back end isn't this 68k, else the CPU)
  *   ZBuffer     16 or 32               bits of depth
  *   Fog, Perspective, Filtering, Lighting   "0" leaves that out, for speed
  * Read again for each new context, so a change applies to the next program. */
@@ -208,10 +221,11 @@ static int envflag(const char *name, int dflt)
 void w3d_read_prefs(struct W3DBase *base)
 {
     char v[16];
-    base->prefer_cpu = base->prefer_gpu = 0;
+    base->prefer_cpu = base->prefer_gpu = base->prefer_virgl = 0;
     if (GetVar("Warp3D/Driver", v, sizeof v, GVF_GLOBAL_ONLY) > 0) {
         base->prefer_cpu = v[0] == 'C' || v[0] == 'c';
         base->prefer_gpu = v[0] == 'O' || v[0] == 'o' || v[0] == 'G' || v[0] == 'g';
+        base->prefer_virgl = v[0] == 'V' || v[0] == 'v';
     }
     base->z32 = GetVar("Warp3D/ZBuffer", v, sizeof v, GVF_GLOBAL_ONLY) > 0 && v[0] == '3';
     base->no_fog = !envflag("Warp3D/Fog", 1);
@@ -269,37 +283,3 @@ void w3d_clear(void *d, ULONG n)
     while (n--) *dd++ = 0;
 }
 
-/* Rounded to the nearest, ties to even: what the FPU's FMOVE.L gives in its
- * own mode, so pictures match the hard-float build. In C: Warp3D is soft
- * float. Out of range saturates, as FMOVE.L does. */
-LONG w3d_f2l(float f)
-{
-    LONG i;
-    float r;
-    if (f >= 2147483648.0f) return 0x7fffffff;
-    if (f <= -2147483648.0f) return (LONG)0x80000000;
-    if (f != f) return 0x7fffffff;
-    i = (LONG)f;                    /* toward zero */
-    r = f - (float)i;               /* exact: the fraction */
-    if (r > 0.5f || (r == 0.5f && (i & 1))) i++;
-    else if (r < -0.5f || (r == -0.5f && (i & 1))) i--;
-    return i;
-}
-
-ULONG w3d_fbits(float f)
-{
-    union { float f; ULONG u; } x;
-    x.f = f;
-    return x.u;
-}
-
-static ULONG ch(float v)
-{
-    LONG c = w3d_f2l(v * 255.0f);
-    return c < 0 ? 0 : c > 255 ? 255 : (ULONG)c;
-}
-
-ULONG w3d_colour(const W3D_Color *c)
-{
-    return (ch(c->a) << 24) | (ch(c->r) << 16) | (ch(c->g) << 8) | ch(c->b);
-}

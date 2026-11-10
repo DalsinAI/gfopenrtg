@@ -8,7 +8,7 @@
  *   Warp3DPrefs FROMWAZP3D SAVE         takes Wazp3D's settings (ENVARC:Wazp3D.cfg)
  * The installer runs the last one when it finds Wazp3D; Wazp3D's own files
  * stay where they are. Settings:
- *   DRIVER      AUTO (the host's GPU when there is one), CPU or GFOPENGPU
+ *   DRIVER      AUTO (the host's GPU when there is one), VIRGL, GFOPENGPU or CPU
  *   ZBUFFER     16 or 32
  *   FOG, PERSPECTIVE, FILTERING, LIGHTING   ON or OFF: OFF draws faster and
  *               plainer, as Wazp3D's options of the same names did. */
@@ -77,8 +77,9 @@ int main(void)
     if (args[6]) from_wazp3d(save);
     if (args[0]) {
         const char *d = (const char *)args[0];
-        if (!stricmp(d, "AUTO") || !stricmp(d, "CPU") || !stricmp(d, "GFOPENGPU")) set("Driver", !stricmp(d, "AUTO") ? "Auto" : !stricmp(d, "CPU") ? "CPU" : "GFOpenGPU", save);
-        else printf("Warp3DPrefs: DRIVER is AUTO, CPU or GFOPENGPU\n");
+        if (!stricmp(d, "AUTO") || !stricmp(d, "CPU") || !stricmp(d, "GFOPENGPU") || !stricmp(d, "VIRGL"))
+            set("Driver", !stricmp(d, "AUTO") ? "Auto" : !stricmp(d, "CPU") ? "CPU" : !stricmp(d, "VIRGL") ? "virgl" : "GFOpenGPU", save);
+        else printf("Warp3DPrefs: DRIVER is AUTO, VIRGL, GFOPENGPU or CPU\n");
     }
     if (args[1]) {
         if (!strcmp((char *)args[1], "16") || !strcmp((char *)args[1], "32")) set("ZBuffer", (char *)args[1], save);

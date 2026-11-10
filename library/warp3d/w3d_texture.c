@@ -200,6 +200,7 @@ void w3d_free_texture(struct w3dctx *x, W3D_Texture *tex)
     if (x->sent_tex == tex) x->sent_tex = 0;
     if (x->known_tex == tex) x->known_tex = 0;
     Remove(&tex->link);
+    if (x->vg) w3dvg_forget(x->vg, (ULONG)t->level[0]);   /* the host's copy: the memory may come back as another texture */
     for (lv = 0; lv < OGPU_TEX_LEVELS; lv++) w3d_free(t->level[lv]);
     w3d_free(t->srcpal);
     w3d_free(t);

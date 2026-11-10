@@ -67,6 +67,21 @@ static ULONG fill_of(GLenum m) { return m == GL_LINE ? VG_POLYGON_LINE : m == GL
 
 /* ---- the object caches --------------------------------------------------------------------- */
 
+/* A long from memory, through a data register. Comparing two memory longs
+ * makes GCC emit CMPM.L, which AC090's JIT does not translate, so the
+ * compare runs in the interpreter (the GLQuake ranking, 10 Nov: 24% of
+ * the emulation thread in this loop). A data register makes it CMP.L. */
+static ULONG vg_meml(const ULONG *p)
+{
+#ifdef VG_HOST
+    return *p;
+#else
+    ULONG v;
+    __asm__ __volatile__("move.l %1,%0" : "=d"(v) : "m"(*p));
+    return v;
+#endif
+}
+
 /* The handle made for key (n words) in cache, or 0 with *slot where to keep a new one. */
 static ULONG cached(struct vg_cache *k, const ULONG *key, int n, int *slot)
 {
@@ -75,7 +90,7 @@ static ULONG cached(struct vg_cache *k, const ULONG *key, int n, int *slot)
     for (i = 0; i < 4; i++) {
         s = (int)((h + (ULONG)i) & (VG_CACHE - 1));
         if (!k->handle[s]) { *slot = s; return 0; }
-        for (j = 0; j < n && k->key[s][j] == key[j]; j++) ;
+        for (j = 0; j < n && vg_meml(&k->key[s][j]) == vg_meml(&key[j]); j++) ;
         if (j == n) return k->handle[s];
     }
     *slot = -1 - (int)(h & (VG_CACHE - 1));     /* full: that one goes */
@@ -244,7 +259,7 @@ static void send_if_changed(GLcontext c, int type, const float *k, int n)
     const ULONG *a = (const ULONG *)k;
     ULONG *b = (ULONG *)last;
     if (*nlast == n) {
-        for (i = 0; i < n * 4; i++) if (a[i] != b[i]) break;
+        for (i = 0; i < n * 4; i++) if (vg_meml(a + i) != vg_meml(b + i)) break;
         if (i == n * 4) return;
     }
     for (i = 0; i < n * 4; i++) b[i] = a[i];

@@ -57,7 +57,16 @@ $CC $MODF -c -o "$W/gl_exports.o" "$W/gl_exports.c"
 # module_start.o first: its first code is the module's. -nostartfiles: no
 # libnix startup (module_rt.c stands in). -resident32: the data-to-data
 # relocations, for each program's copy.
-$CC $MESA_LFLAGS -nostartfiles $WEAK -Wl,-Map,"$W/GL.module.map" -o "$W/GL.module.debug" "$W/module_start.o" "$W/module_rt.o" "$W/gl_module.o" "$W/gl_exports.o" \
+# --gc-sections (10 November 2026): Mesa is built -ffunction-sections
+# -fdata-sections, and the sections nothing reaches are left out (about
+# 0.9 MB). The stove's linker (bfd/amigaos.c, amiga_gc_sections) starts
+# from every section of the first object, module_start.o, so the header,
+# the entry and through it the call table (gl_exports.c) and everything
+# they reach stay; libnix's .list_/.dlist_ set entries stay with any
+# object that keeps a section. Don't add KEEP() in a linker script: that
+# linker doesn't follow the relocations of a section already marked kept.
+# -e names the first code, the module's start (no "entry symbol" warning).
+$CC $MESA_LFLAGS -nostartfiles $WEAK -Wl,--gc-sections -Wl,-e,_ogpu_module_start -Wl,-Map,"$W/GL.module.map" -o "$W/GL.module.debug" "$W/module_start.o" "$W/module_rt.o" "$W/gl_module.o" "$W/gl_exports.o" \
     $GLAOBJS gla_present_os3.o $SHIM ${FIXOBJS:-} -Wl,--start-group $LIBS $OPT -Wl,--end-group $SYSLIBS -latomic -lamiga
 # No float-to-int store through the FPCR register may ship (tools/fpcr_check.py),
 # and the data is reached only through A4 (tools/baserel_check.py).

@@ -17,11 +17,12 @@ It is a thin front end over the one library's 3D path. It keeps Warp3D's state, 
 | Driver | `W3D_CC_DRIVERTYPE` | Where it draws |
 | --- | --- | --- |
 | W3D_OpenGPU | `W3D_DRIVER_3DHW` | It sends batches to `gfopengpu.library`, whose back end draws them. On AmiCradle that is `ACRTG.gpu`, the Cradle on the PC; on a PiStorm it will be `PiStorm.gpu`. It is offered when `OGPU_Query(OGPU_OP_TRIANGLES)` answers. |
+| virgl | `W3D_DRIVER_3DHW` | The host's graphics chip draws the same batches through virgl (`w3d_vg.c`, `docs/design/Warp3D-Virgl-Route.md`), by way of `gfopengpu.library`'s `OGPU_OP_VIRGL`, which minigl.library's virgl route and GL.module use too. The host writes each frame straight into the drawing area at Warp3D's sync points. It is offered when `OGPU_Query(OGPU_OP_VIRGL)` answers in full; drawing areas other than A8R8G8B8 and R5G6B5 go to the CPU driver. |
 | W3D_CPU | `W3D_DRIVER_CPU` | The same 3D core (`library/opengpu/ogpu_3d.c`) linked in, on the 68k. It needs no `gfopengpu.library`, so it works on any Amiga with a 68040 or 68060 and RTG. Warp3D is soft float, so an LC040 or EC040 (no FPU) runs it too. |
 
-`W3D_DRIVER_BEST` takes GFOpenGPU when its back end is not the 68k itself, and the CPU driver otherwise, unless the preferences say which.
+`W3D_DRIVER_BEST` takes virgl when the host draws it on a graphics chip, else GFOpenGPU when its back end is not the 68k itself, and the CPU driver otherwise, unless the preferences say which.
 
-Both drivers draw the same pixels, because both run the same core: W3DCheck and W3DTest compare them. W3D_AGA, the blitter as a simple 3D chip, is a later stage (`AGA.gpu`, GFOpenGPU's G5).
+W3D_OpenGPU and W3D_CPU draw the same pixels, because both run the same core: W3DCheck and W3DTest compare them. The virgl driver draws on a real GPU, so it differs within a small tolerance (texel rounding, per-pixel mip levels and exact perspective where the core works per triangle and per 8 pixels); `tests/run_w3d_vg.sh` reports the worst case for each scene against the core. W3D_AGA, the blitter as a simple 3D chip, is a later stage (`AGA.gpu`, GFOpenGPU's G5).
 
 ## What is in it
 
@@ -63,7 +64,7 @@ Both drivers draw the same pixels, because both run the same core: W3DCheck and 
 
 `C:Warp3DPrefs` sets ENV:Warp3D/, which GFOpenPrefs' Acceleration page also writes:
 
-- `Driver` is Auto, CPU or GFOpenGPU.
+- `Driver` is Auto, virgl, GFOpenGPU or CPU.
 - `ZBuffer` is 16 or 32.
 - `Fog`, `Perspective`, `Filtering` and `Lighting` can each be switched off for speed. These are Wazp3D's options of those names.
 

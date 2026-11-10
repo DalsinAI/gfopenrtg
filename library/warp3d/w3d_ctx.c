@@ -52,7 +52,15 @@ LIBCALL W3D_Context *LIB_W3D_CreateContext(REG(a0, ULONG *error), REG(a1, struct
     }
     c->driver = x;
     x->ctx = c;
+    /* ENV:Warp3D/Driver: Auto (the default) takes virgl when the host draws
+     * it on a graphics chip, else GFOpenGPU when its back end isn't this
+     * 68k, else the CPU. Virgl asks for virgl even without a chip;
+     * GFOpenGPU and CPU for those. Whatever isn't there falls back the same
+     * way. W3D_DRIVER_3DHW gets the best that isn't the CPU. */
     if (type & W3D_DRIVER_CPU) x->route = ROUTE_CPU;
+    else if (libbase->gpu_virgl && !libbase->prefer_cpu && !libbase->prefer_gpu
+             && (libbase->prefer_virgl || libbase->virgl_chip != 0) && w3d_vg_start(x, !libbase->prefer_virgl))
+        x->route = ROUTE_VIRGL;
     else if (type & W3D_DRIVER_3DHW) {
         if (!libbase->gpu_3d) { e = W3D_NODRIVER; goto fail; }
         x->route = ROUTE_GPU;
@@ -92,6 +100,7 @@ LIBCALL W3D_Context *LIB_W3D_CreateContext(REG(a0, ULONG *error), REG(a1, struct
               (unsigned long)c->format, (long)x->direct);
     return c;
 fail:
+    w3d_vg_stop(x);
     w3d_close_area(x);
     w3d_free(x->cmdmem); w3d_free(x->vmem); w3d_free(x); w3d_free(c);
     if (error) *error = e;
@@ -103,8 +112,9 @@ LIBCALL void LIB_W3D_DestroyContext(REG(a0, W3D_Context *c), REG(a6, struct W3DB
     struct w3dctx *x;
     if (!c) return;
     x = CTX(c);
-    w3d_flush(x);
+    w3d_sync(x);
     LIB_W3D_FreeAllTexObj(c, libbase);
+    w3d_vg_stop(x);
     w3d_free(x->zbuf); w3d_free(x->sbuf); w3d_free(x->stipple);
     w3d_close_area(x);
     w3d_free(x->cmdmem); w3d_free(x->vmem);
@@ -125,7 +135,7 @@ LIBCALL ULONG LIB_W3D_SetState(REG(a0, W3D_Context *c), REG(d0, ULONG state), RE
         if (state & ~CAN_ENABLE) return W3D_UNSUPPORTEDSTATE;
         c->state |= state;
     } else c->state &= ~state;
-    if ((old ^ c->state) & W3D_INDIRECT && !(c->state & W3D_INDIRECT)) w3d_flush(x);
+    if ((old ^ c->state) & W3D_INDIRECT && !(c->state & W3D_INDIRECT)) w3d_sync(x);
     if ((old ^ c->state) & W3D_DOUBLEHEIGHT) w3d_open_area(x, c->w3dbitmap ? 0 : c->drawregion,
                                                           c->w3dbitmap ? (W3D_Bitmap *)c->drawregion : 0, c->yoffset);
     if ((old ^ c->state) & W3D_GLOBALTEXENV) x->tex_dirty = 1;
@@ -137,7 +147,7 @@ LIBCALL ULONG LIB_W3D_SetState(REG(a0, W3D_Context *c), REG(d0, ULONG state), RE
 
 LIBCALL ULONG LIB_W3D_CheckDriver(REG(a6, struct W3DBase *libbase))
 {
-    return W3D_DRIVER_CPU | (libbase->gpu_3d ? W3D_DRIVER_3DHW : 0);
+    return W3D_DRIVER_CPU | (libbase->gpu_3d || libbase->gpu_virgl ? W3D_DRIVER_3DHW : 0);
 }
 
 LIBCALL ULONG LIB_W3D_LockHardware(REG(a0, W3D_Context *c), REG(a6, struct W3DBase *libbase))
@@ -150,14 +160,14 @@ LIBCALL ULONG LIB_W3D_LockHardware(REG(a0, W3D_Context *c), REG(a6, struct W3DBa
 LIBCALL void LIB_W3D_UnLockHardware(REG(a0, W3D_Context *c), REG(a6, struct W3DBase *libbase))
 {
     w3d_trace("UnLockHardware");
-    w3d_flush(CTX(c));
+    w3d_sync(CTX(c));
     c->HWlocked = W3D_FALSE;
 }
 
-LIBCALL void LIB_W3D_WaitIdle(REG(a0, W3D_Context *c), REG(a6, struct W3DBase *libbase)) { w3d_flush(CTX(c)); }
+LIBCALL void LIB_W3D_WaitIdle(REG(a0, W3D_Context *c), REG(a6, struct W3DBase *libbase)) { w3d_sync(CTX(c)); }
 LIBCALL ULONG LIB_W3D_CheckIdle(REG(a0, W3D_Context *c), REG(a6, struct W3DBase *libbase)) { return W3D_SUCCESS; }
-LIBCALL ULONG LIB_W3D_Flush(REG(a0, W3D_Context *c), REG(a6, struct W3DBase *libbase)) { return w3d_flush(CTX(c)); }
-LIBCALL void LIB_W3D_FlushFrame(REG(a0, W3D_Context *c), REG(a6, struct W3DBase *libbase)) { w3d_flush(CTX(c)); }
+LIBCALL ULONG LIB_W3D_Flush(REG(a0, W3D_Context *c), REG(a6, struct W3DBase *libbase)) { return w3d_sync(CTX(c)); }
+LIBCALL void LIB_W3D_FlushFrame(REG(a0, W3D_Context *c), REG(a6, struct W3DBase *libbase)) { w3d_sync(CTX(c)); }
 LIBCALL ULONG LIB_W3D_GetDriverState(REG(a0, W3D_Context *c), REG(a6, struct W3DBase *libbase)) { return W3D_SUCCESS; }
 
 /* ---- the drawing area ---------------------------------------------------------------- */
@@ -169,7 +179,7 @@ LIBCALL ULONG LIB_W3D_SetDrawRegion(REG(a0, W3D_Context *c), REG(a1, struct BitM
     ULONG e;
     w3d_trace("SetDrawRegion bm %lx y %ld scissor %lx", (unsigned long)bm, (long)yoffset, (unsigned long)scissor);
     if (bm == c->drawregion && !c->w3dbitmap && x->direct) {
-        w3d_flush(x);                           /* double buffering in one bitmap: only the offset moves */
+        w3d_sync(x);                            /* double buffering in one bitmap: only the offset moves */
         c->yoffset = yoffset;
     } else if ((e = w3d_open_area(x, bm, 0, yoffset)) != W3D_SUCCESS) return e;
     if (scissor) { c->scissor = *scissor; x->clip_dirty = 1; }
@@ -367,7 +377,8 @@ LIBCALL ULONG LIB_W3D_AllocZBuffer(REG(a0, W3D_Context *c), REG(a6, struct W3DBa
     struct w3dctx *x = CTX(c);
     int bpp = libbase->z32 ? 4 : 2;
     if (x->zbuf) return W3D_SUCCESS;
-    w3d_flush(x);
+    w3d_zsync(x, 1);
+    if (x->vg) w3dvg_forget_z(x->vg);          /* the buffers move: the next batch names them */
     x->zbpr = (ULONG)c->width * bpp;
     x->zbuf = w3d_alloc(x->zbpr * (ULONG)c->height);
     if (!x->zbuf) return W3D_NOGFXMEM;
@@ -383,7 +394,8 @@ LIBCALL ULONG LIB_W3D_FreeZBuffer(REG(a0, W3D_Context *c), REG(a6, struct W3DBas
 {
     struct w3dctx *x = CTX(c);
     if (!x->zbuf) return W3D_NOZBUFFER;
-    w3d_flush(x);
+    w3d_zsync(x, 1);
+    if (x->vg) w3dvg_forget_z(x->vg);          /* the buffers move: the next batch names them */
     w3d_free(x->zbuf);
     x->zbuf = 0;
     c->zbuffer = 0;
@@ -430,7 +442,7 @@ LIBCALL ULONG LIB_W3D_ReadZPixel(REG(a0, W3D_Context *c), REG(d0, ULONG px), REG
     struct w3dctx *x = CTX(c);
     if (!x->zbuf) return W3D_NOZBUFFER;
     if (px >= (ULONG)c->width || py >= (ULONG)c->height) return W3D_ILLEGALINPUT;
-    w3d_flush(x);
+    w3d_zsync(x, 0);
     *z = zat(x, px, py);
     return W3D_SUCCESS;
 }
@@ -442,7 +454,7 @@ LIBCALL ULONG LIB_W3D_ReadZSpan(REG(a0, W3D_Context *c), REG(d0, ULONG px), REG(
     ULONG i;
     if (!x->zbuf) return W3D_NOZBUFFER;
     if (py >= (ULONG)c->height || px + n > (ULONG)c->width) return W3D_ILLEGALINPUT;
-    w3d_flush(x);
+    w3d_zsync(x, 0);
     for (i = 0; i < n; i++) z[i] = zat(x, px + i, py);
     return W3D_SUCCESS;
 }
@@ -452,7 +464,7 @@ LIBCALL void LIB_W3D_WriteZPixel(REG(a0, W3D_Context *c), REG(d0, ULONG px), REG
 {
     struct w3dctx *x = CTX(c);
     if (!x->zbuf || px >= (ULONG)c->width || py >= (ULONG)c->height) return;
-    w3d_flush(x);
+    w3d_zsync(x, 1);
     zput(x, px, py, *z);
 }
 
@@ -462,7 +474,7 @@ LIBCALL void LIB_W3D_WriteZSpan(REG(a0, W3D_Context *c), REG(d0, ULONG px), REG(
     struct w3dctx *x = CTX(c);
     ULONG i;
     if (!x->zbuf || py >= (ULONG)c->height || px + n > (ULONG)c->width) return;
-    w3d_flush(x);
+    w3d_zsync(x, 1);
     for (i = 0; i < n; i++) if (!mask || mask[i]) zput(x, px + i, py, z[i]);
 }
 
@@ -472,7 +484,8 @@ LIBCALL ULONG LIB_W3D_AllocStencilBuffer(REG(a0, W3D_Context *c), REG(a6, struct
 {
     struct w3dctx *x = CTX(c);
     if (x->sbuf) return W3D_SUCCESS;
-    w3d_flush(x);
+    w3d_zsync(x, 1);
+    if (x->vg) w3dvg_forget_z(x->vg);          /* the buffers move: the next batch names them */
     x->sbuf = w3d_alloc((ULONG)c->width * (ULONG)c->height);
     if (!x->sbuf) return W3D_NOGFXMEM;
     c->stencilbuffer = x->sbuf;
@@ -485,7 +498,8 @@ LIBCALL ULONG LIB_W3D_FreeStencilBuffer(REG(a0, W3D_Context *c), REG(a6, struct 
 {
     struct w3dctx *x = CTX(c);
     if (!x->sbuf) return W3D_NOSTENCILBUFFER;
-    w3d_flush(x);
+    w3d_zsync(x, 1);
+    if (x->vg) w3dvg_forget_z(x->vg);          /* the buffers move: the next batch names them */
     w3d_free(x->sbuf);
     x->sbuf = 0;
     c->stencilbuffer = 0;
@@ -510,7 +524,7 @@ LIBCALL ULONG LIB_W3D_FillStencilBuffer(REG(a0, W3D_Context *c), REG(d0, ULONG p
     ULONG i, j;
     if (!x->sbuf) return W3D_NOSTENCILBUFFER;
     if (px + w > (ULONG)c->width || py + h > (ULONG)c->height || !data) return W3D_ILLEGALINPUT;
-    w3d_flush(x);
+    w3d_zsync(x, 1);
     for (j = 0; j < h; j++)
         for (i = 0; i < w; i++) {
             ULONG k = j * w + i, v;
@@ -528,7 +542,7 @@ LIBCALL ULONG LIB_W3D_ReadStencilPixel(REG(a0, W3D_Context *c), REG(d0, ULONG px
     struct w3dctx *x = CTX(c);
     if (!x->sbuf) return W3D_NOSTENCILBUFFER;
     if (px >= (ULONG)c->width || py >= (ULONG)c->height) return W3D_ILLEGALINPUT;
-    w3d_flush(x);
+    w3d_zsync(x, 0);
     *st = x->sbuf[py * (ULONG)c->width + px];
     return W3D_SUCCESS;
 }
@@ -540,7 +554,7 @@ LIBCALL ULONG LIB_W3D_ReadStencilSpan(REG(a0, W3D_Context *c), REG(d0, ULONG px)
     ULONG i;
     if (!x->sbuf) return W3D_NOSTENCILBUFFER;
     if (py >= (ULONG)c->height || px + n > (ULONG)c->width) return W3D_ILLEGALINPUT;
-    w3d_flush(x);
+    w3d_zsync(x, 0);
     for (i = 0; i < n; i++) st[i] = x->sbuf[py * (ULONG)c->width + px + i];
     return W3D_SUCCESS;
 }
@@ -551,7 +565,7 @@ LIBCALL ULONG LIB_W3D_WriteStencilPixel(REG(a0, W3D_Context *c), REG(d0, ULONG p
     struct w3dctx *x = CTX(c);
     if (!x->sbuf) return W3D_NOSTENCILBUFFER;
     if (px >= (ULONG)c->width || py >= (ULONG)c->height) return W3D_ILLEGALINPUT;
-    w3d_flush(x);
+    w3d_zsync(x, 1);
     x->sbuf[py * (ULONG)c->width + px] = (UBYTE)st;
     return W3D_SUCCESS;
 }
@@ -563,7 +577,7 @@ LIBCALL ULONG LIB_W3D_WriteStencilSpan(REG(a0, W3D_Context *c), REG(d0, ULONG px
     ULONG i;
     if (!x->sbuf) return W3D_NOSTENCILBUFFER;
     if (py >= (ULONG)c->height || px + n > (ULONG)c->width) return W3D_ILLEGALINPUT;
-    w3d_flush(x);
+    w3d_zsync(x, 1);
     for (i = 0; i < n; i++) if (!mask || mask[i]) x->sbuf[py * (ULONG)c->width + px + i] = (UBYTE)st[i];
     return W3D_SUCCESS;
 }

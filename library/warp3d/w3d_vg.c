@@ -101,7 +101,11 @@ struct w3dvg {
     ULONG r3d[OGPU_R3D_ARGS];
     ULONG env, envc;
     ULONG t_addr, t_bpr, t_w, t_h, t_fmt, t_gen, t_filter, t_wrap, t_border, t_levels, t_lv[OGPU_TEX_LEVELS];
-    ULONG z_addr, z_fmt, s_addr;
+    ULONG z_addr, z_fmt, z_bpr, z_w, z_h, s_addr, s_bpr, s_w, s_h;
+    int tri;                            /* a TRIANGLES is being prepared: its area stops at the buffers */
+    int have_z;                         /* the depth buffer holds memory's Z and stencil */
+    ULONG *zstage, zstage_bytes;        /* Z and stencil packed for the host (24/8) */
+    ULONG *cstage, cstage_bytes;        /* a padded drawing area's rows, packed */
     LONG cx, cy, cw, ch;
     /* what is bound on the host */
     ULONG b_blend, b_dsa, b_rs, b_vs, b_fs, b_ve, b_view, b_samp, b_sref, b_bconst, b_stipple;
@@ -382,8 +386,9 @@ static void depth_for(struct w3dvg *v)
 {
     ULONG fmt, *p;
     if (!v->z_addr && !v->s_addr) return;
-    fmt = v->s_addr ? VG_FMT_Z24_UNORM_S8_UINT : v->z_fmt == OGPU_FMT_Z16 ? VG_FMT_Z16_UNORM : VG_FMT_Z24X8_UNORM;
-    if (v->depth && (v->zfmt == fmt || (v->zfmt == VG_FMT_Z24_UNORM_S8_UINT && fmt != VG_FMT_Z16_UNORM))) return;
+    fmt = v->s_addr ? VG_FMT_D24S8 : v->z_fmt == OGPU_FMT_Z16 ? VG_FMT_Z16_UNORM : VG_FMT_Z24X8_UNORM;
+    if (v->depth && (v->zfmt == fmt || (v->zfmt == VG_FMT_D24S8 && fmt != VG_FMT_Z16_UNORM))) return;
+    v->have_z = 0;
     if (v->depth) { destroy(v, VG_OBJ_SURFACE, v->surf_z); res_release(v, v->depth); }
     v->depth = res_create(v, VG_TARGET_2D, fmt, VG_BIND_DEPTH_STENCIL, v->colour->w, v->colour->h, 1);
     v->zfmt = fmt;
@@ -398,27 +403,96 @@ static void depth_for(struct w3dvg *v)
     v->fb_dirty = 1;
 }
 
+/* Memory the host must hold for a while (until the block has run). */
+static ULONG *stage_mem(struct w3dvg *v, ULONG **m, ULONG *have, ULONG bytes)
+{
+    if (*have < bytes) {
+        if (*m) v->os.free(v->os.user, *m);
+        *m = v->os.alloc(v->os.user, bytes);
+        *have = *m ? bytes : 0;
+    }
+    return *m;
+}
+
+/* A w x h picture at src (stride bytes a row) into a resource. The host
+ * takes a transfer whose rows are packed (stride = w * bpp): padded rows are
+ * packed into *m first. */
+static void put_rows(struct w3dvg *v, struct res *r, ULONG w, ULONG h, ULONG src, ULONG stride, ULONG bpp,
+                     ULONG swap, ULONG **m, ULONG *have)
+{
+    ULONG row = w * bpp, y, i;
+    UBYTE *d;
+    if (stride == row) { put(v, r, 0, 0, 0, w, h, src, row, row * h, swap); return; }
+    if (!(d = (UBYTE *)stage_mem(v, m, have, row * h))) return;
+    for (y = 0; y < h; y++) {
+        const UBYTE *sp = (const UBYTE *)(src + y * stride);
+        for (i = 0; i < row; i++) d[y * row + i] = sp[i];
+    }
+    put(v, r, 0, 0, 0, w, h, ADDR(d), row, row * h, swap);
+}
+
 /* The drawing area's pixels into the colour buffer (the frame's first draw). */
 static void load(struct w3dvg *v)
 {
     const ULONG *t = v->slot[v->target];
-    ULONG bytes = t[1] * (t[3] - 1) + t[2] * (t[4] == OGPU_FMT_RGB565 ? 2 : 4), *p;
+    ULONG *p;
     v->have_frame = 1;
     v->frame_addr = t[0];
     v->st.loads++;
     if (t[4] == OGPU_FMT_ARGB32) {
-        put(v, v->colour, 0, 0, 0, t[2], t[3], t[0], t[1], bytes, ACV_SWAP_32);
+        put_rows(v, v->colour, t[2], t[3], t[0], t[1], 4, ACV_SWAP_32, &v->cstage, &v->cstage_bytes);
         return;
     }
     if (t[4] != OGPU_FMT_RGB565) return;
     if (!v->stage && !(v->stage = res_create(v, VG_TARGET_2D, VG_FMT_B5G6R5_UNORM, VG_BIND_SAMPLER_VIEW, t[2], t[3], 1))) return;
-    put(v, v->stage, 0, 0, 0, t[2], t[3], t[0], t[1], bytes, ACV_SWAP_16);
+    put_rows(v, v->stage, t[2], t[3], t[0], t[1], 2, ACV_SWAP_16, &v->cstage, &v->cstage_bytes);
     p = cmd(v, 22);
     VG_W(p, VG_CMD0(VG_CCMD_BLIT, 0, 21));
     VG_W(p, 0xF);                          /* RGBA, nearest, no scissor */
     VG_W(p, 0); VG_W(p, 0);
     VG_W(p, v->colour->handle); VG_W(p, 0); VG_W(p, VG_FMT_B8G8R8A8_UNORM); VG_W(p, 0); VG_W(p, 0); VG_W(p, 0); VG_W(p, t[2]); VG_W(p, t[3]); VG_W(p, 1);
     VG_W(p, v->stage->handle); VG_W(p, 0); VG_W(p, VG_FMT_B5G6R5_UNORM); VG_W(p, 0); VG_W(p, 0); VG_W(p, 0); VG_W(p, t[2]); VG_W(p, t[3]); VG_W(p, 1);
+}
+
+/* Memory's Z (and stencil) into the depth buffer: the first draw or part
+ * clear after the buffer was made or the CPU may have written it. Z16 alone
+ * goes up as it is; otherwise the 68k packs each pixel as the host's 24/8
+ * word (depth << 8 | stencil), the depth the top 24 bits of Z32 or Z16
+ * widened. */
+static void load_z(struct w3dvg *v)
+{
+    ULONG w = v->colour->w, h = v->colour->h, x, y, bytes = w * h * 4, zw = 0, zh = 0;
+    v->have_z = 1;
+    if (!v->depth || (!v->z_addr && !v->s_addr)) return;
+    v->st.loads++;
+    if (v->z_addr) { zw = v->z_w < w ? v->z_w : w; zh = v->z_h < h ? v->z_h : h; }
+    if (v->zfmt == VG_FMT_Z16_UNORM) {
+        /* the buffer's own size: beyond it nothing is drawn with Z */
+        if (zw && zh) put_rows(v, v->depth, zw, zh, v->z_addr, v->z_bpr, 2, ACV_SWAP_16, &v->zstage, &v->zstage_bytes);
+        return;
+    }
+    if (!stage_mem(v, &v->zstage, &v->zstage_bytes, bytes)) return;
+    for (y = 0; y < h; y++) {
+        const UBYTE *z = v->z_addr && y < zh ? (const UBYTE *)(v->z_addr + y * v->z_bpr) : 0;
+        const UBYTE *st = v->s_addr && y < v->s_h ? (const UBYTE *)(v->s_addr + y * v->s_bpr) : 0;
+        UBYTE *d = (UBYTE *)(v->zstage + y * w);
+        for (x = 0; x < w; x++, d += 4) {
+            ULONG zz = 0xFFFFFFUL;
+            if (z && x < zw) zz = v->z_fmt == OGPU_FMT_Z16 ? ((ULONG)z[x * 2] << 16 | (ULONG)z[x * 2 + 1] << 8 | z[x * 2])
+                                                 : ((ULONG)z[x * 4] << 16 | (ULONG)z[x * 4 + 1] << 8 | z[x * 4 + 2]);
+            VG_A32(d, v->zfmt == VG_FMT_D24S8 ? zz << 8 | (st && x < v->s_w ? st[x] : 0) : zz);
+        }
+    }
+    put(v, v->depth, 0, 0, 0, w, h, ADDR(v->zstage), w * 4, bytes, ACV_SWAP_32);
+}
+
+/* The depth buffer's contents known before a depth op: loaded, unless the
+ * op covers all of it (a whole clear of a buffer with one part). */
+static void depth_known(struct w3dvg *v, int covers_all)
+{
+    if (v->have_z || !v->depth) return;
+    if (covers_all) v->have_z = 1;
+    else load_z(v);
 }
 
 /* Before anything that draws colour: a target, and its pixels. */
@@ -462,7 +536,7 @@ static ULONG shader(struct w3dvg *v, int type, ULONG key)
     ULONG len, h;
     for (i = 0; i < *n; i++) if (keys[i] == key) return hs[i];
     len = type == VG_SHADER_VERTEX ? w3dvg_vs_text(key, v->text, TEXT_BYTES) : w3dvg_fs_text(key, v->text, TEXT_BYTES);
-    if (v->os.log && v->st.shaders < 2) say(v, v->text);
+    if (v->os.log) say(v, v->text);
     h = new_obj(v);
     vgc_shader(cmd(v, VGC_SHADER_WORDS(len)), h, type, v->text, len);
     v->st.shaders++;
@@ -624,7 +698,7 @@ static void pipe_of(struct w3dvg *v, struct pipe *pp, ULONG layout, int textured
     if (layout & OGPU_LAY_W) vk |= VK_W;
     if (layout & OGPU_LAY_SPEC) vk |= VK_SPEC;
     if ((en & OGPU_R3D_PERSPECTIVE) && (layout & OGPU_LAY_W)) vk |= VK_PERSP;
-    if (!v->gles) { vk |= VK_LINEAR; fk |= FK_LINEAR; }
+    vk |= VK_LINEAR; fk |= FK_LINEAR;   /* GLES too: the shaders do it without noperspective */
     if (en & OGPU_R3D_GOURAUD) fk |= FK_GOURAUD;
     if (textured) {
         fk |= FK_ENV_SET(v->env) | FK_BASE_SET((v->t_fmt >> 8) & 7);
@@ -650,6 +724,12 @@ static void set_scissor(struct w3dvg *v)
         if (v->cy > y0) y0 = v->cy;
         if (v->cx + v->cw < x1) x1 = v->cx + v->cw;
         if (v->cy + v->ch < y1) y1 = v->cy + v->ch;
+    }
+    /* the core's drawing area: a triangle stops at the depth and stencil
+     * buffers it uses */
+    if (v->tri) {
+        if (v->z_addr && (v->r3d[0] & OGPU_R3D_ZTEST)) { if ((LONG)v->z_w < x1) x1 = (LONG)v->z_w; if ((LONG)v->z_h < y1) y1 = (LONG)v->z_h; }
+        if (v->s_addr && (v->r3d[0] & OGPU_R3D_STENCIL)) { if ((LONG)v->s_w < x1) x1 = (LONG)v->s_w; if ((LONG)v->s_h < y1) y1 = (LONG)v->s_h; }
     }
     if (x1 < x0) x1 = x0;
     if (y1 < y0) y1 = y0;
@@ -861,6 +941,7 @@ static LONG triangles(struct w3dvg *v, const UBYTE *a, long args)
     if (prim > OGPU_LAY_FAN || stride < (ULONG)vsize_of(layout) || (iaddr && isize != 1 && isize != 2 && isize != 4)) return -1;
     if (texw < 16) return -1;           /* a SURFACE slot as texture: not Warp3D's */
     if (!ready(v, 0)) return -1;
+    if ((v->r3d[0] & (OGPU_R3D_ZTEST | OGPU_R3D_STENCIL))) depth_known(v, 0);
     tris = prim == OGPU_LAY_LIST ? n / 3 : n - 2;
     maxv = vcount;
     if (maxv > 0xFFFF) return -1;
@@ -884,7 +965,9 @@ static LONG triangles(struct w3dvg *v, const UBYTE *a, long args)
     if (textured) { view = tex_view(v); samp = sampler(v); if (!view) return -1; }
     pipe_of(v, &pp, layout, textured);
     if (group_for(v, off, layout, stride, textured ? v->t_addr : 0, maxv, &first)) {
+        v->tri = 1;
         prepare(v, &pp, layout, view, samp);
+        v->tri = 0;
         bind_vbuf(v);
         /* the state may have sent the block (a full stream): the run starts again */
         if (!v->g_on) { group_for(v, off, layout, stride, textured ? v->t_addr : 0, maxv, &first); bind_vbuf(v); }
@@ -920,8 +1003,8 @@ static void quad(struct w3dvg *v, LONG x, LONG y, LONG w, LONG h, ULONG argb, UL
     pp.stipple = 0;
     pp.rs = 1UL << 14 | 1UL << 29 | 1UL << 30;
     pp.vs = VK_Z | VK_W | VK_SPEC;
-    pp.fs = FK_GOURAUD | (v->gles ? 0 : FK_LINEAR);
-    if (!v->gles) pp.vs |= VK_LINEAR;
+    pp.fs = FK_GOURAUD | FK_LINEAR;
+    pp.vs |= VK_LINEAR;
     group_for(v, off, OGPU_LAY_Z | OGPU_LAY_W | OGPU_LAY_SPEC, 32, 0xFFFFFFFFUL, 4, &first);
     prepare(v, &pp, OGPU_LAY_Z | OGPU_LAY_W | OGPU_LAY_SPEC, 0, 0);
     if (!v->g_on) group_for(v, off, OGPU_LAY_Z | OGPU_LAY_W | OGPU_LAY_SPEC, 32, 0xFFFFFFFFUL, 4, &first);
@@ -991,8 +1074,10 @@ static LONG clear3d(struct w3dvg *v, const UBYTE *a)
     if (!colour_for(v)) return -1;
     depth_for(v);
     if (!v->depth || !clipped(v, &x, &y, &w, &h)) return 0;
-    if (kind == OGPU_KIND_STENCIL && v->zfmt != VG_FMT_Z24_UNORM_S8_UINT) return 0;
+    if (kind == OGPU_KIND_STENCIL && v->zfmt != VG_FMT_D24S8) return 0;
     need(v, 512, 6);
+    /* one part of a 24/8 buffer: the other part must be there first */
+    depth_known(v, whole(v, x, y, w, h) && (v->zfmt != VG_FMT_D24S8 || (kind == OGPU_KIND_DEPTH ? !v->s_addr : !v->z_addr)));
     if (whole(v, x, y, w, h)) {
         if (kind == OGPU_KIND_DEPTH)
             clear(v, VG_CLEAR_DEPTH, 0, v->z_fmt == OGPU_FMT_Z16 ? (double)(val >> 16) / 65535.0 : (double)val / 4294967295.0, 0);
@@ -1074,8 +1159,10 @@ LONG w3dvg_run(struct w3dvg *v, const UBYTE *s, long words, ULONG vbase, ULONG v
         }
         case OGPU_OP_DEPTH: {
             ULONG kind = rd32(a), addr = rd32(a + 4), fmt = rd32(a + 16);
-            if (kind == OGPU_KIND_DEPTH) { v->z_addr = addr; v->z_fmt = fmt; }
-            else if (kind == OGPU_KIND_STENCIL) v->s_addr = addr;
+            ULONG wh = rd32(a + 12);
+            if (kind == OGPU_KIND_DEPTH) { if (addr != v->z_addr) v->have_z = 0; v->z_addr = addr; v->z_fmt = fmt; v->z_bpr = rd32(a + 8); v->z_w = wh >> 16; v->z_h = wh & 0xFFFF; }
+            else if (kind == OGPU_KIND_STENCIL) { if (addr != v->s_addr) v->have_z = 0; v->s_addr = addr; v->s_bpr = rd32(a + 8); v->s_w = wh >> 16; v->s_h = wh & 0xFFFF; }
+            v->sc_dirty = 1;
             break;
         }
         case OGPU_OP_CLEAR3D: r = clear3d(v, a); break;
@@ -1090,6 +1177,7 @@ LONG w3dvg_run(struct w3dvg *v, const UBYTE *s, long words, ULONG vbase, ULONG v
     if (present && !v->colour) colour_for(v);
     block_send(v, present);
     v->st.refused += v->errors;
+    v->st.declined += declined;
     return (LONG)(v->errors + declined);
 }
 
@@ -1101,6 +1189,8 @@ static void free_all(struct w3dvg *v)
     int i;
     while ((r = v->dead) != 0) { v->dead = r->next_dead; dealloc(v, r); }
     for (i = 0; i < TEXTS; i++) dealloc(v, v->tex[i].res);
+    if (v->zstage) v->os.free(v->os.user, v->zstage);
+    if (v->cstage) v->os.free(v->os.user, v->cstage);
     dealloc(v, v->colour); dealloc(v, v->depth); dealloc(v, v->stage); dealloc(v, v->vbuf); dealloc(v, v->ibuf);
     dealloc(v, v->blk); dealloc(v, v->post); dealloc(v, v->cmd); dealloc(v, v->va); dealloc(v, v->ia); dealloc(v, v->text);
     v->os.free(v->os.user, v);
@@ -1152,11 +1242,7 @@ struct w3dvg *w3dvg_open(const struct w3dvg_os *os, struct w3dvg_info *info)
     v->b_sref = v->b_bconst = 0xFFFFFFFFUL;
     v->b_stipple = 0;
     v->fb_dirty = v->vp_dirty = v->sc_dirty = 1;
-    /* the core's state at the start (ogpu3d_init) */
-    v->r3d[0] = OGPU_R3D_GOURAUD; v->r3d[1] = 2; v->r3d[2] = 8; v->r3d[3] = 2 | 1UL << 16;
-    v->r3d[5] = 0xFF0F; v->r3d[6] = 4; v->r3d[12] = 2 | 255UL << 16; v->r3d[13] = 1 | 1 << 8 | 1UL << 16 | 255UL << 24;
-    v->r3d[14] = 1; v->r3d[17] = 0xFFFFFFFFUL;
-    v->env = OGPU_ENV_MODULATE;
+    w3dvg_reset(v);
     if (info) { info->host_flags = v->host_flags; info->caps_bits = v->caps_bits; }
     return v;
 }
@@ -1188,11 +1274,36 @@ void w3dvg_forget(struct w3dvg *v, ULONG addr)
     /* the unref goes with the next block */
 }
 
-void w3dvg_stale(struct w3dvg *v) { if (v) v->have_frame = 0; }
+void w3dvg_reset(struct w3dvg *v)
+{
+    int i;
+    if (!v) return;
+    end_group(v);
+    /* the core's state at the start (ogpu3d_init, ogpu_core_init) */
+    for (i = 0; i < OGPU_R3D_ARGS; i++) v->r3d[i] = 0;
+    v->r3d[0] = OGPU_R3D_GOURAUD; v->r3d[1] = 2; v->r3d[2] = 8; v->r3d[3] = 2 | 1UL << 16;
+    v->r3d[5] = 0xFF0F; v->r3d[6] = 4; v->r3d[12] = 2 | 255UL << 16; v->r3d[13] = 1 | 1 << 8 | 1UL << 16 | 255UL << 24;
+    v->r3d[14] = 1; v->r3d[17] = 0xFFFFFFFFUL;
+    v->env = OGPU_ENV_MODULATE; v->envc = 0;
+    v->t_addr = 0;
+    v->z_addr = v->s_addr = 0; v->have_z = 0;
+    v->cx = v->cy = 0; v->cw = v->ch = 0;
+    v->sc_dirty = v->vp_dirty = 1;
+}
+
+void w3dvg_forget_all(struct w3dvg *v)
+{
+    int i;
+    if (!v) return;
+    block_begin(v);
+    for (i = 0; i < TEXTS; i++) if (v->tex[i].res) tex_drop(v, &v->tex[i]);
+}
+
+void w3dvg_stale(struct w3dvg *v) { if (v) v->have_frame = v->have_z = 0; }
 
 void w3dvg_stats(struct w3dvg *v, struct w3dvg_stats *s)
 {
     *s = v->st;
     v->st.blocks = v->st.draws = v->st.merged = v->st.triangles = v->st.objects = v->st.shaders = 0;
-    v->st.puts = v->st.put_bytes = v->st.loads = v->st.presents = v->st.refused = 0;
+    v->st.puts = v->st.put_bytes = v->st.loads = v->st.presents = v->st.refused = v->st.declined = 0;
 }

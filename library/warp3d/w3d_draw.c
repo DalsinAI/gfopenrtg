@@ -22,11 +22,7 @@ static float fexp(float v)
     return r;
 }
 
-static ULONG clampf255(float v)
-{
-    LONG c = w3d_f2l(v * 255.0f);
-    return c < 0 ? 0 : c > 255 ? 255 : (ULONG)c;
-}
+#define clampf255 w3d_unit8
 
 /* The fog factor a vertex carries when fog is worked out per vertex
  * (W3D_FOG_INTERPOLATED, version 5's Z fog and fog coordinates); 255 = none. */
@@ -55,21 +51,52 @@ static ULONG vertex_fog(struct w3dctx *x, const W3D_Vertex *v, float fogcoord, i
     return clampf255(f);
 }
 
-/* One Warp3D vertex in the stream's layout. tw, th: the texture's size, or
- * 0 when u and v are already 0..1. */
-static void convert(struct w3dctx *x, const W3D_Vertex *v, float su, float sv, struct ovtx *o, float fogc, int have_fogc)
+/* How u and v become 16.16 texels: times 2^k when the scale is a power of
+ * two (a texture's usual size, or normalised coordinates), else times the
+ * float scale; UV_NONE without a texture. All in integers but the last. */
+#define UV_NONE  -1000
+#define UV_FLOAT 1000
+struct uvs { int ku, kv; float su, sv; };
+
+static int pow2_k(int size)
+{
+    int k = 16;
+    if (size <= 0 || (size & (size - 1))) return UV_FLOAT;
+    while (size > 1) { size >>= 1; k--; }
+    return k;
+}
+
+static void uv_scale(struct uvs *s, const struct w3dtex *t, int normalised)
+{
+    if (!t) { s->ku = s->kv = UV_NONE; s->su = s->sv = 0.0f; return; }
+    if (normalised) { s->ku = s->kv = 16; s->su = s->sv = 65536.0f; return; }
+    s->ku = pow2_k(t->w); s->kv = pow2_k(t->h);
+    s->su = s->ku == UV_FLOAT ? 65536.0f / (float)t->w : 0.0f;
+    s->sv = s->kv == UV_FLOAT ? 65536.0f / (float)t->h : 0.0f;
+}
+
+static LONG uv(float c, int k, float scale)
+{
+    if (k == UV_NONE) return 0;
+    if (k == UV_FLOAT) return w3d_f2l(c * scale);
+    return w3d_fx(c, k);
+}
+
+/* One Warp3D vertex in the stream's layout. z: the stream's depth, worked
+ * out by the caller (w3d_zd, w3d_zf); argb: the colour already packed, or 0. */
+static void convert(struct w3dctx *x, const W3D_Vertex *v, const struct uvs *s, ULONG z, const ULONG *argb, struct ovtx *o,
+                    float fogc, int have_fogc)
 {
     W3D_Context *c = x->ctx;
-    double z = v->z;
-    float w = v->w;
-    o->x = w3d_f2l(v->x * 65536.0f);
-    o->y = w3d_f2l(v->y * 65536.0f);
-    o->argb = (c->state & W3D_GOURAUD) ? w3d_colour(&v->color) : w3d_colour(&x->current);
-    o->u = w3d_f2l(v->u * su);
-    o->v = w3d_f2l(v->v * sv);
-    o->z = z <= 0.0 ? 0 : z >= 1.0 ? 0xFFFFFFFFUL : (ULONG)w3d_f2l((float)z * 1073741823.0f) << 2;
-    if (!(w > 0.0f)) w = 1e-6f;                 /* w must be positive */
-    o->w = w3d_fbits(w);
+    ULONG w = w3d_fbits(v->w);
+    o->x = w3d_fx(v->x, 16);
+    o->y = w3d_fx(v->y, 16);
+    o->argb = !(c->state & W3D_GOURAUD) ? w3d_colour(&x->current) : argb ? *argb : w3d_colour(&v->color);
+    o->u = uv(v->u, s->ku, s->su);
+    o->v = uv(v->v, s->kv, s->sv);
+    o->z = z;
+    if ((LONG)w <= 0 || w > 0x7f800000UL) w = 0x358637BDUL;    /* w must be positive: 1e-6 */
+    o->w = w;
     if (W3DBase->trace > 100000)
         w3d_trace("  v %ld %ld z %lx w %lx u %ld v %ld argb %lx", (long)o->x >> 16, (long)o->y >> 16, (unsigned long)o->z,
                   (unsigned long)o->w, (long)o->u, (long)o->v, (unsigned long)o->argb);
@@ -77,19 +104,27 @@ static void convert(struct w3dctx *x, const W3D_Vertex *v, float su, float sv, s
             | ((c->state & W3D_SPECULAR) ? (clampf255(v->spec.r) << 16) | (clampf255(v->spec.g) << 8) | clampf255(v->spec.b) : 0);
 }
 
+static void vertex_s(struct w3dctx *x, const W3D_Vertex *v, const struct uvs *s, struct ovtx *o)
+{
+    convert(x, v, s, w3d_zd(&v->z), 0, o, 0.0f, 0);
+}
+
 void w3d_vertex(struct w3dctx *x, const W3D_Vertex *v, struct w3dtex *t, struct ovtx *o)
 {
-    convert(x, v, t ? 65536.0f / (float)t->w : 0.0f, t ? 65536.0f / (float)t->h : 0.0f, o, 0.0f, 0);
+    struct uvs s;
+    uv_scale(&s, t, 0);
+    vertex_s(x, v, &s, o);
 }
 
 /* Front-facing, by the winding SetFrontFace gave (y runs down the screen). */
 static int culled(struct w3dctx *x, const struct ovtx *a, const struct ovtx *b, const struct ovtx *c)
 {
     W3D_Context *ctx = x->ctx;
-    float area;
+    long long l, r;                             /* exact, in integers: no float calls */
     if (!(ctx->state & W3D_CULLFACE)) return 0;
-    area = ((float)(b->x - a->x)) * ((float)(c->y - a->y)) - ((float)(c->x - a->x)) * ((float)(b->y - a->y));
-    return ctx->FrontFaceOrder == W3D_CW ? area < 0.0f : area > 0.0f;
+    l = (long long)(LONG)(b->x - a->x) * (LONG)(c->y - a->y);
+    r = (long long)(LONG)(c->x - a->x) * (LONG)(b->y - a->y);
+    return ctx->FrontFaceOrder == W3D_CW ? l < r : l > r;
 }
 
 /* The texture a primitive names, when texture mapping is on and the
@@ -140,11 +175,13 @@ static ULONG draw(struct w3dctx *x, W3D_Texture *tex, const struct vsrc *src, UL
 {
     struct ovtx *o;
     struct w3dtex *t;
+    struct uvs s;
     ULONG i, m;
     int cull = (x->ctx->state & W3D_CULLFACE) != 0;
     if (n < 3) return W3D_ILLEGALINPUT;
     tex = use_tex(x, tex);
     t = tex ? TEX(tex) : 0;
+    uv_scale(&s, t, 0);
     w3d_trace("draw prim %ld n %ld tex %lx state %lx", (long)prim, (long)n, (unsigned long)tex, (unsigned long)x->ctx->state);
     stipple(x, pat);
     m = cull && prim != OGPU_LAY_LIST ? (n - 2) * 3 : n;
@@ -152,7 +189,7 @@ static ULONG draw(struct w3dctx *x, W3D_Texture *tex, const struct vsrc *src, UL
     if (!o) return W3D_QUEUEFAILED;
     w3d_select_texture(x, tex);
     if (!cull || prim == OGPU_LAY_LIST) {
-        for (i = 0; i < n; i++) w3d_vertex(x, vget(src, i), t, &o[i]);
+        for (i = 0; i < n; i++) vertex_s(x, vget(src, i), &s, &o[i]);
         if (cull) {                             /* a list: keep the front faces */
             ULONG k = 0;
             for (i = 0; i + 2 < n; i += 3)
@@ -167,11 +204,11 @@ static ULONG draw(struct w3dctx *x, W3D_Texture *tex, const struct vsrc *src, UL
     } else {
         struct ovtx a, b, c;
         ULONG k = 0;
-        w3d_vertex(x, vget(src, 0), t, &a);
-        w3d_vertex(x, vget(src, 1), t, &b);
+        vertex_s(x, vget(src, 0), &s, &a);
+        vertex_s(x, vget(src, 1), &s, &b);
         for (i = 2; i < n; i++) {
             const struct ovtx *p0, *p1;
-            w3d_vertex(x, vget(src, i), t, &c);
+            vertex_s(x, vget(src, i), &s, &c);
             if (prim == OGPU_LAY_STRIP && (i & 1)) { p0 = &b; p1 = &a; }  /* odd strip triangles turn the other way */
             else { p0 = &a; p1 = &b; }
             if (!culled(x, p0, p1, &c)) { o[k] = *p0; o[k + 1] = *p1; o[k + 2] = c; k += 3; }
@@ -459,18 +496,34 @@ static void colour_at(const UBYTE *p, ULONG mode, W3D_Color *o)
     else { o->r = ch[0]; o->g = ch[1]; o->b = ch[2]; o->a = ch[3]; }
 }
 
+/* A colour of bytes packed as ARGB32 (what colour_at and w3d_colour give
+ * for it, without the floats). */
+static ULONG colour_bytes(const UBYTE *p, ULONG mode)
+{
+    if (mode & W3D_CMODE_RGB) return 0xFF000000UL | (ULONG)p[0] << 16 | (ULONG)p[1] << 8 | p[2];
+    if (mode & W3D_CMODE_BGR) return 0xFF000000UL | (ULONG)p[2] << 16 | (ULONG)p[1] << 8 | p[0];
+    if (mode & W3D_CMODE_ARGB) return (ULONG)p[0] << 24 | (ULONG)p[1] << 16 | (ULONG)p[2] << 8 | p[3];
+    if (mode & W3D_CMODE_BGRA) return (ULONG)p[3] << 24 | (ULONG)p[2] << 16 | (ULONG)p[1] << 8 | p[0];
+    return (ULONG)p[3] << 24 | (ULONG)p[0] << 16 | (ULONG)p[1] << 8 | p[2];
+}
+
 /* Vertex i of the arrays, converted. */
-static void array_vertex(struct w3dctx *x, ULONG i, struct w3dtex *t, struct ovtx *o)
+static void array_vertex(struct w3dctx *x, ULONG i, const struct uvs *s, struct ovtx *o)
 {
     W3D_Context *c = x->ctx;
     W3D_Vertex v;
     const UBYTE *p = (const UBYTE *)c->VertexPointer + (LONG)i * c->VPStride;
-    float su, sv, fogc = 0.0f;
-    int have_fogc = 0;
+    float fogc = 0.0f;
+    int have_fogc = 0, fog = (c->state & W3D_FOGGING) != 0;
+    ULONG z, argb, *pargb = 0;
     switch (c->VPMode) {
-    case W3D_VERTEX_F_F_F: v.x = getf(p, 0); v.y = getf(p + 4, 0); v.z = getf(p + 8, 0); break;
-    case W3D_VERTEX_F_F_D: v.x = getf(p, 0); v.y = getf(p + 4, 0); v.z = *(const double *)(p + 8); break;
-    default: v.x = getf(p, 1); v.y = getf(p + 8, 1); v.z = *(const double *)(p + 16); break;
+    case W3D_VERTEX_F_F_F:
+        v.x = getf(p, 0); v.y = getf(p + 4, 0);
+        z = w3d_zf(*(const float *)(p + 8));
+        v.z = fog ? getf(p + 8, 0) : 0.0;      /* only fog needs it as a double: a library call */
+        break;
+    case W3D_VERTEX_F_F_D: v.x = getf(p, 0); v.y = getf(p + 4, 0); v.z = *(const double *)(p + 8); z = w3d_zd(&v.z); break;
+    default: v.x = getf(p, 1); v.y = getf(p + 8, 1); v.z = *(const double *)(p + 16); z = w3d_zd(&v.z); break;
     }
     v.u = v.v = 0.0f; v.w = 1.0f; v.tex3d = 0.0f; v.l = 0.0f;
     if (c->TexCoordPointer[0]) {
@@ -479,7 +532,10 @@ static void array_vertex(struct w3dctx *x, ULONG i, struct w3dtex *t, struct ovt
         v.v = *(const float *)(q + c->TPVOffs[0]);
         v.w = *(const float *)(q + c->TPWOffs[0]);      /* off_w may be negative: w before u, as MiniGL keeps it */
     }
-    if (c->ColorPointer) colour_at((const UBYTE *)c->ColorPointer + (LONG)i * c->CPStride, c->CPMode, &v.color);
+    if (c->ColorPointer && (c->CPMode & W3D_COLOR_UBYTE)) {
+        argb = colour_bytes((const UBYTE *)c->ColorPointer + (LONG)i * c->CPStride, c->CPMode);
+        pargb = &argb;
+    } else if (c->ColorPointer) colour_at((const UBYTE *)c->ColorPointer + (LONG)i * c->CPStride, c->CPMode, &v.color);
     else v.color = x->current;
     v.spec.r = v.spec.g = v.spec.b = 0.0f;
     if (c->SecondaryColorPointer) {
@@ -491,10 +547,7 @@ static void array_vertex(struct w3dctx *x, ULONG i, struct w3dtex *t, struct ovt
         fogc = getf((const UBYTE *)c->FogCoordPointer + i * c->FCPStride, c->FCPMode == W3D_FOGCOORD_DOUBLE);
         have_fogc = 1;
     }
-    if (!t) su = sv = 0.0f;
-    else if (c->TPFlags[0] & W3D_TEXCOORD_NORMALIZED) su = sv = 65536.0f;
-    else { su = 65536.0f / (float)t->w; sv = 65536.0f / (float)t->h; }
-    convert(x, &v, su, sv, o, fogc, have_fogc);
+    convert(x, &v, s, z, pargb, o, fogc, have_fogc);
 }
 
 static ULONG index_at(const void *ix, ULONG type, ULONG i)
@@ -511,8 +564,10 @@ static ULONG arrays(struct w3dctx *x, ULONG prim, ULONG base, ULONG count, ULONG
     W3D_Context *c = x->ctx;
     W3D_Texture *tex = use_tex(x, c->CurrentTex[0]);
     struct w3dtex *t = tex ? TEX(tex) : 0;
+    struct uvs s;
     ULONG i;
     if (!c->VertexPointer) return W3D_ILLEGALINPUT;
+    uv_scale(&s, t, (c->TPFlags[0] & W3D_TEXCOORD_NORMALIZED) != 0);
     w3d_trace("arrays prim %ld base %ld count %ld type %ld idx %lx vp %lx stride %ld mode %ld cp %lx cmode %lx tp %lx tstride %ld voff %ld woff %ld tflags %ld tex %lx",
               (long)prim, (long)base, (long)count, (long)type, (unsigned long)ix, (unsigned long)c->VertexPointer, (long)c->VPStride,
               (long)c->VPMode, (unsigned long)c->ColorPointer, (unsigned long)c->CPMode, (unsigned long)c->TexCoordPointer[0],
@@ -534,9 +589,9 @@ static ULONG arrays(struct w3dctx *x, ULONG prim, ULONG base, ULONG count, ULONG
                 else if (prim == W3D_PRIMITIVE_TRIFAN) { i0 = 0; i1 = tnum + 1; i2 = tnum + 2; }
                 else if (tnum & 1) { i0 = tnum + 1; i1 = tnum; i2 = tnum + 2; }
                 else { i0 = tnum; i1 = tnum + 1; i2 = tnum + 2; }
-                array_vertex(x, base + index_at(ix, type, i0), t, &a);
-                array_vertex(x, base + index_at(ix, type, i1), t, &b);
-                array_vertex(x, base + index_at(ix, type, i2), t, &cc);
+                array_vertex(x, base + index_at(ix, type, i0), &s, &a);
+                array_vertex(x, base + index_at(ix, type, i1), &s, &b);
+                array_vertex(x, base + index_at(ix, type, i2), &s, &cc);
                 if (culled(x, &a, &b, &cc)) continue;
                 o[k] = a; o[k + 1] = b; o[k + 2] = cc; k += 3;
             }
@@ -550,7 +605,7 @@ static ULONG arrays(struct w3dctx *x, ULONG prim, ULONG base, ULONG count, ULONG
         for (i = 0; i < count; i++) {
             struct ovtx q[4];
             LONG h = w3d_f2l((x->point_size < 1.0f ? 1.0f : x->point_size) * 32768.0f);
-            array_vertex(x, base + index_at(ix, type, i), t, &q[0]);
+            array_vertex(x, base + index_at(ix, type, i), &s, &q[0]);
             q[1] = q[2] = q[3] = q[0];
             q[0].x -= h; q[0].y -= h; q[1].x += h; q[1].y -= h; q[2].x -= h; q[2].y += h; q[3].x += h; q[3].y += h;
             if (quad(x, tex, q) != W3D_SUCCESS) return W3D_QUEUEFAILED;
@@ -561,8 +616,8 @@ static ULONG arrays(struct w3dctx *x, ULONG prim, ULONG base, ULONG count, ULONG
         for (i = 0; i < n; i++) {
             struct ovtx a, b;
             ULONG i0 = prim == W3D_PRIMITIVE_LINES ? i * 2 : i, i1 = prim == W3D_PRIMITIVE_LINES ? i * 2 + 1 : (i + 1) % count;
-            array_vertex(x, base + index_at(ix, type, i0), t, &a);
-            array_vertex(x, base + index_at(ix, type, i1), t, &b);
+            array_vertex(x, base + index_at(ix, type, i0), &s, &a);
+            array_vertex(x, base + index_at(ix, type, i1), &s, &b);
             if (segment(x, tex, &a, &b, x->line_width < 1.0f ? 1.0f : x->line_width) != W3D_SUCCESS) return W3D_QUEUEFAILED;
         }
         break;

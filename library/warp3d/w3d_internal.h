@@ -23,6 +23,7 @@
 #include "../opengpu/ogpu_3d.h"
 #include "../../include/gfopengpu/build3d.h"
 #include "w3d_vg.h"
+#include "w3d_conv.h"
 
 #define REG(r, decl) register decl __asm(#r)   /* bebbo gcc: an argument in a register */
 #define LIBCALL                                 /* library entry points */
@@ -168,8 +169,6 @@ void w3d_free(void *p);
 void w3d_copy(void *d, const void *s, ULONG n);
 void w3d_clear(void *d, ULONG n);
 ULONG w3d_colour(const W3D_Color *c);           /* to ARGB32 */
-LONG w3d_f2l(float f);                          /* rounded to the nearest */
-ULONG w3d_fbits(float f);
 
 void w3d_read_prefs(struct W3DBase *base);     /* again for each new context */
 void w3d_trace(const char *fmt, ...);          /* a line to the serial port while tracing */

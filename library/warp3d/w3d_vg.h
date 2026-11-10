@@ -65,6 +65,12 @@ LONG w3dvg_run(struct w3dvg *v, const UBYTE *stream, long words, ULONG vbase, UL
 /* A texture whose first level was at addr is gone (or will change size). */
 void w3dvg_forget(struct w3dvg *v, ULONG addr);
 
+/* The stream's state back to the core's start (a new context on the core). */
+void w3dvg_reset(struct w3dvg *v);
+
+/* Every texture is gone (W3D_FreeAllTexObj, or the context is reset). */
+void w3dvg_forget_all(struct w3dvg *v);
+
 /* The drawing area's pixels changed behind the host's copy: the next draw
  * loads them first. */
 void w3dvg_stale(struct w3dvg *v);
@@ -72,6 +78,7 @@ void w3dvg_stale(struct w3dvg *v);
 /* Counters since the last call (cleared by it). */
 struct w3dvg_stats {
     ULONG blocks, draws, merged, triangles, objects, shaders, puts, put_bytes, loads, presents, refused;
+    ULONG declined;                     /* commands the route leaves to the CPU core */
 };
 void w3dvg_stats(struct w3dvg *v, struct w3dvg_stats *s);
 

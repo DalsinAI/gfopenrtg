@@ -352,6 +352,9 @@ struct acvirgl {
     unsigned vw_tick;
     int direct_said;            /* targets EGL wouldn't take, told in the log (the first few) */
     uint32_t bad[4];            /* the last one: width, height, bytes a row, offset in its page */
+    /* the contexts the Amiga made and has not destroyed, for acvirgl_reset */
+    uint32_t *ctxs;
+    uint32_t nctx, ctx_cap;
 };
 
 static void av_no_fence(void *cookie, uint32_t fence) { (void)cookie; (void)fence; }
@@ -617,6 +620,48 @@ fail:
 static void av_vwin_free(struct acvirgl *v, struct av_vwin *w, int gl);
 #endif
 
+/* the Amiga's contexts (acvirgl_reset's list): one made, one gone */
+static void av_ctx_made(struct acvirgl *v, uint32_t id)
+{
+    uint32_t i;
+    for (i = 0; i < v->nctx; i++) if (v->ctxs[i] == id) return;
+    if (v->nctx == v->ctx_cap) {
+        uint32_t n = v->ctx_cap ? v->ctx_cap * 2 : 16;
+        uint32_t *p = realloc(v->ctxs, n * sizeof *p);
+        if (!p) return;                     /* not listed: a reset leaves it (as before) */
+        v->ctxs = p; v->ctx_cap = n;
+    }
+    v->ctxs[v->nctx++] = id;
+}
+static void av_ctx_gone(struct acvirgl *v, uint32_t id)
+{
+    uint32_t i;
+    for (i = 0; i < v->nctx; i++)
+        if (v->ctxs[i] == id) { v->ctxs[i] = v->ctxs[--v->nctx]; return; }
+}
+
+static void av_zs_forget(struct acvirgl *v, uint32_t ctx);
+void acvirgl_reset(struct acvirgl *v)
+{
+    uint32_t i, nc, nr = 0;
+    if (!v) return;
+    v->npend = 0;                           /* presents left: the caller settled or dropped them */
+    nc = v->nctx;
+    if (v->vr.force_ctx_0) v->vr.force_ctx_0();
+    for (i = 0; i < v->nctx; i++) {         /* contexts first: each lets go of what is attached to it */
+        av_zs_forget(v, v->ctxs[i]);
+        v->vr.context_destroy(v->ctxs[i]);
+        if (v->vr.force_ctx_0) v->vr.force_ctx_0();
+    }
+    v->nctx = 0;
+    for (i = 0; i < v->res_cap; i++)
+        if (v->res[i].handle) { v->vr.resource_unref(v->res[i].handle); nr++; }
+    if (v->res) memset(v->res, 0, (size_t)v->res_cap * sizeof *v->res);
+    v->res_used = 0;
+    v->st.resets++;
+    if (nc || nr) fprintf(stderr, "ACVIRGL: reset: %u contexts and %u resources of the last boot let go of\n", nc, nr);
+}
+
 void acvirgl_destroy(struct acvirgl *v)
 {
     if (!v) return;
@@ -640,6 +685,7 @@ void acvirgl_destroy(struct acvirgl *v)
     }
 #endif
     free(v->zs);
+    free(v->ctxs);
     /* virglrenderer keeps state at file scope; it stays loaded */
     free(v->tmp);
     free(v->res);
@@ -2170,11 +2216,13 @@ int acvirgl_run(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), 
              * in a GPU wait). */
             if (v->vr.force_ctx_0) v->vr.force_ctx_0();
             if (v->vr.context_create(id, (uint32_t)strlen(buf), buf)) r = ACV_ERR_RENDERER;
+            else av_ctx_made(v, id);
             if (v->vr.force_ctx_0) v->vr.force_ctx_0();
             break;
         }
         case ACV_CTX_DESTROY:
             av_zs_forget(v, av_be32(a));
+            av_ctx_gone(v, av_be32(a));
             v->vr.context_destroy(av_be32(a));
             if (v->vr.force_ctx_0) v->vr.force_ctx_0();
             break;

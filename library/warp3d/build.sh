@@ -39,14 +39,14 @@ OGPU="$ROOT/library/opengpu"
 # with -m68040 -mhard-float they ran a quarter slower on the AC090 than at
 # -m68020 (8 October 2026, W3DTest); every build is 68040 now.
 mkdir -p "$OUT/w3d-obj"
-for f in ogpu_core ogpu_3d ogpu_build ogpu_build3d; do
+for f in ogpu_core ogpu_dwt ogpu_3d ogpu_build ogpu_build3d; do
     "$CC" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -fno-builtin -Wall -Wextra -Werror -Wno-unused-parameter \
         -I"$ROOT/include" -c -o "$OUT/w3d-obj/$f.o" "$OGPU/$f.c"
 done
 "$CC" $FLAGS -fno-toplevel-reorder -fno-builtin -nostartfiles -nostdlib -o "$OUT/Warp3D.library" \
     "$HERE/w3d_lib.c" "$HERE/w3d_ctx.c" "$HERE/w3d_batch.c" "$HERE/w3d_draw.c" "$HERE/w3d_texture.c" "$HERE/w3d_query.c" \
     "$HERE/w3d_vg.c" "$HERE/w3d_vg_shader.c" "$HERE/w3d_vg_os3.c" \
-    "$OUT/w3d-obj/ogpu_core.o" "$OUT/w3d-obj/ogpu_3d.o" "$OUT/w3d-obj/ogpu_build.o" "$OUT/w3d-obj/ogpu_build3d.o" \
+    "$OUT/w3d-obj/ogpu_core.o" "$OUT/w3d-obj/ogpu_dwt.o" "$OUT/w3d-obj/ogpu_3d.o" "$OUT/w3d-obj/ogpu_build.o" "$OUT/w3d-obj/ogpu_build3d.o" \
     "$ROOT/library/string.c" -noixemul -lm -lgcc
 echo "$OUT/Warp3D.library ($(wc -c < "$OUT/Warp3D.library") bytes)"
 "$CC" $FLAGS -noixemul -o "$OUT/W3DTest" "$ROOT/tools/w3dtest.c" -lm

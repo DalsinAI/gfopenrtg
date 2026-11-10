@@ -27,119 +27,9 @@
 #include "mgl_internal.h"
 #include "../../include/gfopengpu/virgl.h"
 
-/* ---- the protocol's numbers ----------------------------------------------------------------- */
-
-#define VG_CMD0(cmd, obj, len) ((ULONG)(cmd) | ((ULONG)(obj) << 8) | ((ULONG)(len) << 16))
-
-enum {                                  /* virgl_context_cmd */
-    VG_CCMD_CREATE_OBJECT = 1, VG_CCMD_BIND_OBJECT = 2, VG_CCMD_DESTROY_OBJECT = 3,
-    VG_CCMD_SET_VIEWPORT_STATE = 4, VG_CCMD_SET_FRAMEBUFFER_STATE = 5, VG_CCMD_SET_VERTEX_BUFFERS = 6,
-    VG_CCMD_CLEAR = 7, VG_CCMD_DRAW_VBO = 8, VG_CCMD_SET_SAMPLER_VIEWS = 10, VG_CCMD_SET_INDEX_BUFFER = 11,
-    VG_CCMD_SET_CONSTANT_BUFFER = 12, VG_CCMD_SET_BLEND_COLOR = 14, VG_CCMD_SET_SCISSOR_STATE = 15,
-    VG_CCMD_BLIT = 16, VG_CCMD_RESOURCE_COPY_REGION = 17, VG_CCMD_BIND_SAMPLER_STATES = 18,
-    VG_CCMD_BIND_SHADER = 31
-};
-
-enum {                                  /* virgl_object_type */
-    VG_OBJ_BLEND = 1, VG_OBJ_RASTERIZER = 2, VG_OBJ_DSA = 3, VG_OBJ_SHADER = 4, VG_OBJ_VERTEX_ELEMENTS = 5,
-    VG_OBJ_SAMPLER_VIEW = 6, VG_OBJ_SAMPLER_STATE = 7, VG_OBJ_SURFACE = 8
-};
-
-#define VG_SHADER_VERTEX   0
-#define VG_SHADER_FRAGMENT 1
-
-/* virgl_formats */
-#define VG_FMT_B8G8R8A8_UNORM    1
-#define VG_FMT_Z16_UNORM         16
-#define VG_FMT_Z32_FLOAT         18
-#define VG_FMT_Z24X8_UNORM       21
-#define VG_FMT_R32_FLOAT         28
-#define VG_FMT_R32G32_FLOAT      29
-#define VG_FMT_R32G32B32_FLOAT   30
-#define VG_FMT_R32G32B32A32_FLOAT 31
-#define VG_FMT_R8_UNORM          64
-#define VG_FMT_R8G8B8A8_UNORM    67
-#define VG_FMT_R16_UINT          185
-
-/* virgl_hw.h's bind flags */
-#define VG_BIND_DEPTH_STENCIL  (1UL << 0)
-#define VG_BIND_RENDER_TARGET  (1UL << 1)
-#define VG_BIND_SAMPLER_VIEW   (1UL << 3)
-#define VG_BIND_VERTEX_BUFFER  (1UL << 4)
-#define VG_BIND_INDEX_BUFFER   (1UL << 5)
-
-/* Gallium's numbers, as virgl carries them (p_defines.h) */
-#define VG_TARGET_BUFFER 0
-#define VG_TARGET_2D 2
-#define VG_CLEAR_DEPTH  (1UL << 0)
-#define VG_CLEAR_COLOR0 (1UL << 2)
-#define VG_PRIM_POINTS 0
-#define VG_PRIM_LINES 1
-#define VG_PRIM_LINE_LOOP 2
-#define VG_PRIM_LINE_STRIP 3
-#define VG_PRIM_TRIANGLES 4
-#define VG_PRIM_TRIANGLE_STRIP 5
-#define VG_PRIM_TRIANGLE_FAN 6
-#define VG_BLEND_ADD 0
-#define VG_BLEND_SUBTRACT 1
-#define VG_BLEND_REVERSE_SUBTRACT 2
-#define VG_BLEND_MIN 3
-#define VG_BLEND_MAX 4
-#define VG_BF_ONE 0x01
-#define VG_BF_SRC_COLOR 0x02
-#define VG_BF_SRC_ALPHA 0x03
-#define VG_BF_DST_ALPHA 0x04
-#define VG_BF_DST_COLOR 0x05
-#define VG_BF_SRC_ALPHA_SATURATE 0x06
-#define VG_BF_CONST_COLOR 0x07
-#define VG_BF_CONST_ALPHA 0x08
-#define VG_BF_ZERO 0x11
-#define VG_BF_INV_SRC_COLOR 0x12
-#define VG_BF_INV_SRC_ALPHA 0x13
-#define VG_BF_INV_DST_ALPHA 0x14
-#define VG_BF_INV_DST_COLOR 0x15
-#define VG_BF_INV_CONST_COLOR 0x17
-#define VG_BF_INV_CONST_ALPHA 0x18
-#define VG_FACE_FRONT 1
-#define VG_FACE_BACK 2
-#define VG_POLYGON_FILL 0
-#define VG_POLYGON_LINE 1
-#define VG_POLYGON_POINT 2
-#define VG_WRAP_REPEAT 0
-#define VG_WRAP_CLAMP 1
-#define VG_WRAP_CLAMP_TO_EDGE 2
-#define VG_FILTER_NEAREST 0
-#define VG_FILTER_LINEAR 1
-#define VG_MIP_NEAREST 0
-#define VG_MIP_LINEAR 1
-#define VG_MIP_NONE 2
-
-/* virgl_caps_v1's primitive mask bits we look at, and its words we read */
-#define VG_CAPS_WORDS 256               /* room for virgl_caps_v2 */
-
-/* ---- byte order ----------------------------------------------------------------------------- */
-
-/* The command stream is little-endian words; the block, the Amiga's (big-
- * endian) words. Vertex, index and texel data stay in the 68k's order and
- * the host turns them round in ACV_PUT (VG_SW32, VG_SW16). A PC test keeps
- * the arenas in the Amiga's order too (VG_A32, VG_A16 write them so), so
- * that it reads every byte as the host does for the 68k. */
-#define VG_SW32 ACV_SWAP_32
-#define VG_SW16 ACV_SWAP_16
-#ifdef MGL_HOST
-#define VG_LE(v) ((ULONG)(v))
-#define VG_A32(p, v) (*(ULONG *)(p) = __builtin_bswap32((ULONG)(v)))
-#define VG_A16(p, v) (*(UWORD *)(p) = __builtin_bswap16((UWORD)(v)))
-#else
-#define VG_A32(p, v) (*(ULONG *)(p) = (ULONG)(v))
-#define VG_A16(p, v) (*(UWORD *)(p) = (UWORD)(v))
-static inline ULONG vg_swap32(ULONG v)
-{
-    __asm__("rol.w #8,%0\n\tswap %0\n\trol.w #8,%0" : "+d"(v));
-    return v;
-}
-#define VG_LE(v) vg_swap32((ULONG)(v))
-#endif
+/* The protocol's numbers, byte order and command writers are shared with
+ * Warp3D.library's virgl route. */
+#include "../../include/gfopengpu/virgl_cmd.h"
 
 /* ---- resources -------------------------------------------------------------------------------- */
 
@@ -301,7 +191,6 @@ struct mgl_vg {
 
 /* Room for n words in the stream; the frame is sent first when there is none. */
 ULONG *vg_cmd(GLcontext c, ULONG n);
-#define VG_W(p, v) (*(p)++ = VG_LE(v))
 ULONG vg_fbits(float f);
 void vg_bind(GLcontext c, ULONG obj, ULONG handle);
 void vg_set_viewport(GLcontext c, const float *v6);

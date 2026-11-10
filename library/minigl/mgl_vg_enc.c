@@ -4,8 +4,10 @@
  * minigl.library's virgl route: the encoder. The command stream virglrenderer
  * reads (little-endian words: each written turned round on the 68k, three
  * instructions) and the ACVirgl request block that carries it (the Amiga's
- * own order). Each command's layout follows virglrenderer's protocol
- * (Mesa's MIT virgl_protocol.h); the encoder is ours. */
+ * own order). The commands themselves are written by the shared writers in
+ * include/gfopengpu/virgl_cmd.h, which Warp3D.library's virgl route builds
+ * from too; each layout follows virglrenderer's protocol (Mesa's MIT
+ * virgl_protocol.h); the encoder is ours. */
 #include "mgl_vg.h"
 
 /* ---- the stream ------------------------------------------------------------------------------ */
@@ -24,12 +26,7 @@ ULONG *vg_cmd(GLcontext c, ULONG n)
     return p;
 }
 
-ULONG vg_fbits(float f)
-{
-    union { float f; ULONG u; } x;
-    x.f = f;
-    return x.u;
-}
+ULONG vg_fbits(float f) { return vgc_fbits(f); }
 
 ULONG vg_new_obj(GLcontext c)
 {
@@ -37,71 +34,45 @@ ULONG vg_new_obj(GLcontext c)
     return ++c->vg->next_obj;
 }
 
+/* The commands' layouts are the shared writers' (virgl_cmd.h); these find
+ * the room in the frame's stream and keep the context's own records. */
+
 void vg_bind(GLcontext c, ULONG obj, ULONG handle)
 {
-    ULONG *p = vg_cmd(c, 2);
-    if (!p) return;
-    VG_W(p, VG_CMD0(VG_CCMD_BIND_OBJECT, obj, 1));
-    VG_W(p, handle);
+    ULONG *p = vg_cmd(c, VGC_BIND_WORDS);
+    if (p) vgc_bind(p, obj, handle);
 }
 
 void vg_set_viewport(GLcontext c, const float *v6)
 {
-    ULONG *p = vg_cmd(c, 8);
-    int i;
-    if (!p) return;
-    VG_W(p, VG_CMD0(VG_CCMD_SET_VIEWPORT_STATE, 0, 7));
-    VG_W(p, 0);
-    for (i = 0; i < 6; i++) VG_W(p, vg_fbits(v6[i]));
+    ULONG *p = vg_cmd(c, VGC_VIEWPORT_WORDS);
+    if (p) vgc_viewport(p, v6);
 }
 
 void vg_set_scissor(GLcontext c, int x0, int y0, int x1, int y1)
 {
-    ULONG *p = vg_cmd(c, 4);
-    if (!p) return;
-    VG_W(p, VG_CMD0(VG_CCMD_SET_SCISSOR_STATE, 0, 3));
-    VG_W(p, 0);
-    VG_W(p, (ULONG)x0 | ((ULONG)y0 << 16));
-    VG_W(p, (ULONG)x1 | ((ULONG)y1 << 16));
+    ULONG *p = vg_cmd(c, VGC_SCISSOR_WORDS);
+    if (p) vgc_scissor(p, x0, y0, x1, y1);
 }
 
 void vg_set_framebuffer(GLcontext c)
 {
-    ULONG *p = vg_cmd(c, 4);
-    if (!p) return;
-    VG_W(p, VG_CMD0(VG_CCMD_SET_FRAMEBUFFER_STATE, 0, 3));
-    VG_W(p, 1);
-    VG_W(p, c->vg->surf_z);
-    VG_W(p, c->vg->surf_c);
+    ULONG *p = vg_cmd(c, VGC_FRAMEBUFFER_WORDS);
+    if (p) vgc_framebuffer(p, c->vg->surf_z, c->vg->surf_c);
 }
 
 void vg_clear(GLcontext c, ULONG buffers, const float *rgba, float depth)
 {
-    ULONG *p = vg_cmd(c, 9);
-    union { double d; ULONG w[2]; } z;
-    int i;
-    if (!p) return;
-    z.d = depth;
-    VG_W(p, VG_CMD0(VG_CCMD_CLEAR, 0, 8));
-    VG_W(p, buffers);
-    for (i = 0; i < 4; i++) VG_W(p, vg_fbits(rgba[i]));
-    /* the depth is a double, its low word first (little-endian qword) */
-#ifdef MGL_HOST
-    VG_W(p, z.w[0]); VG_W(p, z.w[1]);
-#else
-    VG_W(p, z.w[1]); VG_W(p, z.w[0]);
-#endif
-    VG_W(p, 0);
+    ULONG *p = vg_cmd(c, VGC_CLEAR_WORDS);
+    if (p) vgc_clear(p, buffers, rgba, depth, 0);
 }
 
 void vg_set_vertex_buffer(GLcontext c, ULONG stride)
 {
-    ULONG *p = vg_cmd(c, 4);
+    ULONG *p = vg_cmd(c, VGC_VERTEX_BUFFER_WORDS);
     if (!p) return;
-    VG_W(p, VG_CMD0(VG_CCMD_SET_VERTEX_BUFFERS, 0, 3));
-    VG_W(p, stride);
-    VG_W(p, c->vg->vb_off);             /* this block's arena in the buffer (vg_ring) */
-    VG_W(p, c->vg->vbuf->handle);
+    /* this block's arena in the buffer (vg_ring) */
+    vgc_vertex_buffer(p, stride, c->vg->vb_off, c->vg->vbuf->handle);
     c->vg->stride = stride;
 }
 
@@ -110,12 +81,9 @@ void vg_set_vertex_buffer(GLcontext c, ULONG stride)
  * set again whenever a draw starts elsewhere in the index arena. */
 void vg_set_index_buffer(GLcontext c, ULONG offset)
 {
-    ULONG *p = vg_cmd(c, 4);
+    ULONG *p = vg_cmd(c, VGC_INDEX_BUFFER_WORDS);
     if (!p) return;
-    VG_W(p, VG_CMD0(VG_CCMD_SET_INDEX_BUFFER, 0, 3));
-    VG_W(p, c->vg->ibuf->handle);
-    VG_W(p, 2);
-    VG_W(p, offset);
+    vgc_index_buffer(p, c->vg->ibuf->handle, 2, offset);
     c->vg->ib_off = offset;
 }
 
@@ -127,86 +95,47 @@ void vg_draw(GLcontext c, ULONG prim, ULONG start, ULONG count, int indexed, LON
         if (off != c->vg->ib_off || (c->vg->dirty & VG_D_IBUF)) { vg_set_index_buffer(c, off); c->vg->dirty &= ~VG_D_IBUF; }
         start = 0;
     }
-    p = vg_cmd(c, 13);
+    p = vg_cmd(c, VGC_DRAW_WORDS);
     if (!p) return;
-    VG_W(p, VG_CMD0(VG_CCMD_DRAW_VBO, 0, 12));
-    VG_W(p, start);
-    VG_W(p, count);
-    VG_W(p, prim);
-    VG_W(p, indexed ? 1 : 0);
-    VG_W(p, 1);                         /* instances */
-    VG_W(p, indexed ? (ULONG)bias : 0);
-    VG_W(p, 0);                         /* start instance */
-    VG_W(p, 0);                         /* primitive restart */
-    VG_W(p, 0);
-    VG_W(p, 0);                         /* min index */
-    VG_W(p, 0xFFFFFFFFUL);              /* max index */
-    VG_W(p, 0);
+    vgc_draw(p, prim, start, count, indexed, bias);
     c->vg->draws++;
     if (mgl_trace > 2) mgl_log("draw prim %ld start %ld count %ld idx %ld bias %ld (nva %ld nia %ld ncmd %ld)", (long)prim, (long)start, (long)count, (long)indexed, (long)bias, (long)c->vg->nva, (long)c->vg->nia, (long)c->vg->ncmd);
 }
 
 void vg_constants(GLcontext c, int shader, const float *v, int vec4s)
 {
-    ULONG n = (ULONG)vec4s * 4, *p = vg_cmd(c, n + 3), i;
-    const ULONG *src = (const ULONG *)v;
+    ULONG *p = vg_cmd(c, VGC_CONSTANTS_WORDS(vec4s));
     if (!p) return;
     if (mgl_trace > 2) mgl_log("consts %ld: %ld vec4, mvp row0 %ld %ld %ld %ld", (long)shader, (long)vec4s, (long)(v[0]*1000), (long)(v[1]*1000), (long)(v[2]*1000), (long)(v[3]*1000));
-    VG_W(p, VG_CMD0(VG_CCMD_SET_CONSTANT_BUFFER, 0, n + 2));
-    VG_W(p, (ULONG)shader);
-    VG_W(p, 0);
-    for (i = 0; i < n; i++) VG_W(p, src[i]);
+    vgc_constants(p, shader, (const ULONG *)v, vec4s);
 }
 
 /* TGSI text, as bytes, after the header; one command (our shaders are far
  * below a command's 64K words). */
 void vg_shader(GLcontext c, ULONG handle, int type, const char *text, ULONG len)
 {
-    ULONG words = (len + 3) / 4, *p = vg_cmd(c, words + 6);
-    UBYTE *b;
-    ULONG i;
+    ULONG *p = vg_cmd(c, VGC_SHADER_WORDS(len));
     if (!p) return;
-    VG_W(p, VG_CMD0(VG_CCMD_CREATE_OBJECT, VG_OBJ_SHADER, words + 5));
-    VG_W(p, handle);
-    VG_W(p, (ULONG)type);
-    VG_W(p, len);                       /* the whole length, in this one command */
-    VG_W(p, len + 300);                 /* tokens to make room for: fewer than its bytes */
-    VG_W(p, 0);                         /* no stream output */
-    b = (UBYTE *)p;
-    for (i = 0; i < len; i++) b[i] = (UBYTE)text[i];
-    for (; i < words * 4; i++) b[i] = 0;
+    vgc_shader(p, handle, type, text, len);
     c->vg->objects++;
 }
 
 void vg_bind_shader(GLcontext c, ULONG handle, int type)
 {
-    ULONG *p = vg_cmd(c, 3);
-    if (!p) return;
-    VG_W(p, VG_CMD0(VG_CCMD_BIND_SHADER, 0, 2));
-    VG_W(p, handle);
-    VG_W(p, (ULONG)type);
+    ULONG *p = vg_cmd(c, VGC_BIND_SHADER_WORDS);
+    if (p) vgc_bind_shader(p, handle, type);
 }
 
 void vg_sampler_views(GLcontext c, int n, const ULONG *h)
 {
-    ULONG *p = vg_cmd(c, (ULONG)n + 3);
-    int i;
-    if (!p) return;
-    VG_W(p, VG_CMD0(VG_CCMD_SET_SAMPLER_VIEWS, 0, n + 2));
-    VG_W(p, VG_SHADER_FRAGMENT);
-    VG_W(p, 0);
-    for (i = 0; i < n; i++) VG_W(p, h[i]);
+    ULONG *p = vg_cmd(c, VGC_SAMPLERS_WORDS(n));
+    if (p) vgc_sampler_views(p, n, h);
 }
 
 void vg_sampler_states(GLcontext c, int n, const ULONG *h)
 {
-    ULONG *p = vg_cmd(c, (ULONG)n + 3);
-    int i;
-    if (!p) return;
-    VG_W(p, VG_CMD0(VG_CCMD_BIND_SAMPLER_STATES, 0, n + 2));
-    VG_W(p, VG_SHADER_FRAGMENT);
-    VG_W(p, 0);
-    for (i = 0; i < n; i++) VG_W(p, h[i]);
+    ULONG *p = vg_cmd(c, VGC_SAMPLERS_WORDS(n));
+    if (p) vgc_sampler_states(p, n, h);
 }
 
 /* ---- the block --------------------------------------------------------------------------------- */
@@ -221,16 +150,9 @@ ULONG *vg_pre(GLcontext c, ULONG n)
     return p;
 }
 
-void vg_blk_cmd(ULONG *p, ULONG cmd, ULONG n, const ULONG *args)
-{
-    ULONG i;
-    PUTW(p, ACV_HDR(cmd, n + 2));
-    PUTW(p + 1, 0);
-    for (i = 0; i < n; i++) PUTW(p + 2 + i, args[i]);
-}
-
-LONG vg_result(const ULONG *blk, ULONG at) { return (LONG)GETW(blk + at + 1); }
-ULONG vg_word(const ULONG *blk, ULONG at) { return GETW(blk + at); }
+void vg_blk_cmd(ULONG *p, ULONG cmd, ULONG n, const ULONG *args) { vgc_blk_cmd(p, cmd, n, args); }
+LONG vg_result(const ULONG *blk, ULONG at) { return vgc_result(blk, at); }
+ULONG vg_word(const ULONG *blk, ULONG at) { return vgc_word(blk, at); }
 
 int vg_run(GLcontext c, ULONG *blk, ULONG words)
 {

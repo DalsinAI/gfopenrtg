@@ -53,7 +53,10 @@ enum {                                  /* virgl_object_type */
 #define VG_FMT_B5G6R5_UNORM      7
 #define VG_FMT_Z16_UNORM         16
 #define VG_FMT_Z32_FLOAT         18
-#define VG_FMT_Z24_UNORM_S8_UINT 19
+/* depth and stencil packed 24/8 (depth << 8 | stencil in a word): the one
+ * virglrenderer takes for a depth-stencil buffer (it refuses 19; the
+ * Warp3D host test, tests/run_w3d_vg.sh, makes one) */
+#define VG_FMT_D24S8             20
 #define VG_FMT_Z24X8_UNORM       21
 #define VG_FMT_R32_FLOAT         28
 #define VG_FMT_R32G32_FLOAT      29

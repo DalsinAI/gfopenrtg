@@ -101,7 +101,8 @@ gfopengpu.library's `OGPU_ModuleOpen` (`include/gfopengpu/module.h`):
 - **GL.module** (`module/`) is Mesa, the GLA core and its OS 3 parts, linked
   as a module on `library/modules/common`. Its table hands out every call by
   name: the 1,300 GL and GLES entry points Mesa's glapi generated for this
-  build, and the 16 GLA calls (`stubs/gl/gla.names`). It is about 20 MB and
+  build, and the 16 GLA calls (`stubs/gl/gla.names`). It is about 12 MB
+  (20 MB before patch 0014 and `--gc-sections`, 10 November 2026) and
   opens in about a second on the AC090.
 - **libGL.a** has one entry per call, generated with the module's table from
   the same list (`stubs/gl/gen_gl.py`). The first call loads the module and
@@ -110,7 +111,8 @@ gfopengpu.library's `OGPU_ModuleOpen` (`include/gfopengpu/module.h`):
 - **Shared** (residency step 2, DESIGN.md section 5): Mesa is built
   `-fbaserel32` (the cross file) and GL.module linked `-resident32`, so
   gfopengpu.library loads its code once for every program and each program's
-  open gets its own copy of Mesa's data (about 200 KB with the BSS). An
+  open gets its own copy of Mesa's data (about 60 KB with the BSS; 200 KB
+  before `--gc-sections`). An
   entry of libGL.a sets A4 to the program's copy: it copies its arguments
   (their size comes from Mesa's glapi XML, the GLA calls' from their
   headers), calls, and gives the program its A4 back.

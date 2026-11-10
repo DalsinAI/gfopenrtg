@@ -295,6 +295,10 @@ struct av_zs {
     uint32_t zsurf;                         /* the framebuffer's depth surface now */
     int dirty;                              /* commands since the last present */
     uint32_t cleared_surf, cleared;         /* the one cleared since the last present, and which (1 depth, 2 stencil) */
+    uint32_t first;                         /* of those, cleared before any draw since the last present */
+    int drawn;                              /* a draw since the last present */
+    int streak;                             /* presents in a row whose frame began with that clear */
+    int discarded;                          /* the last present invalidated depth/stencil */
     uint32_t surf[AV_ZS_SURF][2];           /* surface handle, its resource */
 };
 
@@ -1573,6 +1577,7 @@ static void av_direct_drop(struct acvirgl *v, struct av_pres *p) { (void)v; (voi
 /* ---- depth/stencil invalidation (struct av_zs) -------------------------------------- */
 
 #define AV_CCMD_CREATE_OBJECT 1             /* virgl_protocol.h's numbers */
+#define AV_CCMD_DRAW_VBO 4
 #define AV_CCMD_SET_FRAMEBUFFER_STATE 5
 #define AV_CCMD_CLEAR 7
 #define AV_CCMD_SET_SUB_CTX 28
@@ -1640,9 +1645,13 @@ static void av_zs_scan(struct acvirgl *v, uint32_t ctx, const uint8_t *s, uint32
             break;
         case AV_CCMD_CLEAR:
             if (len >= 1 && z->zsurf && (av_le32(a) & 3)) {
-                if (z->cleared_surf != z->zsurf) { z->cleared_surf = z->zsurf; z->cleared = 0; }
+                if (z->cleared_surf != z->zsurf) { z->cleared_surf = z->zsurf; z->cleared = z->first = 0; }
                 z->cleared |= av_le32(a) & 3;      /* PIPE_CLEAR_DEPTH, PIPE_CLEAR_STENCIL */
+                if (!z->drawn) z->first |= av_le32(a) & 3;
             }
+            break;
+        case AV_CCMD_DRAW_VBO:
+            z->drawn = 1;
             break;
         case AV_CCMD_SET_SUB_CTX:
             if (len >= 1) {
@@ -1656,8 +1665,12 @@ static void av_zs_scan(struct acvirgl *v, uint32_t ctx, const uint8_t *s, uint32
 }
 
 /* At a present: the framebuffer's depth/stencil invalidated in the
- * context's GL context, before anything flushes its job, when the context
- * has cleared it since its last present (and always has). */
+ * context's GL context, before anything flushes its job, when this frame
+ * and the one before it both began by clearing it (and every frame since
+ * the first invalidation has). One cleared frame is not enough: W3DCheck
+ * clears its Z buffer, presents, then draws against it without clearing
+ * again, and a tiler (V3D) really drops what was invalidated, so all of
+ * its scene failed the depth test there. */
 static void av_zs_discard(struct acvirgl *v, const struct av_pres *p)
 {
     struct av_zs *z = v->zs_on && v->zs ? av_zs_of(v, p->ctx, 0) : NULL;
@@ -1668,16 +1681,21 @@ static void av_zs_discard(struct acvirgl *v, const struct av_pres *p)
     unsigned fb = 0;
     if (!z || z->off || !z->dirty) return;  /* nothing drawn since the last present: as it was */
     z->dirty = 0;
-    if (!z->zsurf) { z->cleared_surf = 0; return; }     /* no depth buffer */
+    z->drawn = 0;
+    if (!z->zsurf) { z->cleared_surf = 0; z->streak = 0; return; }     /* no depth buffer */
     e = av_zs_slot(z, z->zsurf, 0);
     zr = e ? av_res_find(v, e[1]) : NULL;
     if (!zr) { z->off = 1; return; }
     stencil = !(zr->format == 16 || zr->format == 17 || zr->format == 18 || zr->format == 21 || zr->format == 22);
-    if (z->cleared_surf != z->zsurf || (z->cleared & (stencil ? 3u : 1u)) != (stencil ? 3u : 1u)) {
-        z->off = 1;                         /* kept from frame to frame: never again for this context */
+    if (z->cleared_surf != z->zsurf || (z->first & (stencil ? 3u : 1u)) != (stencil ? 3u : 1u)) {
+        z->cleared_surf = 0; z->cleared = z->first = 0;
+        z->streak = 0;
+        if (z->discarded) z->off = 1;       /* kept after an invalidation: never again for this context */
         return;
     }
-    z->cleared_surf = 0; z->cleared = 0;
+    z->cleared_surf = 0; z->cleared = z->first = 0;
+    if (++z->streak < 2) { z->discarded = 0; return; }  /* not yet a habit: kept */
+    z->discarded = 1;
     memset(&zi, 0, sizeof zi); memset(&ci, 0, sizeof ci);
     if (!v->vr.resource_get_info || !av_gl_load(v) || !v->gl.InvalidateFramebuffer) return;
     /* a depth format has no DRM fourcc: virglrenderer says EINVAL for that,

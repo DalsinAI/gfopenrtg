@@ -517,10 +517,12 @@ int main(void)
               "a display target's GET counts as a frame read back (%d, %llu bytes, %llu presents)", result(c),
               (unsigned long long)(s1.frame_get_bytes - s0.frame_get_bytes), (unsigned long long)(s1.presents - s0.presents));
     }
-    /* Depth/stencil invalidated at a present (AC_VIRGL_ZDISCARD): when the
-     * context cleared both since its last present; never again once it
-     * presents a depth buffer it kept. Context 1's framebuffer gets a Z24S8
-     * depth buffer (surface 12 on resource 5). */
+    /* Depth/stencil invalidated at a present (AC_VIRGL_ZDISCARD): when this
+     * frame and the one before both began by clearing both; never again once
+     * it keeps a depth buffer after an invalidation. First W3DCheck's order:
+     * a cleared frame presented, then one that keeps its depth (only the
+     * colour cleared), so nothing may be invalidated yet. Context 1's
+     * framebuffer gets a Z24S8 depth buffer (surface 12 on resource 5). */
     {
         enum { T = 0x60000 };
         uint32_t a_z[12] = { 5, 2, 20 /* S8_UINT_Z24_UNORM */, 1 /* DEPTH_STENCIL */, 64, 64, 1, 1, 0, 0, 0, 1 };
@@ -533,13 +535,13 @@ int main(void)
         acvirgl_run(v, map, NULL, BLK, at - BLK);
         CHECK(result(c) == 0, "a depth buffer (%d)", result(c));
         acvirgl_stats(v, &s0);
-        for (k = 0; k < 3; k++) {             /* three frames, each cleared */
+        for (k = 0; k < 5; k++) {             /* cleared, depth kept, then three cleared */
             cn = 0;
             if (!k) {
                 le(VIRGL_CMD0(VIRGL_CCMD_CREATE_OBJECT, VIRGL_OBJECT_SURFACE, VIRGL_OBJ_SURFACE_SIZE)); le(12); le(5); le(20); le(0); le(0);
                 le(VIRGL_CMD0(VIRGL_CCMD_SET_FRAMEBUFFER_STATE, 0, VIRGL_SET_FRAMEBUFFER_STATE_SIZE(1))); le(1); le(12); le(10);
             }
-            le(VIRGL_CMD0(VIRGL_CCMD_CLEAR, 0, VIRGL_OBJ_CLEAR_SIZE)); le(1 << 2 | 1 | 2);
+            le(VIRGL_CMD0(VIRGL_CCMD_CLEAR, 0, VIRGL_OBJ_CLEAR_SIZE)); le(k == 1 ? 1 << 2 : 1 << 2 | 1 | 2);
             le(f32(0.25f)); le(f32(0.5f)); le(f32(0.75f)); le(f32(1.0f));
             { double d = 1.0; uint32_t w2[2]; memcpy(w2, &d, 8); le(w2[0]); le(w2[1]); }
             le(0);
@@ -547,6 +549,11 @@ int main(void)
             begin(); cs = cmd(ACV_SUBMIT, 3, a_sub); c = cmd(ACV_PRESENT, 12, pa);
             acvirgl_run(v, map, NULL, BLK, at - BLK);
             CHECK(result(cs) == 0 && result(c) == 64 * 64, "frame %d: submit %d, present %d", k, result(cs), result(c));
+            if (k == 1) {
+                acvirgl_stats(v, &s1);
+                CHECK(s1.zs_discards == s0.zs_discards, "a cleared frame then one that keeps its depth: nothing invalidated (%llu)",
+                      (unsigned long long)(s1.zs_discards - s0.zs_discards));
+            }
         }
         /* a second present of the same frame (another bitmap): nothing new, not given up */
         begin(); c = cmd(ACV_PRESENT, 12, pa);
@@ -554,7 +561,7 @@ int main(void)
         acvirgl_stats(v, &s1);
         c = T + (10 * 64 + 10) * 4;
         CHECK(arena[c] == 0 && arena[c + 1] >= 0x3F && arena[c + 1] <= 0x40, "frames with depth invalidated still show");
-        CHECK(s1.zs_discards - s0.zs_discards == (on ? 3u : 0u), "depth/stencil not stored for 3 cleared frames (%llu)",
+        CHECK(s1.zs_discards - s0.zs_discards == (on ? 2u : 0u), "depth/stencil not stored for the 2nd and 3rd cleared frames in a row (%llu)",
               (unsigned long long)(s1.zs_discards - s0.zs_discards));
         /* a frame that keeps depth (colour cleared only): given up for good */
         for (k = 0; k < 2; k++) {

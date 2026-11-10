@@ -168,7 +168,11 @@ void *w3d_alloc(ULONG bytes);                   /* cleared */
 void w3d_free(void *p);
 void w3d_copy(void *d, const void *s, ULONG n);
 void w3d_clear(void *d, ULONG n);
-ULONG w3d_colour(const W3D_Color *c);           /* to ARGB32 */
+/* to ARGB32 (inline: once or more a vertex) */
+W3D_CONV_FN ULONG w3d_colour(const W3D_Color *c)
+{
+    return (w3d_unit8(c->a) << 24) | (w3d_unit8(c->r) << 16) | (w3d_unit8(c->g) << 8) | w3d_unit8(c->b);
+}
 
 void w3d_read_prefs(struct W3DBase *base);     /* again for each new context */
 void w3d_trace(const char *fmt, ...);          /* a line to the serial port while tracing */

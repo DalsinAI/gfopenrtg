@@ -283,7 +283,3 @@ void w3d_clear(void *d, ULONG n)
     while (n--) *dd++ = 0;
 }
 
-ULONG w3d_colour(const W3D_Color *c)
-{
-    return (w3d_unit8(c->a) << 24) | (w3d_unit8(c->r) << 16) | (w3d_unit8(c->g) << 8) | w3d_unit8(c->b);
-}

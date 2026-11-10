@@ -157,11 +157,11 @@ struct mgl_vg {
     LONG sc[4];
     ULONG blend_color[4];
 
-    /* constants, as last sent */
-    float vsc[VG_VS_CONSTS * 4];
-    int nvsc;
-    float fsc[VG_FS_CONSTS * 4];
-    int nfsc;
+    /* constants, as last sent: hostlib_mgl_consts' state (hostlib/mgl/consts.h,
+     * HL_MC_HDR): how many vec4s ($FFFFFFFF: none yet), the command cursor
+     * while a call runs, two spare longs, then the vec4s */
+    struct { ULONG n, ncmd, spare[2]; float k[VG_VS_CONSTS * 4]; } vsc;
+    struct { ULONG n, ncmd, spare[2]; float k[VG_FS_CONSTS * 4]; } fsc;
 
     /* glBegin/glEnd */
     struct vg_layout *im_lay;

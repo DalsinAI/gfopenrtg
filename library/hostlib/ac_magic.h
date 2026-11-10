@@ -99,6 +99,55 @@
  * hostlib/text/text_strip.h and hostlib/HOSTLIB-ABI.md. A hostlib function:
  * one C source for the 68k and the host (hostlib/hl.h). */
 #define AC_MAGIC_OGFX_TEXT_STRIP 0x00010105
+/* uint32_t hostlib_sdl2_blend(block): SDL 2's ARGB8888 SDL_BLENDMODE_BLEND.
+ * The destination is read and written, so the call is locked (tag $0002)
+ * and that rectangle is state: a decline puts it back before the 68k body
+ * blends it. The block is hostlib/sdl/blend.h; the contract is
+ * HOSTLIB-ABI.md. */
+#define AC_MAGIC_SDL2_BLEND 0x00010106
+/* uint32_t hostlib_mgl_draw(block): one MiniGL virgl draw appended to a
+ * context. The cursors are locked state, so a decline does not append
+ * twice and the next draw on that context follows this one. The vertices
+ * are a read range. The block is hostlib/mgl/draw.h. */
+#define AC_MAGIC_MGL_DRAW 0x00010107
+/* uint32_t hostlib_mgl_vertices(block): an array draw's vertices, or a
+ * batch of immediate ones, copied into the arena. The cursor is locked
+ * state. The block is hostlib/mgl/vertices.h. */
+#define AC_MAGIC_MGL_VERTICES 0x00010108
+/* uint32_t hostlib_mgl_tex(block): one ACV_PUT for a texture upload. The
+ * block cursor is locked state; the texels are only read. The block is
+ * hostlib/mgl/tex.h. */
+#define AC_MAGIC_MGL_TEX 0x00010109
+/* uint32_t hostlib_mgl_consts(block): send_if_changed. The last-sent
+ * constants are locked state, so a decline does not send them twice.
+ * The block is hostlib/mgl/consts.h. */
+#define AC_MAGIC_MGL_CONSTS 0x0001010A
+/* uint32_t hostlib_mgl_cached(block): cached(), the state objects' table
+ * lookup. It only reads, so there is no state. The block and the result
+ * are hostlib/mgl/cached.h. */
+#define AC_MAGIC_MGL_CACHED 0x0001010B
+/* uint32_t hostlib_zlib_inflate_codes(block): GFOpenZlib's inflate, the
+ * codes of one block (literals, lengths, distances) until its end, the
+ * input or the output runs out, or a bad code. Locked: the decoder's
+ * registers and the window are state, so a decline puts them back before
+ * the 68k body decodes the call. The block is hostlib/zlib/inflate_codes.h.
+ * $00010180 up: compression. */
+#define AC_MAGIC_ZLIB_INFLATE_CODES 0x00010180
+/* uint32_t hostlib_zlib_deflate_all(block): raw deflate of a whole input
+ * in one call, its working memory a write range it clears first (too big
+ * for a locked call's 64 KB); the output's length, or 0 when it does not
+ * fit. The block is hostlib/zlib/deflate_all.h. */
+#define AC_MAGIC_ZLIB_DEFLATE_ALL 0x00010181
+/* hostlib's own calls (hostlib/HOSTLIB-ABI.md), $00011000 up: above the
+ * open libraries' LVO ranges ($00010300 to $00010FFF), which AC090 indexes
+ * by bits 11-0. */
+/* uint32_t hostlib_probe(block): what this runtime runs as host code, for
+ * a thin shell's init (hostlib/probe/probe.h has the block): one answer
+ * byte for each (id, version) asked about, HL_PROBE_HOST (1) and
+ * HL_PROBE_TOTAL (2), and the host's feature level; returns the hostlib
+ * ABI the runtime implements. The 68k body writes zeros and returns 0.
+ * Its answer is about the host: AC_HOSTLIB=verify does not compare it. */
+#define AC_MAGIC_HOSTLIB_PROBE 0x00011000
 /* GFOpenCrypto's operations (DalsinAI/gfopentls, library/oc_magic.h, which
  * has each one's exact contract; AC090's side is jit_crypto.c). Byte
  * arrays throughout; each writes only its first argument's range. */
@@ -195,8 +244,8 @@
 /* An LVO body's tag is also its call's core class (libraries/openexec/
  * DESIGN-NATIVE-BODIES.md, section 4): tag version 1 ($0001) marks a pure
  * call, which AmiCradle may run as its native body on CPU0 or on the
- * calling task core. Tag only pure calls with it; a locked call takes the
- * proposed version 2, an anchored one no tag at all. */
+ * calling task core. Tag only pure calls with it; a locked call takes
+ * version 2 (AC_MAGIC_LOCKED below), an anchored one no tag at all. */
 /* A library's LVO body: the tag, then a jump to body, a C function that
  * takes its arguments in registers (register ... __asm("d0")), external and
  * kept (AC_MAGIC_KEEP). name is what the library's vector table holds:
@@ -215,5 +264,35 @@
                          "\t.long\t" AC_MAGIC_STR(id) "\n"                   \
                          "\tjmp\t" AC_MAGIC_SYM(body) "\n");                 \
     }
+
+/* A locked call's tag, version 2 (hostlib/HOSTLIB-ABI.md, section 8.1;
+ * libraries/openexec/DESIGN-NATIVE-BODIES.md, section 4): 14 bytes, then
+ * the jump to the body.
+ *     BRA.S   *+14            ; $600C
+ *     DC.L    'ACMF'
+ *     DC.W    $0002
+ *     DC.L    id
+ *     DC.W    lock            ; reg<<12 | offset: the object's register and
+ *                             ; its lock word's offset; $FFFF: no object
+ *                             ; lock, the caller keeps two calls on one
+ *                             ; state apart (hostlib's locked calls)
+ *     JMP     name_acbody
+ * A runtime that knows only version 1 does not recognise it, and the call
+ * runs as 68k code: the form is safe to ship before the runtime takes it.
+ * AC_MAGIC_LOCKED(name, id) is hostlib's (lock $FFFF). */
+#define AC_MAGIC_NOLOCK 0xffff
+#define AC_MAGIC_LOCKED_LK(name, id, lock)                                   \
+    __attribute__((used, noinline, noclone)) static void name##_actag(void) \
+    {                                                                        \
+        __asm__ volatile("\t.globl\t" AC_MAGIC_SYM(name) "\n"                \
+                         AC_MAGIC_SYM(name) ":\n"                            \
+                         "\t.short\t0x600c\n"                                \
+                         "\t.long\t0x41434d46\n"                             \
+                         "\t.short\t0x0002\n"                                \
+                         "\t.long\t" AC_MAGIC_STR(id) "\n"                   \
+                         "\t.short\t" AC_MAGIC_STR(lock) "\n"                \
+                         "\tjmp\t" AC_MAGIC_SYM(name##_acbody) "\n");        \
+    }
+#define AC_MAGIC_LOCKED(name, id) AC_MAGIC_LOCKED_LK(name, id, AC_MAGIC_NOLOCK)
 
 #endif

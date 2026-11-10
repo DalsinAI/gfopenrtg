@@ -269,11 +269,11 @@ static void send_if_changed(GLcontext c, int type, const float *k, int n)
 {
     struct mgl_vg *v = c->vg;
     ULONG *st = type == VG_SHADER_VERTEX ? &v->vsc.n : &v->fsc.n;
-    ULONG cap = type == VG_SHADER_VERTEX ? VG_VS_CONSTS : VG_FS_CONSTS;
     const ULONG *a = (const ULONG *)k;
-    ULONG *b = st + 4;
+    ULONG *b = (ULONG *)(type == VG_SHADER_VERTEX ? v->vsc.k : v->fsc.k);
     int i;
 #ifndef VG_HOST
+    ULONG cap = type == VG_SHADER_VERTEX ? VG_VS_CONSTS : VG_FS_CONSTS;
     if (n > 0 && (ULONG)n <= cap && v->cmd && v->ncmd + VGC_CONSTANTS_WORDS(n) <= v->ccmd) {
         ULONG blk[HL_MC_LONGS];
         blk[HL_MC_STATE] = ADDR(st);

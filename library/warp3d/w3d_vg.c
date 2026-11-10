@@ -19,65 +19,14 @@
  *
  * The numbers of the virgl protocol are virglrenderer's (Mesa's MIT
  * virgl_protocol.h, virgl_hw.h, Gallium's p_defines.h), as
- * library/minigl/mgl_vg.h carries them; the encoder is the Team's own. */
+ * include/gfopengpu/virgl_cmd.h carries them for MiniGL and Warp3D
+ * alike; the encoder is the Team's own. */
 #include "w3d_vg.h"
 #include "../../include/gfopengpu/stream3d.h"
-#include "../../include/gfopengpu/virgl.h"
 
-#ifdef W3D_HOST
-#define PUTW(p, v) (*(ULONG *)(p) = __builtin_bswap32((ULONG)(v)))
-#define GETW(p) __builtin_bswap32(*(const ULONG *)(p))
-#define LE(v) ((ULONG)(v))
-#define A32(p, v) (*(ULONG *)(p) = __builtin_bswap32((ULONG)(v)))
-#define A16(p, v) (*(UWORD *)(p) = __builtin_bswap16((UWORD)(v)))
-#else
-#define PUTW(p, v) (*(ULONG *)(p) = (ULONG)(v))
-#define GETW(p) (*(const ULONG *)(p))
-#define A32(p, v) (*(ULONG *)(p) = (ULONG)(v))
-#define A16(p, v) (*(UWORD *)(p) = (UWORD)(v))
-static inline ULONG swap32(ULONG v)
-{
-    __asm__("rol.w #8,%0\n\tswap %0\n\trol.w #8,%0" : "+d"(v));
-    return v;
-}
-#define LE(v) swap32((ULONG)(v))
-#endif
+#include "../../include/gfopengpu/virgl_cmd.h"
+
 #define ADDR(p) ((ULONG)(p))
-#define W(p, v) (*(p)++ = LE(v))
-
-/* ---- the protocol's numbers ------------------------------------------------------------------- */
-
-#define CMD0(cmd, obj, len) ((ULONG)(cmd) | ((ULONG)(obj) << 8) | ((ULONG)(len) << 16))
-enum {
-    C_CREATE = 1, C_BIND = 2, C_DESTROY = 3, C_VIEWPORT = 4, C_FRAMEBUFFER = 5, C_VBUFS = 6, C_CLEAR = 7,
-    C_DRAW = 8, C_VIEWS = 10, C_IBUF = 11, C_CONSTS = 12, C_STENCIL_REF = 13, C_BLEND_COLOR = 14,
-    C_SCISSOR = 15, C_BLIT = 16, C_SAMPLERS = 18, C_STIPPLE = 22, C_BIND_SHADER = 31
-};
-enum { O_BLEND = 1, O_RS = 2, O_DSA = 3, O_SHADER = 4, O_VE = 5, O_VIEW = 6, O_SAMPLER = 7, O_SURFACE = 8 };
-#define SH_VERTEX 0
-#define SH_FRAGMENT 1
-/* virgl_formats */
-#define F_B8G8R8A8   1
-#define F_B5G6R5     7
-#define F_Z16        16
-#define F_Z24S8      19
-#define F_Z24X8      21
-#define F_R32_FLOAT  28
-#define F_R32_USCALED 36
-#define F_R32G32_SSCALED 45
-#define F_R8_UNORM   64
-/* bind flags */
-#define B_DEPTH   (1UL << 0)
-#define B_RT      (1UL << 1)
-#define B_SAMPLER (1UL << 3)
-#define B_VBUF    (1UL << 4)
-#define B_IBUF    (1UL << 5)
-#define T_BUFFER 0
-#define T_2D 2
-#define CLEAR_DEPTH   (1UL << 0)
-#define CLEAR_STENCIL (1UL << 1)
-#define CLEAR_COLOR0  (1UL << 2)
-#define PRIM_TRIANGLES 4
 
 /* Warp3D's numbers (as the stream carries them) to Gallium's. */
 static const UBYTE cmp_of[9] = { 7, 0, 1, 6, 3, 4, 5, 2, 7 };        /* W3D_Z_/W3D_A_: NEVER LESS GEQUAL LEQUAL GREATER NOTEQUAL EQUAL ALWAYS */
@@ -197,12 +146,12 @@ static ULONG new_obj(struct w3dvg *v) { v->st.objects++; return ++v->next_obj; }
 static void blk_cmd(ULONG *p, ULONG cmd, ULONG n, const ULONG *args)
 {
     ULONG i;
-    PUTW(p, ACV_HDR(cmd, n + 2));
-    PUTW(p + 1, 0);
-    for (i = 0; i < n; i++) PUTW(p + 2 + i, args[i]);
+    VG_PUTW(p, ACV_HDR(cmd, n + 2));
+    VG_PUTW(p + 1, 0);
+    for (i = 0; i < n; i++) VG_PUTW(p + 2 + i, args[i]);
 }
 #define BLK_WORDS(n) ((n) + 2)
-static LONG result(const ULONG *blk, ULONG at) { return (LONG)GETW(blk + at + 1); }
+static LONG result(const ULONG *blk, ULONG at) { return (LONG)VG_GETW(blk + at + 1); }
 
 static int run(struct w3dvg *v, ULONG *blk, ULONG words)
 {
@@ -286,12 +235,12 @@ static void block_begin(struct w3dvg *v)
     v->open = 1;
     v->region_used = 0;
     if (!v->vbuf || v->vb_off + need > v->vb_size) {
-        struct res *r = res_create(v, T_BUFFER, F_R8_UNORM, B_VBUF, need * RING, 1, 1);
+        struct res *r = res_create(v, VG_TARGET_BUFFER, VG_FMT_R8_UNORM, VG_BIND_VERTEX_BUFFER, need * RING, 1, 1);
         if (r) { if (v->vbuf) res_release(v, v->vbuf); v->vbuf = r; v->vb_size = need * RING; }
         v->vb_off = 0;
     }
     if (!v->ibuf || v->ib_off + IA_COUNT * 2 > v->ib_size) {
-        struct res *r = res_create(v, T_BUFFER, F_R8_UNORM, B_IBUF, IA_COUNT * 2 * RING, 1, 1);
+        struct res *r = res_create(v, VG_TARGET_BUFFER, VG_FMT_R8_UNORM, VG_BIND_INDEX_BUFFER, IA_COUNT * 2 * RING, 1, 1);
         if (r) { if (v->ibuf) res_release(v, v->ibuf); v->ibuf = r; v->ib_size = IA_COUNT * 2 * RING; }
         v->ib_off = 0;
     }
@@ -356,8 +305,8 @@ static void block_send(struct w3dvg *v, int present)
     if (at) {
         if (run(v, b, at)) { say(v, "virgl: a block didn't run"); v->errors++; }
         else {
-            for (i = 0; i < v->npre; i += ACV_HDR_WORDS(GETW(b + i))) {
-                if (!ACV_HDR_WORDS(GETW(b + i))) break;
+            for (i = 0; i < v->npre; i += ACV_HDR_WORDS(VG_GETW(b + i))) {
+                if (!ACV_HDR_WORDS(VG_GETW(b + i))) break;
                 if (result(b, i)) { v->errors++; say(v, "virgl: the host refused a command"); }
             }
             if (submit_at != 0xFFFFFFFFUL && result(b, submit_at)) { v->errors++; say(v, "virgl: the host refused the stream"); }
@@ -377,39 +326,31 @@ static void block_send(struct w3dvg *v, int present)
 
 static void bind(struct w3dvg *v, ULONG obj, ULONG h)
 {
-    ULONG *p = cmd(v, 2);
-    W(p, CMD0(C_BIND, obj, 1)); W(p, h);
+    vgc_bind(cmd(v, VGC_BIND_WORDS), obj, h);
 }
 
 static void destroy(struct w3dvg *v, ULONG obj, ULONG h)
 {
-    ULONG *p = cmd(v, 2);
-    W(p, CMD0(C_DESTROY, obj, 1)); W(p, h);
+    vgc_destroy(cmd(v, VGC_DESTROY_WORDS), obj, h);
 }
 
 static void set_framebuffer(struct w3dvg *v)
 {
-    ULONG *p = cmd(v, 4);
-    W(p, CMD0(C_FRAMEBUFFER, 0, 3));
-    W(p, 1);
-    W(p, v->depth ? v->surf_z : 0);
-    W(p, v->surf_c);
+    vgc_framebuffer(cmd(v, VGC_FRAMEBUFFER_WORDS), v->depth ? v->surf_z : 0, v->surf_c);
 }
 
 static void set_viewport(struct w3dvg *v, ULONG w, ULONG h)
 {
-    ULONG *p = cmd(v, 8);
     /* clip -1..1 to the surface, y down (a top-down surface, as minigl.library's) */
-    W(p, CMD0(C_VIEWPORT, 0, 7)); W(p, 0);
-    W(p, fbits((float)w * 0.5f)); W(p, fbits(-(float)h * 0.5f)); W(p, fbits(0.5f));
-    W(p, fbits((float)w * 0.5f)); W(p, fbits((float)h * 0.5f)); W(p, fbits(0.5f));
+    float v6[6];
+    v6[0] = (float)w * 0.5f; v6[1] = -(float)h * 0.5f; v6[2] = 0.5f;
+    v6[3] = (float)w * 0.5f; v6[4] = (float)h * 0.5f; v6[5] = 0.5f;
+    vgc_viewport(cmd(v, VGC_VIEWPORT_WORDS), v6);
 }
 
 static void constants(struct w3dvg *v, int shader, const ULONG *k, int vec4s)
 {
-    ULONG n = (ULONG)vec4s * 4, *p = cmd(v, n + 3), i;
-    W(p, CMD0(C_CONSTS, 0, n + 2)); W(p, (ULONG)shader); W(p, 0);
-    for (i = 0; i < n; i++) W(p, k[i]);
+    vgc_constants(cmd(v, VGC_CONSTANTS_WORDS(vec4s)), shader, k, vec4s);
 }
 
 /* ---- the host's buffers ----------------------------------------------------------------------------- */
@@ -420,19 +361,19 @@ static int colour_for(struct w3dvg *v)
     const ULONG *t = v->slot[v->target];
     ULONG *p;
     if (v->colour && v->colour->w == t[2] && v->colour->h == t[3]) return 1;
-    if (v->colour) { destroy(v, O_SURFACE, v->surf_c); res_release(v, v->colour); v->colour = 0; }
+    if (v->colour) { destroy(v, VG_OBJ_SURFACE, v->surf_c); res_release(v, v->colour); v->colour = 0; }
     if (v->stage) { res_release(v, v->stage); v->stage = 0; }
     if (!t[2] || !t[3]) return 0;
-    v->colour = res_create(v, T_2D, F_B8G8R8A8, B_RT | B_SAMPLER, t[2], t[3], 1);
+    v->colour = res_create(v, VG_TARGET_2D, VG_FMT_B8G8R8A8_UNORM, VG_BIND_RENDER_TARGET | VG_BIND_SAMPLER_VIEW, t[2], t[3], 1);
     if (!v->colour) return 0;
     v->surf_c = new_obj(v);
     p = cmd(v, 6);
-    W(p, CMD0(C_CREATE, O_SURFACE, 5)); W(p, v->surf_c); W(p, v->colour->handle); W(p, F_B8G8R8A8); W(p, 0); W(p, 0);
+    VG_W(p, VG_CMD0(VG_CCMD_CREATE_OBJECT, VG_OBJ_SURFACE, 5)); VG_W(p, v->surf_c); VG_W(p, v->colour->handle); VG_W(p, VG_FMT_B8G8R8A8_UNORM); VG_W(p, 0); VG_W(p, 0);
     v->have_frame = 0;
     v->fb_dirty = v->vp_dirty = v->sc_dirty = 1;
     v->vc_ok = 0;
     /* the depth buffer goes with it: made again at this size */
-    if (v->depth) { destroy(v, O_SURFACE, v->surf_z); res_release(v, v->depth); v->depth = 0; }
+    if (v->depth) { destroy(v, VG_OBJ_SURFACE, v->surf_z); res_release(v, v->depth); v->depth = 0; }
     return 1;
 }
 
@@ -441,27 +382,19 @@ static void depth_for(struct w3dvg *v)
 {
     ULONG fmt, *p;
     if (!v->z_addr && !v->s_addr) return;
-    fmt = v->s_addr ? F_Z24S8 : v->z_fmt == OGPU_FMT_Z16 ? F_Z16 : F_Z24X8;
-    if (v->depth && (v->zfmt == fmt || (v->zfmt == F_Z24S8 && fmt != F_Z16))) return;
-    if (v->depth) { destroy(v, O_SURFACE, v->surf_z); res_release(v, v->depth); }
-    v->depth = res_create(v, T_2D, fmt, B_DEPTH, v->colour->w, v->colour->h, 1);
+    fmt = v->s_addr ? VG_FMT_Z24_UNORM_S8_UINT : v->z_fmt == OGPU_FMT_Z16 ? VG_FMT_Z16_UNORM : VG_FMT_Z24X8_UNORM;
+    if (v->depth && (v->zfmt == fmt || (v->zfmt == VG_FMT_Z24_UNORM_S8_UINT && fmt != VG_FMT_Z16_UNORM))) return;
+    if (v->depth) { destroy(v, VG_OBJ_SURFACE, v->surf_z); res_release(v, v->depth); }
+    v->depth = res_create(v, VG_TARGET_2D, fmt, VG_BIND_DEPTH_STENCIL, v->colour->w, v->colour->h, 1);
     v->zfmt = fmt;
     if (!v->depth) return;
     v->surf_z = new_obj(v);
     p = cmd(v, 6);
-    W(p, CMD0(C_CREATE, O_SURFACE, 5)); W(p, v->surf_z); W(p, v->depth->handle); W(p, fmt); W(p, 0); W(p, 0);
+    VG_W(p, VG_CMD0(VG_CCMD_CREATE_OBJECT, VG_OBJ_SURFACE, 5)); VG_W(p, v->surf_z); VG_W(p, v->depth->handle); VG_W(p, fmt); VG_W(p, 0); VG_W(p, 0);
     /* cleared, as a new Warp3D Z buffer is (W3D_AllocZBuffer clears it) */
-    p = cmd(v, 4);
-    W(p, CMD0(C_FRAMEBUFFER, 0, 3)); W(p, 1); W(p, v->surf_z); W(p, v->surf_c);
-    p = cmd(v, 9);
-    W(p, CMD0(C_CLEAR, 0, 8)); W(p, CLEAR_DEPTH | CLEAR_STENCIL);
-    W(p, 0); W(p, 0); W(p, 0); W(p, 0);
-#ifdef W3D_HOST
-    { union { double d; ULONG w[2]; } z; z.d = 1.0; W(p, z.w[0]); W(p, z.w[1]); }
-#else
-    { union { double d; ULONG w[2]; } z; z.d = 1.0; W(p, z.w[1]); W(p, z.w[0]); }
-#endif
-    W(p, 0);
+    vgc_framebuffer(cmd(v, VGC_FRAMEBUFFER_WORDS), v->surf_z, v->surf_c);
+    { static const float none[4] = { 0, 0, 0, 0 };
+      vgc_clear(cmd(v, VGC_CLEAR_WORDS), VG_CLEAR_DEPTH | VG_CLEAR_STENCIL, none, 1.0, 0); }
     v->fb_dirty = 1;
 }
 
@@ -478,14 +411,14 @@ static void load(struct w3dvg *v)
         return;
     }
     if (t[4] != OGPU_FMT_RGB565) return;
-    if (!v->stage && !(v->stage = res_create(v, T_2D, F_B5G6R5, B_SAMPLER, t[2], t[3], 1))) return;
+    if (!v->stage && !(v->stage = res_create(v, VG_TARGET_2D, VG_FMT_B5G6R5_UNORM, VG_BIND_SAMPLER_VIEW, t[2], t[3], 1))) return;
     put(v, v->stage, 0, 0, 0, t[2], t[3], t[0], t[1], bytes, ACV_SWAP_16);
     p = cmd(v, 22);
-    W(p, CMD0(C_BLIT, 0, 21));
-    W(p, 0xF);                          /* RGBA, nearest, no scissor */
-    W(p, 0); W(p, 0);
-    W(p, v->colour->handle); W(p, 0); W(p, F_B8G8R8A8); W(p, 0); W(p, 0); W(p, 0); W(p, t[2]); W(p, t[3]); W(p, 1);
-    W(p, v->stage->handle); W(p, 0); W(p, F_B5G6R5); W(p, 0); W(p, 0); W(p, 0); W(p, t[2]); W(p, t[3]); W(p, 1);
+    VG_W(p, VG_CMD0(VG_CCMD_BLIT, 0, 21));
+    VG_W(p, 0xF);                          /* RGBA, nearest, no scissor */
+    VG_W(p, 0); VG_W(p, 0);
+    VG_W(p, v->colour->handle); VG_W(p, 0); VG_W(p, VG_FMT_B8G8R8A8_UNORM); VG_W(p, 0); VG_W(p, 0); VG_W(p, 0); VG_W(p, t[2]); VG_W(p, t[3]); VG_W(p, 1);
+    VG_W(p, v->stage->handle); VG_W(p, 0); VG_W(p, VG_FMT_B5G6R5_UNORM); VG_W(p, 0); VG_W(p, 0); VG_W(p, 0); VG_W(p, t[2]); VG_W(p, t[3]); VG_W(p, 1);
 }
 
 /* Before anything that draws colour: a target, and its pixels. */
@@ -517,27 +450,21 @@ static ULONG cached(struct w3dvg *v, struct cache *c, ULONG obj, const ULONG *ke
     h = new_obj(v);
     c->handle[i] = h;
     p = cmd(v, words + 1);
-    W(p, CMD0(C_CREATE, obj, words)); W(p, h);
+    VG_W(p, VG_CMD0(VG_CCMD_CREATE_OBJECT, obj, words)); VG_W(p, h);
     *body = p;
     return h;
 }
 
 static ULONG shader(struct w3dvg *v, int type, ULONG key)
 {
-    ULONG *keys = type == SH_VERTEX ? v->vs_key : v->fs_key, *hs = type == SH_VERTEX ? v->vs_h : v->fs_h;
-    int *n = type == SH_VERTEX ? &v->nvs : &v->nfs, i;
-    ULONG len, words, h, *p;
-    UBYTE *b;
+    ULONG *keys = type == VG_SHADER_VERTEX ? v->vs_key : v->fs_key, *hs = type == VG_SHADER_VERTEX ? v->vs_h : v->fs_h;
+    int *n = type == VG_SHADER_VERTEX ? &v->nvs : &v->nfs, i;
+    ULONG len, h;
     for (i = 0; i < *n; i++) if (keys[i] == key) return hs[i];
-    len = type == SH_VERTEX ? w3dvg_vs_text(key, v->text, TEXT_BYTES) : w3dvg_fs_text(key, v->text, TEXT_BYTES);
+    len = type == VG_SHADER_VERTEX ? w3dvg_vs_text(key, v->text, TEXT_BYTES) : w3dvg_fs_text(key, v->text, TEXT_BYTES);
     if (v->os.log && v->st.shaders < 2) say(v, v->text);
     h = new_obj(v);
-    words = (len + 3) / 4;
-    p = cmd(v, words + 6);
-    W(p, CMD0(C_CREATE, O_SHADER, words + 5)); W(p, h); W(p, (ULONG)type); W(p, len); W(p, len + 300); W(p, 0);
-    b = (UBYTE *)p;
-    for (i = 0; i < (int)len; i++) b[i] = (UBYTE)v->text[i];
-    for (; i < (int)words * 4; i++) b[i] = 0;
+    vgc_shader(cmd(v, VGC_SHADER_WORDS(len)), h, type, v->text, len);
     v->st.shaders++;
     if (*n == SHADERS) *n = 0;          /* the table starts again; the old variants stay on the host */
     keys[*n] = key; hs[*n] = h;
@@ -556,13 +483,13 @@ static ULONG elements(struct w3dvg *v, ULONG layout)
     if (key & OGPU_LAY_SPEC) n++;
     h = new_obj(v);
     p = cmd(v, (ULONG)n * 4 + 2);
-    W(p, CMD0(C_CREATE, O_VE, n * 4 + 1)); W(p, h);
-    W(p, 0); W(p, 0); W(p, 0); W(p, F_R32G32_SSCALED);         /* x, y */
-    W(p, 8); W(p, 0); W(p, 0); W(p, F_B8G8R8A8);               /* ARGB32 */
-    W(p, 12); W(p, 0); W(p, 0); W(p, F_R32G32_SSCALED);        /* u, v */
-    if (key & OGPU_LAY_Z) { W(p, off); W(p, 0); W(p, 0); W(p, F_R32_USCALED); off += 4; }
-    if (key & OGPU_LAY_W) { W(p, off); W(p, 0); W(p, 0); W(p, F_R32_FLOAT); off += 4; }
-    if (key & OGPU_LAY_SPEC) { W(p, off); W(p, 0); W(p, 0); W(p, F_B8G8R8A8); }
+    VG_W(p, VG_CMD0(VG_CCMD_CREATE_OBJECT, VG_OBJ_VERTEX_ELEMENTS, n * 4 + 1)); VG_W(p, h);
+    VG_W(p, 0); VG_W(p, 0); VG_W(p, 0); VG_W(p, VG_FMT_R32G32_SSCALED);         /* x, y */
+    VG_W(p, 8); VG_W(p, 0); VG_W(p, 0); VG_W(p, VG_FMT_B8G8R8A8_UNORM);               /* ARGB32 */
+    VG_W(p, 12); VG_W(p, 0); VG_W(p, 0); VG_W(p, VG_FMT_R32G32_SSCALED);        /* u, v */
+    if (key & OGPU_LAY_Z) { VG_W(p, off); VG_W(p, 0); VG_W(p, 0); VG_W(p, VG_FMT_R32_USCALED); off += 4; }
+    if (key & OGPU_LAY_W) { VG_W(p, off); VG_W(p, 0); VG_W(p, 0); VG_W(p, VG_FMT_R32_FLOAT); off += 4; }
+    if (key & OGPU_LAY_SPEC) { VG_W(p, off); VG_W(p, 0); VG_W(p, 0); VG_W(p, VG_FMT_B8G8R8A8_UNORM); }
     if (v->nve == LAYOUTS) v->nve = 0;
     v->ve_key[v->nve] = key; v->ve_h[v->nve] = h; v->nve++;
     return h;
@@ -581,7 +508,7 @@ static void tex_drop(struct w3dvg *v, struct tex *t)
 {
     if (!t->res) return;
     if (v->b_view == t->view) v->b_view = 0xFFFFFFFFUL;
-    destroy(v, O_VIEW, t->view);
+    destroy(v, VG_OBJ_SAMPLER_VIEW, t->view);
     res_release(v, t->res);
     t->res = 0; t->addr = 0;
 }
@@ -600,15 +527,15 @@ static ULONG tex_view(struct w3dvg *v)
         }
         t = &v->tex[old];
         tex_drop(v, t);
-        t->res = res_create(v, T_2D, F_B8G8R8A8, B_SAMPLER, v->t_w, v->t_h, v->t_levels);
+        t->res = res_create(v, VG_TARGET_2D, VG_FMT_B8G8R8A8_UNORM, VG_BIND_SAMPLER_VIEW, v->t_w, v->t_h, v->t_levels);
         if (!t->res) return 0;
         t->addr = v->t_addr; t->w = v->t_w; t->h = v->t_h; t->levels = v->t_levels;
         t->gen = v->t_gen + 1;          /* not yet up */
         t->view = new_obj(v);
         p = cmd(v, 7);
-        W(p, CMD0(C_CREATE, O_VIEW, 6)); W(p, t->view); W(p, t->res->handle);
-        W(p, F_B8G8R8A8 | ((v->caps_bits & 2) ? (ULONG)T_2D << 24 : 0));
-        W(p, 0); W(p, (t->levels - 1) << 8); W(p, 0 | 1 << 3 | 2 << 6 | 3 << 9);
+        VG_W(p, VG_CMD0(VG_CCMD_CREATE_OBJECT, VG_OBJ_SAMPLER_VIEW, 6)); VG_W(p, t->view); VG_W(p, t->res->handle);
+        VG_W(p, VG_FMT_B8G8R8A8_UNORM | ((v->caps_bits & 2) ? (ULONG)VG_TARGET_2D << 24 : 0));
+        VG_W(p, 0); VG_W(p, (t->levels - 1) << 8); VG_W(p, 0 | 1 << 3 | 2 << 6 | 3 << 9);
     }
     if (t->gen != v->t_gen) {
         for (l = 0; l < t->levels; l++) {
@@ -633,11 +560,11 @@ static ULONG sampler(struct w3dvg *v)
     s0 = wrap_of[(v->t_wrap & 255) & 3] | (ULONG)wrap_of[((v->t_wrap >> 8) & 255) & 3] << 3 | 2UL << 6
        | minf << 9 | mipf << 11 | (mag == 1 ? 0UL : 1UL) << 13;
     key[0] = s0; key[1] = v->t_levels; key[2] = v->t_border; key[3] = 0;
-    h = cached(v, &v->c_samp, O_SAMPLER, key, 3, 9, &p);
+    h = cached(v, &v->c_samp, VG_OBJ_SAMPLER_STATE, key, 3, 9, &p);
     if (p) {
         c[0] = (v->t_border >> 16) & 255; c[1] = (v->t_border >> 8) & 255; c[2] = v->t_border & 255; c[3] = v->t_border >> 24;
-        W(p, s0); W(p, fbits(0.0f)); W(p, fbits(0.0f)); W(p, fbits((float)(v->t_levels - 1)));
-        for (i = 0; i < 4; i++) W(p, fbits((float)c[i] / 255.0f));
+        VG_W(p, s0); VG_W(p, fbits(0.0f)); VG_W(p, fbits(0.0f)); VG_W(p, fbits((float)(v->t_levels - 1)));
+        for (i = 0; i < 4; i++) VG_W(p, fbits((float)c[i] / 255.0f));
     }
     return h;
 }
@@ -718,7 +645,6 @@ static void set_scissor(struct w3dvg *v)
 {
     const ULONG *t = v->slot[v->target];
     LONG x0 = 0, y0 = 0, x1 = (LONG)t[2], y1 = (LONG)t[3];
-    ULONG *p;
     if (v->cw > 0 && v->ch > 0) {
         if (v->cx > x0) x0 = v->cx;
         if (v->cy > y0) y0 = v->cy;
@@ -728,9 +654,7 @@ static void set_scissor(struct w3dvg *v)
     if (x1 < x0) x1 = x0;
     if (y1 < y0) y1 = y0;
     if (!v->sc_dirty && x0 == v->sc[0] && y0 == v->sc[1] && x1 == v->sc[2] && y1 == v->sc[3]) return;
-    p = cmd(v, 4);
-    W(p, CMD0(C_SCISSOR, 0, 3)); W(p, 0);
-    W(p, (ULONG)x0 | ((ULONG)y0 << 16)); W(p, (ULONG)x1 | ((ULONG)y1 << 16));
+    vgc_scissor(cmd(v, VGC_SCISSOR_WORDS), x0, y0, x1, y1);
     v->sc[0] = x0; v->sc[1] = y0; v->sc[2] = x1; v->sc[3] = y1;
     v->sc_dirty = 0;
 }
@@ -760,48 +684,48 @@ static void prepare(struct w3dvg *v, const struct pipe *pp, ULONG layout, ULONG 
     if (v->vp_dirty) { set_viewport(v, t[2], t[3]); v->vp_dirty = 0; }
     set_scissor(v);
     key[0] = pp->blend[0]; key[1] = pp->blend[1];
-    h = cached(v, &v->c_blend, O_BLEND, key, 2, 11, &p);
+    h = cached(v, &v->c_blend, VG_OBJ_BLEND, key, 2, 11, &p);
     if (p) {
-        W(p, pp->blend[1] ? 2 : 0);     /* S0: the logic op on */
-        W(p, pp->blend[1] & 15);        /* S1: which */
-        W(p, pp->blend[0]);
-        for (i = 1; i < 8; i++) W(p, 0);
+        VG_W(p, pp->blend[1] ? 2 : 0);     /* S0: the logic op on */
+        VG_W(p, pp->blend[1] & 15);        /* S1: which */
+        VG_W(p, pp->blend[0]);
+        for (i = 1; i < 8; i++) VG_W(p, 0);
     }
-    if (h != v->b_blend) { bind(v, O_BLEND, h); v->b_blend = h; }
-    h = cached(v, &v->c_dsa, O_DSA, pp->dsa, 3, 5, &p);
-    if (p) { W(p, pp->dsa[0]); W(p, pp->dsa[1]); W(p, pp->dsa[1]); W(p, pp->dsa[2]); }
-    if (h != v->b_dsa) { bind(v, O_DSA, h); v->b_dsa = h; }
+    if (h != v->b_blend) { bind(v, VG_OBJ_BLEND, h); v->b_blend = h; }
+    h = cached(v, &v->c_dsa, VG_OBJ_DSA, pp->dsa, 3, 5, &p);
+    if (p) { VG_W(p, pp->dsa[0]); VG_W(p, pp->dsa[1]); VG_W(p, pp->dsa[1]); VG_W(p, pp->dsa[2]); }
+    if (h != v->b_dsa) { bind(v, VG_OBJ_DSA, h); v->b_dsa = h; }
     if ((pp->dsa[1] & 1) && pp->sref != v->b_sref) {
-        p = cmd(v, 2); W(p, CMD0(C_STENCIL_REF, 0, 1)); W(p, pp->sref | pp->sref << 8); v->b_sref = pp->sref;
+        p = cmd(v, 2); VG_W(p, VG_CMD0(VG_CCMD_SET_STENCIL_REF, 0, 1)); VG_W(p, pp->sref | pp->sref << 8); v->b_sref = pp->sref;
     }
     if ((pp->blend[0] & 1) && pp->bconst != v->b_bconst) {
         ULONG c[4];
         colour4(c, pp->bconst);
-        p = cmd(v, 5); W(p, CMD0(C_BLEND_COLOR, 0, 4)); W(p, c[0]); W(p, c[1]); W(p, c[2]); W(p, c[3]);
+        p = cmd(v, 5); VG_W(p, VG_CMD0(VG_CCMD_SET_BLEND_COLOR, 0, 4)); VG_W(p, c[0]); VG_W(p, c[1]); VG_W(p, c[2]); VG_W(p, c[3]);
         v->b_bconst = pp->bconst;
     }
     if (pp->stipple && pp->stipple != v->b_stipple) {
         const UBYTE *s = (const UBYTE *)pp->stipple;
         /* rows top first, the first byte's high bit leftmost (ogpu_3d.c) */
-        p = cmd(v, 33); W(p, CMD0(C_STIPPLE, 0, 32));
-        for (i = 0; i < 32; i++) W(p, rd32(s + i * 4));
+        p = cmd(v, 33); VG_W(p, VG_CMD0(VG_CCMD_SET_POLYGON_STIPPLE, 0, 32));
+        for (i = 0; i < 32; i++) VG_W(p, rd32(s + i * 4));
         v->b_stipple = pp->stipple;
     }
     key[0] = pp->rs;
-    h = cached(v, &v->c_rs, O_RS, key, 1, 9, &p);
-    if (p) { W(p, pp->rs); W(p, fbits(1.0f)); W(p, 0); W(p, 0); W(p, fbits(1.0f)); W(p, 0); W(p, 0); W(p, 0); }
-    if (h != v->b_rs) { bind(v, O_RS, h); v->b_rs = h; }
-    h = shader(v, SH_VERTEX, pp->vs);
-    if (h != v->b_vs) { p = cmd(v, 3); W(p, CMD0(C_BIND_SHADER, 0, 2)); W(p, h); W(p, SH_VERTEX); v->b_vs = h; }
-    h = shader(v, SH_FRAGMENT, pp->fs);
-    if (h != v->b_fs) { p = cmd(v, 3); W(p, CMD0(C_BIND_SHADER, 0, 2)); W(p, h); W(p, SH_FRAGMENT); v->b_fs = h; }
+    h = cached(v, &v->c_rs, VG_OBJ_RASTERIZER, key, 1, 9, &p);
+    if (p) { VG_W(p, pp->rs); VG_W(p, fbits(1.0f)); VG_W(p, 0); VG_W(p, 0); VG_W(p, fbits(1.0f)); VG_W(p, 0); VG_W(p, 0); VG_W(p, 0); }
+    if (h != v->b_rs) { bind(v, VG_OBJ_RASTERIZER, h); v->b_rs = h; }
+    h = shader(v, VG_SHADER_VERTEX, pp->vs);
+    if (h != v->b_vs) { vgc_bind_shader(cmd(v, VGC_BIND_SHADER_WORDS), h, VG_SHADER_VERTEX); v->b_vs = h; }
+    h = shader(v, VG_SHADER_FRAGMENT, pp->fs);
+    if (h != v->b_fs) { vgc_bind_shader(cmd(v, VGC_BIND_SHADER_WORDS), h, VG_SHADER_FRAGMENT); v->b_fs = h; }
     h = elements(v, layout);
-    if (h != v->b_ve) { bind(v, O_VE, h); v->b_ve = h; }
+    if (h != v->b_ve) { bind(v, VG_OBJ_VERTEX_ELEMENTS, h); v->b_ve = h; }
     if (view && view != v->b_view) {
-        p = cmd(v, 4); W(p, CMD0(C_VIEWS, 0, 3)); W(p, SH_FRAGMENT); W(p, 0); W(p, view); v->b_view = view;
+        vgc_sampler_views(cmd(v, VGC_SAMPLERS_WORDS(1)), 1, &view); v->b_view = view;
     }
     if (samp && samp != v->b_samp) {
-        p = cmd(v, 4); W(p, CMD0(C_SAMPLERS, 0, 3)); W(p, SH_FRAGMENT); W(p, 0); W(p, samp); v->b_samp = samp;
+        vgc_sampler_states(cmd(v, VGC_SAMPLERS_WORDS(1)), 1, &samp); v->b_samp = samp;
     }
     /* constants */
     {
@@ -810,7 +734,7 @@ static void prepare(struct w3dvg *v, const struct pipe *pp, ULONG layout, ULONG 
         c[2] = fbits(-1.0f); c[3] = fbits(1.0f);
         c[4] = fbits(1.0f / 65536.0f); c[5] = fbits(1.0f / 2147483648.0f); c[6] = fbits(-1.0f); c[7] = fbits(1.0f);
         c[8] = fbits(0.0f); c[9] = fbits(1.0f); c[10] = fbits(0.0f); c[11] = fbits(0.0f);
-        send_if(v, SH_VERTEX, v->vc, &v->vc_ok, c, VC_N);
+        send_if(v, VG_SHADER_VERTEX, v->vc, &v->vc_ok, c, VC_N);
     }
     {
         const ULONG *a = v->r3d;
@@ -833,7 +757,7 @@ static void prepare(struct w3dvg *v, const struct pipe *pp, ULONG layout, ULONG 
         k[FC_CHI * 4 + 3] = 0;
         k[FC_CONST * 4] = fbits(0.0f); k[FC_CONST * 4 + 1] = fbits(1.0f); k[FC_CONST * 4 + 2] = fbits(0.5f);
         k[FC_CONST * 4 + 3] = fbits(1.44269504f);
-        send_if(v, SH_FRAGMENT, v->fc, &v->fc_ok, k, FC_N);
+        send_if(v, VG_SHADER_FRAGMENT, v->fc, &v->fc_ok, k, FC_N);
     }
 }
 
@@ -841,20 +765,16 @@ static void prepare(struct w3dvg *v, const struct pipe *pp, ULONG layout, ULONG 
 
 static void end_group(struct w3dvg *v)
 {
-    ULONG *p, n;
+    ULONG n;
     if (!v->g_on) return;
     v->g_on = 0;
     n = v->nia - v->g_ifirst;
     if (!n) return;
     if (v->b_iboff != v->ib_block + v->g_ifirst * 2) {
-        p = cmd(v, 4);
-        W(p, CMD0(C_IBUF, 0, 3)); W(p, v->ibuf->handle); W(p, 2); W(p, v->ib_block + v->g_ifirst * 2);
+        vgc_index_buffer(cmd(v, VGC_INDEX_BUFFER_WORDS), v->ibuf->handle, 2, v->ib_block + v->g_ifirst * 2);
         v->b_iboff = v->ib_block + v->g_ifirst * 2;
     }
-    p = cmd(v, 13);
-    W(p, CMD0(C_DRAW, 0, 12));
-    W(p, 0); W(p, n); W(p, PRIM_TRIANGLES); W(p, 1); W(p, 1); W(p, 0); W(p, 0); W(p, 0); W(p, 0);
-    W(p, 0); W(p, 0xFFFFFFFFUL); W(p, 0);
+    vgc_draw(cmd(v, VGC_DRAW_WORDS), VG_PRIM_TRIANGLES, 0, n, 1, 0);
     v->st.draws++;
     v->st.triangles += n / 3;
 }
@@ -890,10 +810,8 @@ static int group_for(struct w3dvg *v, ULONG off, ULONG layout, ULONG stride, ULO
 
 static void bind_vbuf(struct w3dvg *v)
 {
-    ULONG *p;
     if (v->b_stride == v->g_stride && v->b_vboff == v->g_base) return;
-    p = cmd(v, 4);
-    W(p, CMD0(C_VBUFS, 0, 3)); W(p, v->g_stride); W(p, v->g_base); W(p, v->vbuf->handle);
+    vgc_vertex_buffer(cmd(v, VGC_VERTEX_BUFFER_WORDS), v->g_stride, v->g_base, v->vbuf->handle);
     v->b_stride = v->g_stride; v->b_vboff = v->g_base;
 }
 
@@ -916,15 +834,15 @@ static void indices(struct w3dvg *v, int prim, ULONG first, ULONG n, const UBYTE
     (void)map_base;
 #define IX(k) (first + (idx ? (isize == 1 ? (ULONG)idx[k] : isize == 2 ? ((ULONG)idx[(k) * 2] << 8 | idx[(k) * 2 + 1]) : rd32(idx + (k) * 4)) : (k)))
     if (prim == OGPU_LAY_LIST) {
-        for (i = 0; i + 2 < n; i += 3) { A16(q, IX(i)); A16(q + 1, IX(i + 1)); A16(q + 2, IX(i + 2)); q += 3; }
+        for (i = 0; i + 2 < n; i += 3) { VG_A16(q, IX(i)); VG_A16(q + 1, IX(i + 1)); VG_A16(q + 2, IX(i + 2)); q += 3; }
     } else if (prim == OGPU_LAY_STRIP) {
         for (i = 2; i < n; i++) {
             a = IX(i - 2); b = IX(i - 1); c = IX(i);
-            A16(q, a); A16(q + 1, b); A16(q + 2, c); q += 3;
+            VG_A16(q, a); VG_A16(q + 1, b); VG_A16(q + 2, c); q += 3;
         }
     } else {
         ULONG f0 = IX(0);
-        for (i = 2; i < n; i++) { A16(q, f0); A16(q + 1, IX(i - 1)); A16(q + 2, IX(i)); q += 3; }
+        for (i = 2; i < n; i++) { VG_A16(q, f0); VG_A16(q + 1, IX(i - 1)); VG_A16(q + 2, IX(i)); q += 3; }
     }
 #undef IX
     v->nia = (ULONG)(q - v->ia);
@@ -988,8 +906,8 @@ static void quad(struct w3dvg *v, LONG x, LONG y, LONG w, LONG h, ULONG argb, UL
     d = v->va + v->nva;
     off = va_at(v) + v->nva;
     for (i = 0; i < 4; i++, d += 32) {
-        A32(d, (ULONG)((x + (cx[i] ? w : 0)) << 16)); A32(d + 4, (ULONG)((y + (cy[i] ? h : 0)) << 16));
-        A32(d + 8, argb); A32(d + 12, 0); A32(d + 16, 0); A32(d + 20, z); A32(d + 24, fbits(1.0f)); A32(d + 28, 0xFF000000UL);
+        VG_A32(d, (ULONG)((x + (cx[i] ? w : 0)) << 16)); VG_A32(d + 4, (ULONG)((y + (cy[i] ? h : 0)) << 16));
+        VG_A32(d + 8, argb); VG_A32(d + 12, 0); VG_A32(d + 16, 0); VG_A32(d + 20, z); VG_A32(d + 24, fbits(1.0f)); VG_A32(d + 28, 0xFF000000UL);
     }
     v->nva += 256;
     pp.blend[0] = kind == 0 ? 15UL << 27 : 0;
@@ -1033,21 +951,11 @@ static int clipped(struct w3dvg *v, LONG *x, LONG *y, LONG *w, LONG *h)
 
 static void clear(struct w3dvg *v, ULONG buffers, ULONG argb, double depth, ULONG stencil)
 {
-    ULONG *p, c[4];
-    union { double d; ULONG w[2]; } z;
+    union { ULONG u[4]; float f[4]; } c;
     end_group(v);
     if (v->fb_dirty) { set_framebuffer(v); v->fb_dirty = 0; }
-    colour4(c, argb);
-    z.d = depth;
-    p = cmd(v, 9);
-    W(p, CMD0(C_CLEAR, 0, 8)); W(p, buffers);
-    W(p, c[0]); W(p, c[1]); W(p, c[2]); W(p, c[3]);
-#ifdef W3D_HOST
-    W(p, z.w[0]); W(p, z.w[1]);
-#else
-    W(p, z.w[1]); W(p, z.w[0]);
-#endif
-    W(p, stencil);
+    colour4(c.u, argb);
+    vgc_clear(cmd(v, VGC_CLEAR_WORDS), buffers, c.f, depth, stencil);
 }
 
 static int whole(struct w3dvg *v, LONG x, LONG y, LONG w, LONG h)
@@ -1069,7 +977,7 @@ static LONG fill(struct w3dvg *v, const UBYTE *a)
     else return -1;
     if (!ready(v, whole(v, x, y, w, h))) return -1;
     need(v, 512, 6);
-    if (whole(v, x, y, w, h)) clear(v, CLEAR_COLOR0, argb, 1.0, 0);
+    if (whole(v, x, y, w, h)) clear(v, VG_CLEAR_COLOR0, argb, 1.0, 0);
     else quad(v, x, y, w, h, argb, 0, 0, 0);
     return 0;
 }
@@ -1083,12 +991,12 @@ static LONG clear3d(struct w3dvg *v, const UBYTE *a)
     if (!colour_for(v)) return -1;
     depth_for(v);
     if (!v->depth || !clipped(v, &x, &y, &w, &h)) return 0;
-    if (kind == OGPU_KIND_STENCIL && v->zfmt != F_Z24S8) return 0;
+    if (kind == OGPU_KIND_STENCIL && v->zfmt != VG_FMT_Z24_UNORM_S8_UINT) return 0;
     need(v, 512, 6);
     if (whole(v, x, y, w, h)) {
         if (kind == OGPU_KIND_DEPTH)
-            clear(v, CLEAR_DEPTH, 0, v->z_fmt == OGPU_FMT_Z16 ? (double)(val >> 16) / 65535.0 : (double)val / 4294967295.0, 0);
-        else clear(v, CLEAR_STENCIL, 0, 1.0, val & 255);
+            clear(v, VG_CLEAR_DEPTH, 0, v->z_fmt == OGPU_FMT_Z16 ? (double)(val >> 16) / 65535.0 : (double)val / 4294967295.0, 0);
+        else clear(v, VG_CLEAR_STENCIL, 0, 1.0, val & 255);
     } else {
         if (!v->have_frame) ready(v, 0);        /* the quad writes no colour, but the frame must be there */
         quad(v, x, y, w, h, 0, kind == OGPU_KIND_DEPTH ? (v->z_fmt == OGPU_FMT_Z16 ? val & 0xFFFF0000UL : val) : 0,
@@ -1224,21 +1132,21 @@ struct w3dvg *w3dvg_open(const struct w3dvg_os *os, struct w3dvg_info *info)
     a[0] = 2; a[1] = 0; a[2] = 0;
     blk_cmd(b + 8, ACV_CAPSET_INFO, 3, a);
     if (run(v, b, 13) || result(b, 0) != ACV_PROTOCOL || result(b, 3) != 0) { say(v, "virgl: no virgl on the host"); free_all(v); return 0; }
-    v->host_flags = GETW(b + 2);
+    v->host_flags = VG_GETW(b + 2);
     ri = 8;
-    if (!GETW(b + ri + 3)) {
+    if (!VG_GETW(b + ri + 3)) {
         set = 1;
         a[0] = 1;
         blk_cmd(b, ACV_CAPSET_INFO, 3, a);
         if (run(v, b, 5)) { free_all(v); return 0; }
         ri = 0;
     }
-    n = GETW(b + ri + 4);
+    n = VG_GETW(b + ri + 4);
     if (n > 1024) n = 1024;
     caps = (ULONG *)v->va;
-    a[0] = set; a[1] = GETW(b + ri + 3); a[2] = ADDR(caps); a[3] = n;
+    a[0] = set; a[1] = VG_GETW(b + ri + 3); a[2] = ADDR(caps); a[3] = n;
     blk_cmd(b, ACV_CAPS, 4, a);
-    if (!run(v, b, 6) && result(b, 0) > 0 && (ULONG)result(b, 0) / 4 > 98) v->caps_bits = GETW(&caps[98]);
+    if (!run(v, b, 6) && result(b, 0) > 0 && (ULONG)result(b, 0) / 4 > 98) v->caps_bits = VG_GETW(&caps[98]);
     v->gles = (v->host_flags & ACV_HOST_GLES) != 0;
     v->b_blend = v->b_dsa = v->b_rs = v->b_vs = v->b_fs = v->b_ve = v->b_view = v->b_samp = 0xFFFFFFFFUL;
     v->b_sref = v->b_bconst = 0xFFFFFFFFUL;

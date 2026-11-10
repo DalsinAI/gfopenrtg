@@ -940,6 +940,18 @@ static LONG triangles(struct w3dvg *v, const UBYTE *a, long args)
     if (!vcount || n < 3) return 0;
     if (prim > OGPU_LAY_FAN || stride < (ULONG)vsize_of(layout) || (iaddr && isize != 1 && isize != 2 && isize != 4)) return -1;
     if (texw < 16) return -1;           /* a SURFACE slot as texture: not Warp3D's */
+    if (iaddr) {
+        /* as the core: an index past the vertices ends the command there,
+         * the triangles before it drawn */
+        const UBYTE *ip = (const UBYTE *)iaddr;
+        ULONG i, vi;
+        for (i = 0; i < n; i++) {
+            vi = isize == 1 ? ip[i] : isize == 2 ? ((ULONG)ip[i * 2] << 8 | ip[i * 2 + 1]) : rd32(ip + i * 4);
+            if (vi >= vcount) break;
+        }
+        n = i;
+        if (n < 3) return 0;
+    }
     if (!ready(v, 0)) return -1;
     if ((v->r3d[0] & (OGPU_R3D_ZTEST | OGPU_R3D_STENCIL))) depth_known(v, 0);
     tris = prim == OGPU_LAY_LIST ? n / 3 : n - 2;
@@ -950,10 +962,10 @@ static LONG triangles(struct w3dvg *v, const UBYTE *a, long args)
     if (textured && (v->t_fmt & 255) != OGPU_FMT_ARGB32) return -1;
     need(v, ((bytes + 3) & ~3UL) + 64, tris * 3);
     /* where the vertices are: the batch's vertex memory, or copied */
-    if (v->region_len && vaddr >= v->region && vaddr + bytes <= v->region + v->region_len) {
+    if (((stride | vaddr) & 3) == 0 && v->region_len && vaddr >= v->region && vaddr + bytes <= v->region + v->region_len) {
         v->region_used = 1;
         off = v->vb_block + (vaddr - v->region);
-    } else {
+    } else if (((stride | vaddr) & 3) == 0) {
         const UBYTE *s = (const UBYTE *)vaddr;
         UBYTE *d = v->va + v->nva;
         ULONG i;
@@ -961,6 +973,19 @@ static LONG triangles(struct w3dvg *v, const UBYTE *a, long args)
         for (i = 0; i < bytes; i++) d[i] = s[i];
         off = va_at(v) + v->nva;
         v->nva += (bytes + 255) & ~255UL;
+    } else {
+        /* The host turns the vertices round a 32-bit word at a time, so each
+         * field must start on a word: an odd stride or address is packed at
+         * the layout's own size first. */
+        const UBYTE *s = (const UBYTE *)vaddr;
+        ULONG vs = (ULONG)vsize_of(layout), i, k;
+        UBYTE *d = v->va + v->nva;
+        if (vs * vcount > VA_BYTES) return -1;
+        for (i = 0; i < vcount; i++)
+            for (k = 0; k < vs; k++) d[i * vs + k] = s[i * stride + k];
+        off = va_at(v) + v->nva;
+        v->nva += (vs * vcount + 255) & ~255UL;
+        stride = vs;
     }
     if (textured) { view = tex_view(v); samp = sampler(v); if (!view) return -1; }
     pipe_of(v, &pp, layout, textured);

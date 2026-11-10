@@ -235,7 +235,14 @@ static void put(struct w3dvg *v, struct res *r, ULONG level, ULONG x, ULONG y, U
 static void block_begin(struct w3dvg *v)
 {
     ULONG need = ((v->region_len + 255) & ~255UL) + VA_BYTES;
-    if (v->open) return;
+    if (v->open) {
+        /* opened between batches (w3dvg_forget's unrefs) for a smaller
+         * vertex region than this batch's: what it holds goes first, and the
+         * block starts again where the region fits */
+        if (!v->vbuf || v->vb_block + need <= v->vb_size) return;
+        end_group(v);
+        block_send(v, 0);
+    }
     v->open = 1;
     v->region_used = 0;
     if (!v->vbuf || v->vb_off + need > v->vb_size) {
@@ -1085,8 +1092,11 @@ static LONG fill(struct w3dvg *v, const UBYTE *a)
     else return -1;
     if (!ready(v, whole(v, x, y, w, h))) return -1;
     need(v, 512, 6);
-    if (whole(v, x, y, w, h)) clear(v, VG_CLEAR_COLOR0, argb, 1.0, 0);
-    else quad(v, x, y, w, h, argb, 0, 0, 0);
+    /* a drawn quad, also for the whole area: a virgl CLEAR of the colour
+     * buffer didn't reach it on the lab's GPU host (W3DCheck's
+     * ClearDrawRegion pixel and W3DTest's background, 10 November), while
+     * llvmpipe took it */
+    quad(v, x, y, w, h, argb, 0, 0, 0);
     return 0;
 }
 

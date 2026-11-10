@@ -283,37 +283,7 @@ void w3d_clear(void *d, ULONG n)
     while (n--) *dd++ = 0;
 }
 
-/* Rounded to the nearest, ties to even: what the FPU's FMOVE.L gives in its
- * own mode, so pictures match the hard-float build. In C: Warp3D is soft
- * float. Out of range saturates, as FMOVE.L does. */
-LONG w3d_f2l(float f)
-{
-    LONG i;
-    float r;
-    if (f >= 2147483648.0f) return 0x7fffffff;
-    if (f <= -2147483648.0f) return (LONG)0x80000000;
-    if (f != f) return 0x7fffffff;
-    i = (LONG)f;                    /* toward zero */
-    r = f - (float)i;               /* exact: the fraction */
-    if (r > 0.5f || (r == 0.5f && (i & 1))) i++;
-    else if (r < -0.5f || (r == -0.5f && (i & 1))) i--;
-    return i;
-}
-
-ULONG w3d_fbits(float f)
-{
-    union { float f; ULONG u; } x;
-    x.f = f;
-    return x.u;
-}
-
-static ULONG ch(float v)
-{
-    LONG c = w3d_f2l(v * 255.0f);
-    return c < 0 ? 0 : c > 255 ? 255 : (ULONG)c;
-}
-
 ULONG w3d_colour(const W3D_Color *c)
 {
-    return (ch(c->a) << 24) | (ch(c->r) << 16) | (ch(c->g) << 8) | ch(c->b);
+    return (w3d_unit8(c->a) << 24) | (w3d_unit8(c->r) << 16) | (w3d_unit8(c->g) << 8) | w3d_unit8(c->b);
 }

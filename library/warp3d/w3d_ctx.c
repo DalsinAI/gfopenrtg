@@ -406,9 +406,7 @@ LIBCALL ULONG LIB_W3D_FreeZBuffer(REG(a0, W3D_Context *c), REG(a6, struct W3DBas
 
 static ULONG z_to_u32(double z)
 {
-    if (z <= 0.0) return 0;
-    if (z >= 1.0) return 0xFFFFFFFFUL;
-    return (ULONG)w3d_f2l((float)(z * 1073741823.0)) << 2;
+    return w3d_zd(&z);
 }
 
 LIBCALL ULONG LIB_W3D_ClearZBuffer(REG(a0, W3D_Context *c), REG(a1, W3D_Double *value), REG(a6, struct W3DBase *libbase))

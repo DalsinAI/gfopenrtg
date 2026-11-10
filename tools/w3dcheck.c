@@ -7,7 +7,10 @@
  * the same. The virgl driver (ENV:Warp3D/Driver virgl) draws on a real GPU,
  * so its scene is held to the route's tolerance instead (8 of 255 a channel,
  * a pixel's shift allowed at edges, at most 2% of pixels beyond it). Run on an Amiga with GFOpenRTG's Warp3D.library:
- *   W3DCheck            prints one line a call that fails, and a summary */
+ *   W3DCheck            prints one line a call that fails, and a summary
+ * With ENV:W3DCheck/Dump set to a file prefix it also writes both scenes, raw
+ * ARGB 64x48, to <prefix>.cpu and <prefix>.drv; ENV:W3DCheck/NoZ draws the
+ * scene without the Z buffer. */
 #include <exec/types.h>
 #include <exec/memory.h>
 #include <graphics/modeid.h>
@@ -166,7 +169,10 @@ static ULONG run(ULONG type, int out)
     (void)W3D_BestModeIDTags(W3D_BMI_WIDTH, 320, W3D_BMI_HEIGHT, 240, W3D_BMI_DEPTH, 16, TAG_DONE);
     checks++;
     /* the scene: every drawing call */
-    W3D_SetState(c, W3D_ZBUFFER, W3D_ENABLE);
+    {   /* ENV:W3DCheck/NoZ: the scene without the Z buffer, to tell a driver's depth test from its drawing */
+        char nz[4];
+        W3D_SetState(c, W3D_ZBUFFER, GetVar((STRPTR)"W3DCheck/NoZ", (STRPTR)nz, sizeof nz, 0) > 0 ? W3D_DISABLE : W3D_ENABLE);
+    }
     W3D_SetState(c, W3D_FOGGING, W3D_ENABLE);
     vtx(&tri.v1, 2, 2, 0.1f, 0, 0, 1, 0, 0, 1);
     vtx(&tri.v2, 40, 4, 0.5f, 16, 0, 0, 1, 0, 1);
@@ -281,6 +287,16 @@ int main(void)
     printf("scene: CPU %08lx, %s %08lx%s\n", (unsigned long)a, drvname, (unsigned long)b,
            (W3D_CheckDriver() & W3D_DRIVER_3DHW) ? "" : " (no 3D hardware driver: the CPU's again)");
     checks++;
+    {   /* ENV:W3DCheck/Dump names a file prefix: both scenes go to <prefix>.cpu and <prefix>.drv, raw ARGB, BW x BH */
+        char dp[96], fn[104];
+        int k;
+        if (GetVar((STRPTR)"W3DCheck/Dump", (STRPTR)dp, 90, 0) > 0)
+            for (k = 0; k < 2; k++) {
+                BPTR fh;
+                sprintf(fn, "%s.%s", dp, k ? "drv" : "cpu");
+                if ((fh = Open((STRPTR)fn, MODE_NEWFILE))) { Write(fh, scene[k], sizeof scene[k]); Close(fh); }
+            }
+    }
     if (a != b && virgl) {
         int worst, over;
         tolerance(&worst, &over);

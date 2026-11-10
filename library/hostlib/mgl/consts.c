@@ -56,8 +56,14 @@ HL_FN(hostlib_mgl_consts)
     if (n) HL_NEED_R(src, bytes);
     same = nlast == n;
     if (same && n) {
-        for (i = 0; i < n * 4u; i++) if (HL_RD32(src + i * 4u) != HL_RD32(state + HL_MC_HDR + i * 4u)) {
-            same = 0; break;
+        for (i = 0; i < n * 4u; i++) {
+            uint32_t a = HL_RD32(src + i * 4u), b = HL_RD32(state + HL_MC_HDR + i * 4u);
+#if !defined(HL_HOST) && defined(__mc68000__)
+            /* a in a data register: two memory longs compared make GCC emit
+             * CMPM.L (gfopenrtg #246), which older AC090 JITs interpret */
+            __asm__("" : "+d"(a));
+#endif
+            if (a != b) { same = 0; break; }
         }
     }
     if (same) return 0;

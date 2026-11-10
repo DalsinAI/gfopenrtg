@@ -7,7 +7,16 @@
  * SURFACE in front, then runs the batch:
  *  - W3D_OpenGPU: OGPU_Submit to gfopengpu.library, which hands it to its back
  *    end (ACRTG.gpu: the host on AmiCradle), and OGPU_Wait;
- *  - W3D_CPU: the 3D core linked in here, on this 68k.
+ *  - W3D_CPU: the 3D core linked in here, on this 68k;
+ *  - virgl: the host's graphics chip draws the batch (w3d_vg.c, through
+ *    gfopengpu.library's OGPU_OP_VIRGL). The frame lives on the host while
+ *    the program holds the hardware lock; at every sync point (W3D_Flush,
+ *    W3D_UnLockHardware, W3D_WaitIdle, W3D_FlushFrame, a new drawing area,
+ *    every draw when the program draws unlocked and direct) the host writes
+ *    it straight into the drawing area (ACV_PRESENT, the bitmap locked), so
+ *    the program's own 2D between 3D batches lands where Warp3D's rules put
+ *    it, and the next batch takes the area's pixels up again. Z and stencil
+ *    stay on the host until the program reads or writes them (w3d_zsync).
  * A batch carries all the state it draws with, as GFOpenGPU's back ends keep
  * nothing between batches. */
 #include <exec/memory.h>
@@ -113,7 +122,7 @@ int w3d_open_area(struct w3dctx *x, struct BitMap *bm, W3D_Bitmap *wbm, int yoff
 {
     W3D_Context *c = x->ctx;
     ULONG fmt;
-    w3d_flush(x);
+    w3d_sync(x);                            /* the frame into the old area first */
     w3d_close_area(x);
     c->yoffset = yoffset;
     if (wbm) {
@@ -205,7 +214,31 @@ static void unlock_area(struct w3dctx *x)
     }
 }
 
-ULONG w3d_flush(struct w3dctx *x)
+/* The batch on the virgl route; 0 when it ran there. A batch the route
+ * can't run (a drawing area in a format the host isn't given, the host
+ * failing) goes to the 3D core, after the host's Z is in memory. */
+static int vg_flush(struct w3dctx *x, UBYTE *stream, long words, int present)
+{
+    LONG e;
+    if (!x->vg || !x->direct) return -1;
+    e = w3dvg_run(x->vg, stream, words, (ULONG)x->vmem, x->vused, present);
+    x->vg_hold = !present;
+    if (!e) return 0;
+    if (e > 0) {                            /* drawn, but not all of it */
+        x->vg_errors += (ULONG)e;
+        w3d_trace("virgl: %ld commands not drawn (%ld so far)", (long)e, (long)x->vg_errors);
+        return 0;
+    }
+    /* the block didn't run: the CPU from here on */
+    w3d_trace("virgl: the host failed a batch; the CPU draws from here");
+    x->vg_errors++;
+    w3dvg_read_z(x->vg);
+    w3d_vg_stop(x);
+    x->route = ROUTE_CPU;
+    return -1;
+}
+
+static ULONG flush(struct w3dctx *x, int present)
 {
     W3D_Context *c = x->ctx;
     struct OGPUBatch pre;
@@ -213,7 +246,18 @@ ULONG w3d_flush(struct w3dctx *x)
     long words;
     UBYTE *stream;
     ULONG r = W3D_SUCCESS;
-    if (!x->body) return W3D_SUCCESS;
+    if (!x->body) {
+        if (present && x->vg_hold && x->vg && lock_area(x)) {
+            /* nothing new, but the host's frame isn't in the area yet */
+            ogpu_batch_init(&pre, prefix, PREFIX_WORDS);
+            ogpu_surface(&pre, 0, (unsigned long)x->base, x->bpr, c->width, c->height, x->fmt);
+            ogpu_target(&pre, 0);
+            w3dvg_run(x->vg, (UBYTE *)prefix, pre.words, 0, 0, 1);
+            x->vg_hold = 0;
+            unlock_area(x);
+        }
+        return W3D_SUCCESS;
+    }
     w3d_trace("flush %ld words %ld bytes", (long)x->b.words, (long)x->vused);
     x->body = 0;
     x->list_at = -1;
@@ -227,7 +271,9 @@ ULONG w3d_flush(struct w3dctx *x)
     stream = (UBYTE *)(x->cmdmem + PREFIX_WORDS - pre.words);
     w3d_copy(stream, prefix, (ULONG)pre.words * 4);
     words = pre.words + x->b.words;
-    if (x->route == ROUTE_GPU && OpenGPUBase) {
+    if (x->route == ROUTE_VIRGL && !vg_flush(x, stream, words, present)) {
+        /* drawn on the host */
+    } else if (x->route == ROUTE_GPU && OpenGPUBase) {
         ULONG fence = 0;
         LONG e = OGPU_Submit(stream, (ULONG)words, &fence);
         if (e == OGPU_OK) e = OGPU_Wait(fence);
@@ -239,7 +285,9 @@ ULONG w3d_flush(struct w3dctx *x)
         x->core.ext = 0;
         x->core.user = 0;
         ogpu3d_init(&x->d3, &x->core);
+        if (x->vg) w3dvg_read_z(x->vg);     /* the host's Z, before the core reads it */
         ogpu3d_run(&x->d3, stream, words);
+        if (x->vg) w3dvg_stale(x->vg);      /* the area and Z changed behind the host */
     }
     unlock_area(x);
     x->b.words = 0;
@@ -247,10 +295,28 @@ ULONG w3d_flush(struct w3dctx *x)
     return r;
 }
 
+/* A batch run because it is full, or a texture changes under it: with the
+ * hardware locked the program draws no 2D, so the frame may stay on the host. */
+ULONG w3d_flush(struct w3dctx *x) { return flush(x, !x->ctx->HWlocked); }
+
+/* A sync point: the frame in the drawing area afterwards. */
+ULONG w3d_sync(struct w3dctx *x) { return flush(x, 1); }
+
 void w3d_maybe_flush(struct w3dctx *x)
 {
     W3D_Context *c = x->ctx;
-    if (!(c->state & W3D_INDIRECT) && !c->HWlocked) w3d_flush(x);
+    if (!(c->state & W3D_INDIRECT) && !c->HWlocked) w3d_sync(x);
+}
+
+/* Before the CPU reads or writes Z or stencil (W3D_ReadZSpan ...): what is
+ * queued drawn, and the host's buffers in memory; after a write the host
+ * takes memory's up again before its next depth test. */
+void w3d_zsync(struct w3dctx *x, int writes)
+{
+    w3d_flush(x);
+    if (!x->vg) return;
+    w3dvg_read_z(x->vg);
+    if (writes) w3dvg_stale_z(x->vg);
 }
 
 /* ---- building ---------------------------------------------------------------------------- */

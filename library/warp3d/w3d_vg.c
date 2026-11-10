@@ -1326,6 +1326,59 @@ void w3dvg_forget_all(struct w3dvg *v)
 
 void w3dvg_stale(struct w3dvg *v) { if (v) v->have_frame = v->have_z = 0; }
 
+void w3dvg_stale_z(struct w3dvg *v) { if (v) v->have_z = 0; }
+
+void w3dvg_forget_z(struct w3dvg *v)
+{
+    if (!v) return;
+    v->z_addr = v->s_addr = 0;
+    v->have_z = 0;
+    v->sc_dirty = 1;
+}
+
+/* The host's depth (and stencil) back into memory, for a program that reads
+ * them (W3D_ReadZSpan ...). Z16 alone comes back as it is; the 24/8 and
+ * 24-bit buffers come back a word a pixel and the 68k takes them apart: Z16
+ * the top 16 bits of the 24, Z32 the 24 with its top byte again below (the
+ * 8 bits the host doesn't keep). */
+void w3dvg_read_z(struct w3dvg *v)
+{
+    ULONG w, h, zw = 0, zh = 0, sw = 0, sh = 0, x, y, a[14], bytes;
+    if (!v || !v->depth || !v->have_z || (!v->z_addr && !v->s_addr)) return;
+    w = v->depth->w; h = v->depth->h;
+    if (v->z_addr) { zw = v->z_w < w ? v->z_w : w; zh = v->z_h < h ? v->z_h : h; }
+    if (v->s_addr) { sw = v->s_w < w ? v->s_w : w; sh = v->s_h < h ? v->s_h : h; }
+    bytes = v->zfmt == VG_FMT_Z16_UNORM ? w * h * 2 : w * h * 4;
+    if (!stage_mem(v, &v->zstage, &v->zstage_bytes, bytes)) return;
+    block_begin(v);
+    a[0] = v->depth->handle; a[1] = v->ctx_id; a[2] = 0; a[3] = bytes / h; a[4] = 0;
+    a[5] = 0; a[6] = 0; a[7] = 0; a[8] = w; a[9] = h; a[10] = 1;
+    a[11] = ADDR(v->zstage); a[12] = bytes; a[13] = v->zfmt == VG_FMT_Z16_UNORM ? ACV_SWAP_16 : ACV_SWAP_32;
+    blk_cmd(pre(v, BLK_WORDS(14)), ACV_GET, 14, a);
+    v->errors = 0;
+    block_send(v, 0);
+    v->st.refused += v->errors;
+    if (v->errors) return;
+    for (y = 0; y < h; y++) {
+        const UBYTE *sp = (const UBYTE *)v->zstage + y * (bytes / h);
+        UBYTE *z = y < zh ? (UBYTE *)(v->z_addr + y * v->z_bpr) : 0;
+        UBYTE *st = y < sh ? (UBYTE *)(v->s_addr + y * v->s_bpr) : 0;
+        if (v->zfmt == VG_FMT_Z16_UNORM) {
+            for (x = 0; z && x < zw * 2; x++) z[x] = sp[x];
+            continue;
+        }
+        for (x = 0; x < w; x++, sp += 4) {
+            ULONG word = (ULONG)sp[0] << 24 | (ULONG)sp[1] << 16 | (ULONG)sp[2] << 8 | sp[3];
+            ULONG d = v->zfmt == VG_FMT_D24S8 ? word >> 8 : word & 0xFFFFFFUL;
+            if (z && x < zw) {
+                if (v->z_fmt == OGPU_FMT_Z16) { z[x * 2] = (UBYTE)(d >> 16); z[x * 2 + 1] = (UBYTE)(d >> 8); }
+                else { z[x * 4] = (UBYTE)(d >> 16); z[x * 4 + 1] = (UBYTE)(d >> 8); z[x * 4 + 2] = (UBYTE)d; z[x * 4 + 3] = (UBYTE)(d >> 16); }
+            }
+            if (st && x < sw && v->zfmt == VG_FMT_D24S8) st[x] = (UBYTE)word;
+        }
+    }
+}
+
 void w3dvg_stats(struct w3dvg *v, struct w3dvg_stats *s)
 {
     *s = v->st;

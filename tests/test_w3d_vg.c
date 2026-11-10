@@ -448,6 +448,152 @@ static void mixed_scene(const char *ppm_dir)
     CHECK(d.over_shift * 1000 <= d.pixels, "mixed scene matches the core (%ld off)", d.over_shift);
 }
 
+/* ---- the hardware lock: batches that keep the frame on the host, then a sync with nothing new -- */
+
+static void hold_scene(const char *ppm_dir)
+{
+    static ogpu_u8 b0[4096 * 4], b1[4096 * 4], pre[64];
+    struct OGPUBatch b;
+    struct shape sh;
+    struct diff d;
+    struct w3dvg_stats st;
+    LONG r = 0;
+    int pass;
+    memset(mem[0][0], 0, REG); memset(mem[0][1], 0, REG); memset(mem[1][0], 0, REG); memset(mem[1][1], 0, REG);
+    core_fresh();
+    w3dvg_stale(V);
+    w3dvg_forget_all(V);
+    w3dvg_reset(V);
+    for (pass = 0; pass < 2; pass++) {
+        ULONG n0 = mx_build(b0, 0, pass), n1 = mx_build(b1, 1, pass);
+        ogpu3d_run(&T, b0, (long)n0);
+        r |= w3dvg_run(V, b1, (long)n1, (ULONG)(unsigned long)mem[1][1], 256 * 1024, 0);    /* full batches under the lock */
+    }
+    /* W3D_UnLockHardware with the batch empty: SURFACE and TARGET only, and the present */
+    ogpu_batch_init(&b, pre, 16);
+    ogpu_surface(&b, 0, (ULONG)(unsigned long)mem[1][0], MX_W * 4, MX_W, MX_H, OGPU_FMT_ARGB32);
+    ogpu_target(&b, 0);
+    r |= w3dvg_run(V, pre, b.words, 0, 0, 1);
+    w3dvg_stats(V, &st);
+    memset(&sh, 0, sizeof sh);
+    sh.addr = (ULONG)(unsigned long)env[0].mem[0]; sh.bpr = MX_W * 4; sh.w = MX_W; sh.h = MX_H; sh.fmt = OGPU_FMT_ARGB32;
+    d = compare(&sh, 0, ppm_dir, "hold");
+    printf("w3d virgl held frame: worst %d, %ld with a pixel's shift; %ld loads, %ld presents\n",
+           d.worst, d.over_shift, (long)st.loads, (long)st.presents);
+    CHECK(!r && st.presents == 1 && st.loads == 0, "held frame: one present, no loads (%ld, %ld)", (long)st.presents, (long)st.loads);
+    CHECK(d.over_shift * 1000 <= d.pixels, "held frame matches the core (%ld off)", d.over_shift);
+}
+
+/* ---- Z and stencil back to memory (W3D_ReadZSpan ...), and written by the CPU ------------------ */
+
+#define ZS_Z   0x80000
+#define ZS_S   0x100000
+
+static ULONG zs_build(ogpu_u8 *buf, int side, int pass, int zfmt, int stencil)
+{
+    struct OGPUBatch b;
+    ogpu_u8 *fast = mem[side][1];
+    ULONG base = (ULONG)(unsigned long)fast, vtx = base + 0x1000UL * (ULONG)(pass + 1);
+    ogpu_u8 *v = fast + 0x1000 * (pass + 1);
+    unsigned long r3d[OGPU_R3D_ARGS];
+    static const int tri[2][3][2] = { { { 10, 10 }, { 310, 30 }, { 40, 230 } }, { { 150, 5 }, { 315, 235 }, { 60, 190 } } };
+    static const ULONG zz[2][3] = { { 0x20000000UL, 0xE0000000UL, 0x80000000UL }, { 0xF0000000UL, 0x10000000UL, 0x60000000UL } };
+    int i;
+    ogpu_batch_init(&b, buf, 4096);
+    ogpu_surface(&b, 0, (ULONG)(unsigned long)mem[side][0], MX_W * 4, MX_W, MX_H, OGPU_FMT_ARGB32);
+    ogpu_target(&b, 0);
+    ogpu_depth(&b, OGPU_KIND_DEPTH, base + ZS_Z, MX_W * (zfmt == OGPU_FMT_Z16 ? 2 : 4), MX_W, MX_H, zfmt);
+    if (stencil) ogpu_depth(&b, OGPU_KIND_STENCIL, base + ZS_S, MX_W, MX_W, MX_H, OGPU_FMT_S8);
+    memset(r3d, 0, sizeof r3d);
+    r3d[0] = OGPU_R3D_GOURAUD | OGPU_R3D_ZTEST | OGPU_R3D_ZWRITE | (stencil ? OGPU_R3D_STENCIL : 0);
+    r3d[1] = 2;                         /* W3D_Z_LESS */
+    r3d[2] = 8; r3d[3] = 2 | 1UL << 16;
+    r3d[5] = 0xF; r3d[6] = 4; r3d[14] = 1; r3d[17] = 0xFFFFFFFFUL;
+    r3d[12] = 8 | (ULONG)(0x40 + pass * 0x31) << 8 | 0xFFUL << 16;   /* always, the ref */
+    r3d[13] = 1 | 1UL << 8 | 3UL << 16 | 0xFFUL << 24;               /* keep, keep, replace */
+    ogpu_render3d(&b, r3d);
+    for (i = 0; i < 3; i++) {
+        ogpu_u8 *p = v + i * 24;
+        ULONG w6[6] = { (ULONG)tri[pass][i][0] << 16, (ULONG)tri[pass][i][1] << 16, 0xFF000000UL | (0x55UL << (8 * i)) | (pass ? 0x808080UL : 0), 0, 0, zz[pass][i] };
+        int k;
+        for (k = 0; k < 6; k++) { p[k * 4] = (ogpu_u8)(w6[k] >> 24); p[k * 4 + 1] = (ogpu_u8)(w6[k] >> 16); p[k * 4 + 2] = (ogpu_u8)(w6[k] >> 8); p[k * 4 + 3] = (ogpu_u8)w6[k]; }
+    }
+    ogpu_triangles3d(&b, vtx, 3, 24, 0, 0, 2, OGPU_TRI_NOTEX, 0, OGPU_LAY_LIST | OGPU_LAY_Z);
+    return (ULONG)b.words;
+}
+
+/* What W3D_WriteZSpan and a program's own stencil writes do: straight into memory. */
+static void zs_cpu_write(int side, int zfmt, int stencil)
+{
+    int x, y;
+    for (y = 100; y < 140; y++)
+        for (x = 0; x < MX_W; x++) {
+            ogpu_u8 *z = mem[side][1] + ZS_Z + (y * MX_W + x) * (zfmt == OGPU_FMT_Z16 ? 2 : 4);
+            z[0] = 0x05; z[1] = 0x00;
+            if (zfmt != OGPU_FMT_Z16) { z[2] = 0; z[3] = 0; }
+            if (stencil) mem[side][1][ZS_S + y * MX_W + x] = 0xEE;
+        }
+}
+
+/* The worst difference in the Z buffer's top 16 bits, and stencil bytes that differ. */
+static void zs_compare(int zfmt, int stencil, int *zworst, long *sdiff)
+{
+    int x, y, bpp = zfmt == OGPU_FMT_Z16 ? 2 : 4;
+    *zworst = 0; *sdiff = 0;
+    for (y = 0; y < MX_H; y++)
+        for (x = 0; x < MX_W; x++) {
+            const ogpu_u8 *a = mem[0][1] + ZS_Z + (y * MX_W + x) * bpp, *b = mem[1][1] + ZS_Z + (y * MX_W + x) * bpp;
+            int d = ((int)a[0] << 8 | a[1]) - ((int)b[0] << 8 | b[1]);
+            if (d < 0) d = -d;
+            if (d > *zworst) *zworst = d;
+            if (stencil && mem[0][1][ZS_S + y * MX_W + x] != mem[1][1][ZS_S + y * MX_W + x]) (*sdiff)++;
+        }
+}
+
+static void z_scene(int zfmt, int stencil, const char *ppm_dir)
+{
+    static ogpu_u8 b0[4096 * 4], b1[4096 * 4];
+    struct shape sh;
+    struct diff d;
+    struct w3dvg_stats st;
+    LONG r = 0;
+    int pass, side, zworst[2];
+    long sdiff[2];
+    const char *name = zfmt == OGPU_FMT_Z16 ? (stencil ? "z16+stencil" : "z16") : (stencil ? "z32+stencil" : "z32");
+    char tag[32];
+    for (side = 0; side < 2; side++) {
+        memset(mem[side][0], 0, REG); memset(mem[side][1], 0, REG);
+        /* a cleared Z buffer (W3D_ClearZBuffer(1.0) on the CPU) */
+        memset(mem[side][1] + ZS_Z, 0xFF, MX_W * MX_H * 4);
+    }
+    core_fresh();
+    w3dvg_stale(V);
+    w3dvg_forget_all(V);
+    w3dvg_reset(V);
+    for (pass = 0; pass < 2; pass++) {
+        ULONG n0 = zs_build(b0, 0, pass, zfmt, stencil), n1 = zs_build(b1, 1, pass, zfmt, stencil);
+        ogpu3d_run(&T, b0, (long)n0);
+        r |= w3dvg_run(V, b1, (long)n1, (ULONG)(unsigned long)mem[1][1], 256 * 1024, 1);
+        w3dvg_read_z(V);                /* W3D_ReadZSpan after the batch */
+        zs_compare(zfmt, stencil, &zworst[pass], &sdiff[pass]);
+        if (!pass) {
+            for (side = 0; side < 2; side++) zs_cpu_write(side, zfmt, stencil);
+            w3dvg_stale_z(V);           /* W3D_WriteZSpan */
+        }
+    }
+    w3dvg_stats(V, &st);
+    memset(&sh, 0, sizeof sh);
+    sh.addr = (ULONG)(unsigned long)env[0].mem[0]; sh.bpr = MX_W * 4; sh.w = MX_W; sh.h = MX_H; sh.fmt = OGPU_FMT_ARGB32;
+    snprintf(tag, sizeof tag, "zread-%s", name);
+    d = compare(&sh, 0, ppm_dir, tag);
+    printf("w3d virgl Z read %-12s: Z worst %d/%d (top 16 bits), stencil %ld/%ld off; colour worst %d, %ld with a shift; %ld refused\n",
+           name, zworst[0], zworst[1], sdiff[0], sdiff[1], d.worst, d.over_shift, (long)st.refused);
+    CHECK(!r && !st.refused, "Z scene %s ran on the route", name);
+    CHECK(zworst[0] <= 2 && zworst[1] <= 2, "Z %s back in memory matches the core (%d, %d)", name, zworst[0], zworst[1]);
+    CHECK(!sdiff[0] && !sdiff[1], "stencil %s back in memory matches the core (%ld, %ld)", name, sdiff[0], sdiff[1]);
+    CHECK(d.over_shift * 1000 <= d.pixels, "Z scene %s colour matches the core (%ld off)", name, d.over_shift);
+}
+
 int main(int argc, char **argv)
 {
     const char *e = getenv("MGL_VG_BRIDGE"), *ppm_dir = 0;
@@ -475,8 +621,14 @@ int main(int argc, char **argv)
     printf("w3d virgl: host flags %#lx\n", (unsigned long)info.host_flags);
 
     if (getenv("W3D_SEED")) { random_scene(strtoul(getenv("W3D_SEED"), 0, 0)); w3dvg_close(V); return 0; }
+    if (getenv("W3D_ZONLY")) { z_scene(OGPU_FMT_Z16, 0, ppm_dir); z_scene(OGPU_FMT_Z32, 0, ppm_dir); z_scene(OGPU_FMT_Z16, 1, ppm_dir); z_scene(OGPU_FMT_Z32, 1, ppm_dir); w3dvg_close(V); printf("w3d virgl: %d checks, %d failed\n", checks, failures); return failures ? 1 : 0; }
     if (getenv("W3D_BENCH")) { bench_scene(atoi(getenv("W3D_BENCH")), ppm_dir); w3dvg_close(V); return 0; }
     mixed_scene(ppm_dir);
+    hold_scene(ppm_dir);
+    z_scene(OGPU_FMT_Z16, 0, ppm_dir);
+    z_scene(OGPU_FMT_Z32, 0, ppm_dir);
+    z_scene(OGPU_FMT_Z16, 1, ppm_dir);
+    z_scene(OGPU_FMT_Z32, 1, ppm_dir);
     for (k = 0; k < OGPU_SCENE3D_BENCHES; k++) bench_scene(k, ppm_dir);
     for (i = 1; i <= rounds; i++) random_scene((unsigned long)i);
     printf("w3d virgl random scenes: %ld run, %ld declined (left to the CPU), %ld refused by the host\n", ran_scenes, declined_scenes, refused_scenes);

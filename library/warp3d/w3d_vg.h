@@ -75,6 +75,18 @@ void w3dvg_forget_all(struct w3dvg *v);
  * loads them first. */
 void w3dvg_stale(struct w3dvg *v);
 
+/* Memory's Z or stencil changed behind the host (W3D_WriteZSpan ...): the
+ * next depth op loads them first. */
+void w3dvg_stale_z(struct w3dvg *v);
+
+/* The host's depth and stencil written into memory (the buffers the last
+ * batch named), for a program that reads them. */
+void w3dvg_read_z(struct w3dvg *v);
+
+/* The Z and stencil buffers are gone or moved (W3D_FreeZBuffer ...): the
+ * route forgets them until a batch names them again. */
+void w3dvg_forget_z(struct w3dvg *v);
+
 /* Counters since the last call (cleared by it). */
 struct w3dvg_stats {
     ULONG blocks, draws, merged, triangles, objects, shaders, puts, put_bytes, loads, presents, refused;

@@ -1,0 +1,383 @@
+nir: store the algebraic search automaton's tables compactly (GFOpenGPU,
+10 November 2026). On the 68k they were 40% of GL.module:
+nir_opt_algebraic.c.o was 7,765,896 bytes, of which bcsel's transition
+table alone (137^3 uint16_t entries) was 5,142,708, and the 161
+per-opcode filters (5,100 uint16_t each) another 1.6 MB.
+
+The automaton is built exactly as before; only how its tables are stored
+changes. nir_algebraic.py (CompactTables) emits:
+- each distinct filter and table once, by name;
+- a filter whose values fit a byte (all of them, in Mesa 26.2.4) paged:
+  the number of a 32-byte block for each 32 states, and each distinct
+  block once for the whole pass (<pass>_filter_pages);
+- for an opcode with two or more sources, when it is smaller, a "row
+  table": n^(k-1) row numbers for the first k-1 sources' filtered states,
+  then each distinct row of n entries once (bcsel: 781 distinct rows of
+  18,769, 251,532 bytes in place of 5,142,708);
+- each distinct per-state transform list once, and struct transform's
+  condition_offset as a uint16_t (UINT16_MAX ends a list, in place of ~0).
+
+nir_search.h/.c look these up in place, with one more read for a paged
+filter or a row table. Nothing is expanded at run time: no memory and no
+time at first use. struct per_op_table is 16 bytes (was 12).
+nir_opt_algebraic.c.o: 7,765,896 -> 1,036,648 bytes. The generated .c is
+6.5 MB (was 52 MB) and is generated and compiled much faster.
+
+Same shaders: as it emits the tables, the generator checks, for every
+opcode, that the lookup on what it emits gives the original dense table's
+next state for every combination of the sources' filtered states, the
+filter's value for every state, and every state's original transform list
+in the same order. library/modules/gl/tests/nir_tables_check.py checks the
+emitted C again, against the C the unpatched generator makes.
+
+diff --git a/src/compiler/nir/nir_algebraic.py b/src/compiler/nir/nir_algebraic.py
+--- a/src/compiler/nir/nir_algebraic.py
++++ b/src/compiler/nir/nir_algebraic.py
+@@ -1145,6 +1145,158 @@
+             process_new_states()
+ 
+ 
++class CompactTables(object):
++    """The automaton's tables as the C code stores them (GFOpenGPU,
++    mesa/patches/0014; nir_search.h's struct per_op_table).
++
++    - Each distinct filter and table is emitted once. A filter whose
++      values all fit a byte (all of them in Mesa 26.2.4) is paged: the
++      number of a 32-byte block for each 32 states, each distinct block
++      stored once for the pass (<pass>_filter_pages).
++    - A table for an opcode with k >= 2 sources may be a row table: the
++      first n^(k-1) entries are, for each combination of the first k-1
++      sources' filtered states (in itertools.product() order), the number
++      of a row of n entries, stored after them, which the last source's
++      filtered state indexes. Identical rows are stored once. It is used
++      when it is smaller than the dense table.
++    - Identical per-state transform lists are stored once.
++
++    Every lookup is checked here against the dense tables of the original
++    generator, entry for entry, so the automaton finds the same states and
++    tries the same transforms in the same order.
++    """
++
++    PAGE = 32   # NIR_SEARCH_FILTER_PAGE (nir_search.h)
++
++    def __init__(self, pass_name, automaton, xforms):
++        self.arrays = []
++        self.ops = []
++        names = {}
++        pages = {}
++        filter_checks = []
++
++        def array(kind, ctype, vals):
++            key = (ctype, tuple(vals))
++            if key not in names:
++                name = '{}_{}{}'.format(pass_name, kind, len(self.arrays))
++                names[key] = name
++                self.arrays.append((name, ctype, key[1]))
++            return names[key]
++
++        for op in automaton.opcodes:
++            filt = automaton.filter[op]
++            n = len(automaton.rep[op])
++            assert 0 < n <= 0xffff
++            table = automaton.table[op]
++            num_srcs = len(next(iter(table)))
++            dense = [table[indices] for indices in
++                     itertools.product(range(n), repeat=num_srcs)]
++            assert all(0 <= s <= 0xffff for s in dense)
++
++            e = {'n': n, 'filter': None, 'filter_pages': None, 'row_table': 0}
++            if not all(f == 0 for f in filt):
++                if max(filt) <= 0xff:
++                    # paged: the number of each PAGE-state block, the blocks shared by the pass
++                    blocks = []
++                    for b in range(0, len(filt), self.PAGE):
++                        blk = tuple(filt[b:b + self.PAGE])
++                        blk += (0,) * (self.PAGE - len(blk))
++                        if blk not in pages:
++                            pages[blk] = len(pages)
++                        blocks.append(pages[blk])
++                    e['filter'] = array('filter', 'uint16_t', blocks)
++                    e['filter_pages'] = pass_name + '_filter_pages'
++                    filter_checks.append((op, filt, blocks))
++                else:
++                    e['filter'] = array('filter', 'uint16_t', filt)
++
++            stored = dense
++            if num_srcs >= 2:
++                row_of = {}
++                index, rows = [], []
++                for r in range(0, len(dense), n):
++                    row = tuple(dense[r:r + n])
++                    if row not in row_of:
++                        row_of[row] = len(rows)
++                        rows.append(row)
++                    index.append(row_of[row])
++                compact = index + [s for row in rows for s in row]
++                if len(compact) < len(dense) and len(rows) <= 0xffff:
++                    stored = compact
++                    e['row_table'] = 1
++            e['table'] = array('table', 'uint16_t', stored)
++            self.ops.append((op, e))
++
++            # The check: nir_algebraic_automaton()'s lookup on what is
++            # stored gives the dense table's state for every combination
++            # of the sources' filtered states (the filters below).
++            assert len(filt) == len(automaton.states)
++            for indices in itertools.product(range(n), repeat=num_srcs):
++                assert self.lookup(e, stored, indices) == table[indices], (pass_name, op, indices)
++
++        # The filters' pages, and the check: nir_search_filter() on what is
++        # stored gives the filter's value for every state.
++        if pages:
++            assert len(pages) <= 0xffff
++            flat = [v for blk in sorted(pages, key=pages.get) for v in blk]
++            self.arrays.append((pass_name + '_filter_pages', 'uint8_t', tuple(flat)))
++            for op, filt, blocks in filter_checks:
++                for s, f in enumerate(filt):
++                    assert self.filter_lookup(blocks, flat, s) == f, (pass_name, op, s)
++
++        # The per-state transform lists, each distinct list once.
++        sp, offs = automaton.state_patterns, automaton.state_pattern_offsets
++        self.state_patterns = [None]
++        self.state_pattern_offsets = []
++        at = {(): 0}
++        for o in offs:
++            pats = []
++            if o != 0:
++                i = o
++                while sp[i] is not None:
++                    pats.append(sp[i])
++                    i += 1
++            pats = tuple(pats)
++            if pats not in at:
++                at[pats] = len(self.state_patterns)
++                self.state_patterns.extend(pats)
++                self.state_patterns.append(None)
++            self.state_pattern_offsets.append(at[pats])
++        assert len(self.state_pattern_offsets) == len(offs)
++        assert all(o <= 0xffff for o in self.state_pattern_offsets)
++        for o_old, o_new in zip(offs, self.state_pattern_offsets):
++            i, j = o_old, o_new
++            while True:
++                assert sp[i] == self.state_patterns[j]
++                if o_old == 0 or sp[i] is None:
++                    break
++                i += 1
++                j += 1
++        # struct transform's condition_offset is a uint16_t now, and
++        # UINT16_MAX ends a list.
++        for i in self.state_patterns:
++            if i is not None:
++                assert 0 <= xforms[i].condition_index < 0xffff
++
++    @classmethod
++    def filter_lookup(cls, blocks, flat, s):
++        """nir_search_filter() for a paged filter (nir_search.h)."""
++        return flat[blocks[s // cls.PAGE] * cls.PAGE + s % cls.PAGE]
++
++    @staticmethod
++    def lookup(e, stored, fs):
++        """nir_algebraic_automaton()'s index arithmetic (nir_search.c)."""
++        n, index, rows = e['n'], 0, 1
++        head = len(fs) - 1 if e['row_table'] else len(fs)
++        for i, f in enumerate(fs):
++            if i == head:
++                index = rows + stored[index] * n + f
++            else:
++                index = index * n + f
++                rows *= n
++        return stored[index]
++
++
+ _algebraic_pass_template = mako.template.Template("""
+ #include "nir.h"
+ #include "nir_builder.h"
+@@ -1184,47 +1336,48 @@
+ % endif
+ 
+ static const struct transform ${pass_name}_transforms[] = {
+-% for i in automaton.state_patterns:
++% for i in compact.state_patterns:
+ % if i is not None:
+    { ${xforms[i].search.array_index}, ${xforms[i].replace.array_index}, ${xforms[i].condition_index} },
+ % else:
+-   { ~0, ~0, ~0 }, /* Sentinel */
++   { UINT16_MAX, UINT16_MAX, UINT16_MAX }, /* Sentinel */
+ 
+ % endif
+ % endfor
+ };
+ 
++/* The filters and transition tables, each distinct one once
++ * (CompactTables below; mesa/patches/0014 in GFOpenGPU).
++ */
++% for name, ctype, vals in compact.arrays:
++static const ${ctype} ${name}[${len(vals)}] = {
++% for k in range(0, len(vals), 16):
++   ${', '.join(str(v) for v in vals[k:k + 16])},
++% endfor
++};
++% endfor
++
+ static const struct per_op_table ${pass_name}_pass_op_table[nir_num_search_ops] = {
+-% for op in automaton.opcodes:
++% for op, e in compact.ops:
+    [${get_c_opcode(op)}] = {
+-% if all(e == 0 for e in automaton.filter[op]):
++% if e['filter'] is None:
+       .filter = NULL,
+ % else:
+-      .filter = (const uint16_t []) {
+-      % for e in automaton.filter[op]:
+-         ${e},
+-      % endfor
+-      },
++      .filter = ${e['filter']},
++% endif
++% if e['filter_pages'] is not None:
++      .filter_pages = ${e['filter_pages']},
+ % endif
+-      <%
+-        num_filtered = len(automaton.rep[op])
+-      %>
+-      .num_filtered_states = ${num_filtered},
+-      .table = (const uint16_t []) {
+-      <%
+-        num_srcs = len(next(iter(automaton.table[op])))
+-      %>
+-      % for indices in itertools.product(range(num_filtered), repeat=num_srcs):
+-         ${automaton.table[op][indices]},
+-      % endfor
+-      },
++      .num_filtered_states = ${e['n']},
++      .table = ${e['table']},
++      .row_table = ${e['row_table']},
+    },
+ % endfor
+ };
+ 
+ /* Mapping from state index to offset in transforms (0 being no transforms) */
+ static const uint16_t ${pass_name}_transform_offsets[] = {
+-% for offset in automaton.state_pattern_offsets:
++% for offset in compact.state_pattern_offsets:
+    ${offset},
+ % endfor
+ };
+@@ -1647,6 +1800,7 @@
+                                                opcode_xforms=self.opcode_xforms,
+                                                condition_list=condition_list,
+                                                automaton=self.automaton,
++                                               compact=CompactTables(self.pass_name, self.automaton, self.xforms),
+                                                expression_cond=sorted(
+                                                    self.expression_cond.items(), key=lambda kv: kv[1]),
+                                                variable_cond=sorted(
+diff --git a/src/compiler/nir/nir_search.h b/src/compiler/nir/nir_search.h
+--- a/src/compiler/nir/nir_search.h
++++ b/src/compiler/nir/nir_search.h
+@@ -158,16 +158,51 @@
+    int16_t cond_index;
+ } nir_search_expression;
+ 
++/* GFOpenGPU (mesa/patches/0014): the automaton's tables are stored
++ * compactly, and identical ones are emitted once.
++ *
++ * A filter (state -> filtered state) whose values fit a byte is paged:
++ * filter_pages holds blocks of NIR_SEARCH_FILTER_PAGE bytes, each distinct
++ * block once for the whole pass, and filter[] the number of the block for
++ * each NIR_SEARCH_FILTER_PAGE states. Without filter_pages, filter[] is the
++ * plain uint16_t filter, as before.
++ *
++ * A table with row_table set is a table of rows: the first n^(k-1) entries
++ * give, for the first k-1 sources' filtered states, the number of a row of
++ * n entries stored after them, indexed by the last source's filtered state.
++ * Identical rows are stored once (nir_opt_algebraic's bcsel table goes from
++ * 5.1 MB to about 250 KB).
++ *
++ * The states found are the dense tables' own: nir_algebraic.py checks every
++ * lookup against them as it emits the tables.
++ */
++#define NIR_SEARCH_FILTER_PAGE_SHIFT 5
++#define NIR_SEARCH_FILTER_PAGE (1u << NIR_SEARCH_FILTER_PAGE_SHIFT)
++
+ struct per_op_table {
+    const uint16_t *filter;
+-   unsigned num_filtered_states;
++   const uint8_t *filter_pages;
+    const uint16_t *table;
++   uint16_t num_filtered_states;
++   uint16_t row_table;
+ };
+ 
++static inline unsigned
++nir_search_filter(const struct per_op_table *tbl, uint16_t state)
++{
++   if (!tbl->filter)
++      return 0;
++   if (!tbl->filter_pages)
++      return tbl->filter[state];
++   return tbl->filter_pages[((unsigned)tbl->filter[state >> NIR_SEARCH_FILTER_PAGE_SHIFT]
++                             << NIR_SEARCH_FILTER_PAGE_SHIFT) |
++                            (state & (NIR_SEARCH_FILTER_PAGE - 1))];
++}
++
+ struct transform {
+    uint16_t search;  /* Index in table->values[] for the search expression. */
+    uint16_t replace; /* Index in table->values[] for the replace value. */
+-   unsigned condition_offset;
++   uint16_t condition_offset;
+ };
+ 
+ typedef union {
+diff --git a/src/compiler/nir/nir_search.c b/src/compiler/nir/nir_search.c
+--- a/src/compiler/nir/nir_search.c
++++ b/src/compiler/nir/nir_search.c
+@@ -770,19 +770,32 @@
+        * calculated must match the iteration order of Python's
+        * itertools.product(), which was used to emit the transition
+        * table.
++       *
++       * A row table (nir_search.h, mesa/patches/0014): the sources but
++       * the last pick a row number from the first n^(k-1) entries, and
++       * the last source the entry in that row, after them.
+        */
+-      unsigned index = 0;
+-      for (unsigned i = 0; i < nir_op_infos[op].num_inputs; i++) {
+-         index *= tbl->num_filtered_states;
+-         if (tbl->filter)
+-            index += tbl->filter[*util_dynarray_element(states, uint16_t,
+-                                                        alu->src[i].src.ssa->index)];
++      const unsigned n = tbl->num_filtered_states;
++      const unsigned num_inputs = nir_op_infos[op].num_inputs;
++      const unsigned head = tbl->row_table ? num_inputs - 1 : num_inputs;
++      unsigned index = 0, rows = 1;
++      for (unsigned i = 0; i < num_inputs; i++) {
++         unsigned f = nir_search_filter(tbl,
++            *util_dynarray_element(states, uint16_t, alu->src[i].src.ssa->index));
++         if (i == head) {
++            /* the last source of a row table */
++            index = rows + (unsigned)tbl->table[index] * n + f;
++         } else {
++            index = index * n + f;
++            rows *= n;
++         }
+       }
+ 
++      uint16_t next = tbl->table[index];
+       uint16_t *state = util_dynarray_element(states, uint16_t,
+                                               alu->def.index);
+-      if (*state != tbl->table[index]) {
+-         *state = tbl->table[index];
++      if (*state != next) {
++         *state = next;
+          return true;
+       }
+       return false;
+@@ -822,7 +835,7 @@
+    int xform_idx = *util_dynarray_element(states, uint16_t,
+                                           alu->def.index);
+    for (const struct transform *xform = &table->transforms[table->transform_offsets[xform_idx]];
+-        xform->condition_offset != ~0;
++        xform->condition_offset != UINT16_MAX;
+         xform++) {
+       if (condition_flags[xform->condition_offset] &&
+           nir_replace_instr(build, alu, state, states, table,

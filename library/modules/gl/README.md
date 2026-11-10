@@ -82,6 +82,15 @@ deals with byte order in these places:
     u_vbuf's vertex widening (0011) read buffers at every draw, so before it
     a program drawing from buffer objects sent each draw as a request block
     of its own (Neverball: 29 submits and 29 puts a frame, now 1 and 1).
+  - 0014 stores NIR's algebraic search automaton compactly (10 November
+    2026): its filters paged, its biggest transition tables as tables of
+    distinct rows, and each distinct table, filter and transform list
+    once. `nir_opt_algebraic.c.o` was 7.8 MB of GL.module (bcsel's table
+    alone 5.1 MB) and is 1.0 MB. Nothing is expanded at run time; the
+    lookups take one more read. The automaton is the same, and the
+    generator checks every lookup against the original dense tables as
+    it emits them; `tests/nir_tables_check.py` checks the emitted C
+    against the unpatched generator's.
 
 ## GL.module and libGL.a
 

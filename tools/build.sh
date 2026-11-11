@@ -19,6 +19,10 @@ CPU="-m68040 -specs=$HERE/m68k-soft-m68040.specs"
 # it proves a pointer null, in place of the access.
 "$CC" $CPU -O2 -fno-delete-null-pointer-checks -Wall -Werror -noixemul -o "$OUT/LibCount" "$HERE/libcount.c"
 echo "$OUT/LibCount ($(wc -c < "$OUT/LibCount") bytes)"
+python3 "$HERE/mglcount_names.py" "$HERE/../include/libraries/minigl_dispatch.h" "$OUT/mglcount_names.h"
+"$CC" $CPU -O2 -fno-delete-null-pointer-checks -Wall -Werror -noixemul -I"$OUT" -o "$OUT/MGLCount" "$HERE/mglcount.c"
+rm -f "$OUT/mglcount_names.h"
+echo "$OUT/MGLCount ($(wc -c < "$OUT/MGLCount") bytes)"
 "$CC" $CPU -mnobitfield -O2 -fno-delete-null-pointer-checks -Wall -Werror -noixemul -I"$HERE/../include" -o "$OUT/GFOpenGPUCheck" "$HERE/ogpu_check.c" \
     "$HERE/../tests/golden_scenes.c" "$HERE/../library/opengpu/ogpu_core.c" "$HERE/../library/opengpu/ogpu_dwt.c" "$HERE/../library/opengpu/ogpu_build.c" -lm
 echo "$OUT/GFOpenGPUCheck ($(wc -c < "$OUT/GFOpenGPUCheck") bytes)"
@@ -37,4 +41,4 @@ echo "$OUT/OpenRTGWPAExact ($(wc -c < "$OUT/OpenRTGWPAExact") bytes)"
 echo "$OUT/OpenRTGScaleExact ($(wc -c < "$OUT/OpenRTGScaleExact") bytes)"
 "$CC" $CPU -O2 -fno-delete-null-pointer-checks -Wall -Werror -noixemul -I"$HERE/../include" -o "$OUT/OpenRTGScrollExact" "$HERE/ortg_scroll_exact.c"
 echo "$OUT/OpenRTGScrollExact ($(wc -c < "$OUT/OpenRTGScrollExact") bytes)"
-python3 "$HERE/fpcr_check.py" "${CC%gcc}objdump" "$OUT/LibCount" "$OUT/GFOpenGPUCheck" "$OUT/OpenGPUBench" "$OUT/GfxBench" "$OUT/OpenRTGExact" "$OUT/OpenGfxCheck" "$OUT/OpenRTGWPAExact" "$OUT/OpenRTGScaleExact" "$OUT/OpenRTGScrollExact"
+python3 "$HERE/fpcr_check.py" "${CC%gcc}objdump" "$OUT/LibCount" "$OUT/MGLCount" "$OUT/GFOpenGPUCheck" "$OUT/OpenGPUBench" "$OUT/GfxBench" "$OUT/OpenRTGExact" "$OUT/OpenGfxCheck" "$OUT/OpenRTGWPAExact" "$OUT/OpenRTGScaleExact" "$OUT/OpenRTGScrollExact"

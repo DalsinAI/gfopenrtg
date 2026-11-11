@@ -215,7 +215,15 @@ nothing in it may need them:
   real Amiga already has work under it: Picasso II and IV, CyberVision 64,
   ZZ9000, on a PiStorm Emu68's VideoCore RTG driver, and the rest that have
   one: the Vampire's SAGA, MiSTer's Minimig, UAE's `uaegfx.card`. A board's drivers
-  are found from its monitor file, as Picasso96 finds them.
+  are found from its monitor file, as Picasso96 finds them. The running library
+  still finds only ACRTG (manufacturer `0xDA15` or the old `2011`, products 9,
+  15 and 16) and programs ACRTG registers, so a UAE-family emulator with a
+  `uaegfx` board (manufacturer 2011 or 514, product 96) did not get an RTG
+  desktop from GFOpenRTG. From 0.26 (11 November 2026) it does: with no
+  ACRTG board, `gfopenrtg.library` drives the emulator's own `uaegfx.card`
+  (the library the emulator makes, not the commercial Picasso96 card)
+  through BoardInfo (`library/uaegfx.c`); see
+  `docs/design/UAEGFX-20261111.md`, section 9.
 - **No host needed.** Everything ACRTG does on the host (blits, the
   command ring, COMPOSITE, the rasterizer) also has a 68k path: BoardInfo's
   `...Default` routines for Picasso96's 2D, and GFOpenGPU's CPU code for

@@ -74,6 +74,10 @@
  * FRST_DOT, linpatcnt, JAM2 and INVERSVID and lock once a line
  * (ortg_line.h); ScrollRaster moves the whole box across a layer's
  * ClipRects as OS 3.2 does (scroll_plan.h).
+ *
+ * 0.26 (11 Nov 2026): the uaegfx backend (uaegfx.c, docs/design/UAEGFX-20261111.md): with no ACRTG
+ * board fitted, the RTG board of Amiberry, WinUAE or FS-UAE is monitor 1, driven through the
+ * emulator's own uaegfx.card. Looked for again when no monitor was found at the library's start.
  */
 #include <exec/types.h>
 #include "ortg_state.h"
@@ -89,11 +93,12 @@
 #include "displaydb.h"
 #include "screens.h"
 #include "pixels.h"
+#include "uaegfx.h"
 #include "../include/gfopenrtg/gfopenrtg.h"
 
 #define REG(r, decl) register decl __asm(#r)   /* bebbo gcc: an argument in a register */
 #define LIB_VERSION 0
-#define LIB_REVISION 25
+#define LIB_REVISION 26
 
 /* The ACRTG board (amicradle's common/protocol/acrtg.h): Zorro III,
  * AmiCradle Team (0xDA15; 2011 before 1 October 2026), product 9 (16 MiB), product 15 (64 MiB, 0.14) or product 16
@@ -146,9 +151,9 @@ struct OpenRTGBase {
 int start(void) { return -1; }
 
 static const char lib_name[] = "gfopenrtg.library";
-static const char lib_id[] = "gfopenrtg.library 0.25 (1.11.2026) GFOpenRTG, AmiCradle Team\r\n";
+static const char lib_id[] = "gfopenrtg.library 0.26 (11.11.2026) GFOpenRTG, AmiCradle Team\r\n";
 /* For C:Version, which looks for "$VER:" in the file. */
-static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopenrtg.library 0.25 (1.11.2026) GFOpenRTG, AmiCradle Team";
+static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopenrtg.library 0.26 (11.11.2026) GFOpenRTG, AmiCradle Team";
 
 static struct Library *lib_init(REG(d0, struct OpenRTGBase *base), REG(a0, BPTR seglist), REG(a6, struct ExecBase *sys));
 static struct Library *lib_open(REG(a6, struct OpenRTGBase *base));
@@ -245,6 +250,24 @@ static void find_boards(struct OpenRTGBase *base) {
             }
         }
     CloseLibrary(ExpansionBase);
+    /* 0.26: no ACRTG board, but a UAE-family emulator's RTG board (uaegfx.c): monitor 1. On
+     * AmiCradle nothing changes: an ACRTG board is found first and this is never tried. */
+    if (!base->monitors) {
+        struct ConfigDev *cd;
+        ULONG vram;
+        struct ortg_mode_table *t;
+        if (!(t = AllocVec(sizeof *t, MEMF_ANY | MEMF_CLEAR))) return;
+        if (!ugx_attach(1, &cd, &vram)) { FreeVec(t); return; }
+        base->board[1] = cd; base->board_size[1] = vram + 2 * ACRTG_PAGE;   /* as ACRTG: video RAM, less two pages */
+        struct ortg_caps *c = &base->caps[1];
+        c->vram_bytes = vram;
+        c->max_width = UGX_MAX_W; c->max_height = UGX_MAX_H;
+        c->formats = 7;
+        c->native = 0; c->native_w = c->native_h = 0;
+        c->display_w = c->display_h = 0;                  /* the emulator's window: not known */
+        ortg_build_modes(t, 1, c, 0);
+        base->table[1] = t; base->monitors = 1;
+    }
 }
 
 /* The Native modes made again when the host has asked for a new size since (WANT_GEN moved): the table
@@ -368,6 +391,9 @@ static struct ortg_mode_table *table_of(struct OpenRTGBase *base, ULONG monitor)
 
 static ULONG ORTG_MonitorCount(REG(a6, struct OpenRTGBase *base))
 {
+    /* 0.26: none found when the library was made (from a ROM, before the emulator had made its
+     * uaegfx.card, which it does as it mounts its drives): look again */
+    if (!base->monitors) find_boards(base);
     ortg_late_opengpu();                                /* 0.18: switched on from a ROM, gfopengpu.library when it can */
     return base->monitors;
 }
@@ -449,6 +475,9 @@ static LONG ORTG_Screens(REG(d0, ULONG on), REG(a6, struct OpenRTGBase *base))
     if (!on) return ortg_screens_are_on();             /* 0.18: 0 asks whether they are on */
     if (!base->gfx || !base->monitors) return 0;
     for (int n = 0; n <= ORTG_MAX_MONITORS; n++) boards[n] = base->board[n] ? base->board[n]->cd_BoardAddr : NULL;
+    /* 0.26: screens.c finds video RAM a page past the board's address, as on ACRTG; the uaegfx board's is
+     * all video RAM */
+    for (int n = 1; n <= ORTG_MAX_MONITORS; n++) if (boards[n] && ugx_is(n)) boards[n] = (UBYTE *)boards[n] - ACRTG_PAGE;
     base->patched = 1;
     return ortg_screens_on(base->gfx, base->table, boards, base->board_size);
 }

@@ -39,6 +39,7 @@ struct ortg_state {
     struct OpenRTGBase *base;           /* the library's base */
     volatile ULONG palette_gen;         /* screens.c's, read by pixels.c */
     void *db, *scr, *pix;               /* displaydb.c's, screens.c's and pixels.c's own parts */
+    void *ugx;                          /* 0.26: the uaegfx board (uaegfx.c), or NULL */
     struct ortg_stubs stubs;            /* the room for entry stubs, at the block's end */
 };
 

@@ -240,7 +240,7 @@ static void ugx_pan(void)
     *(UWORD *)(U->bme + BME_Width) = (UWORD)(stride / bpp);
     *(UWORD *)(U->bme + BME_Height) = (UWORD)U->r[R_HEIGHT / 4];
     BIL(BI_BitMapExtra) = (ULONG)U->bme;
-    ugx_call(BI_FN(BI_SetPanning), (UBYTE *)U->cd.cd_BoardAddr + off, U->r[R_WIDTH / 4], 0, 0, 0, U->fmt);
+    ugx_call(BI_FN(BI_SetPanning), (UBYTE *)U->cd.cd_BoardAddr + off, stride / bpp, 0, 0, 0, U->fmt);
 }
 
 /* SPR_HOT ends a picture: hand it to the card (SetSpriteImage). 16 pixels wide, its first word a

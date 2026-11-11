@@ -1,0 +1,72 @@
+--- a/src/SDL20_syms.h
++++ b/src/SDL20_syms.h
+@@ -268,6 +268,14 @@
+ SDL20_SYM(SDL_RWops *,AllocRW,(void),(),return)
+ SDL20_SYM(void,FreeRW,(SDL_RWops *a),(a),)
+ SDL20_SYM(void *,LoadFile_RW,(SDL_RWops *a, size_t *b, int c),(a,b,c),return)
++#ifdef __amigaos3__
++/* AmigaOS 3 (Open), altered by the AmiCradle Team, 2026: SDL 2's RWops are
++   SDL2.module's, reached through its calls (SDL12_compat.c, RWops20to12_). */
++SDL20_SYM(Sint64,RWseek,(SDL_RWops *a, Sint64 b, int c),(a,b,c),return)
++SDL20_SYM(size_t,RWread,(SDL_RWops *a, void *b, size_t c, size_t d),(a,b,c,d),return)
++SDL20_SYM(size_t,RWwrite,(SDL_RWops *a, const void *b, size_t c, size_t d),(a,b,c,d),return)
++SDL20_SYM(int,RWclose,(SDL_RWops *a),(a),return)
++#endif
+ 
+ SDL20_SYM_PASSTHROUGH(void *,malloc,(size_t a),(a),return)
+ SDL20_SYM_PASSTHROUGH(void *,calloc,(size_t a, size_t b),(a,b),return)
+--- a/src/SDL12_compat.c
++++ b/src/SDL12_compat.c
+@@ -8867,22 +8867,40 @@
+     SDL20_free(rwops12);
+ }
+ 
++#ifdef __amigaos3__
++/* AmigaOS 3 (Open), altered by the AmiCradle Team, 2026: an SDL 2 RWops of
++   SDL_RWFromFile and the others is SDL2.module's, and its functions reach the
++   module's data through A4, which only a call through SDL2.module's table
++   sets (include/gfopengpu/module.h). Called straight from here they ran on
++   the program's A4 and never came back (SDL_LoadWAV's first seek, a
++   program's first read). So these go through SDL 2's calls. */
++#define RWOPS20_SEEK(rw, o, w) SDL20_RWseek(rw, o, w)
++#define RWOPS20_READ(rw, p, s, n) SDL20_RWread(rw, p, s, n)
++#define RWOPS20_WRITE(rw, p, s, n) SDL20_RWwrite(rw, p, s, n)
++#define RWOPS20_CLOSE(rw) SDL20_RWclose(rw)
++#else
++#define RWOPS20_SEEK(rw, o, w) (rw)->seek(rw, o, w)
++#define RWOPS20_READ(rw, p, s, n) (rw)->read(rw, p, s, n)
++#define RWOPS20_WRITE(rw, p, s, n) (rw)->write(rw, p, s, n)
++#define RWOPS20_CLOSE(rw) (rw)->close(rw)
++#endif
++
+ static int SDLCALL
+ RWops20to12_seek(struct SDL12_RWops *rwops12, int offset, int whence)
+ {
+-    return (int)rwops12->rwops20->seek(rwops12->rwops20, offset, whence);
++    return (int)RWOPS20_SEEK(rwops12->rwops20, offset, whence);
+ }
+ 
+ static int SDLCALL
+ RWops20to12_read(struct SDL12_RWops *rwops12, void *ptr, int size, int maxnum)
+ {
+-    return (int)rwops12->rwops20->read(rwops12->rwops20, ptr, size, maxnum);
++    return (int)RWOPS20_READ(rwops12->rwops20, ptr, size, maxnum);
+ }
+ 
+ static int SDLCALL
+ RWops20to12_write(struct SDL12_RWops *rwops12, const void *ptr, int size, int num)
+ {
+-    return (int)rwops12->rwops20->write(rwops12->rwops20, ptr, size, num);
++    return (int)RWOPS20_WRITE(rwops12->rwops20, ptr, size, num);
+ }
+ 
+ static int SDLCALL
+@@ -8890,7 +8908,7 @@
+ {
+     int rc = 0;
+     if (rwops12) {
+-        rc = rwops12->rwops20->close(rwops12->rwops20);
++        rc = RWOPS20_CLOSE(rwops12->rwops20);
+         if (rc == 0) {
+             SDL_FreeRW(rwops12);
+         }

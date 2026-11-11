@@ -10,7 +10,8 @@
 # SDL 1.2 headers), libSDL.a, libSDL_gl.a (SDL 1.2's OpenGL: sdl-config --gl)
 # and LICENSE.txt, which tools/make_sdk.py puts in the developer kit.
 #
-# libSDL.a holds sdl12-compat (patches/: the AmigaOS 3 branch of its loader),
+# libSDL.a holds sdl12-compat (patches/: the AmigaOS 3 branch of its loader,
+# and its RWops through SDL 2's calls),
 # sdl12_amiga.c (the Team's: its lookups answered from a table) and
 # libSDL2.a's own members with every SDL_ name renamed SDL2X_, because
 # sdl12-compat defines the SDL_ names with SDL 1.2's meanings. A program

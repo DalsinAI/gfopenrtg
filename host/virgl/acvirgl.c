@@ -272,6 +272,11 @@ struct av_pres {
     /* or written by the GPU straight into video RAM (1 + its window's index;
      * 0: not), the GL fence after it in p->sync; the target's size */
     int direct;
+    /* its window's udmabuf, dup'd when the present was made, plus 1 (0:
+     * none): the window's slot may be freed and reused (a new vr_gen, an
+     * LRU eviction) before the present is waited for, and the sync must be
+     * on the pages the GPU wrote */
+    int dfd1;
     int tw, th;
 };
 #define AV_PEND 16                          /* deferred presents at once */
@@ -669,6 +674,13 @@ void acvirgl_reset(struct acvirgl *v)
 void acvirgl_destroy(struct acvirgl *v)
 {
     if (!v) return;
+#ifdef AV_HAVE_DMABUF
+    {
+        int i;
+        for (i = 0; i < v->npend; i++)      /* their windows' dup'd fds */
+            if (v->pend[i].dfd1) close(v->pend[i].dfd1 - 1);
+    }
+#endif
     v->npend = 0;                           /* left unfinished: the memory they would write may be gone */
 #ifdef AV_HAVE_DMABUF
     {
@@ -873,7 +885,7 @@ static int32_t av_present_prep(struct acvirgl *v, uint8_t *(*map)(void *, uint32
     p->box.x = (uint32_t)bx0; p->box.y = (uint32_t)by0; p->box.z = layer;
     p->box.w = (uint32_t)(bx1 - bx0); p->box.h = (uint32_t)(by1 - by0); p->box.d = 1;
     p->fence = 0; p->done = 0; p->pbo = 0; p->pbo_bytes = 0; p->rev = 0; p->stage = 0; p->sync = NULL;
-    p->direct = 0; p->tw = tw; p->th = th;
+    p->direct = 0; p->dfd1 = 0; p->tw = tw; p->th = th;
     return pixels > 0x7FFFFFFF ? 0x7FFFFFFF : (int32_t)pixels;
 }
 
@@ -1463,7 +1475,7 @@ static int av_direct_start(struct acvirgl *v, struct av_pres *p)
     const struct av_res *res;
     struct av_cur cur;
     struct av_vwin *w;
-    int dl, dg, db, da, wi, s, t, i, ok;
+    int dl, dg, db, da, wi, s, t, i, ok, dfd;
     unsigned gen;
     void *fs;
     if (v->direct_state < 0 || v->vr_fd < 0 || p->nr != 1 || p->layer || (p->fmt != OGPU_FMT_XRGB32 && p->fmt != OGPU_FMT_ARGB32)
@@ -1506,6 +1518,11 @@ static int av_direct_start(struct acvirgl *v, struct av_pres *p)
         return 0;
     }
     w = &v->vw[wi];
+    if ((dfd = fcntl(w->fd, F_DUPFD_CLOEXEC, 3)) < 0) {
+        v->gl.DeleteSync(fs);
+        av_own_leave(v, &cur);
+        return 0;
+    }
     v->gl.WaitSync(fs, 0, AV_GL_TIMEOUT_IGNORED);
     v->gl.DeleteSync(fs);
     /* the CPU's lines over the window written back, none left to land over the GPU's writes */
@@ -1534,12 +1551,14 @@ static int av_direct_start(struct acvirgl *v, struct av_pres *p)
     if (!ok) {
         if (p->sync) v->gl.DeleteSync(p->sync);
         p->sync = NULL;
+        close(dfd);
         return 0;
     }
     /* and the frame's context's next drawing after ours (the GPU waits, not
      * the CPU): a present one frame behind reads the frame as presented */
     v->gl.WaitSync(p->sync, 0, AV_GL_TIMEOUT_IGNORED);
     p->direct = wi + 1;
+    p->dfd1 = dfd + 1;
     return 1;
 }
 
@@ -1547,23 +1566,26 @@ static int av_direct_start(struct acvirgl *v, struct av_pres *p)
 static void av_direct_drop(struct acvirgl *v, struct av_pres *p)
 {
     if (p->sync && v->egl_current && v->egl_current()) v->gl.DeleteSync(p->sync);
-    p->direct = 0; p->sync = NULL;
+    if (p->dfd1) close(p->dfd1 - 1);
+    p->direct = 0; p->dfd1 = 0; p->sync = NULL;
 }
 
 /* Waits for the GPU's writing and makes the window's pages the CPU's
  * again (its lines invalidated); 0 when that failed. */
 static int av_direct_wait(struct acvirgl *v, struct av_pres *p)
 {
-    int ok = 1, fd = v->vw[p->direct - 1].fd;
+    int ok = 1, fd = p->dfd1 - 1;           /* the window's own, though its slot was reused */
     if (p->sync && (v->egl_current() || av_current(v, p->ctx))) {
         if (v->gl.ClientWaitSync(p->sync, 0, 4000000000ull) == AV_GL_WAIT_FAILED) ok = 0;
         v->gl.DeleteSync(p->sync);
     }
     p->sync = NULL;
     p->direct = 0;
+    p->dfd1 = 0;
     if (fd >= 0) {
         av_dmabuf_sync(fd, AV_SYNC_READ);  /* waits for its writer too */
         av_dmabuf_sync(fd, AV_SYNC_READ | AV_SYNC_END);
+        close(fd);
     }
     return ok;
 }

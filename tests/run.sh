@@ -12,6 +12,9 @@ cc -std=c99 -O2 -Wall -Wextra -Werror -o "$OUT/test_modes" "$HERE/test_modes.c" 
 # With no size asked for, the mode table is exactly 0.16's (0.17: the Native modes come only with one).
 cc -std=c99 -O2 -Wall -Wextra -Werror -o "$OUT/modes_golden" "$HERE/modes_golden.c" "$HERE/../library/modes.c"
 "$OUT/modes_golden" "$HERE/golden/modes-table.txt"
+# The uaegfx monitor's table (0.26): GFOS's 1920 x 1080 32-bit mode on a 16 MiB uaegfx board.
+cc -std=c99 -O2 -Wall -Wextra -Werror -o "$OUT/test_uaegfx_modes" "$HERE/test_uaegfx_modes.c" "$HERE/../library/modes.c"
+"$OUT/test_uaegfx_modes"
 # screens.c's pixel conversions (library/pixconv.h) against the per-pixel code they replace.
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined -I"$HERE/host-include" \
     -o "$OUT/test_pixconv" "$HERE/test_pixconv.c"

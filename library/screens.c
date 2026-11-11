@@ -66,6 +66,7 @@
 #include "pixconv.h"
 #include "opengfx_bridge.h"
 #include "text_strip.h"
+#include "uaegfx.h"
 
 #define REG(r, decl) register decl __asm(#r)
 
@@ -368,8 +369,13 @@ static void late_opengpu(int asked);
 
 /* Each board's size sets where its video RAM ends and its register page lies (the page at its end). */
 
-static void reg(int n, ULONG off, ULONG v) { *(volatile ULONG *)(board[n] + regs_at[n] + off) = v; }
-static ULONG rreg(int n, ULONG off) { return *(volatile ULONG *)(board[n] + regs_at[n] + off); }
+/* 0.26: a uaegfx monitor has no registers; uaegfx.c turns these into its board's calls */
+static void reg(int n, ULONG off, ULONG v)
+{
+    if (ugx_is(n)) { ugx_reg(off, v); return; }
+    *(volatile ULONG *)(board[n] + regs_at[n] + off) = v;
+}
+static ULONG rreg(int n, ULONG off) { return ugx_is(n) ? ugx_rreg(off) : *(volatile ULONG *)(board[n] + regs_at[n] + off); }
 
 
 /* GFOpenGPU's command ring needs a place in video RAM nobody else uses. With
@@ -580,7 +586,7 @@ ULONG ortg_written_spans(struct BitMap *bm, struct OpenRTGSpan *s, ULONG max)
     volatile ULONG *R;
     ULONG k = 0;
     int n;
-    if (!o || !(n = o->monitor) || !board[n]) return 0;
+    if (!o || !(n = o->monitor) || !board[n] || ugx_is(n)) return 0;     /* 0.26: no watch on uaegfx */
     w = &SC->watch[n];
     R = (volatile ULONG *)(board[n] + regs_at[n]);     /* the registers, a long each */
     Forbid();

@@ -1,0 +1,8 @@
+03-233 [896 001=127/123]: uaegfx.card 3.5 init @400124C4
+27-199 [1266 001=154/150]: RTG mode mask: 212 BI=40141850
+27-203 [1266 001=154/150]: P96: Hardware sprite support enabled
+27-203 [1266 001=154/150]: uaegfx.card magic code: 00F04800-00F0496E BI=40141850
+51-457 [1649 001=071/067]: SetSwitch() - Picasso96 1920x1080x32 (1920x1080x32) - immediate. Monitor=0, old=0
+52-992 [1650 001=004/000]: Buffer 0 size (1920*1080) RTG
+53-112 [1650 001=004/000]: Buffer 0 size (1920*1080) RTG
+53-181 [1651 001=045/041]: Buffer 0 size (1920*1080) RTG

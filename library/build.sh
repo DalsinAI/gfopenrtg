@@ -50,7 +50,7 @@ build_ortg() {
         -nostartfiles -nostdlib -I"$ROOT/include" -o "$out" "$@" -lgcc
     echo "$out ($(wc -c < "$out") bytes)"
 }
-ORTG_SRC="$HERE/openrtg_lib.c $HERE/modes.c $HERE/displaydb.c $HERE/screens.c $HERE/pixels.c $HERE/opengpu/ogpu_build.c $HERE/string.c $HERE/ortg_stub.c"
+ORTG_SRC="$HERE/openrtg_lib.c $HERE/modes.c $HERE/displaydb.c $HERE/screens.c $HERE/pixels.c $HERE/uaegfx.c $HERE/opengpu/ogpu_build.c $HERE/string.c $HERE/ortg_stub.c"
 CGX_SRC="$ROOT/compat/cybergraphics_lib.c $HERE/ortg_stub.c"
 # nothing writable in the file, and nothing undefined
 rom_clean() {

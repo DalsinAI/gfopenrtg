@@ -55,6 +55,8 @@ struct acvirgl_stats {
     uint64_t zs_discards;                           /* presents whose depth/stencil the GPU was told not to store (AC_VIRGL_ZDISCARD) */
     /* (ACVIRGL_HAS_VRAM) */
     uint64_t direct;                                /* presents the GPU wrote straight into video RAM (acvirgl_video_ram) */
+    /* (ACVIRGL_HAS_RESET) */
+    uint64_t resets;                                /* Amiga resets: acvirgl_reset */
 };
 /* Presents through a stage (9 Nov 2026): on V3D (the Pi's GPU, whose
  * memory the CPU reads uncached) the GPU blits each presented frame into a
@@ -148,6 +150,18 @@ void acvirgl_video_ram(struct acvirgl *v, int fd, uint32_t base, uint32_t size,
  * thread at its next present. Nothing written directly may be in flight
  * (settle or drop presents first). */
 void acvirgl_video_ram_forget(struct acvirgl *v);
+
+/* The Amiga was reset (task 13, 10 Nov 2026): every context it made
+ * (ACV_CTX_CREATE) is destroyed and every resource (ACV_RES_CREATE) let go
+ * of, so the next boot's programs start in a renderer with nothing of the
+ * last boot's. MiniGL and GL.module name their contexts and resources by
+ * Amiga addresses, which a warm reset hands out again: without this the
+ * new boot's ACV_RES_CREATE met the old boot's resource of that handle
+ * (refused: "Illegal resource" later, or the CPU route) and ACV_CTX_CREATE
+ * the old boot's context (taken as is, with its objects). Presents left to
+ * finish must be settled or dropped first. On virglrenderer's thread. */
+#define ACVIRGL_HAS_RESET 1
+void acvirgl_reset(struct acvirgl *v);
 
 /* "GL" or "GLES": the kind of context virglrenderer is drawing with. */
 const char *acvirgl_api(const struct acvirgl *v);

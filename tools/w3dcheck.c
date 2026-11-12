@@ -4,8 +4,13 @@
  * W3DCheck: every one of Warp3D.library's 92 calls, on each driver, into an
  * ARGB32 W3D_Bitmap in memory (no screen needed), with what each should
  * answer; then the same small scene from every driver, which must come out
- * the same. Run on an Amiga with GFOpenRTG's Warp3D.library:
- *   W3DCheck            prints one line a call that fails, and a summary */
+ * the same. The virgl driver (ENV:Warp3D/Driver virgl) draws on a real GPU,
+ * so its scene is held to the route's tolerance instead (8 of 255 a channel,
+ * a pixel's shift allowed at edges, at most 2% of pixels beyond it). Run on an Amiga with GFOpenRTG's Warp3D.library:
+ *   W3DCheck            prints one line a call that fails, and a summary
+ * With ENV:W3DCheck/Dump set to a file prefix it also writes both scenes, raw
+ * ARGB 64x48, to <prefix>.cpu and <prefix>.drv; ENV:W3DCheck/NoZ draws the
+ * scene without the Z buffer. */
 #include <exec/types.h>
 #include <exec/memory.h>
 #include <graphics/modeid.h>
@@ -40,10 +45,12 @@ static ULONG sum(const ULONG *p, int n)
     return h;
 }
 
-/* Every call once, on one driver. Returns the scene's checksum. */
-static ULONG run(ULONG type)
+static ULONG pix[BW * BH], scene[2][BW * BH];
+
+/* Every call once, on one driver. Returns the scene's checksum, its pixels in scene[out]. */
+static ULONG run(ULONG type, int out)
 {
-    static ULONG pix[BW * BH], tex[16 * 16];
+    static ULONG tex[16 * 16];
     static UBYTE stip[128];
     W3D_Bitmap bm;
     W3D_Context *c;
@@ -162,7 +169,10 @@ static ULONG run(ULONG type)
     (void)W3D_BestModeIDTags(W3D_BMI_WIDTH, 320, W3D_BMI_HEIGHT, 240, W3D_BMI_DEPTH, 16, TAG_DONE);
     checks++;
     /* the scene: every drawing call */
-    W3D_SetState(c, W3D_ZBUFFER, W3D_ENABLE);
+    {   /* ENV:W3DCheck/NoZ: the scene without the Z buffer, to tell a driver's depth test from its drawing */
+        char nz[4];
+        W3D_SetState(c, W3D_ZBUFFER, GetVar((STRPTR)"W3DCheck/NoZ", (STRPTR)nz, sizeof nz, 0) > 0 ? W3D_DISABLE : W3D_ENABLE);
+    }
     W3D_SetState(c, W3D_FOGGING, W3D_ENABLE);
     vtx(&tri.v1, 2, 2, 0.1f, 0, 0, 1, 0, 0, 1);
     vtx(&tri.v2, 40, 4, 0.5f, 16, 0, 0, 1, 0, 1);
@@ -215,6 +225,7 @@ static ULONG run(ULONG type)
         CHECK(W3D_PinTexture(c, t, TRUE) == W3D_SUCCESS && t->pinned, "W3D_PinTexture");
         W3D_FlushFrame(c);
         h = sum(pix, BW * BH);
+        memcpy(scene[out], pix, sizeof pix);
         CHECK(W3D_SetDrawRegionTexture(c, t, 0) == W3D_SUCCESS && c->width == 16, "W3D_SetDrawRegionTexture");
         CHECK(W3D_ClearBuffers(c, &clear, 0, 0) == W3D_SUCCESS, "W3D_ClearBuffers");
         CHECK(W3D_SetDrawRegionTexture(c, 0, 0) != W3D_SUCCESS || 1, "W3D_SetDrawRegionTexture back");
@@ -231,20 +242,67 @@ static ULONG run(ULONG type)
     return h;
 }
 
+/* How far scene[1] is from scene[0]: the worst channel, and the pixels
+ * beyond the tolerance even with a neighbour's pixel allowed (edges). */
+static int chan(ULONG p, int sh) { return (int)((p >> sh) & 255); }
+static int pdiff(ULONG p, ULONG q)
+{
+    int sh, w = 0, d;
+    for (sh = 0; sh < 24; sh += 8) { d = chan(p, sh) - chan(q, sh); if (d < 0) d = -d; if (d > w) w = d; }
+    return w;
+}
+
+static void tolerance(int *worst, int *over)
+{
+    int x, y, dx, dy;
+    *worst = *over = 0;
+    for (y = 0; y < BH; y++)
+        for (x = 0; x < BW; x++) {
+            int d = pdiff(scene[0][y * BW + x], scene[1][y * BW + x]), best = d;
+            if (d > *worst) *worst = d;
+            for (dy = -1; dy <= 1 && best > 8; dy++)
+                for (dx = -1; dx <= 1 && best > 8; dx++)
+                    if (x + dx >= 0 && x + dx < BW && y + dy >= 0 && y + dy < BH) {
+                        int e = pdiff(scene[0][(y + dy) * BW + x + dx], scene[1][y * BW + x]);
+                        if (e < best) best = e;
+                    }
+            if (best > 8) (*over)++;
+        }
+}
+
 int main(void)
 {
     ULONG a, b;
+    char drv[16];
+    int virgl;
+    drv[0] = 0;
+    virgl = GetVar((STRPTR)"Warp3D/Driver", (STRPTR)drv, sizeof drv, 0) > 0 && (drv[0] == 'v' || drv[0] == 'V');
     Warp3DBase = OpenLibrary("Warp3D.library", 4);
     if (!Warp3DBase) { printf("W3DCheck: no Warp3D.library 4\n"); return 20; }
     printf("W3DCheck: %s %d.%d\n", Warp3DBase->lib_Node.ln_Name, Warp3DBase->lib_Version, Warp3DBase->lib_Revision);
     drvname = "CPU";
-    a = run(W3D_DRIVER_CPU);
-    drvname = "GFOpenGPU";
-    b = (W3D_CheckDriver() & W3D_DRIVER_3DHW) ? run(W3D_DRIVER_3DHW) : a;
-    printf("scene: CPU %08lx, GFOpenGPU %08lx%s\n", (unsigned long)a, (unsigned long)b,
-           (W3D_CheckDriver() & W3D_DRIVER_3DHW) ? "" : " (no GFOpenGPU 3D driver: the CPU's again)");
+    a = run(W3D_DRIVER_CPU, 0);
+    drvname = virgl ? "virgl" : "GFOpenGPU";
+    b = (W3D_CheckDriver() & W3D_DRIVER_3DHW) ? run(W3D_DRIVER_3DHW, 1) : a;
+    printf("scene: CPU %08lx, %s %08lx%s\n", (unsigned long)a, drvname, (unsigned long)b,
+           (W3D_CheckDriver() & W3D_DRIVER_3DHW) ? "" : " (no 3D hardware driver: the CPU's again)");
     checks++;
-    if (a != b) { fails++; printf("FAIL: the drivers draw the scene differently\n"); }
+    {   /* ENV:W3DCheck/Dump names a file prefix: both scenes go to <prefix>.cpu and <prefix>.drv, raw ARGB, BW x BH */
+        char dp[96], fn[104];
+        int k;
+        if (GetVar((STRPTR)"W3DCheck/Dump", (STRPTR)dp, 90, 0) > 0)
+            for (k = 0; k < 2; k++) {
+                BPTR fh;
+                sprintf(fn, "%s.%s", dp, k ? "drv" : "cpu");
+                if ((fh = Open((STRPTR)fn, MODE_NEWFILE))) { Write(fh, scene[k], sizeof scene[k]); Close(fh); }
+            }
+    }
+    if (a != b && virgl) {
+        int worst, over;
+        tolerance(&worst, &over);
+        printf("scene on virgl: worst channel %d, %d of %d pixels over 8 with a pixel's shift\n", worst, over, BW * BH);
+        if (over * 50 > BW * BH) { fails++; printf("FAIL: virgl draws the scene beyond the tolerance\n"); }
+    } else if (a != b) { fails++; printf("FAIL: the drivers draw the scene differently\n"); }
     printf("W3DCheck: %d checks, %d failed\n", checks, fails);
     CloseLibrary(Warp3DBase);
     return fails ? 10 : 0;

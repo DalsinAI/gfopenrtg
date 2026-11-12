@@ -37,7 +37,9 @@ A program needs only this:
 ## Source
 
 - **sdl12-compat 1.2.78**, pinned by SHA-256 in `UPSTREAM.json`. It is taken from `TARBALLS` (default `~/AmiCradle-dev/upstream-tarballs`), and nothing of it is committed.
-- **The Team's change** to it is `patches/0001-amigaos3.patch`: the AmigaOS 3 branch of the loader, and the program's name for its per-program settings. The changed file is marked as altered, as its licence asks.
+- **The Team's changes** to it, in `patches/`. The changed files are marked as altered, as its licence asks.
+  - `0001-amigaos3.patch`: the AmigaOS 3 branch of the loader, and the program's name for its per-program settings.
+  - `0002-rwops-through-module.patch`: an SDL 1.2 RWops made from one of SDL 2's (`SDL_RWFromFile`, `SDL_RWFromMem` and the others) seeks, reads, writes and closes through SDL 2's calls (`SDL_RWseek`, `SDL_RWread`, `SDL_RWwrite`, `SDL_RWclose`), and so does sdl12-compat's own reading of SDL 2 RWops (MP3 and CD audio). Its SDL 2 RWops is `SDL2.module`'s, whose functions need the A4 that only a call through the module's table sets. Called straight from the program, they ran on the program's A4 and never returned: `SDL_LoadWAV` hung on its first call (and `Mix_LoadWAV`, and a program's own first `SDL_RWread`).
 - **Built with the GCC 16 stove**, as SDL 2 is. Programs link it with either stove.
 
 ## Licences

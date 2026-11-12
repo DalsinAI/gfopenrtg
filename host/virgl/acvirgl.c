@@ -272,6 +272,11 @@ struct av_pres {
     /* or written by the GPU straight into video RAM (1 + its window's index;
      * 0: not), the GL fence after it in p->sync; the target's size */
     int direct;
+    /* its window's udmabuf, dup'd when the present was made, plus 1 (0:
+     * none): the window's slot may be freed and reused (a new vr_gen, an
+     * LRU eviction) before the present is waited for, and the sync must be
+     * on the pages the GPU wrote */
+    int dfd1;
     int tw, th;
 };
 #define AV_PEND 16                          /* deferred presents at once */
@@ -295,6 +300,10 @@ struct av_zs {
     uint32_t zsurf;                         /* the framebuffer's depth surface now */
     int dirty;                              /* commands since the last present */
     uint32_t cleared_surf, cleared;         /* the one cleared since the last present, and which (1 depth, 2 stencil) */
+    uint32_t first;                         /* of those, cleared before any draw since the last present */
+    int drawn;                              /* a draw since the last present */
+    int streak;                             /* presents in a row whose frame began with that clear */
+    int discarded;                          /* the last present invalidated depth/stencil */
     uint32_t surf[AV_ZS_SURF][2];           /* surface handle, its resource */
 };
 
@@ -352,6 +361,9 @@ struct acvirgl {
     unsigned vw_tick;
     int direct_said;            /* targets EGL wouldn't take, told in the log (the first few) */
     uint32_t bad[4];            /* the last one: width, height, bytes a row, offset in its page */
+    /* the contexts the Amiga made and has not destroyed, for acvirgl_reset */
+    uint32_t *ctxs;
+    uint32_t nctx, ctx_cap;
 };
 
 static void av_no_fence(void *cookie, uint32_t fence) { (void)cookie; (void)fence; }
@@ -617,9 +629,58 @@ fail:
 static void av_vwin_free(struct acvirgl *v, struct av_vwin *w, int gl);
 #endif
 
+/* the Amiga's contexts (acvirgl_reset's list): one made, one gone */
+static void av_ctx_made(struct acvirgl *v, uint32_t id)
+{
+    uint32_t i;
+    for (i = 0; i < v->nctx; i++) if (v->ctxs[i] == id) return;
+    if (v->nctx == v->ctx_cap) {
+        uint32_t n = v->ctx_cap ? v->ctx_cap * 2 : 16;
+        uint32_t *p = realloc(v->ctxs, n * sizeof *p);
+        if (!p) return;                     /* not listed: a reset leaves it (as before) */
+        v->ctxs = p; v->ctx_cap = n;
+    }
+    v->ctxs[v->nctx++] = id;
+}
+static void av_ctx_gone(struct acvirgl *v, uint32_t id)
+{
+    uint32_t i;
+    for (i = 0; i < v->nctx; i++)
+        if (v->ctxs[i] == id) { v->ctxs[i] = v->ctxs[--v->nctx]; return; }
+}
+
+static void av_zs_forget(struct acvirgl *v, uint32_t ctx);
+void acvirgl_reset(struct acvirgl *v)
+{
+    uint32_t i, nc, nr = 0;
+    if (!v) return;
+    v->npend = 0;                           /* presents left: the caller settled or dropped them */
+    nc = v->nctx;
+    if (v->vr.force_ctx_0) v->vr.force_ctx_0();
+    for (i = 0; i < v->nctx; i++) {         /* contexts first: each lets go of what is attached to it */
+        av_zs_forget(v, v->ctxs[i]);
+        v->vr.context_destroy(v->ctxs[i]);
+        if (v->vr.force_ctx_0) v->vr.force_ctx_0();
+    }
+    v->nctx = 0;
+    for (i = 0; i < v->res_cap; i++)
+        if (v->res[i].handle) { v->vr.resource_unref(v->res[i].handle); nr++; }
+    if (v->res) memset(v->res, 0, (size_t)v->res_cap * sizeof *v->res);
+    v->res_used = 0;
+    v->st.resets++;
+    if (nc || nr) fprintf(stderr, "ACVIRGL: reset: %u contexts and %u resources of the last boot let go of\n", nc, nr);
+}
+
 void acvirgl_destroy(struct acvirgl *v)
 {
     if (!v) return;
+#ifdef AV_HAVE_DMABUF
+    {
+        int i;
+        for (i = 0; i < v->npend; i++)      /* their windows' dup'd fds */
+            if (v->pend[i].dfd1) close(v->pend[i].dfd1 - 1);
+    }
+#endif
     v->npend = 0;                           /* left unfinished: the memory they would write may be gone */
 #ifdef AV_HAVE_DMABUF
     {
@@ -640,6 +701,7 @@ void acvirgl_destroy(struct acvirgl *v)
     }
 #endif
     free(v->zs);
+    free(v->ctxs);
     /* virglrenderer keeps state at file scope; it stays loaded */
     free(v->tmp);
     free(v->res);
@@ -823,7 +885,7 @@ static int32_t av_present_prep(struct acvirgl *v, uint8_t *(*map)(void *, uint32
     p->box.x = (uint32_t)bx0; p->box.y = (uint32_t)by0; p->box.z = layer;
     p->box.w = (uint32_t)(bx1 - bx0); p->box.h = (uint32_t)(by1 - by0); p->box.d = 1;
     p->fence = 0; p->done = 0; p->pbo = 0; p->pbo_bytes = 0; p->rev = 0; p->stage = 0; p->sync = NULL;
-    p->direct = 0; p->tw = tw; p->th = th;
+    p->direct = 0; p->dfd1 = 0; p->tw = tw; p->th = th;
     return pixels > 0x7FFFFFFF ? 0x7FFFFFFF : (int32_t)pixels;
 }
 
@@ -972,6 +1034,7 @@ struct av_heap_alloc { uint64_t len; uint32_t fd, fd_flags; uint64_t heap_flags;
 struct av_dmabuf_sync { uint64_t flags; };
 #define AV_DMA_BUF_SYNC     _IOW('b', 0, struct av_dmabuf_sync)
 #define AV_SYNC_READ        1
+#define AV_SYNC_RW          3
 #define AV_SYNC_END         4
 
 static void av_dmabuf_sync(int fd, uint64_t flags)
@@ -1013,6 +1076,14 @@ static int av_dmabuf_alloc(struct acvirgl *v, size_t bytes, uint8_t **mem)
     if (fd < 0) return -1;
     if ((p = mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0)) == MAP_FAILED) { close(fd); return -1; }
     *mem = p;
+    /* The pages were zeroed by the CPU when they were made, and those lines
+     * may still sit dirty in its caches: written back now, before the GPU
+     * first writes the stage. Left there, they land over the GPU's pixels
+     * later (or are read in place of them): the Pi 5's first frames through
+     * a new stage came back with 16-pixel runs of black (64-byte lines),
+     * different on every boot (Warp3D's W3DTest, 10 November). */
+    av_dmabuf_sync(fd, AV_SYNC_RW);
+    av_dmabuf_sync(fd, AV_SYNC_RW | AV_SYNC_END);
     if (!v->stage_said) {
         v->stage_said = 1;
         fprintf(stderr, "ACVIRGL: frames read back through a stage in cached memory (%s)\n",
@@ -1186,7 +1257,6 @@ static int av_stage_wait(struct acvirgl *v, struct av_pres *p)
 
 /* ---- direct presents: the GPU writes video RAM itself (acvirgl_video_ram) ---------------- */
 
-#define AV_SYNC_RW                  3
 #define AV_GL_FRAGMENT_SHADER       0x8B30
 #define AV_GL_VERTEX_SHADER         0x8B31
 #define AV_GL_COMPILE_STATUS        0x8B81
@@ -1405,7 +1475,7 @@ static int av_direct_start(struct acvirgl *v, struct av_pres *p)
     const struct av_res *res;
     struct av_cur cur;
     struct av_vwin *w;
-    int dl, dg, db, da, wi, s, t, i, ok;
+    int dl, dg, db, da, wi, s, t, i, ok, dfd;
     unsigned gen;
     void *fs;
     if (v->direct_state < 0 || v->vr_fd < 0 || p->nr != 1 || p->layer || (p->fmt != OGPU_FMT_XRGB32 && p->fmt != OGPU_FMT_ARGB32)
@@ -1448,6 +1518,11 @@ static int av_direct_start(struct acvirgl *v, struct av_pres *p)
         return 0;
     }
     w = &v->vw[wi];
+    if ((dfd = fcntl(w->fd, F_DUPFD_CLOEXEC, 3)) < 0) {
+        v->gl.DeleteSync(fs);
+        av_own_leave(v, &cur);
+        return 0;
+    }
     v->gl.WaitSync(fs, 0, AV_GL_TIMEOUT_IGNORED);
     v->gl.DeleteSync(fs);
     /* the CPU's lines over the window written back, none left to land over the GPU's writes */
@@ -1476,12 +1551,14 @@ static int av_direct_start(struct acvirgl *v, struct av_pres *p)
     if (!ok) {
         if (p->sync) v->gl.DeleteSync(p->sync);
         p->sync = NULL;
+        close(dfd);
         return 0;
     }
     /* and the frame's context's next drawing after ours (the GPU waits, not
      * the CPU): a present one frame behind reads the frame as presented */
     v->gl.WaitSync(p->sync, 0, AV_GL_TIMEOUT_IGNORED);
     p->direct = wi + 1;
+    p->dfd1 = dfd + 1;
     return 1;
 }
 
@@ -1489,23 +1566,26 @@ static int av_direct_start(struct acvirgl *v, struct av_pres *p)
 static void av_direct_drop(struct acvirgl *v, struct av_pres *p)
 {
     if (p->sync && v->egl_current && v->egl_current()) v->gl.DeleteSync(p->sync);
-    p->direct = 0; p->sync = NULL;
+    if (p->dfd1) close(p->dfd1 - 1);
+    p->direct = 0; p->dfd1 = 0; p->sync = NULL;
 }
 
 /* Waits for the GPU's writing and makes the window's pages the CPU's
  * again (its lines invalidated); 0 when that failed. */
 static int av_direct_wait(struct acvirgl *v, struct av_pres *p)
 {
-    int ok = 1, fd = v->vw[p->direct - 1].fd;
+    int ok = 1, fd = p->dfd1 - 1;           /* the window's own, though its slot was reused */
     if (p->sync && (v->egl_current() || av_current(v, p->ctx))) {
         if (v->gl.ClientWaitSync(p->sync, 0, 4000000000ull) == AV_GL_WAIT_FAILED) ok = 0;
         v->gl.DeleteSync(p->sync);
     }
     p->sync = NULL;
     p->direct = 0;
+    p->dfd1 = 0;
     if (fd >= 0) {
         av_dmabuf_sync(fd, AV_SYNC_READ);  /* waits for its writer too */
         av_dmabuf_sync(fd, AV_SYNC_READ | AV_SYNC_END);
+        close(fd);
     }
     return ok;
 }
@@ -1519,6 +1599,7 @@ static void av_direct_drop(struct acvirgl *v, struct av_pres *p) { (void)v; (voi
 /* ---- depth/stencil invalidation (struct av_zs) -------------------------------------- */
 
 #define AV_CCMD_CREATE_OBJECT 1             /* virgl_protocol.h's numbers */
+#define AV_CCMD_DRAW_VBO 4
 #define AV_CCMD_SET_FRAMEBUFFER_STATE 5
 #define AV_CCMD_CLEAR 7
 #define AV_CCMD_SET_SUB_CTX 28
@@ -1586,9 +1667,13 @@ static void av_zs_scan(struct acvirgl *v, uint32_t ctx, const uint8_t *s, uint32
             break;
         case AV_CCMD_CLEAR:
             if (len >= 1 && z->zsurf && (av_le32(a) & 3)) {
-                if (z->cleared_surf != z->zsurf) { z->cleared_surf = z->zsurf; z->cleared = 0; }
+                if (z->cleared_surf != z->zsurf) { z->cleared_surf = z->zsurf; z->cleared = z->first = 0; }
                 z->cleared |= av_le32(a) & 3;      /* PIPE_CLEAR_DEPTH, PIPE_CLEAR_STENCIL */
+                if (!z->drawn) z->first |= av_le32(a) & 3;
             }
+            break;
+        case AV_CCMD_DRAW_VBO:
+            z->drawn = 1;
             break;
         case AV_CCMD_SET_SUB_CTX:
             if (len >= 1) {
@@ -1602,8 +1687,12 @@ static void av_zs_scan(struct acvirgl *v, uint32_t ctx, const uint8_t *s, uint32
 }
 
 /* At a present: the framebuffer's depth/stencil invalidated in the
- * context's GL context, before anything flushes its job, when the context
- * has cleared it since its last present (and always has). */
+ * context's GL context, before anything flushes its job, when this frame
+ * and the one before it both began by clearing it (and every frame since
+ * the first invalidation has). One cleared frame is not enough: W3DCheck
+ * clears its Z buffer, presents, then draws against it without clearing
+ * again, and a tiler (V3D) really drops what was invalidated, so all of
+ * its scene failed the depth test there. */
 static void av_zs_discard(struct acvirgl *v, const struct av_pres *p)
 {
     struct av_zs *z = v->zs_on && v->zs ? av_zs_of(v, p->ctx, 0) : NULL;
@@ -1614,16 +1703,21 @@ static void av_zs_discard(struct acvirgl *v, const struct av_pres *p)
     unsigned fb = 0;
     if (!z || z->off || !z->dirty) return;  /* nothing drawn since the last present: as it was */
     z->dirty = 0;
-    if (!z->zsurf) { z->cleared_surf = 0; return; }     /* no depth buffer */
+    z->drawn = 0;
+    if (!z->zsurf) { z->cleared_surf = 0; z->streak = 0; return; }     /* no depth buffer */
     e = av_zs_slot(z, z->zsurf, 0);
     zr = e ? av_res_find(v, e[1]) : NULL;
     if (!zr) { z->off = 1; return; }
     stencil = !(zr->format == 16 || zr->format == 17 || zr->format == 18 || zr->format == 21 || zr->format == 22);
-    if (z->cleared_surf != z->zsurf || (z->cleared & (stencil ? 3u : 1u)) != (stencil ? 3u : 1u)) {
-        z->off = 1;                         /* kept from frame to frame: never again for this context */
+    if (z->cleared_surf != z->zsurf || (z->first & (stencil ? 3u : 1u)) != (stencil ? 3u : 1u)) {
+        z->cleared_surf = 0; z->cleared = z->first = 0;
+        z->streak = 0;
+        if (z->discarded) z->off = 1;       /* kept after an invalidation: never again for this context */
         return;
     }
-    z->cleared_surf = 0; z->cleared = 0;
+    z->cleared_surf = 0; z->cleared = z->first = 0;
+    if (++z->streak < 2) { z->discarded = 0; return; }  /* not yet a habit: kept */
+    z->discarded = 1;
     memset(&zi, 0, sizeof zi); memset(&ci, 0, sizeof ci);
     if (!v->vr.resource_get_info || !av_gl_load(v) || !v->gl.InvalidateFramebuffer) return;
     /* a depth format has no DRM fourcc: virglrenderer says EINVAL for that,
@@ -2170,11 +2264,13 @@ int acvirgl_run(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), 
              * in a GPU wait). */
             if (v->vr.force_ctx_0) v->vr.force_ctx_0();
             if (v->vr.context_create(id, (uint32_t)strlen(buf), buf)) r = ACV_ERR_RENDERER;
+            else av_ctx_made(v, id);
             if (v->vr.force_ctx_0) v->vr.force_ctx_0();
             break;
         }
         case ACV_CTX_DESTROY:
             av_zs_forget(v, av_be32(a));
+            av_ctx_gone(v, av_be32(a));
             v->vr.context_destroy(av_be32(a));
             if (v->vr.force_ctx_0) v->vr.force_ctx_0();
             break;

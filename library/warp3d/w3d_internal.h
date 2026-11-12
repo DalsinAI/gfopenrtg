@@ -22,6 +22,8 @@
 #include "../opengpu/ogpu_core.h"
 #include "../opengpu/ogpu_3d.h"
 #include "../../include/gfopengpu/build3d.h"
+#include "w3d_vg.h"
+#include "w3d_conv.h"
 
 #define REG(r, decl) register decl __asm(#r)   /* bebbo gcc: an argument in a register */
 #define LIBCALL                                 /* library entry points */
@@ -32,17 +34,22 @@
 /* Drivers (W3D_GetDrivers order). */
 #define ROUTE_GPU 0                             /* gfopengpu.library: the ring to the host when there is one */
 #define ROUTE_CPU 1                             /* the 3D core on this 68k */
+#define ROUTE_VIRGL 2                           /* the host's graphics chip, through virgl (w3d_vg.c) */
+#define ROUTES 3
 
 struct W3DBase {
     struct Library lib;
     BPTR seglist;
     struct SignalSemaphore lock;
-    W3D_Driver drv[2];
-    W3D_Driver *drivers[3];                     /* W3D_GetDrivers: 0-terminated */
+    W3D_Driver drv[ROUTES];
+    W3D_Driver *drivers[ROUTES + 1];            /* W3D_GetDrivers: 0-terminated */
     int gpu_3d;                                 /* gfopengpu.library opened and draws 3D */
     int gpu_host;                               /* ... on a back end that is not this 68k */
+    int gpu_virgl;                              /* ... and carries virgl (OGPU_OP_VIRGL) */
+    int virgl_chip;                             /* the host's virgl draws on a graphics chip: 1, no: 0, not asked yet: -1 */
     int prefer_cpu;                             /* ENV:Warp3D/Driver says CPU */
     int prefer_gpu;                             /* ... GFOpenGPU, even on its CPU back end */
+    int prefer_virgl;                           /* ... virgl, even when the host draws it without a chip */
     int z32;                                    /* ENV:Warp3D/ZBuffer says 32 */
     /* Speed against looks, as Wazp3D offered them (ENV:Warp3D/Fog, Perspective,
      * Filtering, Lighting: "0" turns one off; all on by default). */
@@ -130,6 +137,10 @@ struct w3dctx {
     struct w3dtex *global_env;                  /* W3D_GLOBALTEXENV: the environment from SetTexEnv(NULL) */
     int genv;
     ULONG genvcolour;
+    /* the virgl route (ROUTE_VIRGL) */
+    struct w3dvg *vg;
+    int vg_hold;                                /* the host's frame is newer than the drawing area's (not presented yet) */
+    ULONG vg_errors;                            /* commands the host refused or the route left out */
     /* the 3D core, for ROUTE_CPU */
     struct ogpu_core core;
     struct ogpu3d d3;
@@ -157,9 +168,11 @@ void *w3d_alloc(ULONG bytes);                   /* cleared */
 void w3d_free(void *p);
 void w3d_copy(void *d, const void *s, ULONG n);
 void w3d_clear(void *d, ULONG n);
-ULONG w3d_colour(const W3D_Color *c);           /* to ARGB32 */
-LONG w3d_f2l(float f);                          /* rounded to the nearest */
-ULONG w3d_fbits(float f);
+/* to ARGB32 (inline: once or more a vertex) */
+W3D_CONV_FN ULONG w3d_colour(const W3D_Color *c)
+{
+    return (w3d_unit8(c->a) << 24) | (w3d_unit8(c->r) << 16) | (w3d_unit8(c->g) << 8) | w3d_unit8(c->b);
+}
 
 void w3d_read_prefs(struct W3DBase *base);     /* again for each new context */
 void w3d_trace(const char *fmt, ...);          /* a line to the serial port while tracing */
@@ -168,7 +181,12 @@ void w3d_trace(const char *fmt, ...);          /* a line to the serial port whil
 int  w3d_open_area(struct w3dctx *x, struct BitMap *bm, W3D_Bitmap *wbm, int yoffset);
 void w3d_close_area(struct w3dctx *x);
 void w3d_begin(struct w3dctx *x);               /* the state the next primitives need */
-ULONG w3d_flush(struct w3dctx *x);
+ULONG w3d_flush(struct w3dctx *x);              /* runs the batch; a hardware lock may keep the frame on the host */
+ULONG w3d_sync(struct w3dctx *x);               /* ... and the frame is in the drawing area after it */
+void w3d_zsync(struct w3dctx *x, int writes);   /* Z and stencil in memory for the CPU (writes: it changes them) */
+int  w3d_vg_start(struct w3dctx *x, int need_chip); /* w3d_vg_os3.c: the context's virgl route, 0 when there is none
+                                                   (need_chip: nor when the host draws virgl without a graphics chip) */
+void w3d_vg_stop(struct w3dctx *x);
 void w3d_maybe_flush(struct w3dctx *x);         /* after a primitive, when drawing is direct */
 int  w3d_room(struct w3dctx *x, long words, ULONG vbytes);
 UBYTE *w3d_data(struct w3dctx *x, ULONG bytes); /* bytes in the batch's data area (aligned) */

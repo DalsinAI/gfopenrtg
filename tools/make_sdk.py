@@ -292,10 +292,11 @@ PC_OPENAL = {
                "-L${libdir} -lopenal -lm -lamiga", "-I${includedir}"),
 }
 
-# Only with physfs.library's build (--physfs, or BUILD/physfs): gfopenphysfs at this commit (main after its #1 and
-# #2: physfs.library 1.1, zip members inflated through LIBS:z.library). A kit names one physfs.library ABI, so a
-# newer gfopenphysfs is a change here, with its own check.
-PHYSFS_COMMIT = "21cfa03d8cbff7ddad62c8a2fbba4c7fd0589e20"
+# Only with physfs.library's build (--physfs, or BUILD/physfs): gfopenphysfs at this commit (main after its #5:
+# physfs.library 1.1, zip members inflated through LIBS:z.library, reads through a read-ahead buffer, proto/physfs.h
+# usable from C++). A kit names one physfs.library ABI, so a newer gfopenphysfs is a change here, with its own check.
+# The ABI is 21cfa03's: the same functions and LVOs. GFOpenUp's GFOPENPHYSFS names the same commit.
+PHYSFS_COMMIT = "d3a0ad78e2a1cb5cc32306982593a9889f2e9ba4"
 PHYSFS_VERSION = "1.1"
 PC_PHYSFS = {
     "physfs": ("physfs", "PhysicsFS 3.2.0 through LIBS:physfs.library 1.1 (one copy of its state per program; zip through LIBS:z.library)",

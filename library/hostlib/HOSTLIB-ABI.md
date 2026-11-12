@@ -24,7 +24,7 @@ So:
 - **Ownership.** An id is 32 bits: the owner in the top half (the AmiCradle Team is `$0001`), the function below.
 - **Permanence.** An id is never reused, and its contract (section 5) is frozen once merged. New behaviour, or a changed block layout, takes a new id. The old one stays, with its host version, for as long as old ROMs and disk libraries may call it.
 - **Tag version word.** `$0001` marks a pure call, which may run on any core (12-byte tag, `BRA.S *+12`). `$0002` marks a locked call (section 8.1): a 14-byte tag, `BRA.S *+14; 'ACMF'; $0002; id; lock`, where the lock word is `$FFFF` for hostlib's locked calls. A runtime that knows only `$0001` does not recognise a `$0002` tag, and the call runs as 68k code. No other value is defined.
-- **Registries.** `ac_magic.h` lists every id. `hostlib.toml` lists those built by hostlib, with each one's contract version. `gen.py --check` (in CI) fails on any disagreement between them, and on two ids with one value. `ids.lock` is the ledger of merged ids (section 8.5): their contracts are frozen there.
+- **Registries.** `ac_magic.h` lists every id. `hostlib.toml` lists those built by hostlib, with each one's contract version. `gen.py --check` (in CI) fails on any disagreement between them, and on two ids with one value. `ids.lock` is the ledger of merged ids (section 8.5): their contracts are frozen there. `ranges.lock` permanently reserves inclusive id ranges to named owners; a manifest entry inside one must name that owner.
 - **Manifest hash.** The sha256 of `hostlib.toml` (`HOSTLIB_MANIFEST` in `hl_ids.h`) is compiled into both sides for logs and reports. Nothing refuses to run on a mismatch.
 
 ## 3. One source, two builds
@@ -122,7 +122,7 @@ Text's glyphs gathered into one 1-bit strip. Called by gfopenrtg.library's Text 
 
 ### SDL2_BLEND, `$00010106`, version 1: `hostlib_sdl2_blend(block)`
 
-SDL 2's software blit of ARGB8888 with `SDL_BLENDMODE_BLEND` (SDL 2.32's `ALPHA_BLEND_RGBA`). Called by the SDL 2 module's software blit. A locked call: the destination is read, then changed.
+SDL 2's software blit of ARGB8888 with `SDL_BLENDMODE_BLEND`, with SDL 2.32's `ALPHA_BLEND_RGBA` formula (`/255`). That is the formula of SDL's generic blitters, not of the blit SDL 2.32 picks for ARGB8888 to ARGB8888 on a 68k, which uses `>> 8` and differs by up to one in a channel: SDL2_BLEND_ARGB below is that one. This contract is frozen as merged. A locked call: the destination is read, then changed.
 
 **The block:** `hostlib/sdl/blend.h`. Six longs: source, destination, source stride, destination stride, width, height. A pixel is four bytes, A, R, G, B, which is how the 68k stores SDL's ARGB8888. A stride is the bytes from one row to the next, and it is at least `width * 4`.
 
@@ -143,6 +143,22 @@ SDL 2's software blit of ARGB8888 with `SDL_BLENDMODE_BLEND` (SDL 2.32's `ALPHA_
 
 A decline after the blend has started puts the destination back, then the 68k body runs the call from the start. The blend therefore happens once. The rows are not `HL_PARALLEL`: a part may not write state, and these rows write the destination.
 
+
+### SDL2_BLEND_ARGB, `$0001010A`, version 1: `hostlib_sdl2_blend_argb(block)`
+
+SDL 2.32's own software blit of ARGB8888 to ARGB8888 with `SDL_BLENDMODE_BLEND`: the plain C per-pixel-alpha blit `SDL_CalculateBlitA` picks for that format on a 68k. Stock SDL 2 programs get these results; the SDL 2 module's software blit calls this one. A locked call: the destination is read, then changed.
+
+**The block:** `hostlib/sdl/blend.h`, the same as SDL2_BLEND's.
+
+**What it does**, for each pixel (`s` and `d` the source and destination pixels as 32-bit `ARGB` values, arithmetic in unsigned 32 bits):
+
+- source alpha 0: the destination pixel stays;
+- source alpha 255: the source pixel is copied;
+- otherwise R and B together, `rb = ((d & 0xff00ff) + (((s & 0xff00ff) - (d & 0xff00ff)) * sA >> 8)) & 0xff00ff`; G alone the same way with `0xff00`; and `dA = sA + (dA * (255 - sA) >> 8)`.
+
+For example, `0x80FF4020` over `0x40102030` gives `0x9F873028` (SDL2_BLEND gives `0xA0873028`).
+
+**Returns, declines, state:** as SDL2_BLEND.
 ### MGL_DRAW, `$00010107`, version 1: `hostlib_mgl_draw(block)`
 
 One non-indexed virgl `DRAW_VBO` appended to a MiniGL context, and the vertices it reads copied into that context's arena. The shared writers are `include/gfopengpu/virgl_cmd.h`'s (`vgc_draw`); this call does the same bytes. A locked call: the four cursor longs are the context's state.
@@ -182,7 +198,7 @@ A decline puts the cursor back, so the upload is not counted twice.
 
 Not `HL_PARALLEL`: the cursor is state (8.3).
 
-### MGL_CONSTS, `$0001010A`, version 1: `hostlib_mgl_consts(block)`
+### MGL_CONSTS, `$0001010B`, version 1: `hostlib_mgl_consts(block)`
 
 `send_if_changed`. Compares `n` vec4s with the constants this context last sent and, when they differ, appends one `SET_CONSTANT_BUFFER` and remembers them. The last-sent values and the command cursor are locked state.
 
@@ -193,18 +209,6 @@ Not `HL_PARALLEL`: the cursor is state (8.3).
 A decline puts the last-sent values and the cursor back, so the constants are not sent twice.
 
 Not `HL_PARALLEL`: the last-sent values are state (8.3).
-
-### MGL_CACHED, `$0001010B`, version 1: `hostlib_mgl_cached(block)`
-
-`cached()`, the other half of `vg_prepare`'s state work beside MGL_CONSTS: finds the virgl object made for a blend, DSA or rasterizer key in a context's table, or the slot a new one goes in. It only reads.
-
-**The block:** `hostlib/mgl/cached.h`: the table's keys (`slots` x `keyw` big-endian longs), its 16-bit handles (0 is an empty slot), `slots` (a power of two, 1 to 1024), `keyw` (1 to 16), the key and its length `n` (1 to `keyw`), and `probes` (1 to `slots`). minigl's tables are 64 slots of 5 longs, probed 4 times.
-
-**The search:** the hash is `k0 ^ (k0 >> 11) ^ (n > 1 ? k1 * 7 : 0) ^ (n > 2 ? k2 * 13 : 0)`, 32-bit. Slots `(hash + i) & (slots - 1)` for `i` below `probes`, in order: an empty slot ends it; a slot whose first `n` longs equal the key, as bits, gives its handle. When all are taken by other keys, the hash's own slot is the one a new object replaces.
-
-**Returns** `$00010000 | handle` for a match, `$00020000 | slot` for an empty slot, `$00030000 | slot` for a full table, and 0 for a block outside the limits above or a range that wraps. A 0 means the caller looks the key up itself; it is the same in both builds.
-
-Reads the block, the keys, the handles and the key. Writes nothing and has no state, so a decline needs nothing put back. Not `HL_PARALLEL`: one search is a few longs.
 
 ### ZLIB_INFLATE_CODES, `$00010180`, version 1: `hostlib_zlib_inflate_codes(block)`
 
@@ -227,6 +231,16 @@ Raw deflate (RFC 1951) of a whole input in one call, every level and strategy z.
 **Returns** the output's length, or 0 when it does not fit in the room given, the working memory is too small, or a parameter is out of range. Those return 0 in both builds.
 
 **Its caller:** z.library's `deflate()` takes this path for a first `deflate(Z_FINISH)` with no dictionary, no primed bits and no gzip header fields (and so `compress2`), only when `HOSTLIB_PROBE` says the runtime runs this id as host code. A plain 68k streams as before. When the call answers 0, deflate streams from the start, with only the header written.
+
+### LZMA_DECODE_ALL, `$00010182`, version 1: `hostlib_lzma_decode_all(block)`
+
+LZMA (7z's method 030101: a raw stream, its size known, an end mark allowed) or LZMA2 (7z's 21, xz's: chunks, uncompressed or LZMA, with their resets), a whole stream in one call. Clean-room, from the formats' published description; the shared decoder that 7z and PhysicsFS use in place of each one's copy of the LZMA SDK. The output is the dictionary, so this is 8.1's "larger state" call: nothing is kept between calls.
+
+**The block:** `hostlib/lzma/lzma_dec.h`: the mode and the props byte, the input and its length, the output and its length (LZMA: exactly; LZMA2 and LZMA_EOS, an LZMA stream of unknown size that its end mark closes: at most, one byte more than the output for LZMA_EOS), the working memory and its length (at least `hl_lzd_work(mode, props)`: the probabilities, big-endian words in both builds, set first), and a result range of two longs (bytes written, bytes read).
+
+**Returns** `HL_LZD_OK`, `HL_LZD_DATA` (damaged: a bad code, a distance before the dictionary's start), `HL_LZD_SHORT` (the input ended first, inside a symbol), `HL_LZD_ROOM` (LZMA2 or LZMA_EOS wants more output than given) or `HL_LZD_PARAM`. Never 0. Both builds give the same answer and the same result longs for every input, damaged ones too.
+
+**68k speed:** the 68k body is no slower than the LZMA SDK it replaces: on 1 MB at -O2 for the 68040, 90.24 M instructions against the SDK's 90.88 M for text (lc3 lp0 pb2), and 113.0-113.3 M against 116.8-117.1 M for 68k code (lc3/lp0/pb2, lc0/lp2/pb2, lc1/lp2/pb0).
 
 ### HOSTLIB_PROBE, `$00011000`, version 1: `hostlib_probe(block)`
 
@@ -260,7 +274,7 @@ Ids from before hostlib keep the contracts `ac_magic.h` gives them: memcpy to ad
 
 ## 8. ABI 2
 
-ABI 2 adds five things to ABI 1. Each is optional per function, and everything in sections 1 to 7 still holds unless this section says otherwise: the tag, ids and their permanence, one source and two builds, the accessors, declared ranges, verification and the switches. A runtime that knows only ABI 1 runs an ABI 2 library correctly: it does not recognise a `$0002` tag, so a locked call runs as 68k code; a total or parallel function is an ordinary pure call to it; and it does not know the probe, whose 68k body answers zeros, so a thin shell opens the full 68k build (8.4).
+ABI 2 adds six things to ABI 1. Each is optional per function, and everything in sections 1 to 7 still holds unless this section says otherwise: the tag, ids and their permanence, one source and two builds, the accessors, declared ranges, verification and the switches. A runtime that knows only ABI 1 runs an ABI 2 library correctly: it does not recognise a `$0002` tag, so a locked call runs as 68k code; a total or parallel function is an ordinary pure call to it; and it does not know the probe or host services, whose 68k bodies report that the host facility is unavailable, so their caller uses its ordinary fallback (8.4 and 8.7).
 
 The decisions behind it are Dale's of 9 November 2026 (A1 to A7, PR #655), section 10.
 
@@ -368,22 +382,36 @@ Each function's keys, in addition to ABI 1's (`name`, `id`, `id_name`, `version`
 | `total` | bool | the host build never declines (8.2) |
 | `parallel` | bool | the host build uses `HL_PARALLEL` (8.3) |
 | `runtime` | bool | the host side is the runtime's own (the probe); gen.py writes no wrapper |
+| `service` | bool | a host service (8.7); implies `runtime` and no verification comparison |
+| `owner` | string | the owner from `ranges.lock`, required when the id lies in a reserved range |
 
 `gen.py` (and `--check`, in CI) fails on:
 
 - an unknown key, a wrong type, or an ABI 2 key with `abi = 1`;
 - `locked` without `state` and `state_max`, `state_max` outside 1 to 65536, or either of them without `locked`;
-- `runtime` with `locked`, `total` or `parallel`;
+- `runtime` (and therefore `service`) with `locked`, `total` or `parallel`;
+- `service = true` with an explicit `runtime = false`, or an id in a reserved range whose `owner` differs;
 - a source that disagrees with its flags: `locked` and `HL_TAG_LOCKED(name, ...)` go together (else `HL_TAG(name, ...)`); `HL_NEED_S` only with `locked`; `HL_PARALLEL` exactly with `parallel` (comments are not counted);
 - two functions with one id, name or `id_name`, or an id not the AmiCradle Team's;
-- **the ledger, `ids.lock`.** gen.py appends a line for each new id and never changes one. `--check` fails when a merged id is missing from the manifest, or when any of its frozen fields differ: `name`, `id_name`, `version`, `locked`, `total`, `state_max`, `runtime`. So making a function total, or locked, or changing its state's size, takes a new id; `parallel` and the source may change.
+- **the contract ledger, `ids.lock`.** gen.py appends a line for each new id and never changes one. `--check` fails when a merged id is missing from the manifest, or when any of its frozen fields differ: `name`, `id_name`, `version`, `locked`, `total`, `state_max`, `runtime`, `service`. So making a function total, locked or a service, or changing its state's size, takes a new id; `parallel`, `owner` and the source may change.
+- **the namespace ledger, `ranges.lock`.** Each line is `first last owner`, an inclusive permanent reservation. Ranges must be AmiCradle Team ids and may not overlap. A manifest id in a range must have the same `owner`; this keeps a later component from consuming another component's reserved namespace without filling `ids.lock` with fake functions.
 
-`hl_ids.h` has the flags (`HL_C_LOCKED`, `HL_C_TOTAL`, `HL_C_PARALLEL`, `HL_C_RUNTIME`), and `hostlib_host.inc` the table `HOSTLIB_CONTRACTS`, `{ id, version, flags, state_max }` for every id, for the probe and the Alert. Stage C's generator emits wrappers and separate span callbacks for locked and parallel functions; the board supplies the state buffer and worker pool.
+`hl_ids.h` has the flags (`HL_C_LOCKED`, `HL_C_TOTAL`, `HL_C_PARALLEL`, `HL_C_RUNTIME`, `HL_C_SERVICE`), and `hostlib_host.inc` the table `HOSTLIB_CONTRACTS`, `{ id, version, flags, state_max }` for every id, for the probe and the Alert. Stage C's generator emits wrappers and separate span callbacks for locked and parallel functions; the board supplies the state buffer and worker pool.
 
 ### 8.6 Hosts
 
 - Every host build is tested on x86-64 and ARM64 (the Pi 5 and the CM4), and on PPC when the runtime offers it. In CI that is `HOST_CC`/`HOST_RUN` under qemu-aarch64 (section 6); on the real boards it is a lab run before a module set ships.
 - Host builds may be compiled more than once, for feature levels: x86-64 baseline and AVX2, ARMv8.0 and ARMv8.2. The runtime picks one at start and reports it through the probe. Each level is tested on its own, and all must give the same bytes.
+
+### 8.7 Host services (`service = true`)
+
+A host service is an ABI call whose answer comes from a facility owned by the runtime, rather than a second implementation of a deterministic 68k computation. `service = true` implies `runtime = true` and no verification comparison. It cannot be `locked`, `total` or `parallel`. The generator freezes the service bit in `ids.lock`, emits `HL_C_SERVICE` in `HOSTLIB_CONTRACTS`, and emits no host wrapper: the runtime supplies the service body, its spans callback and a `MAGIC_F_SERVICE`/`noverify` table entry.
+
+The ordinary outer gates still apply. `AC_HOSTLIB=0`, `AC_HOSTLIB_OFF`, an unsupported CPU or MMU state, or an invalid declared span leaves the call to its 68k body. That body returns the service's typed unavailable result, so the caller can take its next implementation rung. A service is not total: an invalid span never takes 8.2's Alert-and-stop path.
+
+Once those gates admit a call, the host body runs exactly once, including under `AC_HOSTLIB=verify`, and returns a typed service result. It never returns an `HL_DECLINE` reason. Semantic bad arguments are service errors, not requests to run the 68k body. The probe reports an admitted service in verify mode; it continues to hide ordinary compute ids there.
+
+`$00012000`–`$00012FFF` is reserved to owner `ACMedia` in `ranges.lock`. ACMedia v1 uses `$00012000`–`$0001200B`; later versions have the remainder without claiming other components' ids.
 
 ## 9. The verifier and runtime contract (stage C)
 
@@ -478,3 +506,4 @@ uint8_t flags;                                          /* MAGIC_F_LOCKED 1, MAG
   - **A5:** a total function's access outside its ranges gives an Alert with the id, a log line, and the calling task stopped. Section 8.2.
   - **A6:** a thin shell whose ids are not all total opens the full 68k build from disk in its place. Section 8.4.
   - **A7:** yes to ABI 2.
+- **ABI 2 host services**, 10 November 2026: Dale accepted `service = true`, its verify/fallback rules and ACMedia's namespace after Team 1's review. Section 8.7; `ranges.lock` records the permanent reservation.

@@ -7,7 +7,8 @@
 # An id is permanent: never reused, its contract (HOSTLIB-ABI.md, section 5)
 # frozen once merged. New behaviour is a new id. ids.lock is the ledger of
 # merged ids: gen.py appends to it, and --check fails when a merged id's
-# frozen fields (name, id_name, version, locked, total, state_max, runtime)
+# frozen fields (name, id_name, version, locked, total, state_max, runtime,
+# service)
 # change here. Making a function total, or locked, takes a new id.
 #
 # Each function:
@@ -28,6 +29,10 @@
 #             the source); not part of the contract, so not frozen
 #   runtime   the host side is the runtime's own, not built from the source
 #             (HOSTLIB_PROBE): gen.py writes no wrapper for it
+#   service   a host service (8.7): implies runtime and noverify, and cannot
+#             be locked, total or parallel
+#   owner     the owner named by ranges.lock when the id is in a reserved
+#             range (metadata for its permanent namespace, not a contract)
 
 abi = 2
 
@@ -90,6 +95,18 @@ state = "the destination rectangle, read and blended in place"
 state_max = 65536
 
 [[function]]
+name = "hostlib_sdl2_blend_argb"
+id = 0x0001010a
+id_name = "SDL2_BLEND_ARGB"
+version = 1
+source = "sdl/blend_argb.c"
+header = "sdl/blend.h"
+callers = "gfopenrtg SDL 2 software blit, ARGB8888 to ARGB8888, SDL_BLENDMODE_BLEND, as SDL 2.32's own blit"
+locked = true
+state = "the destination rectangle, read and blended in place"
+state_max = 65536
+
+[[function]]
 name = "hostlib_mgl_draw"
 id = 0x00010107
 id_name = "MGL_DRAW"
@@ -127,7 +144,7 @@ state_max = 16
 
 [[function]]
 name = "hostlib_mgl_consts"
-id = 0x0001010A
+id = 0x0001010B
 id_name = "MGL_CONSTS"
 version = 1
 source = "mgl/consts.c"
@@ -136,15 +153,6 @@ callers = "minigl.library's send_if_changed (mgl_vg_state.c), for glEnd and glDr
 locked = true
 state = "the constants last sent, and the command cursor"
 state_max = 65536
-
-[[function]]
-name = "hostlib_mgl_cached"
-id = 0x0001010B
-id_name = "MGL_CACHED"
-version = 1
-source = "mgl/cached.c"
-header = "mgl/cached.h"
-callers = "minigl.library's cached() (mgl_vg_state.c): the blend, DSA and rasterizer objects, for glEnd and glDrawElements"
 
 [[function]]
 name = "hostlib_probe"
@@ -176,3 +184,12 @@ version = 1
 source = "zlib/deflate_all.c"
 header = "zlib/deflate_all.h"
 callers = "GFOpenZlib's deflate, a whole input at once (libraries/openzlib/zlib_core.cpp: compress2, a first deflate(Z_FINISH))"
+
+[[function]]
+name = "hostlib_lzma_decode_all"
+id = 0x00010182
+id_name = "LZMA_DECODE_ALL"
+version = 1
+source = "lzma/lzma_dec.c"
+header = "lzma/lzma_dec.h"
+callers = "GFOpenLZMA (lzma.library): 7z's LZMA and LZMA2 and PhysicsFS's 7z archiver, in place of the LZMA SDK"

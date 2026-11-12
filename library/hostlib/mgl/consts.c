@@ -15,6 +15,18 @@ static void mc_le(uint8_t *p, uint32_t v)
     p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8);
     p[2] = (uint8_t)(v >> 16); p[3] = (uint8_t)(v >> 24);
 }
+/* the long at p + 4i, bits as the guest has them: the 68k's own load, the
+ * host's bytes (its compiler makes one load of them). Only compared. */
+#ifdef HL_HOST
+static inline uint32_t mc_g32(const uint8_t *p, uint32_t i)
+{
+    p += 4 * i;
+    return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
+}
+#else
+static inline uint32_t mc_g32(const uint8_t *p, uint32_t i) { return ((const uint32_t *)(const void *)p)[i]; }
+#endif
+
 static int mc_apart(uint32_t a, uint32_t an, uint32_t b, uint32_t bn)
 {
     return an == 0 || bn == 0 || (uint64_t)a + an <= b || (uint64_t)b + bn <= a;
@@ -56,8 +68,14 @@ HL_FN(hostlib_mgl_consts)
     if (n) HL_NEED_R(src, bytes);
     same = nlast == n;
     if (same && n) {
+        /* both spans once, then plain loads: HL_RD32 alternating between the
+         * source (a read range) and the state looked each range up again on
+         * every long, and the host call cost more than the 68k compare */
+        const uint8_t *ka, *kb;
+        HL_PTR_R(ka, src, bytes);
+        HL_PTR_R(kb, state + HL_MC_HDR, bytes);
         for (i = 0; i < n * 4u; i++) {
-            uint32_t a = HL_RD32(src + i * 4u), b = HL_RD32(state + HL_MC_HDR + i * 4u);
+            uint32_t a = mc_g32(ka, i), b = mc_g32(kb, i);
 #if !defined(HL_HOST) && defined(__mc68000__)
             /* a in a data register: two memory longs compared make GCC emit
              * CMPM.L (gfopenrtg #246), which older AC090 JITs interpret */

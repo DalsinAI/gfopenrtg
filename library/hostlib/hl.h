@@ -206,10 +206,16 @@ static inline void hl_restore_state(struct hl_ctx *hl)
     hl->restored = 1;
 }
 
+/* The call has failed: it declines. The state is put back when the function
+ * returns (the generated wrapper, HL_PARALLEL, and the accessor macros that
+ * return at once), not here: a checked read or write (HL_RD*, HL_WR8) fails
+ * and the function goes on, and a write through a pointer it already took
+ * (HL_PTR_W, HL_STRUCT_W on state) would land after a restore made here,
+ * with the wrapper's own restore then skipped (HOSTLIB-ABI.md 8.1: the
+ * state is put back before the 68k body runs). */
 static inline void hl_fail(struct hl_ctx *hl, int why)
 {
     if (!hl->why) hl->why = why;
-    hl_restore_state(hl);
 }
 
 static inline int hl_need(struct hl_ctx *hl, uint64_t at, uint64_t n, int write)
@@ -346,18 +352,20 @@ static inline void hl_declared(struct hl_ctx *hl)
 
 #define HL_TAG(name, id)
 #define HL_FN(name) uint32_t name##_host(struct hl_ctx *hl_, hl_addr block)
-#define HL_NEED_R(at, n) do { if (!hl_need(hl_, (uint64_t)(at), (uint64_t)(n), 0)) return 0; } while (0)
-#define HL_NEED_W(at, n) do { if (!hl_need(hl_, (uint64_t)(at), (uint64_t)(n), 1)) return 0; } while (0)
+/* a failure that returns: the state is put back now (hl_fail) */
+#define HL_FAIL_RETURN() do { hl_restore_state(hl_); return 0; } while (0)
+#define HL_NEED_R(at, n) do { if (!hl_need(hl_, (uint64_t)(at), (uint64_t)(n), 0)) HL_FAIL_RETURN(); } while (0)
+#define HL_NEED_W(at, n) do { if (!hl_need(hl_, (uint64_t)(at), (uint64_t)(n), 1)) HL_FAIL_RETURN(); } while (0)
 #define HL_DECLARED() do { if (hl_->dry) return 0; hl_declared(hl_); } while (0)
-#define HL_DECLINE() do { hl_fail(hl_, HL_WHY_INPUT); return 0; } while (0)
+#define HL_DECLINE() do { hl_fail(hl_, HL_WHY_INPUT); HL_FAIL_RETURN(); } while (0)
 #define HL_RD8(a) hl_rd(hl_, (hl_addr)(a), 1)
 #define HL_RD16(a) hl_rd(hl_, (hl_addr)(a), 2)
 #define HL_RD32(a) hl_rd(hl_, (hl_addr)(a), 4)
 #define HL_WR8(a, v) hl_wr8(hl_, (hl_addr)(a), (uint32_t)(v))
-#define HL_PTR_R(var, a, n) do { if (!hl_span(hl_, (hl_addr)(a), (uint32_t)(n), 0)) return 0; (var) = hl_mem_at(hl_, (hl_addr)(a)); } while (0)
-#define HL_PTR_W(var, a, n) do { if (!hl_span(hl_, (hl_addr)(a), (uint32_t)(n), 1)) return 0; (var) = hl_mem_at(hl_, (hl_addr)(a)); } while (0)
-#define HL_STRUCT_R(var, a) do { if (!hl_span(hl_, (hl_addr)(a), (uint32_t)sizeof *(var), 0)) return 0; (var) = (__typeof__(var))(void *)hl_mem_at(hl_, (hl_addr)(a)); } while (0)
-#define HL_STRUCT_W(var, a) do { if (!hl_span(hl_, (hl_addr)(a), (uint32_t)sizeof *(var), 1)) return 0; (var) = (__typeof__(var))(void *)hl_mem_at(hl_, (hl_addr)(a)); } while (0)
+#define HL_PTR_R(var, a, n) do { if (!hl_span(hl_, (hl_addr)(a), (uint32_t)(n), 0)) HL_FAIL_RETURN(); (var) = hl_mem_at(hl_, (hl_addr)(a)); } while (0)
+#define HL_PTR_W(var, a, n) do { if (!hl_span(hl_, (hl_addr)(a), (uint32_t)(n), 1)) HL_FAIL_RETURN(); (var) = hl_mem_at(hl_, (hl_addr)(a)); } while (0)
+#define HL_STRUCT_R(var, a) do { if (!hl_span(hl_, (hl_addr)(a), (uint32_t)sizeof *(var), 0)) HL_FAIL_RETURN(); (var) = (__typeof__(var))(void *)hl_mem_at(hl_, (hl_addr)(a)); } while (0)
+#define HL_STRUCT_W(var, a) do { if (!hl_span(hl_, (hl_addr)(a), (uint32_t)sizeof *(var), 1)) HL_FAIL_RETURN(); (var) = (__typeof__(var))(void *)hl_mem_at(hl_, (hl_addr)(a)); } while (0)
 
 /* ---- ABI 2's host side ------------------------------------------------
  *   hl_need_s           HL_NEED_S: checks [at, at + n) as a write range is
@@ -370,7 +378,7 @@ static inline void hl_declared(struct hl_ctx *hl)
  *                       returns when all are done, with hl->why set if any
  *                       part's was. Deterministic by the parts' rule. */
 #define HL_TAG_LOCKED(name, id)
-#define HL_NEED_S(at, n) do { if (!hl_need_s(hl_, (uint64_t)(at), (uint64_t)(n))) return 0; } while (0)
+#define HL_NEED_S(at, n) do { if (!hl_need_s(hl_, (uint64_t)(at), (uint64_t)(n))) HL_FAIL_RETURN(); } while (0)
 #define HL_PART(fn) static void fn(struct hl_ctx *hl_, hl_addr block, uint32_t part, uint32_t parts)
 #define HL_PARALLEL(n, fn) do { hl_host_parallel(hl_, (uint32_t)(n), fn, block); if (hl_->why) { hl_restore_state(hl_); return 0; } } while (0)
 #endif

@@ -13,7 +13,7 @@
  * Mesa's state tracker does for such a surface. */
 #include "mgl_vg.h"
 #ifndef VG_HOST
-/* hostlib_mgl_consts ($0001010A): send_if_changed as a hostlib function. On
+/* hostlib_mgl_consts ($0001010B): send_if_changed as a hostlib function. On
  * AmiCradle's AC090 it runs as host code; on any other 68k its C runs here. */
 #define HL_VENDORED 1
 #include "../hostlib/mgl/consts.c"

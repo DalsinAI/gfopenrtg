@@ -41,6 +41,9 @@ HL_FN(hostlib_ogfx_chunky_rect)
     first64 = (uint64_t)base + (uint64_t)(uint32_t)y0 * bpr + (uint64_t)(uint32_t)x0 * bpp;
     last64 = (uint64_t)base + (uint64_t)(uint32_t)y1 * bpr + (uint64_t)(uint32_t)x1 * bpp + bpp - 1;
     if (last64 > 0xffffffffull || last64 < first64) HL_DECLINE();
+    /* rows that share bytes (bytes per row under the row's width): the
+     * 68k code writes them in order, the parts would race, so it runs */
+    if (height > 1 && (uint64_t)bpr < (uint64_t)width * bpp) HL_DECLINE();
     HL_NEED_W((uint32_t)first64, last64 - first64 + 1);
     HL_DECLARED();
     HL_PARALLEL(height, hl_ocr_row);

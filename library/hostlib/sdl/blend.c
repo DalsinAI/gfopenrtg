@@ -8,7 +8,10 @@
 extern uint32_t hostlib_sdl2_stop;
 #endif
 
-/* SDL 2.32 ALPHA_BLEND_RGBA, integer division toward zero. */
+/* SDL 2.32's ALPHA_BLEND_RGBA (its generic blitters' formula), integer
+ * division toward zero. SDL's own ARGB8888 to ARGB8888 blit uses >> 8 and
+ * differs by up to one in a channel: that one is SDL2_BLEND_ARGB
+ * (blend_argb.c). This contract is frozen as merged. */
 static uint8_t sbl_ch(int32_t s, int32_t d, int32_t a)
 {
     return (uint8_t)((((s - d) * a) / 255) + d);

@@ -35,6 +35,13 @@ enum { HL_ZIC_MORE = 1,       /* the input or the output ran out: the registers 
 
 #define HL_ZIC_FAST 8         /* zlib_core.cpp's FAST: the short-code table's bits */
 
+/* The host reads these structs in the 68k's byte order through HL_BE,
+ * which only GCC has (scalar_storage_order). Without it the host would
+ * read z.library's state little-endian with no other warning. */
+#if defined(HL_HOST) && !defined(HL_BE)
+#error "inflate_codes.h needs HL_BE (GCC's scalar_storage_order): build the host side with GCC"
+#endif
+
 /* zlib_core.cpp's Huff, as the 68k lays it out */
 struct hl_zic_huff {
     uint16_t count[16];

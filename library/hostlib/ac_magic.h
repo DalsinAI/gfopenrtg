@@ -105,6 +105,11 @@
  * blends it. The block is hostlib/sdl/blend.h; the contract is
  * HOSTLIB-ABI.md. */
 #define AC_MAGIC_SDL2_BLEND 0x00010106
+/* uint32_t hostlib_sdl2_blend_argb(block): the same call, with SDL 2.32's
+ * own ARGB8888 to ARGB8888 blit (>> 8, an opaque pixel copied) in place of
+ * SDL2_BLEND's /255 formula: what stock SDL 2 gives. Locked, the
+ * destination is state; the block is hostlib/sdl/blend.h. */
+#define AC_MAGIC_SDL2_BLEND_ARGB 0x0001010a
 /* uint32_t hostlib_mgl_draw(block): one MiniGL virgl draw appended to a
  * context. The cursors are locked state, so a decline does not append
  * twice and the next draw on that context follows this one. The vertices
@@ -121,11 +126,7 @@
 /* uint32_t hostlib_mgl_consts(block): send_if_changed. The last-sent
  * constants are locked state, so a decline does not send them twice.
  * The block is hostlib/mgl/consts.h. */
-#define AC_MAGIC_MGL_CONSTS 0x0001010A
-/* uint32_t hostlib_mgl_cached(block): cached(), the state objects' table
- * lookup. It only reads, so there is no state. The block and the result
- * are hostlib/mgl/cached.h. */
-#define AC_MAGIC_MGL_CACHED 0x0001010B
+#define AC_MAGIC_MGL_CONSTS 0x0001010B
 /* uint32_t hostlib_zlib_inflate_codes(block): GFOpenZlib's inflate, the
  * codes of one block (literals, lengths, distances) until its end, the
  * input or the output runs out, or a bad code. Locked: the decoder's
@@ -138,6 +139,10 @@
  * for a locked call's 64 KB); the output's length, or 0 when it does not
  * fit. The block is hostlib/zlib/deflate_all.h. */
 #define AC_MAGIC_ZLIB_DEFLATE_ALL 0x00010181
+/* uint32_t hostlib_lzma_decode_all(block): an LZMA or LZMA2 stream decoded
+ * whole in one call, the output its dictionary, the probabilities a write
+ * range it sets first; HL_LZD_OK and the rest (hostlib/lzma/lzma_dec.h). */
+#define AC_MAGIC_LZMA_DECODE_ALL 0x00010182
 /* hostlib's own calls (hostlib/HOSTLIB-ABI.md), $00011000 up: above the
  * open libraries' LVO ranges ($00010300 to $00010FFF), which AC090 indexes
  * by bits 11-0. */

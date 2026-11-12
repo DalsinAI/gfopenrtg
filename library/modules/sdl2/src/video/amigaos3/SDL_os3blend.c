@@ -20,6 +20,7 @@
   loop's (the 68k body would give the same pixels, only slower).
 */
 #include "../../SDL_internal.h"
+#include "SDL_hints.h"
 #include "SDL_os3blend.h"
 
 #define HL_VENDORED 1

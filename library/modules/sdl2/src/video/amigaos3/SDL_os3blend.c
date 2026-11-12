@@ -30,20 +30,20 @@ static int os3_blend_host = -1;     /* -1 not asked yet, 0 SDL's loop, 1 the hos
 
 static int os3_blend_ask(void)
 {
-    ULONG list[2], blk[HL_PB_LONGS];
-    UBYTE answer[4] = { 0, 0, 0, 0 };
+    Uint32 list[2], blk[HL_PB_LONGS];
+    Uint8 answer[4] = { 0, 0, 0, 0 };
     list[0] = HL_ID_SDL2_BLEND_ARGB;
     list[1] = 1;                    /* the contract version this build has */
     blk[HL_PB_N] = 1;
-    blk[HL_PB_LIST] = (ULONG)list;
-    blk[HL_PB_ANSWERS] = (ULONG)answer;
+    blk[HL_PB_LIST] = (Uint32)list;
+    blk[HL_PB_ANSWERS] = (Uint32)answer;
     blk[HL_PB_FEATURES] = 0;
     return hostlib_probe((hl_addr)blk) && (answer[0] & HL_PROBE_HOST) ? 1 : 0;
 }
 
 int SDL_OS3_BlendARGB(const void *src, int srcpitch, void *dst, int dstpitch, int w, int h)
 {
-    ULONG blk[HL_SBL_LONGS];
+    Uint32 blk[HL_SBL_LONGS];
     int rows, done = 0;
     const char *hint = SDL_GetHint("SDL_OS3_HOSTLIB_BLEND");   /* tests/sdl2/blendcheck.c: "0" SDL's loop, "force" the call even off AmiCradle */
     if (w <= 0 || h <= 0 || (hint && *hint == '0')) return 0;
@@ -53,15 +53,15 @@ int SDL_OS3_BlendARGB(const void *src, int srcpitch, void *dst, int dstpitch, in
     }
     if (srcpitch < w * 4 || dstpitch < w * 4 || w * 4 > (int)HL_STATE_MAX) return 0;
     /* the rows a strip may have: (rows - 1) * dstpitch + w * 4 <= 64 KB */
-    rows = 1 + (int)((HL_STATE_MAX - (ULONG)w * 4u) / (ULONG)dstpitch);
+    rows = 1 + (int)((HL_STATE_MAX - (Uint32)w * 4u) / (Uint32)dstpitch);
     while (h > 0) {
         int n = h < rows ? h : rows;
-        blk[HL_SBL_SRC] = (ULONG)src;
-        blk[HL_SBL_DST] = (ULONG)dst;
-        blk[HL_SBL_SSTRIDE] = (ULONG)srcpitch;
-        blk[HL_SBL_DSTRIDE] = (ULONG)dstpitch;
-        blk[HL_SBL_WIDTH] = (ULONG)w;
-        blk[HL_SBL_HEIGHT] = (ULONG)n;
+        blk[HL_SBL_SRC] = (Uint32)src;
+        blk[HL_SBL_DST] = (Uint32)dst;
+        blk[HL_SBL_SSTRIDE] = (Uint32)srcpitch;
+        blk[HL_SBL_DSTRIDE] = (Uint32)dstpitch;
+        blk[HL_SBL_WIDTH] = (Uint32)w;
+        blk[HL_SBL_HEIGHT] = (Uint32)n;
         if (hostlib_sdl2_blend_argb((hl_addr)blk) != (uint32_t)w * (uint32_t)n)
             break;      /* overlap or a refused block: this strip is untouched, SDL's loop does it and the rest */
         src = (const Uint8 *)src + (size_t)n * srcpitch;

@@ -5,7 +5,11 @@
 # it would write, or when an id here disagrees with common/amiga/ac_magic.h.
 #
 # An id is permanent: never reused, its contract (HOSTLIB-ABI.md, section 5)
-# frozen once merged. New behaviour is a new id.
+# frozen once merged. New behaviour is a new id. ids.lock is the ledger of
+# merged ids: gen.py appends to it, and --check fails when a merged id's
+# frozen fields (name, id_name, version, locked, total, state_max, runtime,
+# service)
+# change here. Making a function total, or locked, takes a new id.
 #
 # Each function:
 #   name      the C name (HL_FN(name)); the host build's is name_host
@@ -13,9 +17,24 @@
 #   id_name   its name there, and HL_ID_<id_name> in hl_ids.h
 #   version   the contract's version, as HOSTLIB-ABI.md has it
 #   source    the C, under hostlib/
+#   header    its block's header, under hostlib/ (optional)
 #   callers   who calls the 68k build (for people; nothing reads it)
+# and, with abi = 2 (HOSTLIB-ABI.md, section 8.5), each false when left out:
+#   locked    a locked call: tag version $0002 (HL_TAG_LOCKED in the source),
+#             state ranges (HL_NEED_S); needs
+#     state      what the state is (for people), and
+#     state_max  the most bytes of state one call declares, 1 to 65536
+#   total     the host build never declines (a thin shell may rely on it)
+#   parallel  the host build may run parts on several cores (HL_PARALLEL in
+#             the source); not part of the contract, so not frozen
+#   runtime   the host side is the runtime's own, not built from the source
+#             (HOSTLIB_PROBE): gen.py writes no wrapper for it
+#   service   a host service (8.7): implies runtime and noverify, and cannot
+#             be locked, total or parallel
+#   owner     the owner named by ranges.lock when the id is in a reserved
+#             range (metadata for its permanent namespace, not a contract)
 
-abi = 1
+abi = 2
 
 [[function]]
 name = "hostlib_ogfx_planar_rect"
@@ -34,6 +53,7 @@ version = 1
 source = "ogfx/chunky_rect.c"
 header = "ogfx/leaves.h"
 callers = "gfopenrtg.library GFOpenGfx chunky RectFill"
+parallel = true
 
 [[function]]
 name = "hostlib_ogfx_chunky_copy"
@@ -61,3 +81,103 @@ version = 1
 source = "text/text_strip.c"
 header = "text/text_strip.h"
 callers = "gfopenrtg.library's Text (library/text_strip.h, ts_build)"
+
+[[function]]
+name = "hostlib_sdl2_blend"
+id = 0x00010106
+id_name = "SDL2_BLEND"
+version = 1
+source = "sdl/blend.c"
+header = "sdl/blend.h"
+callers = "gfopenrtg SDL 2 software blit, ARGB8888, SDL_BLENDMODE_BLEND"
+locked = true
+state = "the destination rectangle, read and blended in place"
+state_max = 65536
+
+[[function]]
+name = "hostlib_sdl2_blend_argb"
+id = 0x0001010a
+id_name = "SDL2_BLEND_ARGB"
+version = 1
+source = "sdl/blend_argb.c"
+header = "sdl/blend.h"
+callers = "gfopenrtg SDL 2 software blit, ARGB8888 to ARGB8888, SDL_BLENDMODE_BLEND, as SDL 2.32's own blit"
+locked = true
+state = "the destination rectangle, read and blended in place"
+state_max = 65536
+
+[[function]]
+name = "hostlib_mgl_draw"
+id = 0x00010107
+id_name = "MGL_DRAW"
+version = 1
+source = "mgl/draw.c"
+header = "mgl/draw.h"
+callers = "minigl.library's virgl draw (library/minigl/mgl_vg_draw.c)"
+locked = true
+state = "the context's arena and command cursors, so draws stay in order"
+state_max = 16
+
+[[function]]
+name = "hostlib_mgl_vertices"
+id = 0x00010108
+id_name = "MGL_VERTICES"
+version = 1
+source = "mgl/vertices.c"
+header = "mgl/vertices.h"
+callers = "minigl.library's array draws and immediate vertices (mgl_vg_draw.c)"
+locked = true
+state = "the arena cursor, so batches on one context stay in order"
+state_max = 16
+
+[[function]]
+name = "hostlib_mgl_tex"
+id = 0x00010109
+id_name = "MGL_TEX"
+version = 1
+source = "mgl/tex.c"
+header = "mgl/tex.h"
+callers = "minigl.library's texture upload (mgl_vg_tex.c, vg_put)"
+locked = true
+state = "the block cursor, so uploads on one context stay in order"
+state_max = 16
+
+[[function]]
+name = "hostlib_probe"
+id = 0x00011000
+id_name = "HOSTLIB_PROBE"
+version = 1
+source = "probe/probe.c"
+header = "probe/probe.h"
+runtime = true
+callers = "thin shells' init (HOSTLIB-ABI.md 8.4); GFOpenUpTool's report"
+
+[[function]]
+name = "hostlib_zlib_inflate_codes"
+id = 0x00010180
+id_name = "ZLIB_INFLATE_CODES"
+version = 1
+source = "zlib/inflate_codes.c"
+header = "zlib/inflate_codes.h"
+callers = "GFOpenZlib's inflate, a block's codes (libraries/openzlib/zlib_core.cpp)"
+locked = true
+state = "the decoder's registers (60 bytes) and the window (256 bytes to 32K)"
+state_max = 32828
+
+[[function]]
+name = "hostlib_zlib_deflate_all"
+id = 0x00010181
+id_name = "ZLIB_DEFLATE_ALL"
+version = 1
+source = "zlib/deflate_all.c"
+header = "zlib/deflate_all.h"
+callers = "GFOpenZlib's deflate, a whole input at once (libraries/openzlib/zlib_core.cpp: compress2, a first deflate(Z_FINISH))"
+
+[[function]]
+name = "hostlib_lzma_decode_all"
+id = 0x00010182
+id_name = "LZMA_DECODE_ALL"
+version = 1
+source = "lzma/lzma_dec.c"
+header = "lzma/lzma_dec.h"
+callers = "GFOpenLZMA (lzma.library): 7z's LZMA and LZMA2 and PhysicsFS's 7z archiver, in place of the LZMA SDK"

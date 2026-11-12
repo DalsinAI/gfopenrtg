@@ -1,0 +1,32 @@
+SDL 2 for AmigaOS 3 in GFOpenGPU (Team 2, 12 Nov 2026): BlitRGBtoRGBPixelAlpha, the
+ARGB8888 blend blit, gives its rows to hostlib's SDL2_BLEND_ARGB first
+(src/video/amigaos3/SDL_os3blend.c), where the runtime runs it as host code; SDL's
+own loop does the rows it did not.
+
+--- a/src/video/SDL_blit_A.c
++++ b/src/video/SDL_blit_A.c
+@@ -24,6 +24,9 @@
+ 
+ #include "SDL_video.h"
+ #include "SDL_blit.h"
++#ifdef __AMIGAOS3__
++#include "amigaos3/SDL_os3blend.h"
++#endif
+ 
+ /* Functions to perform alpha blended blitting */
+ 
+@@ -547,6 +550,14 @@
+     Uint32 *dstp = (Uint32 *)info->dst;
+     int dstskip = info->dst_skip >> 2;
+ 
++#ifdef __AMIGAOS3__
++    {   /* hostlib's SDL2_BLEND_ARGB, the same pixels, as host code on AmiCradle (SDL_os3blend.c) */
++        int done = SDL_OS3_BlendARGB(srcp, info->src_pitch, dstp, info->dst_pitch, width, height);
++        srcp = (Uint32 *)((Uint8 *)srcp + done * info->src_pitch);
++        dstp = (Uint32 *)((Uint8 *)dstp + done * info->dst_pitch);
++        height -= done;
++    }
++#endif
+     while (height--) {
+         /* *INDENT-OFF* */ /* clang-format off */
+         DUFFS_LOOP4({

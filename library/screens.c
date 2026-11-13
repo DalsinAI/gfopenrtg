@@ -242,6 +242,7 @@ struct scr_g {
     ULONG card_at[ORTG_MAX_MONITORS + 1];               /* 0.20: where each board's card part starts (acrtg-v7), or 0: none */
     struct ortg_shown shown[ORTG_MAX_MONITORS + 1];     /* what each monitor shows now */
     struct ortg_watch watch[ORTG_MAX_MONITORS + 1];     /* 0.23: each board's watch (acrtg-v9) */
+    WORD ptr_dx, ptr_dy;        /* 0.27: the offsets of the viewport the pointer was last moved on (a dragged screen's) */
     LONG blank_at[ORTG_MAX_MONITORS + 1];               /* 0.27: a blank row in each board's video RAM, above a dragged screen: its offset + 1; 0 not made, -1 none */
     struct ortg_blk blk[BLOCKS];
     int nblk;
@@ -321,6 +322,8 @@ ULONG ortg_screens_size(void) { return sizeof(struct scr_g); }
 #define card_at (SC->card_at)
 #define shown (SC->shown)
 #define blank_at (SC->blank_at)
+#define ptr_dx (SC->ptr_dx)
+#define ptr_dy (SC->ptr_dy)
 #define nblk (SC->nblk)
 #define ogpu_off (SC->ogpu_off)
 #define ogpu_known (SC->ogpu_known)
@@ -3056,6 +3059,7 @@ static void pointer_to_board(int n, struct Screen *s)
 
 static void pointer_update(LONG x, LONG y, int image)
 {
+    x += ptr_dx; y += ptr_dy;                    /* 0.27: MoveSprite's place is the screen's; the board's, the head's */
     struct Screen *s;
     int n = front_monitor(&s);
     if (pointer_on && pointer_on != n) { reg(pointer_on, R_SPR_CTRL, 0); pointer_on = 0; }
@@ -3080,7 +3084,13 @@ static void movesprite_patch(REG(a0, struct ViewPort *vp), REG(a1, struct Simple
         }
     }
 #endif
-    if (pointer && sp == &pointer->es_SimpleSprite) pointer_update(x, y, 0);
+    if (pointer && sp == &pointer->es_SimpleSprite) {
+        /* 0.27: as the chipset's MoveSprite, the viewport's place on the
+         * display is added: a screen dragged down (acrtg-v10's split) */
+        ptr_dx = vp && vp_bitmap(vp) ? vp->DxOffset : 0;
+        ptr_dy = vp && vp_bitmap(vp) ? vp->DyOffset : 0;
+        pointer_update(x, y, 0);
+    }
 }
 
 static LONG changeext_patch(REG(a0, struct ViewPort *vp), REG(a1, struct ExtSprite *olds), REG(a2, struct ExtSprite *news), REG(a3, struct TagItem *tags), REG(a6, struct GfxBase *g))

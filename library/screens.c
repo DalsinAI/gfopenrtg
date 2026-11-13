@@ -157,6 +157,10 @@ static void trace_big(const char *what, LONG a, LONG b, LONG c, LONG d, LONG w, 
 #define WATCH_FLAG_AT 16    /* that long: 16 bytes before the watched bitmap's pixels, in its header's page */
 #define RING_RESERVE 0x00040000UL   /* as acrtg.card 2.3: the top 256 KiB of video RAM for GFOpenGPU's ring */
 #define RING_BYTES   0x00010000UL
+#define R_SPLIT_Y 0x118     /* acrtg-v10, the split (0.27): rows of the head from UNDER_AT, above a dragged screen */
+#define R_UNDER_AT 0x11C
+#define R_UNDER_ROW 0x120   /* bytes a row; 0: the one row at UNDER_AT on each */
+#define SPLIT_BLANK (2 * VRAM_PAGE)   /* the blank row: 1920 pixels at 32 bits (acrtg's widest head), and more */
 #define C_MODE 1
 #define C_PAN 6
 #define C_DISPLAY 7
@@ -211,7 +215,7 @@ typedef void (*waittof_fn)(REG(a6, struct GfxBase *));
 #define STAGE_PARTS 4
 #define STAGE_PART (STAGE_BYTES / STAGE_PARTS)
 #define STAGE_MAX 4096          /* a source up to this is copied; a bigger one is waited for */
-struct ortg_shown { struct ortg_bitmap *bm; UWORD w, h; UBYTE fmt; };
+struct ortg_shown { struct ortg_bitmap *bm; UWORD w, h; UBYTE fmt; ULONG split, under_at, under_row; };   /* 0.27: and its split (acrtg-v10) */
 /* 0.23: a board's watch: the bitmap it was asked for (on: the board took it; no: it can't, so never
  * asked again); the runs WRITTEN readied and not yet read (left), and the one being cut into rows, [at, end) */
 struct ortg_watch { struct ortg_bitmap *bm; ULONG left, at, end; UBYTE on, no; };
@@ -238,6 +242,7 @@ struct scr_g {
     ULONG card_at[ORTG_MAX_MONITORS + 1];               /* 0.20: where each board's card part starts (acrtg-v7), or 0: none */
     struct ortg_shown shown[ORTG_MAX_MONITORS + 1];     /* what each monitor shows now */
     struct ortg_watch watch[ORTG_MAX_MONITORS + 1];     /* 0.23: each board's watch (acrtg-v9) */
+    LONG blank_at[ORTG_MAX_MONITORS + 1];               /* 0.27: a blank row in each board's video RAM, above a dragged screen: its offset + 1; 0 not made, -1 none */
     struct ortg_blk blk[BLOCKS];
     int nblk;
     ULONG stats[ORTG_STAT_COUNT][4];
@@ -315,6 +320,7 @@ ULONG ortg_screens_size(void) { return sizeof(struct scr_g); }
 #define vram_limit (SC->vram_limit)
 #define card_at (SC->card_at)
 #define shown (SC->shown)
+#define blank_at (SC->blank_at)
 #define nblk (SC->nblk)
 #define ogpu_off (SC->ogpu_off)
 #define ogpu_known (SC->ogpu_known)
@@ -2459,6 +2465,7 @@ static void clipblit_patch(REG(a0, struct RastPort *srp), REG(d0, WORD sx), REG(
  * each one's edge and each one's own band was filled, which left B pen stripes
  * across a Shell window partly covered by another (review NEW 3). */
 #include "scroll_plan.h"                 /* the rules and the move, plain C for the host tests */
+#include "split_plan.h"                  /* 0.27: a dragged screen's split, plain C for the host tests */
 
 struct scroll_ctx { struct RastPort *rp; UBYTE pen; };
 
@@ -2823,18 +2830,57 @@ static void palette_to_board(int n, struct ViewPort *vp, ULONG first, ULONG coun
 }
 
 
+/* 0.27 (row 11 C3): what monitor n shows above its front screen o, dragged
+ * down by intuition to its viewport's DyOffset, from the board's split
+ * (acrtg-v10): the screen behind it there, b, or a blank row. Nothing on a
+ * board before v10 or a uaegfx one, which show the front at its top as
+ * before (intuition leaves such a screen where it is unless it is
+ * composited, and composites only on ACRTG). */
+static struct spl_split split_for(int n, struct ortg_bitmap *o, struct ViewPort *vp, struct ortg_bitmap *b)
+{
+    struct spl_split none = { 0, 0, 0 };
+    struct spl_pic f, u;
+    if (ugx_is(n) || !vp || vp->DyOffset <= 0 || rreg(n, R_VERSION) < 10) return none;
+    if (!blank_at[n]) {                                 /* made once, the first time a screen is dragged */
+        LONG at = vram_alloc(n, SPLIT_BLANK, 0);
+        if (at >= 0) { memset(board[n] + VRAM_AT + at, 0, SPLIT_BLANK); blank_at[n] = at + 1; }
+        else blank_at[n] = -1;
+    }
+    f.format = o->format; f.bpp = o->bpp; f.width = o->width; f.height = o->height; f.off = o->vram_off; f.stride = o->stride;
+    if (b) { u.format = b->format; u.bpp = b->bpp; u.width = b->width; u.height = b->height; u.off = b->vram_off; u.stride = b->stride; }
+    return spl_plan(&f, vp->DyOffset, o->height, b ? &u : 0, blank_at[n] > 0 ? (unsigned long)(blank_at[n] - 1) : ~0UL);
+}
+
+static void split_to_board(int n, struct spl_split sp)
+{
+    reg(n, R_SPLIT_Y, sp.y); reg(n, R_UNDER_AT, sp.at); reg(n, R_UNDER_ROW, sp.row);
+    shown[n].split = sp.y; shown[n].under_at = sp.at; shown[n].under_row = sp.row;
+}
+
 static void show_front(void)
 {
-    struct ortg_bitmap *want[ORTG_MAX_MONITORS + 1] = { 0 };
+    struct ortg_bitmap *want[ORTG_MAX_MONITORS + 1] = { 0 }, *under[ORTG_MAX_MONITORS + 1] = { 0 };
     struct ViewPort *wvp[ORTG_MAX_MONITORS + 1] = { 0 };
     struct Screen *s;
     for (s = ortg_S->intuition->FirstScreen; s; s = s->NextScreen) {
         struct ortg_bitmap *o = vp_bitmap(&s->ViewPort);
         if (o && o->monitor && !want[o->monitor]) { want[o->monitor] = o; wvp[o->monitor] = &s->ViewPort; }
+        else if (o && o->monitor && !under[o->monitor] && o != want[o->monitor]) under[o->monitor] = o;   /* 0.27: the screen behind it */
     }
     for (int n = 1; n <= ORTG_MAX_MONITORS; n++) {
         struct ortg_bitmap *o = want[n];
-        if (!board[n] || !o || shown[n].bm == o) continue;
+        struct spl_split sp;
+        if (!board[n] || !o) continue;
+        sp = split_for(n, o, wvp[n], under[n]);
+        if (shown[n].bm == o) {
+            /* 0.27: the same screen, dragged: only the split changes */
+            if (sp.y == shown[n].split && sp.at == shown[n].under_at && sp.row == shown[n].under_row) continue;
+            ortg_ogpu_settle();
+            split_to_board(n, sp);
+            reg(n, R_ARG_A, o->vram_off); reg(n, R_ARG_B, o->stride); reg(n, R_PAN_X, 0); reg(n, R_PAN_Y, 0);
+            reg(n, R_COMMIT, C_PAN);
+            continue;
+        }
         ortg_ogpu_settle();                         /* 0.21: shown whole, with nothing running on it */
         serx("ortg: showing ", (ULONG)o->vram_off);
         if (shown[n].w != o->width || shown[n].h != o->height || shown[n].fmt != o->format) {
@@ -2842,6 +2888,7 @@ static void show_front(void)
             reg(n, R_COMMIT, C_MODE);
             shown[n].w = o->width; shown[n].h = o->height; shown[n].fmt = o->format;
         }
+        if (!ugx_is(n) && (sp.y || shown[n].split)) split_to_board(n, sp);   /* 0.27: before the pan it takes effect at */
         reg(n, R_ARG_A, o->vram_off); reg(n, R_ARG_B, o->stride); reg(n, R_PAN_X, 0); reg(n, R_PAN_Y, 0);
         reg(n, R_COMMIT, C_PAN);
         if (o->bpp == 1) palette_to_board(n, wvp[n], 0, 256);

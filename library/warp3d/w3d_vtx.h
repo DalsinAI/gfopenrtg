@@ -77,7 +77,11 @@ W3D_CONV_FN ULONG w3d_colour_bytes(const UBYTE *p, ULONG mode)
 
 /* Vertex i of the arrays: its fields in *v (z as a double only with fog,
  * its one user), the stream depth as the result, and with byte colours the
- * colour already packed in *argb and *packed set. */
+ * colour already packed in *argb and *packed set. The same reads as
+ * array_vertex() in w3d_draw.c, which keeps its own copy so that DrawArray
+ * and DrawElements without the host function run exactly the code they ran
+ * before (#266's timing); tests/test_w3d_hla.c holds hostlib_w3d_arrays to
+ * this one, word for word. A change to either is a change to both. */
 W3D_CONV_FN ULONG w3d_array_read(const struct w3d_arrs *a, ULONG i, int fog, const W3D_Color *current,
                                  W3D_Vertex *v, ULONG *argb, int *packed)
 {
@@ -128,8 +132,6 @@ W3D_CONV_FN ULONG w3d_tri_elem(int kind, ULONG t, ULONG k)
     return t + k;
 }
 
-/* A colour mode as arrays.h's HL_WA_C_* (RGBA 0, ARGB 1, BGRA 2, RGB 3,
- * BGR 4, plus 8 for bytes), in w3d_colour_at's order of tests. */
 /* DrawArray and DrawElements use hostlib_w3d_arrays only where the runtime
  * runs it as host code: hostlib_probe's answer for it (rc, the ABI, and its
  * answer byte, HL_PROBE_HOST is bit 0). Elsewhere they keep their own loop,
@@ -140,9 +142,42 @@ W3D_CONV_FN int w3d_hl_hosted(ULONG rc, UBYTE answer)
     return rc != 0 && (answer & 1u) != 0;
 }
 
+/* A colour mode as arrays.h's HL_WA_C_* (RGBA 0, ARGB 1, BGRA 2, RGB 3,
+ * BGR 4, plus 8 for bytes), in w3d_colour_at's order of tests. */
 W3D_CONV_FN ULONG w3d_hl_cmode(ULONG m)
 {
     ULONG r = (m & W3D_CMODE_RGB) ? 3 : (m & W3D_CMODE_BGR) ? 4 : (m & W3D_CMODE_ARGB) ? 1 : (m & W3D_CMODE_BGRA) ? 2 : 0;
     return r | ((m & W3D_COLOR_UBYTE) ? 8 : 0);
+}
+
+/* Whether triangle a b c faces back, by the winding SetFrontFace gave (cw:
+ * W3D_CW; y runs down the screen): exact, in integers. */
+W3D_CONV_FN int w3d_back(int cw, const struct ovtx *a, const struct ovtx *b, const struct ovtx *c)
+{
+    long long l = (long long)(LONG)(b->x - a->x) * (LONG)(c->y - a->y);
+    long long r = (long long)(LONG)(c->x - a->x) * (LONG)(b->y - a->y);
+    return cw ? l < r : l > r;
+}
+
+/* The front-facing triangles of a fan (fan 1) or strip (0) whose n converted
+ * vertices are at t, as a list into o; returns how many vertices that is. o
+ * may hold t as its last n of (n - 2) * 3 slots, as draw() lays them out:
+ * triangle i writes no further than slot 3i - 4, below where vertex i + 1
+ * is (2n - 5 + i), and each vertex is copied before its own slot can be
+ * written. */
+W3D_CONV_FN ULONG w3d_front(int fan, int cw, const struct ovtx *t, ULONG n, struct ovtx *o)
+{
+    struct ovtx a = t[0], b = t[1], c;
+    ULONG i, k = 0;
+    for (i = 2; i < n; i++) {
+        const struct ovtx *p0, *p1;
+        c = t[i];
+        if (!fan && (i & 1)) { p0 = &b; p1 = &a; }  /* odd strip triangles turn the other way */
+        else { p0 = &a; p1 = &b; }
+        if (!w3d_back(cw, p0, p1, &c)) { o[k] = *p0; o[k + 1] = *p1; o[k + 2] = c; k += 3; }
+        if (fan) b = c;
+        else { a = b; b = c; }
+    }
+    return k;
 }
 #endif

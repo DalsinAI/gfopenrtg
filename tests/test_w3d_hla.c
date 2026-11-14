@@ -249,7 +249,7 @@ int main(int argc, char **argv)
         indexed += sz != 0;
         dbl += vpmode;
     }
-    printf("ok   Warp3D arrays: %ld runs (%ld lists, %ld fans, %ld strips; %ld indexed, %ld double depths), %ld vertices, hostlib_w3d_arrays = Warp3D's array_vertex() word for word\n",
+    printf("ok   Warp3D arrays: %ld runs (%ld lists, %ld fans, %ld strips; %ld indexed, %ld double depths), %ld vertices, hostlib_w3d_arrays = Warp3D's array reads (w3d_array_read) word for word\n",
            cases, kinds[0], kinds[1], kinds[2], indexed, dbl, verts);
     return 0;
 }

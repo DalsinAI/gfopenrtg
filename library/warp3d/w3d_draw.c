@@ -225,8 +225,11 @@ static ULONG draw(struct w3dctx *x, W3D_Texture *tex, const struct vsrc *src, UL
         }
         if (m) w3d_emit(x, o, m, prim);
     } else {
-        struct ovtx a, b, c;
+        struct ovtx a, b, c, *t = o + (m - n);
         ULONG k = 0;
+        if (hl_vertices(x, src, n, &s, t))     /* all n converted into the last n of the m slots */
+            k = w3d_front(prim == OGPU_LAY_FAN, x->ctx->FrontFaceOrder == W3D_CW, t, n, o);
+        else {
         vertex_s(x, vget(src, 0), &s, &a);
         vertex_s(x, vget(src, 1), &s, &b);
         for (i = 2; i < n; i++) {
@@ -237,6 +240,7 @@ static ULONG draw(struct w3dctx *x, W3D_Texture *tex, const struct vsrc *src, UL
             if (!culled(x, p0, p1, &c)) { o[k] = *p0; o[k + 1] = *p1; o[k + 2] = c; k += 3; }
             if (prim == OGPU_LAY_FAN) b = c;
             else { a = b; b = c; }
+        }
         }
         x->vused -= (m - k) * sizeof(struct ovtx);
         if (k) w3d_emit(x, o, k, OGPU_LAY_LIST);
@@ -504,19 +508,73 @@ LIBCALL ULONG LIB_W3D_InterleavedArray(REG(a0, W3D_Context *c), REG(a1, void *p)
     return W3D_SUCCESS;
 }
 
+static float getf(const UBYTE *p, int dbl) { return dbl ? (float)*(const double *)p : *(const float *)p; }
+
+static void colour_at(const UBYTE *p, ULONG mode, W3D_Color *o)
+{
+    float ch[4];
+    int i, n = (mode & (W3D_CMODE_RGB | W3D_CMODE_BGR)) ? 3 : 4;
+    for (i = 0; i < n; i++) ch[i] = (mode & W3D_COLOR_UBYTE) ? p[i] / 255.0f : ((const float *)p)[i];
+    o->a = 1.0f;
+    if (mode & W3D_CMODE_RGB) { o->r = ch[0]; o->g = ch[1]; o->b = ch[2]; }
+    else if (mode & W3D_CMODE_BGR) { o->b = ch[0]; o->g = ch[1]; o->r = ch[2]; }
+    else if (mode & W3D_CMODE_ARGB) { o->a = ch[0]; o->r = ch[1]; o->g = ch[2]; o->b = ch[3]; }
+    else if (mode & W3D_CMODE_BGRA) { o->b = ch[0]; o->g = ch[1]; o->r = ch[2]; o->a = ch[3]; }
+    else { o->r = ch[0]; o->g = ch[1]; o->b = ch[2]; o->a = ch[3]; }
+}
+
+/* A colour of bytes packed as ARGB32 (what colour_at and w3d_colour give
+ * for it, without the floats). */
+static ULONG colour_bytes(const UBYTE *p, ULONG mode)
+{
+    if (mode & W3D_CMODE_RGB) return 0xFF000000UL | (ULONG)p[0] << 16 | (ULONG)p[1] << 8 | p[2];
+    if (mode & W3D_CMODE_BGR) return 0xFF000000UL | (ULONG)p[2] << 16 | (ULONG)p[1] << 8 | p[0];
+    if (mode & W3D_CMODE_ARGB) return (ULONG)p[0] << 24 | (ULONG)p[1] << 16 | (ULONG)p[2] << 8 | p[3];
+    if (mode & W3D_CMODE_BGRA) return (ULONG)p[3] << 24 | (ULONG)p[2] << 16 | (ULONG)p[1] << 8 | p[0];
+    return (ULONG)p[3] << 24 | (ULONG)p[0] << 16 | (ULONG)p[1] << 8 | p[2];
+}
+
 /* Vertex i of the arrays, converted. */
-static void array_vertex(struct w3dctx *x, const struct w3d_arrs *a, ULONG i, const struct uvs *s, struct ovtx *o)
+static void array_vertex(struct w3dctx *x, ULONG i, const struct uvs *s, struct ovtx *o)
 {
     W3D_Context *c = x->ctx;
     W3D_Vertex v;
+    const UBYTE *p = (const UBYTE *)c->VertexPointer + (LONG)i * c->VPStride;
     float fogc = 0.0f;
-    int have_fogc = 0, packed;
-    ULONG argb, z = w3d_array_read(a, i, (c->state & W3D_FOGGING) != 0, &x->current, &v, &argb, &packed);
+    int have_fogc = 0, fog = (c->state & W3D_FOGGING) != 0;
+    ULONG z, argb, *pargb = 0;
+    switch (c->VPMode) {
+    case W3D_VERTEX_F_F_F:
+        v.x = getf(p, 0); v.y = getf(p + 4, 0);
+        z = w3d_zf(*(const float *)(p + 8));
+        v.z = fog ? getf(p + 8, 0) : 0.0;      /* only fog needs it as a double: a library call */
+        break;
+    case W3D_VERTEX_F_F_D: v.x = getf(p, 0); v.y = getf(p + 4, 0); v.z = *(const double *)(p + 8); z = w3d_zd(&v.z); break;
+    default: v.x = getf(p, 1); v.y = getf(p + 8, 1); v.z = *(const double *)(p + 16); z = w3d_zd(&v.z); break;
+    }
+    v.u = v.v = 0.0f; v.w = 1.0f; v.tex3d = 0.0f; v.l = 0.0f;
+    if (c->TexCoordPointer[0]) {
+        const UBYTE *q = (const UBYTE *)c->TexCoordPointer[0] + (LONG)i * c->TPStride[0];
+        v.u = *(const float *)q;
+        v.v = *(const float *)(q + c->TPVOffs[0]);
+        v.w = *(const float *)(q + c->TPWOffs[0]);      /* off_w may be negative: w before u, as MiniGL keeps it */
+    }
+    if (c->ColorPointer && (c->CPMode & W3D_COLOR_UBYTE)) {
+        argb = colour_bytes((const UBYTE *)c->ColorPointer + (LONG)i * c->CPStride, c->CPMode);
+        pargb = &argb;
+    } else if (c->ColorPointer) colour_at((const UBYTE *)c->ColorPointer + (LONG)i * c->CPStride, c->CPMode, &v.color);
+    else v.color = x->current;
+    v.spec.r = v.spec.g = v.spec.b = 0.0f;
+    if (c->SecondaryColorPointer) {
+        W3D_Color s;
+        colour_at((const UBYTE *)c->SecondaryColorPointer + (LONG)i * c->SCPStride, c->SCPMode, &s);
+        v.spec.r = s.r; v.spec.g = s.g; v.spec.b = s.b;
+    }
     if (c->FogCoordPointer && (c->state & W3D_FOG_COORD)) {
-        fogc = w3d_getf((const UBYTE *)c->FogCoordPointer + i * c->FCPStride, c->FCPMode == W3D_FOGCOORD_DOUBLE);
+        fogc = getf((const UBYTE *)c->FogCoordPointer + i * c->FCPStride, c->FCPMode == W3D_FOGCOORD_DOUBLE);
         have_fogc = 1;
     }
-    convert(x, &v, s, z, packed ? &argb : 0, o, fogc, have_fogc);
+    convert(x, &v, s, z, pargb, o, fogc, have_fogc);
 }
 
 static void arrs_of(W3D_Context *c, struct w3d_arrs *a)
@@ -533,13 +591,15 @@ static void arrs_of(W3D_Context *c, struct w3d_arrs *a)
  * runtime does not run it as host code, the cases of hl_vertices,
  * positions as doubles, a negative stride) or does
  * not take the inputs, and the caller converts them itself. */
-static int hl_arrays(struct w3dctx *x, const struct w3d_arrs *a, int kind, ULONG base, const void *ix, ULONG type,
+static int hl_arrays(struct w3dctx *x, int kind, ULONG base, const void *ix, ULONG type,
                      ULONG first, ULONG ntri, const struct uvs *s, struct ovtx *o)
 {
 #ifndef W3D_HOST
     W3D_Context *c = x->ctx;
     ULONG blk[HL_WA_LONGS];
-    if (!W3DBase->hl_arrays) return 0;          /* no host function here: the loop below, as before */
+    struct w3d_arrs ar, *a = &ar;
+    if (!W3DBase->hl_arrays) return 0;          /* no host function here: main's loop below, unchanged */
+    arrs_of(c, a);
     if (s->ku == UV_FLOAT || s->kv == UV_FLOAT || W3DBase->trace > 100000 || !no_vertex_fog(x)) return 0;
     if ((a->vpmode != W3D_VERTEX_F_F_F && a->vpmode != W3D_VERTEX_F_F_D) || a->vps < 0) return 0;
     if ((a->tp && a->tps < 0) || (a->cp && a->cps < 0) || (a->scp && a->scps < 0)) return 0;
@@ -562,7 +622,7 @@ static int hl_arrays(struct w3dctx *x, const struct w3d_arrs *a, int kind, ULONG
     blk[HL_WA_KV] = (ULONG)(LONG)s->kv;
     return hostlib_w3d_arrays((ULONG)blk) == ntri * 3;
 #else
-    (void)x; (void)a; (void)kind; (void)base; (void)ix; (void)type; (void)first; (void)ntri; (void)s; (void)o;
+    (void)x; (void)kind; (void)base; (void)ix; (void)type; (void)first; (void)ntri; (void)s; (void)o;
     return 0;
 #endif
 }
@@ -582,10 +642,8 @@ static ULONG arrays(struct w3dctx *x, ULONG prim, ULONG base, ULONG count, ULONG
     W3D_Texture *tex = use_tex(x, c->CurrentTex[0]);
     struct w3dtex *t = tex ? TEX(tex) : 0;
     struct uvs s;
-    struct w3d_arrs ar;
     ULONG i;
     if (!c->VertexPointer) return W3D_ILLEGALINPUT;
-    arrs_of(c, &ar);
     uv_scale(&s, t, (c->TPFlags[0] & W3D_TEXCOORD_NORMALIZED) != 0);
     w3d_trace("arrays prim %ld base %ld count %ld type %ld idx %lx vp %lx stride %ld mode %ld cp %lx cmode %lx tp %lx tstride %ld voff %ld woff %ld tflags %ld tex %lx",
               (long)prim, (long)base, (long)count, (long)type, (unsigned long)ix, (unsigned long)c->VertexPointer, (long)c->VPStride,
@@ -603,7 +661,7 @@ static ULONG arrays(struct w3dctx *x, ULONG prim, ULONG base, ULONG count, ULONG
             if (!o) return W3D_QUEUEFAILED;
             w3d_select_texture(x, tex);
             k = 0;
-            if (hl_arrays(x, &ar, kind, base, ix, type, done, chunk, &s, o)) {
+            if (hl_arrays(x, kind, base, ix, type, done, chunk, &s, o)) {
                 if (!(c->state & W3D_CULLFACE)) k = chunk * 3;
                 else for (j = 0; j < chunk; j++)     /* the front faces, in place: k <= 3j */
                     if (!culled(x, &o[3 * j], &o[3 * j + 1], &o[3 * j + 2])) {
@@ -611,10 +669,14 @@ static ULONG arrays(struct w3dctx *x, ULONG prim, ULONG base, ULONG count, ULONG
                         k += 3;
                     }
             } else for (j = 0; j < chunk; j++) {
-                ULONG tnum = done + j;
-                array_vertex(x, &ar, base + index_at(ix, type, w3d_tri_elem(kind, tnum, 0)), &s, &a);
-                array_vertex(x, &ar, base + index_at(ix, type, w3d_tri_elem(kind, tnum, 1)), &s, &b);
-                array_vertex(x, &ar, base + index_at(ix, type, w3d_tri_elem(kind, tnum, 2)), &s, &cc);
+                ULONG tnum = done + j, i0, i1, i2;
+                if (prim == W3D_PRIMITIVE_TRIANGLES) { i0 = tnum * 3; i1 = i0 + 1; i2 = i0 + 2; }
+                else if (prim == W3D_PRIMITIVE_TRIFAN) { i0 = 0; i1 = tnum + 1; i2 = tnum + 2; }
+                else if (tnum & 1) { i0 = tnum + 1; i1 = tnum; i2 = tnum + 2; }
+                else { i0 = tnum; i1 = tnum + 1; i2 = tnum + 2; }
+                array_vertex(x, base + index_at(ix, type, i0), &s, &a);
+                array_vertex(x, base + index_at(ix, type, i1), &s, &b);
+                array_vertex(x, base + index_at(ix, type, i2), &s, &cc);
                 if (culled(x, &a, &b, &cc)) continue;
                 o[k] = a; o[k + 1] = b; o[k + 2] = cc; k += 3;
             }
@@ -628,7 +690,7 @@ static ULONG arrays(struct w3dctx *x, ULONG prim, ULONG base, ULONG count, ULONG
         for (i = 0; i < count; i++) {
             struct ovtx q[4];
             LONG h = w3d_f2l((x->point_size < 1.0f ? 1.0f : x->point_size) * 32768.0f);
-            array_vertex(x, &ar, base + index_at(ix, type, i), &s, &q[0]);
+            array_vertex(x, base + index_at(ix, type, i), &s, &q[0]);
             q[1] = q[2] = q[3] = q[0];
             q[0].x -= h; q[0].y -= h; q[1].x += h; q[1].y -= h; q[2].x -= h; q[2].y += h; q[3].x += h; q[3].y += h;
             if (quad(x, tex, q) != W3D_SUCCESS) return W3D_QUEUEFAILED;
@@ -639,8 +701,8 @@ static ULONG arrays(struct w3dctx *x, ULONG prim, ULONG base, ULONG count, ULONG
         for (i = 0; i < n; i++) {
             struct ovtx a, b;
             ULONG i0 = prim == W3D_PRIMITIVE_LINES ? i * 2 : i, i1 = prim == W3D_PRIMITIVE_LINES ? i * 2 + 1 : (i + 1) % count;
-            array_vertex(x, &ar, base + index_at(ix, type, i0), &s, &a);
-            array_vertex(x, &ar, base + index_at(ix, type, i1), &s, &b);
+            array_vertex(x, base + index_at(ix, type, i0), &s, &a);
+            array_vertex(x, base + index_at(ix, type, i1), &s, &b);
             if (segment(x, tex, &a, &b, x->line_width < 1.0f ? 1.0f : x->line_width) != W3D_SUCCESS) return W3D_QUEUEFAILED;
         }
         break;

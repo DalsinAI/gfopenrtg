@@ -25,7 +25,6 @@ static const char hostlib_manifest[] = "hostlib abi 2, manifest " HOSTLIB_MANIFE
 #include "mgl/consts.c"
 #include "mgl/cached.c"
 #include "w3d/vertices.c"
-#include "w3d/vertices.c"
 #include "zlib/inflate_codes.c"
 #include "zlib/deflate_all.c"
 #include "lzma/lzma_dec.c"

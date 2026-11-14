@@ -43,10 +43,10 @@ Programs that bring ladislawv's library in their own `libs/` drawer still find t
 ## Build
 
 ```
-STOVE=~/AmiCradle/stoves/os32-gcc16-open6 sh library/ogles3/build-amiga.sh [OUT_DIR]
+STOVE=~/AmiCradle/stoves/os32-gcc16 sh library/ogles3/build-amiga.sh [OUT_DIR]
 ```
 
-Or use the Cradle's `stove_build`, target `library/ogles3`, stove `os32-gcc16-open6`. It builds with GCC 16.2 (open6) and gives:
+Or use the Cradle's `stove_build`, target `library/ogles3`, stove `os32-gcc16`. It builds with GCC 16.2 and gives:
 
 - `libs/ogles3.library`, about 37 KB;
 - `OGLES3Check`, which prints what a context offers (GL strings, compute limits) and runs a compute shader;

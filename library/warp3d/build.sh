@@ -53,6 +53,8 @@ echo "$OUT/Warp3D.library ($(wc -c < "$OUT/Warp3D.library") bytes)"
 echo "$OUT/W3DTest ($(wc -c < "$OUT/W3DTest") bytes)"
 "$CC" $FLAGS -noixemul -o "$OUT/W3DCheck" "$ROOT/tools/w3dcheck.c" -lm
 echo "$OUT/W3DCheck ($(wc -c < "$OUT/W3DCheck") bytes)"
+"$CC" $FLAGS -noixemul -o "$OUT/W3DArrBench" "$ROOT/tools/w3darrbench.c" -lm
+echo "$OUT/W3DArrBench ($(wc -c < "$OUT/W3DArrBench") bytes)"
 # Warp3DPrefs is soft float (tools/m68k-soft-m68040.specs: libnix's soft libm020).
 "$CC" -m68040 -specs="$ROOT/tools/m68k-soft-m68040.specs" -O2 -fno-delete-null-pointer-checks -Wall -Wextra -Werror -noixemul -I"$ROOT/include" -o "$OUT/Warp3DPrefs" "$ROOT/tools/w3dprefs.c"
 echo "$OUT/Warp3DPrefs ($(wc -c < "$OUT/Warp3DPrefs") bytes)"

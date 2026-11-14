@@ -2,16 +2,16 @@
 # Copyright (c) 2026 Dalsin Limited / the AmiCradle Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
 # ogles3.library on GFOpenGPU, and OGLES3Check, with the GCC 16 stove
-# (open6, GCC 16.2). For the Cradle's stove_build (STOVE= and OUT= set,
+# (GCC 16.2). For the Cradle's stove_build (STOVE= and OUT= set,
 # target library/ogles3), or by hand:
-#   STOVE=~/AmiCradle/stoves/os32-gcc16-open6 sh library/ogles3/build-amiga.sh [OUT_DIR]
+#   STOVE=~/AmiCradle/stoves/os32-gcc16 sh library/ogles3/build-amiga.sh [OUT_DIR]
 # The library is bare (no startup code, no C library), built -ffixed-a4 as
 # GFOpenGPU's other faces are, and holds no GL: its GL calls go to
 # LIBS:GFOpenGPU/GL.module.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
-STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32-gcc16-open6}
+STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32-gcc16}
 OUT=${OUT:-${1:-$ROOT/build-amiga}}
 if [ -x "$STOVE/prefix/bin/m68k-amigaos-gcc" ]; then PREFIX=$STOVE/prefix; else PREFIX=$STOVE; fi
 CC=${CC:-$PREFIX/bin/m68k-amigaos-gcc}

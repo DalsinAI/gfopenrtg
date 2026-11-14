@@ -182,6 +182,7 @@
  * block and the contract). Pure; the first id of Warp3D's range,
  * $00013000-$000130FF (hostlib/ranges.lock). */
 #define AC_MAGIC_W3D_VERTICES 0x00013000
+#define AC_MAGIC_W3D_ARRAYS 0x00013001
 /* GFOpenCrypto's operations (DalsinAI/gfopentls, library/oc_magic.h, which
  * has each one's exact contract; AC090's side is jit_crypto.c). Byte
  * arrays throughout; each writes only its first argument's range. */

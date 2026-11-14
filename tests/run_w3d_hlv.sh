@@ -2,8 +2,9 @@
 # Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
 # SPDX-License-Identifier: MIT
 # Warp3D.library's per-vertex conversion against hostlib_w3d_vertices, the
-# same work as host code (tests/test_w3d_hlv.c), with UBSan where the
-# compiler has it.
+# same work as host code (tests/test_w3d_hlv.c), and its DrawArray /
+# DrawElements vertex reading against hostlib_w3d_arrays
+# (tests/test_w3d_hla.c), with UBSan where the compiler has it.
 #   tests/run_w3d_hlv.sh [cases]
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -20,4 +21,8 @@ for opt in -O0 -O2; do
     cc -std=gnu11 $opt $san -I"$HERE/host-include" -I"$ROOT/include" -Wall -Wextra -Werror \
         -o "$OUT/test_w3d_hlv$opt" "$HERE/test_w3d_hlv.c"
     "$OUT/test_w3d_hlv$opt" ${1:-3000}
+    # shellcheck disable=SC2086
+    cc -std=gnu11 $opt $san -I"$HERE/host-include" -I"$ROOT/include" -Wall -Wextra -Werror \
+        -o "$OUT/test_w3d_hla$opt" "$HERE/test_w3d_hla.c"
+    "$OUT/test_w3d_hla$opt" ${1:-3000}
 done

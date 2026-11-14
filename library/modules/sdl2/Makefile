@@ -95,7 +95,7 @@ SRCS_AMIGA = \
 	video/amigaos3/SDL_os3framebuffer.c video/amigaos3/SDL_os3events.c \
 	video/amigaos3/SDL_os3mouse.c video/amigaos3/SDL_os3aga.c \
 	video/amigaos3/SDL_os3clipboard.c video/amigaos3/SDL_os3gpu.c video/amigaos3/SDL_os3gl.c \
-	video/amigaos3/SDL_os3vram.c video/amigaos3/SDL_os3keys.c \
+	video/amigaos3/SDL_os3vram.c video/amigaos3/SDL_os3keys.c video/amigaos3/SDL_os3blend.c \
 	audio/amigaos3/SDL_os3audio.c audio/amigaos3/SDL_os3paula.c \
 	thread/amigaos3/SDL_systhread.c thread/amigaos3/SDL_sysmutex.c \
 	thread/amigaos3/SDL_syscond.c thread/amigaos3/SDL_syssem.c thread/amigaos3/SDL_systls.c \
@@ -106,6 +106,8 @@ SRCS_AMIGA = \
 
 C2P_SRC = video/amigaos3/c2p1x1_8_c5_gen.s
 SRCS    = $(SRCS_CORE) $(SRCS_AMIGA)
+# SDL_os3blend.c takes hostlib's blend from library/hostlib (the copy amicradle-guest's hostlib/sync.sh made)
+BLEND_OBJS = $(STATIC_DIR)/video/amigaos3/SDL_os3blend.o $(CORE_DIR)/video/amigaos3/SDL_os3blend.o
 
 SRCS_TEST = \
 	test/SDL_test_assert.c test/SDL_test_common.c test/SDL_test_compare.c \
@@ -140,6 +142,7 @@ $(INLINE): $(OGPU_SRC)/gfopengpu_lib.sfd
 # Every object depends on the configuration (build.sh copies it keeping its
 # time, so a change to it rebuilds SDL; SDL's own files keep the tarball's).
 CONFIG_H := $(SDL)/include/SDL_config_amigaos.h
+$(BLEND_OBJS): CFLAGS_BASE += -I$(ROOT)/library
 $(STATIC_DIR)/%.o: $(SDL)/src/%.c $(INLINE) $(CONFIG_H)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS_BASE) -c $< -o $@
@@ -239,6 +242,11 @@ tests: $(TEST_DIR)/fullscreen $(TEST_DIR)/fullscreen.m
 # screen (tests/sdl2/fsrestore.c)
 OWN_TESTS += fsrestore
 tests: $(TEST_DIR)/fsrestore $(TEST_DIR)/fsrestore.m
+
+# blendcheck: the ARGB8888 blend blit with and without hostlib's
+# SDL2_BLEND_ARGB, pixel for pixel (tests/sdl2/blendcheck.c)
+OWN_TESTS += blendcheck
+tests: $(TEST_DIR)/blendcheck $(TEST_DIR)/blendcheck.m
 
 SDLTEST_OBJS = $(addprefix $(TEST_DIR)/obj/,$(addsuffix .o,$(TESTS)))
 OWNTEST_OBJS = $(addprefix $(TEST_DIR)/obj/,$(addsuffix .o,$(OWN_TESTS)))

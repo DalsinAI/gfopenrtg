@@ -33,6 +33,10 @@ if command -v m68k-linux-gnu-gcc >/dev/null && command -v qemu-m68k >/dev/null; 
         -o "$OUT/test_scroll_plan-m68k" "$HERE/test_scroll_plan.c"
     qemu-m68k -cpu m68040 "$OUT/test_scroll_plan-m68k"
 fi
+# A dragged screen's split (library/split_plan.h, what screens.c's show_front asks the board for, acrtg-v10).
+cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
+    -o "$OUT/test_split_plan" "$HERE/test_split_plan.c"
+"$OUT/test_split_plan"
 # Draw and PolyDraw on 8-bit bitmaps (gfopenrtg.library 0.25, library/ortg_line.h) against
 # graphics.library's (GFOpenGfx's core): FRST_DOT, linpatcnt, JAM2, INVERSVID, through GFOpenGPU's LINE too.
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined -I"$HERE/host-include" \

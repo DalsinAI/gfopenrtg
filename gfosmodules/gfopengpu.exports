@@ -1,0 +1,13 @@
+{
+  global:
+    ogpu_core_init;
+    ogpu_core_run;
+    ogpu_core_supports;
+    ogpu3d_init;
+    ogpu3d_is_op;
+    ogpu3d_op;
+    ogpu3d_run;
+    ogpu3d_supports;
+    ogpu_3d_run;
+  local: *;
+};

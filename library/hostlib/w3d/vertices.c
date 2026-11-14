@@ -247,6 +247,7 @@ static int wa_span(struct wa_arr *a, hl_addr ptr, uint32_t stride, int32_t lo, i
 
 #if defined(HL_HOST) && defined(HOSTLIB_TEST_STOP)
 extern uint32_t hostlib_w3d_arrays_stop;
+extern void (*hostlib_w3d_arrays_between)(void);    /* the test's: changes an index after the scan */
 #endif
 
 HL_TAG(hostlib_w3d_arrays, HL_ID_W3D_ARRAYS)
@@ -316,6 +317,9 @@ HL_FN(hostlib_w3d_arrays)
     }
     HL_NEED_W(b[HL_WA_OUT], outn);
     HL_DECLARED();
+#if defined(HL_HOST) && defined(HOSTLIB_TEST_STOP)
+    if (hostlib_w3d_arrays_between) hostlib_w3d_arrays_between();
+#endif
     if (ix) HL_PTR_R(ixp, ix, (ehi - elo + 1) * b[HL_WA_IXSIZE]);
     HL_PTR_R(vp.p, vp.at, vp.n);
     if (b[HL_WA_TP]) HL_PTR_R(tp.p, tp.at, tp.n);
@@ -328,6 +332,7 @@ HL_FN(hostlib_w3d_arrays)
         uint8_t *o = dst + i * HL_WV_OVTX;
         v = (ixp ? wa_rd(ixp + (e - elo) * b[HL_WA_IXSIZE], b[HL_WA_IXSIZE]) : e) + b[HL_WA_BASE];
         rel = v - vmin;
+        if (rel > vmax - vmin) HL_DECLINE();     /* an index changed since the scan: outside the declared spans */
         p = WA_AT(vp, rel, 0);
         z = b[HL_WA_VPMODE] ? wv_zd(wa_rd(p + 8, 4), wa_rd(p + 12, 4)) : wv_zf(wa_rd(p + 8, 4));
         argb = !(b[HL_WA_FLAGS] & HL_WV_GOURAUD) || !b[HL_WA_CP] ? b[HL_WA_CURRENT]

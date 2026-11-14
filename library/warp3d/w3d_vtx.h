@@ -39,4 +39,35 @@ W3D_CONV_FN void w3d_vtx_core(ULONG state, const W3D_Color *current, const W3D_V
     if ((LONG)w <= 0 || w > 0x7f800000UL) w = 0x358637BDUL;    /* w must be positive: 1e-6 */
     o->w = w;
 }
+
+/* Whether triangle a b c faces back, by the winding SetFrontFace gave (cw:
+ * W3D_CW; y runs down the screen): exact, in integers. */
+W3D_CONV_FN int w3d_back(int cw, const struct ovtx *a, const struct ovtx *b, const struct ovtx *c)
+{
+    long long l = (long long)(LONG)(b->x - a->x) * (LONG)(c->y - a->y);
+    long long r = (long long)(LONG)(c->x - a->x) * (LONG)(b->y - a->y);
+    return cw ? l < r : l > r;
+}
+
+/* The front-facing triangles of a fan (fan 1) or strip (0) whose n converted
+ * vertices are at t, as a list into o; returns how many vertices that is. o
+ * may hold t as its last n of (n - 2) * 3 slots, as draw() lays them out:
+ * triangle i writes no further than slot 3i - 4, below where vertex i + 1
+ * is (2n - 5 + i), and each vertex is copied before its own slot can be
+ * written. */
+W3D_CONV_FN ULONG w3d_front(int fan, int cw, const struct ovtx *t, ULONG n, struct ovtx *o)
+{
+    struct ovtx a = t[0], b = t[1], c;
+    ULONG i, k = 0;
+    for (i = 2; i < n; i++) {
+        const struct ovtx *p0, *p1;
+        c = t[i];
+        if (!fan && (i & 1)) { p0 = &b; p1 = &a; }  /* odd strip triangles turn the other way */
+        else { p0 = &a; p1 = &b; }
+        if (!w3d_back(cw, p0, p1, &c)) { o[k] = *p0; o[k + 1] = *p1; o[k + 2] = c; k += 3; }
+        if (fan) b = c;
+        else { a = b; b = c; }
+    }
+    return k;
+}
 #endif

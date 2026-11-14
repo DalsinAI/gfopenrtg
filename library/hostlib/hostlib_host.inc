@@ -10,7 +10,7 @@ static int hl_host_aliased(uint32_t at, uint32_t n) { return jb_aliased(at, n); 
 static void hl_host_written(uint32_t at, uint32_t n) { jit_guest_written(at, n); }
 #include "hl.h"
 #include "hl_ids.h"
-static const char hostlib_manifest[] = "hostlib abi 2, manifest " HOSTLIB_MANIFEST ", functions: 14";
+static const char hostlib_manifest[] = "hostlib abi 2, manifest " HOSTLIB_MANIFEST ", functions: 15";
 #include "ogfx/planar_rect.c"
 #include "ogfx/chunky_rect.c"
 #include "ogfx/chunky_copy.c"
@@ -21,6 +21,7 @@ static const char hostlib_manifest[] = "hostlib abi 2, manifest " HOSTLIB_MANIFE
 #include "mgl/draw.c"
 #include "mgl/vertices.c"
 #include "mgl/tex.c"
+#include "mgl/consts.c"
 #include "zlib/inflate_codes.c"
 #include "zlib/deflate_all.c"
 #include "lzma/lzma_dec.c"
@@ -285,6 +286,32 @@ static int hls_hostlib_mgl_tex(const uint32_t *arg, magic_spans *out) {
     return 0;
 }
 
+/* hostlib_mgl_consts (HL_ID_MGL_CONSTS): the call; 0, or why it is the 68k code's */
+static int hlw_hostlib_mgl_consts(ac090 *c, const uint32_t *arg, uint32_t *cost) {
+    struct hl_ctx hl;
+    hl_init(&hl, 0);
+    uint32_t r = hostlib_mgl_consts_host(&hl, arg[0]);
+    if (hl.why) { hl_restore_state(&hl); return hl.why; }
+    c->d[0] = r;
+    *cost = (uint32_t)(hl.bytes / 4) + 8;
+    return 0;
+}
+/* ABI 2's dry run: preserve every disjoint write and state range. */
+static int hls_hostlib_mgl_consts(const uint32_t *arg, magic_spans *out) {
+    struct hl_ctx hl;
+    hl_init(&hl, 1);
+    (void)hostlib_mgl_consts_host(&hl, arg[0]);
+    if (hl.why) return hl.why;
+    if (hl.nw + hl.ns > MAGIC_SPANS) return HL_WHY_INPUT;
+    for (uint32_t i = 0; i < hl.nw; i++) {
+        out->s[out->n++] = (magic_span){ hl.wlo[i], hl.wn[i], MAGIC_SPAN_W };
+    }
+    for (uint32_t i = 0; i < hl.ns; i++) {
+        out->s[out->n++] = (magic_span){ hl.slo[i], hl.sn[i], MAGIC_SPAN_S };
+    }
+    return 0;
+}
+
 /* hostlib_zlib_inflate_codes (HL_ID_ZLIB_INFLATE_CODES): the call; 0, or why it is the 68k code's */
 static int hlw_hostlib_zlib_inflate_codes(ac090 *c, const uint32_t *arg, uint32_t *cost) {
     struct hl_ctx hl;
@@ -374,6 +401,7 @@ static int hls_hostlib_lzma_decode_all(const uint32_t *arg, magic_spans *out) {
     { 0x00010107, "hostlib_mgl_draw", 1, hlw_hostlib_mgl_draw, NULL, NULL, NULL, 0, hls_hostlib_mgl_draw, MAGIC_F_LOCKED }, \
     { 0x00010108, "hostlib_mgl_vertices", 1, hlw_hostlib_mgl_vertices, NULL, NULL, NULL, 0, hls_hostlib_mgl_vertices, MAGIC_F_LOCKED }, \
     { 0x00010109, "hostlib_mgl_tex", 1, hlw_hostlib_mgl_tex, NULL, NULL, NULL, 0, hls_hostlib_mgl_tex, MAGIC_F_LOCKED }, \
+    { 0x0001010b, "hostlib_mgl_consts", 1, hlw_hostlib_mgl_consts, NULL, NULL, NULL, 0, hls_hostlib_mgl_consts, MAGIC_F_LOCKED }, \
     { 0x00010180, "hostlib_zlib_inflate_codes", 1, hlw_hostlib_zlib_inflate_codes, NULL, NULL, NULL, 0, hls_hostlib_zlib_inflate_codes, MAGIC_F_LOCKED }, \
     { 0x00010181, "hostlib_zlib_deflate_all", 1, hlw_hostlib_zlib_deflate_all, NULL, NULL, NULL, 0, hls_hostlib_zlib_deflate_all, 0 }, \
     { 0x00010182, "hostlib_lzma_decode_all", 1, hlw_hostlib_lzma_decode_all, NULL, NULL, NULL, 0, hls_hostlib_lzma_decode_all, 0 }, \
@@ -391,6 +419,7 @@ static int hls_hostlib_lzma_decode_all(const uint32_t *arg, magic_spans *out) {
     { 0x00010107, 1, HL_C_LOCKED, 16 }, \
     { 0x00010108, 1, HL_C_LOCKED, 16 }, \
     { 0x00010109, 1, HL_C_LOCKED, 16 }, \
+    { 0x0001010b, 1, HL_C_LOCKED, 65536 }, \
     { 0x00011000, 1, HL_C_RUNTIME, 0 }, \
     { 0x00010180, 1, HL_C_LOCKED, 32828 }, \
     { 0x00010181, 1, 0, 0 }, \

@@ -12,6 +12,12 @@
  * them so): the viewport turns GL's y round (OpenGL 1.1, 2.10.1), as
  * Mesa's state tracker does for such a surface. */
 #include "mgl_vg.h"
+#ifndef VG_HOST
+/* hostlib_mgl_consts ($0001010B): send_if_changed as a hostlib function. On
+ * AmiCradle's AC090 it runs as host code; on any other 68k its C runs here. */
+#define HL_VENDORED 1
+#include "../hostlib/mgl/consts.c"
+#endif
 
 #define TEXT_BYTES 16384                /* a shader's text */
 
@@ -22,7 +28,7 @@ void vg_state_reset(GLcontext c)
     v->dirty = VG_D_ALL;
     v->b_blend = v->b_dsa = v->b_rs = v->b_vs = v->b_fs = v->b_ve = 0;
     v->stride = 0;
-    v->nvsc = v->nfsc = 0;
+    v->vsc.n = v->fsc.n = 0xFFFFFFFFUL;                  /* nothing sent */
     for (i = 0; i < MGL_TEX_UNITS; i++) v->views[i] = v->samps[i] = 0xFFFFFFFFUL;
 }
 
@@ -251,19 +257,46 @@ static void rows(float *d, const float *m)
 
 static void copy4(float *d, const float *s) { d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = s[3]; }
 
+/* The constants for stage type, sent only when they differ from the ones
+ * last sent (as bits). With room in the stream, hostlib_mgl_consts compares,
+ * copies and appends the command; its state is v->vsc or v->fsc, with the
+ * stream's cursor lent to it for the call. Every input it rejects is ruled
+ * out here first (n within cap, the stage 0 or 1, the command fits, three
+ * separate ranges: the stack, the context and the stream), so its 0 means
+ * "the same as last sent". Without room, the C below sends the frame first,
+ * as vg_cmd does, and does the same work. */
 static void send_if_changed(GLcontext c, int type, const float *k, int n)
 {
     struct mgl_vg *v = c->vg;
-    float *last = type == VG_SHADER_VERTEX ? v->vsc : v->fsc;
-    int *nlast = type == VG_SHADER_VERTEX ? &v->nvsc : &v->nfsc, i;
+    ULONG *st = type == VG_SHADER_VERTEX ? &v->vsc.n : &v->fsc.n;
     const ULONG *a = (const ULONG *)k;
-    ULONG *b = (ULONG *)last;
-    if (*nlast == n) {
+    ULONG *b = (ULONG *)(type == VG_SHADER_VERTEX ? v->vsc.k : v->fsc.k);
+    int i;
+#ifndef VG_HOST
+    ULONG cap = type == VG_SHADER_VERTEX ? VG_VS_CONSTS : VG_FS_CONSTS;
+    if (n > 0 && (ULONG)n <= cap && v->cmd && v->ncmd + VGC_CONSTANTS_WORDS(n) <= v->ccmd) {
+        ULONG blk[HL_MC_LONGS];
+        blk[HL_MC_STATE] = ADDR(st);
+        blk[HL_MC_CAP] = cap;
+        blk[HL_MC_SRC] = ADDR(k);
+        blk[HL_MC_N] = (ULONG)n;
+        blk[HL_MC_SHADER] = (ULONG)type;
+        blk[HL_MC_CMD] = ADDR(v->cmd);
+        blk[HL_MC_CMD_CAP] = v->ccmd;
+        st[1] = v->ncmd;
+        if (hostlib_mgl_consts(ADDR(blk))) {
+            v->ncmd = st[1];
+            if (mgl_trace > 2) mgl_log("consts %ld: %ld vec4 (hostlib)", (long)type, (long)n);
+        }
+        return;
+    }
+#endif
+    if (st[0] == (ULONG)n) {
         for (i = 0; i < n * 4; i++) if (vg_meml(a + i) != vg_meml(b + i)) break;
         if (i == n * 4) return;
     }
     for (i = 0; i < n * 4; i++) b[i] = a[i];
-    *nlast = n;
+    st[0] = (ULONG)n;
     vg_constants(c, type, k, n);
 }
 

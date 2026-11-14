@@ -123,6 +123,10 @@
  * block cursor is locked state; the texels are only read. The block is
  * hostlib/mgl/tex.h. */
 #define AC_MAGIC_MGL_TEX 0x00010109
+/* uint32_t hostlib_mgl_consts(block): send_if_changed. The last-sent
+ * constants are locked state, so a decline does not send them twice.
+ * The block is hostlib/mgl/consts.h. */
+#define AC_MAGIC_MGL_CONSTS 0x0001010B
 /* uint32_t hostlib_zlib_inflate_codes(block): GFOpenZlib's inflate, the
  * codes of one block (literals, lengths, distances) until its end, the
  * input or the output runs out, or a bad code. Locked: the decoder's

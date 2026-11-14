@@ -198,6 +198,18 @@ A decline puts the cursor back, so the upload is not counted twice.
 
 Not `HL_PARALLEL`: the cursor is state (8.3).
 
+### MGL_CONSTS, `$0001010B`, version 1: `hostlib_mgl_consts(block)`
+
+`send_if_changed`. Compares `n` vec4s with the constants this context last sent and, when they differ, appends one `SET_CONSTANT_BUFFER` and remembers them. The last-sent values and the command cursor are locked state.
+
+**The block:** `hostlib/mgl/consts.h`. `cap` is how many vec4s the state holds (1 to 4095). A `nlast` of `$FFFFFFFF` means nothing has been sent. The command is `vgc_constants`'s: three little-endian words (command 12, the shader, zero) and then the vec4s, each word swapped into little-endian. The remembered copy stays in the guest's byte order.
+
+**Returns** 1 when a command was appended, or 0 when the constants match what was last sent, `n` exceeds `cap`, the shader is not 0 or 1, the command does not fit, or a range overlaps. A 0 from a match writes nothing. A 0 from a rejection writes nothing in both builds.
+
+A decline puts the last-sent values and the cursor back, so the constants are not sent twice.
+
+Not `HL_PARALLEL`: the last-sent values are state (8.3).
+
 ### ZLIB_INFLATE_CODES, `$00010180`, version 1: `hostlib_zlib_inflate_codes(block)`
 
 The codes of one deflate block (RFC 1951 3.2.5): literals, lengths and distances, until the end-of-block code, the input or the output runs out, or a code is bad. Called by z.library's inflate (`libraries/openzlib/zlib_core.cpp`, `run_codes`), which keeps the headers, stored blocks, code tables and checks.

@@ -143,6 +143,18 @@ state = "the block cursor, so uploads on one context stay in order"
 state_max = 16
 
 [[function]]
+name = "hostlib_mgl_consts"
+id = 0x0001010B
+id_name = "MGL_CONSTS"
+version = 1
+source = "mgl/consts.c"
+header = "mgl/consts.h"
+callers = "minigl.library's send_if_changed (mgl_vg_state.c), for glEnd and glDrawElements"
+locked = true
+state = "the constants last sent, and the command cursor"
+state_max = 65536
+
+[[function]]
 name = "hostlib_probe"
 id = 0x00011000
 id_name = "HOSTLIB_PROBE"

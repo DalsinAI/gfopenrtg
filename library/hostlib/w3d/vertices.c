@@ -121,6 +121,7 @@ HL_FN(hostlib_w3d_vertices)
         if (at + 1 < idx_lo) idx_lo = at + 1;
         if (at + count - 1 > idx_hi) idx_hi = at + count - 1;
     }
+    if (idx_hi > 0xffffu) return 0;             /* every index used, not only FIRST and AT, is 65535 or under */
     if ((uint64_t)out + count * HL_WV_OVTX > 0xffffffffull) return 0;
     if (!list) {
         lo_at = src + idx_lo * HL_WV_VERTEX;

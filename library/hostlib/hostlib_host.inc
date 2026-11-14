@@ -10,17 +10,21 @@ static int hl_host_aliased(uint32_t at, uint32_t n) { return jb_aliased(at, n); 
 static void hl_host_written(uint32_t at, uint32_t n) { jit_guest_written(at, n); }
 #include "hl.h"
 #include "hl_ids.h"
-static const char hostlib_manifest[] = "hostlib abi 2, manifest " HOSTLIB_MANIFEST ", functions: 14";
+static const char hostlib_manifest[] = "hostlib abi 2, manifest " HOSTLIB_MANIFEST ", functions: 30";
 #include "ogfx/planar_rect.c"
 #include "ogfx/chunky_rect.c"
 #include "ogfx/chunky_copy.c"
 #include "ogfx/planar_blit.c"
 #include "text/text_strip.c"
+#include "ogfx/layout_batch.c"
 #include "sdl/blend.c"
 #include "sdl/blend_argb.c"
 #include "mgl/draw.c"
 #include "mgl/vertices.c"
 #include "mgl/tex.c"
+#include "mgl/consts.c"
+#include "mgl/cached.c"
+#include "w3d/vertices.c"
 #include "zlib/inflate_codes.c"
 #include "zlib/deflate_all.c"
 #include "lzma/lzma_dec.c"
@@ -144,6 +148,32 @@ static int hls_hostlib_text_strip(const uint32_t *arg, magic_spans *out) {
     struct hl_ctx hl;
     hl_init(&hl, 1);
     (void)hostlib_text_strip_host(&hl, arg[0]);
+    if (hl.why) return hl.why;
+    if (hl.nw + hl.ns > MAGIC_SPANS) return HL_WHY_INPUT;
+    for (uint32_t i = 0; i < hl.nw; i++) {
+        out->s[out->n++] = (magic_span){ hl.wlo[i], hl.wn[i], MAGIC_SPAN_W };
+    }
+    for (uint32_t i = 0; i < hl.ns; i++) {
+        out->s[out->n++] = (magic_span){ hl.slo[i], hl.sn[i], MAGIC_SPAN_S };
+    }
+    return 0;
+}
+
+/* hostlib_ogfx_layout_batch (HL_ID_OGFX_LAYOUT_BATCH): the call; 0, or why it is the 68k code's */
+static int hlw_hostlib_ogfx_layout_batch(ac090 *c, const uint32_t *arg, uint32_t *cost) {
+    struct hl_ctx hl;
+    hl_init(&hl, 0);
+    uint32_t r = hostlib_ogfx_layout_batch_host(&hl, arg[0]);
+    if (hl.why) { hl_restore_state(&hl); return hl.why; }
+    c->d[0] = r;
+    *cost = (uint32_t)(hl.bytes / 4) + 8;
+    return 0;
+}
+/* ABI 2's dry run: preserve every disjoint write and state range. */
+static int hls_hostlib_ogfx_layout_batch(const uint32_t *arg, magic_spans *out) {
+    struct hl_ctx hl;
+    hl_init(&hl, 1);
+    (void)hostlib_ogfx_layout_batch_host(&hl, arg[0]);
     if (hl.why) return hl.why;
     if (hl.nw + hl.ns > MAGIC_SPANS) return HL_WHY_INPUT;
     for (uint32_t i = 0; i < hl.nw; i++) {
@@ -285,6 +315,84 @@ static int hls_hostlib_mgl_tex(const uint32_t *arg, magic_spans *out) {
     return 0;
 }
 
+/* hostlib_mgl_consts (HL_ID_MGL_CONSTS): the call; 0, or why it is the 68k code's */
+static int hlw_hostlib_mgl_consts(ac090 *c, const uint32_t *arg, uint32_t *cost) {
+    struct hl_ctx hl;
+    hl_init(&hl, 0);
+    uint32_t r = hostlib_mgl_consts_host(&hl, arg[0]);
+    if (hl.why) { hl_restore_state(&hl); return hl.why; }
+    c->d[0] = r;
+    *cost = (uint32_t)(hl.bytes / 4) + 8;
+    return 0;
+}
+/* ABI 2's dry run: preserve every disjoint write and state range. */
+static int hls_hostlib_mgl_consts(const uint32_t *arg, magic_spans *out) {
+    struct hl_ctx hl;
+    hl_init(&hl, 1);
+    (void)hostlib_mgl_consts_host(&hl, arg[0]);
+    if (hl.why) return hl.why;
+    if (hl.nw + hl.ns > MAGIC_SPANS) return HL_WHY_INPUT;
+    for (uint32_t i = 0; i < hl.nw; i++) {
+        out->s[out->n++] = (magic_span){ hl.wlo[i], hl.wn[i], MAGIC_SPAN_W };
+    }
+    for (uint32_t i = 0; i < hl.ns; i++) {
+        out->s[out->n++] = (magic_span){ hl.slo[i], hl.sn[i], MAGIC_SPAN_S };
+    }
+    return 0;
+}
+
+/* hostlib_mgl_cached (HL_ID_MGL_CACHED): the call; 0, or why it is the 68k code's */
+static int hlw_hostlib_mgl_cached(ac090 *c, const uint32_t *arg, uint32_t *cost) {
+    struct hl_ctx hl;
+    hl_init(&hl, 0);
+    uint32_t r = hostlib_mgl_cached_host(&hl, arg[0]);
+    if (hl.why) { hl_restore_state(&hl); return hl.why; }
+    c->d[0] = r;
+    *cost = (uint32_t)(hl.bytes / 4) + 8;
+    return 0;
+}
+/* ABI 2's dry run: preserve every disjoint write and state range. */
+static int hls_hostlib_mgl_cached(const uint32_t *arg, magic_spans *out) {
+    struct hl_ctx hl;
+    hl_init(&hl, 1);
+    (void)hostlib_mgl_cached_host(&hl, arg[0]);
+    if (hl.why) return hl.why;
+    if (hl.nw + hl.ns > MAGIC_SPANS) return HL_WHY_INPUT;
+    for (uint32_t i = 0; i < hl.nw; i++) {
+        out->s[out->n++] = (magic_span){ hl.wlo[i], hl.wn[i], MAGIC_SPAN_W };
+    }
+    for (uint32_t i = 0; i < hl.ns; i++) {
+        out->s[out->n++] = (magic_span){ hl.slo[i], hl.sn[i], MAGIC_SPAN_S };
+    }
+    return 0;
+}
+
+/* hostlib_w3d_vertices (HL_ID_W3D_VERTICES): the call; 0, or why it is the 68k code's */
+static int hlw_hostlib_w3d_vertices(ac090 *c, const uint32_t *arg, uint32_t *cost) {
+    struct hl_ctx hl;
+    hl_init(&hl, 0);
+    uint32_t r = hostlib_w3d_vertices_host(&hl, arg[0]);
+    if (hl.why) { hl_restore_state(&hl); return hl.why; }
+    c->d[0] = r;
+    *cost = (uint32_t)(hl.bytes / 4) + 8;
+    return 0;
+}
+/* ABI 2's dry run: preserve every disjoint write and state range. */
+static int hls_hostlib_w3d_vertices(const uint32_t *arg, magic_spans *out) {
+    struct hl_ctx hl;
+    hl_init(&hl, 1);
+    (void)hostlib_w3d_vertices_host(&hl, arg[0]);
+    if (hl.why) return hl.why;
+    if (hl.nw + hl.ns > MAGIC_SPANS) return HL_WHY_INPUT;
+    for (uint32_t i = 0; i < hl.nw; i++) {
+        out->s[out->n++] = (magic_span){ hl.wlo[i], hl.wn[i], MAGIC_SPAN_W };
+    }
+    for (uint32_t i = 0; i < hl.ns; i++) {
+        out->s[out->n++] = (magic_span){ hl.slo[i], hl.sn[i], MAGIC_SPAN_S };
+    }
+    return 0;
+}
+
 /* hostlib_zlib_inflate_codes (HL_ID_ZLIB_INFLATE_CODES): the call; 0, or why it is the 68k code's */
 static int hlw_hostlib_zlib_inflate_codes(ac090 *c, const uint32_t *arg, uint32_t *cost) {
     struct hl_ctx hl;
@@ -369,11 +477,15 @@ static int hls_hostlib_lzma_decode_all(const uint32_t *arg, magic_spans *out) {
     { 0x00010102, "hostlib_ogfx_chunky_copy", 1, hlw_hostlib_ogfx_chunky_copy, NULL, NULL, NULL, 0, hls_hostlib_ogfx_chunky_copy, 0 }, \
     { 0x00010103, "hostlib_ogfx_planar_blit", 1, hlw_hostlib_ogfx_planar_blit, NULL, NULL, NULL, 0, hls_hostlib_ogfx_planar_blit, 0 }, \
     { 0x00010105, "hostlib_text_strip", 1, hlw_hostlib_text_strip, NULL, NULL, NULL, 0, hls_hostlib_text_strip, 0 }, \
+    { 0x0001010d, "hostlib_ogfx_layout_batch", 1, hlw_hostlib_ogfx_layout_batch, NULL, NULL, NULL, 0, hls_hostlib_ogfx_layout_batch, 0 }, \
     { 0x00010106, "hostlib_sdl2_blend", 1, hlw_hostlib_sdl2_blend, NULL, NULL, NULL, 0, hls_hostlib_sdl2_blend, MAGIC_F_LOCKED }, \
     { 0x0001010a, "hostlib_sdl2_blend_argb", 1, hlw_hostlib_sdl2_blend_argb, NULL, NULL, NULL, 0, hls_hostlib_sdl2_blend_argb, MAGIC_F_LOCKED }, \
     { 0x00010107, "hostlib_mgl_draw", 1, hlw_hostlib_mgl_draw, NULL, NULL, NULL, 0, hls_hostlib_mgl_draw, MAGIC_F_LOCKED }, \
     { 0x00010108, "hostlib_mgl_vertices", 1, hlw_hostlib_mgl_vertices, NULL, NULL, NULL, 0, hls_hostlib_mgl_vertices, MAGIC_F_LOCKED }, \
     { 0x00010109, "hostlib_mgl_tex", 1, hlw_hostlib_mgl_tex, NULL, NULL, NULL, 0, hls_hostlib_mgl_tex, MAGIC_F_LOCKED }, \
+    { 0x0001010b, "hostlib_mgl_consts", 1, hlw_hostlib_mgl_consts, NULL, NULL, NULL, 0, hls_hostlib_mgl_consts, MAGIC_F_LOCKED }, \
+    { 0x0001010c, "hostlib_mgl_cached", 1, hlw_hostlib_mgl_cached, NULL, NULL, NULL, 0, hls_hostlib_mgl_cached, 0 }, \
+    { 0x00013000, "hostlib_w3d_vertices", 1, hlw_hostlib_w3d_vertices, NULL, NULL, NULL, 0, hls_hostlib_w3d_vertices, 0 }, \
     { 0x00010180, "hostlib_zlib_inflate_codes", 1, hlw_hostlib_zlib_inflate_codes, NULL, NULL, NULL, 0, hls_hostlib_zlib_inflate_codes, MAGIC_F_LOCKED }, \
     { 0x00010181, "hostlib_zlib_deflate_all", 1, hlw_hostlib_zlib_deflate_all, NULL, NULL, NULL, 0, hls_hostlib_zlib_deflate_all, 0 }, \
     { 0x00010182, "hostlib_lzma_decode_all", 1, hlw_hostlib_lzma_decode_all, NULL, NULL, NULL, 0, hls_hostlib_lzma_decode_all, 0 }, \
@@ -386,12 +498,28 @@ static int hls_hostlib_lzma_decode_all(const uint32_t *arg, magic_spans *out) {
     { 0x00010102, 1, 0, 0 }, \
     { 0x00010103, 1, 0, 0 }, \
     { 0x00010105, 1, 0, 0 }, \
+    { 0x0001010d, 1, 0, 0 }, \
     { 0x00010106, 1, HL_C_LOCKED, 65536 }, \
     { 0x0001010a, 1, HL_C_LOCKED, 65536 }, \
     { 0x00010107, 1, HL_C_LOCKED, 16 }, \
     { 0x00010108, 1, HL_C_LOCKED, 16 }, \
     { 0x00010109, 1, HL_C_LOCKED, 16 }, \
+    { 0x0001010b, 1, HL_C_LOCKED, 65536 }, \
+    { 0x0001010c, 1, 0, 0 }, \
+    { 0x00013000, 1, 0, 0 }, \
     { 0x00011000, 1, HL_C_RUNTIME, 0 }, \
+    { 0x00012000, 1, HL_C_RUNTIME | HL_C_SERVICE, 0 }, \
+    { 0x00012001, 1, HL_C_RUNTIME | HL_C_SERVICE, 0 }, \
+    { 0x00012002, 1, HL_C_RUNTIME | HL_C_SERVICE, 0 }, \
+    { 0x00012003, 1, HL_C_RUNTIME | HL_C_SERVICE, 0 }, \
+    { 0x00012004, 1, HL_C_RUNTIME | HL_C_SERVICE, 0 }, \
+    { 0x00012005, 1, HL_C_RUNTIME | HL_C_SERVICE, 0 }, \
+    { 0x00012006, 1, HL_C_RUNTIME | HL_C_SERVICE, 0 }, \
+    { 0x00012007, 1, HL_C_RUNTIME | HL_C_SERVICE, 0 }, \
+    { 0x00012008, 1, HL_C_RUNTIME | HL_C_SERVICE, 0 }, \
+    { 0x00012009, 1, HL_C_RUNTIME | HL_C_SERVICE, 0 }, \
+    { 0x0001200a, 1, HL_C_RUNTIME | HL_C_SERVICE, 0 }, \
+    { 0x0001200b, 1, HL_C_RUNTIME | HL_C_SERVICE, 0 }, \
     { 0x00010180, 1, HL_C_LOCKED, 32828 }, \
     { 0x00010181, 1, 0, 0 }, \
     { 0x00010182, 1, 0, 0 }, \

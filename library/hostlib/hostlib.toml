@@ -83,6 +83,15 @@ header = "text/text_strip.h"
 callers = "gfopenrtg.library's Text (library/text_strip.h, ts_build)"
 
 [[function]]
+name = "hostlib_ogfx_layout_batch"
+id = 0x0001010d
+id_name = "OGFX_LAYOUT_BATCH"
+version = 1
+source = "ogfx/layout_batch.c"
+header = "ogfx/layout_batch.h"
+callers = "GFOpenLayout's AC090 olc_accel backend, once per submit"
+
+[[function]]
 name = "hostlib_sdl2_blend"
 id = 0x00010106
 id_name = "SDL2_BLEND"
@@ -143,6 +152,37 @@ state = "the block cursor, so uploads on one context stay in order"
 state_max = 16
 
 [[function]]
+name = "hostlib_mgl_consts"
+id = 0x0001010B
+id_name = "MGL_CONSTS"
+version = 1
+source = "mgl/consts.c"
+header = "mgl/consts.h"
+callers = "minigl.library's send_if_changed (mgl_vg_state.c), for glEnd and glDrawElements"
+locked = true
+state = "the constants last sent, and the command cursor"
+state_max = 65536
+
+[[function]]
+name = "hostlib_mgl_cached"
+id = 0x0001010C
+id_name = "MGL_CACHED"
+version = 1
+source = "mgl/cached.c"
+header = "mgl/cached.h"
+callers = "minigl.library's cached() (mgl_vg_state.c): the blend, DSA and rasterizer objects, for glEnd and glDrawElements"
+
+[[function]]
+name = "hostlib_w3d_vertices"
+id = 0x00013000
+id_name = "W3D_VERTICES"
+version = 1
+source = "w3d/vertices.c"
+header = "w3d/vertices.h"
+callers = "Warp3D.library's draw() (gfopenrtg library/warp3d/w3d_draw.c): a primitive's vertices into the stream, fog off"
+owner = "Warp3D"
+
+[[function]]
 name = "hostlib_probe"
 id = 0x00011000
 id_name = "HOSTLIB_PROBE"
@@ -151,6 +191,138 @@ source = "probe/probe.c"
 header = "probe/probe.h"
 runtime = true
 callers = "thin shells' init (HOSTLIB-ABI.md 8.4); GFOpenUpTool's report"
+
+[[function]]
+name = "hostlib_acm_caps"
+id = 0x00012000
+id_name = "ACM_CAPS"
+version = 1
+source = "acmedia/acmedia.c"
+header = "acmedia/acmedia.h"
+service = true
+owner = "ACMedia"
+callers = "akikoplus.device rungs A and B (ACMedia design 2.2, 7.4): the caps table: ABI version, limits, each codec's tag, built, policy, hardware"
+
+[[function]]
+name = "hostlib_acm_probe"
+id = 0x00012001
+id_name = "ACM_PROBE"
+version = 1
+source = "acmedia/acmedia.c"
+header = "acmedia/acmedia.h"
+service = true
+owner = "ACMedia"
+callers = "akikoplus.device rungs A and B (ACMedia design 2.2, 7.4): a source probed: a ticket, the info later (ACM_RESULT)"
+
+[[function]]
+name = "hostlib_acm_open"
+id = 0x00012002
+id_name = "ACM_OPEN"
+version = 1
+source = "acmedia/acmedia.c"
+header = "acmedia/acmedia.h"
+service = true
+owner = "ACMedia"
+callers = "akikoplus.device rungs A and B (ACMedia design 2.2, 7.4): a session on a source, its streams and output targets"
+
+[[function]]
+name = "hostlib_acm_info"
+id = 0x00012003
+id_name = "ACM_INFO"
+version = 1
+source = "acmedia/acmedia.c"
+header = "acmedia/acmedia.h"
+service = true
+owner = "ACMedia"
+callers = "akikoplus.device rungs A and B (ACMedia design 2.2, 7.4): a session's container, streams, and the path and route in use per stream"
+
+[[function]]
+name = "hostlib_acm_control"
+id = 0x00012004
+id_name = "ACM_CONTROL"
+version = 1
+source = "acmedia/acmedia.c"
+header = "acmedia/acmedia.h"
+service = true
+owner = "ACMedia"
+callers = "akikoplus.device rungs A and B (ACMedia design 2.2, 7.4): PLAY, PAUSE, STOP, SEEK, RATE, VOLUME, SELECT, SETRECT, EVENTS, TARGET"
+
+[[function]]
+name = "hostlib_acm_frame"
+id = 0x00012005
+id_name = "ACM_FRAME"
+version = 1
+source = "acmedia/acmedia.c"
+header = "acmedia/acmedia.h"
+service = true
+owner = "ACMedia"
+callers = "akikoplus.device rungs A and B (ACMedia design 2.2, 7.4): the next video frame into guest memory (GUEST)"
+
+[[function]]
+name = "hostlib_acm_audio"
+id = 0x00012006
+id_name = "ACM_AUDIO"
+version = 1
+source = "acmedia/acmedia.c"
+header = "acmedia/acmedia.h"
+service = true
+owner = "ACMedia"
+callers = "akikoplus.device rungs A and B (ACMedia design 2.2, 7.4): PCM into guest memory (GUEST)"
+
+[[function]]
+name = "hostlib_acm_feed"
+id = 0x00012007
+id_name = "ACM_FEED"
+version = 1
+source = "acmedia/acmedia.c"
+header = "acmedia/acmedia.h"
+service = true
+owner = "ACMedia"
+callers = "akikoplus.device rungs A and B (ACMedia design 2.2, 7.4): a fed source's bytes"
+
+[[function]]
+name = "hostlib_acm_events"
+id = 0x00012008
+id_name = "ACM_EVENTS"
+version = 1
+source = "acmedia/acmedia.c"
+header = "acmedia/acmedia.h"
+service = true
+owner = "ACMedia"
+callers = "akikoplus.device rungs A and B (ACMedia design 2.2, 7.4): event records, 16 bytes each"
+
+[[function]]
+name = "hostlib_acm_close"
+id = 0x00012009
+id_name = "ACM_CLOSE"
+version = 1
+source = "acmedia/acmedia.c"
+header = "acmedia/acmedia.h"
+service = true
+owner = "ACMedia"
+callers = "akikoplus.device rungs A and B (ACMedia design 2.2, 7.4): a session closed"
+
+[[function]]
+name = "hostlib_acm_result"
+id = 0x0001200a
+id_name = "ACM_RESULT"
+version = 1
+source = "acmedia/acmedia.c"
+header = "acmedia/acmedia.h"
+service = true
+owner = "ACMedia"
+callers = "akikoplus.device rungs A and B (ACMedia design 2.2, 7.4): a probe's info, by its ticket"
+
+[[function]]
+name = "hostlib_acm_fault"
+id = 0x0001200b
+id_name = "ACM_FAULT"
+version = 1
+source = "acmedia/acmedia.c"
+header = "acmedia/acmedia.h"
+service = true
+owner = "ACMedia"
+callers = "akikoplus.device rungs A and B (ACMedia design 2.2, 7.4): an English line for an error code, and a deny's reason"
 
 [[function]]
 name = "hostlib_zlib_inflate_codes"

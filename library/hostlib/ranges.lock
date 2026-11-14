@@ -2,3 +2,4 @@
 # Each line is an inclusive range and its owner. Ranges never overlap or
 # shrink; a function in one says owner = "..." in hostlib.toml.
 0x00012000 0x00012fff ACMedia
+0x00013000 0x000130ff Warp3D

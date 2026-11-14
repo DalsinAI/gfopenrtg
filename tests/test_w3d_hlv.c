@@ -135,6 +135,41 @@ static void library(ULONG state, const W3D_Color *cur, const W3D_Vertex *v, cons
     o->spec = (255UL << 24) | ((state & W3D_SPECULAR) ? (w3d_unit8(v->spec.r) << 16) | (w3d_unit8(v->spec.g) << 8) | w3d_unit8(v->spec.b) : 0);
 }
 
+/* draw()'s culled fans and strips with the hostlib call: w3d_front over the
+ * converted vertices laid out in the last n of the (n - 2) * 3 slots, against
+ * the same triangles picked out of a separate copy by index. */
+static int front_cases(long cases, long *tris)
+{
+    static struct ovtx t[MAXV], o[3 * MAXV], want[3 * MAXV];
+    long c;
+    for (c = 0; c < cases; c++) {
+        ULONG n = 3u + below(below(4) ? 20 : 400), m = (n - 2) * 3, i, k, kw = 0;
+        int fan = (int)below(2), cw = (int)below(2);
+        LONG span = below(2) ? 64 << 16 : 0x7fffffff;
+        for (i = 0; i < n; i++) {
+            memset(&t[i], 0, sizeof t[i]);
+            t[i].x = (LONG)(rnd() % (ULONG)span) - span / 2; t[i].y = (LONG)(rnd() % (ULONG)span) - span / 2;
+            t[i].argb = rnd(); t[i].u = (LONG)rnd(); t[i].v = (LONG)rnd(); t[i].z = rnd(); t[i].w = rnd(); t[i].spec = rnd();
+        }
+        for (i = 2; i < n; i++) {               /* by index: fan (0, i-1, i); strip (i-2, i-1, i), odd ones (i-1, i-2, i) */
+            ULONG a = fan ? 0 : (i & 1) ? i - 1 : i - 2, b = fan ? i - 1 : (i & 1) ? i - 2 : i - 1;
+            long long l = (long long)(t[b].x - t[a].x) * (t[i].y - t[a].y), r = (long long)(t[i].x - t[a].x) * (t[b].y - t[a].y);
+            if (cw ? l < r : l > r) continue;
+            want[kw++] = t[a]; want[kw++] = t[b]; want[kw++] = t[i];
+        }
+        memset(o, 0xa5, sizeof o);
+        memcpy(o + (m - n), t, n * sizeof t[0]);
+        k = w3d_front(fan, cw, o + (m - n), n, o);
+        if (k != kw || memcmp(o, want, k * sizeof o[0])) {
+            printf("FAIL culled case %ld (%s, %s, %u vertices): %u front vertices, want %u%s\n", c, fan ? "fan" : "strip",
+                   cw ? "CW" : "CCW", (unsigned)n, (unsigned)k, (unsigned)kw, k == kw ? ", not the same" : "");
+            return 1;
+        }
+        *tris += (long)k / 3;
+    }
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     static W3D_Vertex vs[MAXV];
@@ -191,6 +226,11 @@ int main(int argc, char **argv)
         }
         verts += n;
         lists += list;
+    }
+    {
+        long tris = 0;
+        if (front_cases(cases, &tris)) return 1;
+        printf("ok   Warp3D culled fans and strips: %ld cases, %ld front triangles, in place = by index\n", cases, tris);
     }
     printf("ok   Warp3D vertices: %ld primitives (%ld pointer lists), %ld vertices, hostlib_w3d_vertices = Warp3D's convert() word for word\n",
            cases, lists, verts);

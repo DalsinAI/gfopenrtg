@@ -225,8 +225,11 @@ static ULONG draw(struct w3dctx *x, W3D_Texture *tex, const struct vsrc *src, UL
         }
         if (m) w3d_emit(x, o, m, prim);
     } else {
-        struct ovtx a, b, c;
+        struct ovtx a, b, c, *t = o + (m - n);
         ULONG k = 0;
+        if (hl_vertices(x, src, n, &s, t))     /* all n converted into the last n of the m slots */
+            k = w3d_front(prim == OGPU_LAY_FAN, x->ctx->FrontFaceOrder == W3D_CW, t, n, o);
+        else {
         vertex_s(x, vget(src, 0), &s, &a);
         vertex_s(x, vget(src, 1), &s, &b);
         for (i = 2; i < n; i++) {
@@ -237,6 +240,7 @@ static ULONG draw(struct w3dctx *x, W3D_Texture *tex, const struct vsrc *src, UL
             if (!culled(x, p0, p1, &c)) { o[k] = *p0; o[k + 1] = *p1; o[k + 2] = c; k += 3; }
             if (prim == OGPU_LAY_FAN) b = c;
             else { a = b; b = c; }
+        }
         }
         x->vused -= (m - k) * sizeof(struct ovtx);
         if (k) w3d_emit(x, o, k, OGPU_LAY_LIST);

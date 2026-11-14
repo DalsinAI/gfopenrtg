@@ -120,6 +120,33 @@ Text's glyphs gathered into one 1-bit strip. Called by gfopenrtg.library's Text 
 - `mod <= 0` with rows;
 - any access outside those ranges.
 
+### OGFX_LAYOUT_BATCH, `$0001010D`, version 1: `hostlib_ogfx_layout_batch(block)`
+
+GFOpenLayout's private AC090 transport behind `olc_accel` version 1. It is
+called once by `submit`, after the back end has recorded the compose's coarse
+operations. It does not replace or extend the public `olc_accel` table.
+
+**The block and records:** `hostlib/ogfx/layout_batch.h`. The target is a CPU
+shadow in CLUT8, RGB16, XRGB32 or ARGB32 memory. Damage boxes are inclusive,
+inside the target and non-overlapping. The fixed records are:
+
+- `HL_OLC_FILL`: fill a box with an already target-encoded pixel;
+- `HL_OLC_COPY`: opaque same-format copy, including an overlap-safe
+  same-surface scroll;
+- `HL_OLC_COMPOSITE`: an ARGB32 source over XRGB32, with source alpha times
+  the layer opacity;
+- `HL_OLC_MASK1`: one cached glyph run's 1-bit mask in one command, using one
+  target-encoded pixel.
+
+All records are validated and all spans declared before the first write. Clip
+boxes are replayed inside the one call; overlap-safe copies use global memmove
+order across boxes, so one box cannot corrupt a later box's source. The host
+accepts up to 64 clip boxes, 4096 commands and 8 distinct source spans. A
+larger batch, an unsupported format conversion, memory outside plain
+Fast/host/RTG RAM, an overlapping command/clip block and target, or any range
+that wraps is left to the 68k body before a pixel changes. Nothing waits and
+nothing reads a GPU surface back.
+
 ### SDL2_BLEND, `$00010106`, version 1: `hostlib_sdl2_blend(block)`
 
 SDL 2's software blit of ARGB8888 with `SDL_BLENDMODE_BLEND`, with SDL 2.32's `ALPHA_BLEND_RGBA` formula (`/255`). That is the formula of SDL's generic blitters, not of the blit SDL 2.32 picks for ARGB8888 to ARGB8888 on a 68k, which uses `>> 8` and differs by up to one in a channel: SDL2_BLEND_ARGB below is that one. This contract is frozen as merged. A locked call: the destination is read, then changed.
@@ -197,6 +224,30 @@ One texture upload: 16 big-endian words, an `ACV_PUT` as `vg_put` writes it (hea
 A decline puts the cursor back, so the upload is not counted twice.
 
 Not `HL_PARALLEL`: the cursor is state (8.3).
+
+### MGL_CONSTS, `$0001010B`, version 1: `hostlib_mgl_consts(block)`
+
+`send_if_changed`. Compares `n` vec4s with the constants this context last sent and, when they differ, appends one `SET_CONSTANT_BUFFER` and remembers them. The last-sent values and the command cursor are locked state.
+
+**The block:** `hostlib/mgl/consts.h`. `cap` is how many vec4s the state holds (1 to 4095). A `nlast` of `$FFFFFFFF` means nothing has been sent. The command is `vgc_constants`'s: three little-endian words (command 12, the shader, zero) and then the vec4s, each word swapped into little-endian. The remembered copy stays in the guest's byte order.
+
+**Returns** 1 when a command was appended, or 0 when the constants match what was last sent, `n` exceeds `cap`, the shader is not 0 or 1, the command does not fit, or a range overlaps. A 0 from a match writes nothing. A 0 from a rejection writes nothing in both builds.
+
+A decline puts the last-sent values and the cursor back, so the constants are not sent twice.
+
+Not `HL_PARALLEL`: the last-sent values are state (8.3).
+
+### MGL_CACHED, `$0001010C`, version 1: `hostlib_mgl_cached(block)`
+
+`cached()`, the other half of `vg_prepare`'s state work beside MGL_CONSTS: finds the virgl object made for a blend, DSA or rasterizer key in a context's table, or the slot a new one goes in. It only reads.
+
+**The block:** `hostlib/mgl/cached.h`: the table's keys (`slots` x `keyw` big-endian longs), its 16-bit handles (0 is an empty slot), `slots` (a power of two, 1 to 1024), `keyw` (1 to 16), the key and its length `n` (1 to `keyw`), and `probes` (1 to `slots`). minigl's tables are 64 slots of 5 longs, probed 4 times.
+
+**The search:** the hash is `k0 ^ (k0 >> 11) ^ (n > 1 ? k1 * 7 : 0) ^ (n > 2 ? k2 * 13 : 0)`, 32-bit. Slots `(hash + i) & (slots - 1)` for `i` below `probes`, in order: an empty slot ends it; a slot whose first `n` longs equal the key, as bits, gives its handle. When all are taken by other keys, the hash's own slot is the one a new object replaces.
+
+**Returns** `$00010000 | handle` for a match, `$00020000 | slot` for an empty slot, `$00030000 | slot` for a full table, and 0 for a block outside the limits above or a range that wraps. A 0 means the caller looks the key up itself; it is the same in both builds.
+
+Reads the block, the keys, the handles and the key. Writes nothing and has no state, so a decline needs nothing put back. Not `HL_PARALLEL`: one search is a few longs.
 
 ### ZLIB_INFLATE_CODES, `$00010180`, version 1: `hostlib_zlib_inflate_codes(block)`
 
@@ -399,7 +450,7 @@ The ordinary outer gates still apply. `AC_HOSTLIB=0`, `AC_HOSTLIB_OFF`, an unsup
 
 Once those gates admit a call, the host body runs exactly once, including under `AC_HOSTLIB=verify`, and returns a typed service result. It never returns an `HL_DECLINE` reason. Semantic bad arguments are service errors, not requests to run the 68k body. The probe reports an admitted service in verify mode; it continues to hide ordinary compute ids there.
 
-`$00012000`–`$00012FFF` is reserved to owner `ACMedia` in `ranges.lock`. ACMedia v1 uses `$00012000`–`$0001200B`; later versions have the remainder without claiming other components' ids.
+`$00012000`–`$00012FFF` is reserved to owner `ACMedia` in `ranges.lock`. ACMedia v1 uses `$00012000`–`$0001200B`; later versions have the remainder without claiming other components' ids. Those twelve are in `hostlib.toml` (`service = true`, `owner = "ACMedia"`), their blocks and codes in `hostlib/acmedia/acmedia.h`; each 68k body (`hostlib/acmedia/acmedia.c`, real in a thin shell's build too) writes nothing and returns `ACM_E_NOTAVAIL` (-1).
 
 ## 9. The verifier and runtime contract (stage C)
 

@@ -9,6 +9,14 @@
 
 #include "w3d_internal.h"
 #include "w3d_calls.h"
+#include "w3d_vtx.h"
+#ifndef W3D_HOST
+/* hostlib_w3d_vertices ($00013000): a primitive's vertices as one hostlib
+ * call. On AmiCradle's AC090 it runs as host code; on any other 68k its C
+ * runs here, the same work as convert() with fog off. */
+#define HL_VENDORED 1
+#include "../hostlib/w3d/vertices.c"
+#endif
 
 /* e^x, for fog: the 68040 has no exponential instruction. */
 static float fexp(float v)
@@ -51,13 +59,6 @@ static ULONG vertex_fog(struct w3dctx *x, const W3D_Vertex *v, float fogcoord, i
     return clampf255(f);
 }
 
-/* How u and v become 16.16 texels: times 2^k when the scale is a power of
- * two (a texture's usual size, or normalised coordinates), else times the
- * float scale; UV_NONE without a texture. All in integers but the last. */
-#define UV_NONE  -1000
-#define UV_FLOAT 1000
-struct uvs { int ku, kv; float su, sv; };
-
 static int pow2_k(int size)
 {
     int k = 16;
@@ -75,33 +76,27 @@ static void uv_scale(struct uvs *s, const struct w3dtex *t, int normalised)
     s->sv = s->kv == UV_FLOAT ? 65536.0f / (float)t->h : 0.0f;
 }
 
-static LONG uv(float c, int k, float scale)
-{
-    if (k == UV_NONE) return 0;
-    if (k == UV_FLOAT) return w3d_f2l(c * scale);
-    return w3d_fx(c, k);
-}
-
 /* One Warp3D vertex in the stream's layout. z: the stream's depth, worked
  * out by the caller (w3d_zd, w3d_zf); argb: the colour already packed, or 0. */
 static void convert(struct w3dctx *x, const W3D_Vertex *v, const struct uvs *s, ULONG z, const ULONG *argb, struct ovtx *o,
                     float fogc, int have_fogc)
 {
     W3D_Context *c = x->ctx;
-    ULONG w = w3d_fbits(v->w);
-    o->x = w3d_fx(v->x, 16);
-    o->y = w3d_fx(v->y, 16);
-    o->argb = !(c->state & W3D_GOURAUD) ? w3d_colour(&x->current) : argb ? *argb : w3d_colour(&v->color);
-    o->u = uv(v->u, s->ku, s->su);
-    o->v = uv(v->v, s->kv, s->sv);
-    o->z = z;
-    if ((LONG)w <= 0 || w > 0x7f800000UL) w = 0x358637BDUL;    /* w must be positive: 1e-6 */
-    o->w = w;
+    w3d_vtx_core(c->state, &x->current, v, s, z, argb, o);
     if (W3DBase->trace > 100000)
         w3d_trace("  v %ld %ld z %lx w %lx u %ld v %ld argb %lx", (long)o->x >> 16, (long)o->y >> 16, (unsigned long)o->z,
                   (unsigned long)o->w, (long)o->u, (long)o->v, (unsigned long)o->argb);
     o->spec = (vertex_fog(x, v, fogc, have_fogc) << 24)
             | ((c->state & W3D_SPECULAR) ? (clampf255(v->spec.r) << 16) | (clampf255(v->spec.g) << 8) | clampf255(v->spec.b) : 0);
+}
+
+/* Whether vertex_fog() gives every vertex of a primitive 255 (no fog
+ * factor in the vertex): fog off, or fog the core works out per pixel. */
+static int no_vertex_fog(struct w3dctx *x)
+{
+    if (!(x->ctx->state & W3D_FOGGING)) return 1;
+    if (x->fogmode_v5 >= 0) return x->fogmode_v5 < W3D_FOG_Z_LINEAR || x->fogmode_v5 > W3D_FOG_Z_EXP_2;
+    return x->fogmode != W3D_FOG_INTERPOLATED;
 }
 
 static void vertex_s(struct w3dctx *x, const W3D_Vertex *v, const struct uvs *s, struct ovtx *o)
@@ -169,6 +164,33 @@ static const W3D_Vertex *vget(const struct vsrc *s, ULONG j)
     return s->pv ? s->pv[i] : &s->v[i];
 }
 
+/* n vertices of src into o as vertex_s() converts them, in one hostlib call;
+ * 0 when that call does not apply (a fog factor per vertex, a texture whose
+ * size is not a power of two, tracing) or does not take the inputs, and the
+ * caller converts them itself. */
+static int hl_vertices(struct w3dctx *x, const struct vsrc *src, ULONG n, const struct uvs *s, struct ovtx *o)
+{
+#ifndef W3D_HOST
+    W3D_Context *c = x->ctx;
+    ULONG blk[HL_WV_LONGS];
+    if (s->ku == UV_FLOAT || s->kv == UV_FLOAT || W3DBase->trace > 100000 || !no_vertex_fog(x)) return 0;
+    blk[HL_WV_SRC] = src->pv ? (ULONG)src->pv : (ULONG)src->v;
+    blk[HL_WV_LIST] = src->pv != 0;
+    blk[HL_WV_FIRST] = src->first;
+    blk[HL_WV_AT] = src->at;
+    blk[HL_WV_COUNT] = n;
+    blk[HL_WV_OUT] = (ULONG)o;
+    blk[HL_WV_FLAGS] = ((c->state & W3D_GOURAUD) ? HL_WV_GOURAUD : 0) | ((c->state & W3D_SPECULAR) ? HL_WV_SPECULAR : 0);
+    blk[HL_WV_CURRENT] = w3d_colour(&x->current);
+    blk[HL_WV_KU] = (ULONG)(LONG)s->ku;         /* UV_NONE is HL_WV_UV_NONE */
+    blk[HL_WV_KV] = (ULONG)(LONG)s->kv;
+    return hostlib_w3d_vertices((ULONG)blk) == n;
+#else
+    (void)x; (void)src; (void)n; (void)s; (void)o;
+    return 0;
+#endif
+}
+
 /* n vertices drawn as a list, strip or fan. With face culling on, strips
  * and fans become lists of the triangles that face front. */
 static ULONG draw(struct w3dctx *x, W3D_Texture *tex, const struct vsrc *src, ULONG n, int prim, const unsigned char *pat)
@@ -189,7 +211,8 @@ static ULONG draw(struct w3dctx *x, W3D_Texture *tex, const struct vsrc *src, UL
     if (!o) return W3D_QUEUEFAILED;
     w3d_select_texture(x, tex);
     if (!cull || prim == OGPU_LAY_LIST) {
-        for (i = 0; i < n; i++) vertex_s(x, vget(src, i), &s, &o[i]);
+        if (!hl_vertices(x, src, n, &s, o))
+            for (i = 0; i < n; i++) vertex_s(x, vget(src, i), &s, &o[i]);
         if (cull) {                             /* a list: keep the front faces */
             ULONG k = 0;
             for (i = 0; i + 2 < n; i += 3)

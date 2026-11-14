@@ -99,6 +99,9 @@
  * hostlib/text/text_strip.h and hostlib/HOSTLIB-ABI.md. A hostlib function:
  * one C source for the 68k and the host (hostlib/hl.h). */
 #define AC_MAGIC_OGFX_TEXT_STRIP 0x00010105
+/* uint32_t hostlib_ogfx_layout_batch(block): GFOpenLayout's private AC090
+ * transport for one olc_accel batch (hostlib/ogfx/layout_batch.h). */
+#define AC_MAGIC_OGFX_LAYOUT_BATCH 0x0001010d
 /* uint32_t hostlib_sdl2_blend(block): SDL 2's ARGB8888 SDL_BLENDMODE_BLEND.
  * The destination is read and written, so the call is locked (tag $0002)
  * and that rectangle is state: a decline puts it back before the 68k body
@@ -123,6 +126,14 @@
  * block cursor is locked state; the texels are only read. The block is
  * hostlib/mgl/tex.h. */
 #define AC_MAGIC_MGL_TEX 0x00010109
+/* uint32_t hostlib_mgl_consts(block): send_if_changed. The last-sent
+ * constants are locked state, so a decline does not send them twice.
+ * The block is hostlib/mgl/consts.h. */
+#define AC_MAGIC_MGL_CONSTS 0x0001010B
+/* uint32_t hostlib_mgl_cached(block): cached(), the state objects' table
+ * lookup. It only reads, so there is no state. The block and the result
+ * are hostlib/mgl/cached.h. */
+#define AC_MAGIC_MGL_CACHED 0x0001010C
 /* uint32_t hostlib_zlib_inflate_codes(block): GFOpenZlib's inflate, the
  * codes of one block (literals, lengths, distances) until its end, the
  * input or the output runs out, or a bad code. Locked: the decoder's
@@ -149,6 +160,28 @@
  * ABI the runtime implements. The 68k body writes zeros and returns 0.
  * Its answer is about the host: AC_HOSTLIB=verify does not compare it. */
 #define AC_MAGIC_HOSTLIB_PROBE 0x00011000
+/* ACMedia v1 (hostlib/acmedia/acmedia.h has each block): twelve host
+ * services (HOSTLIB-ABI.md 8.7), $00012000-$0001200B in ACMedia's range
+ * (hostlib/ranges.lock). The runtime's broker answers them; each 68k body
+ * writes nothing and returns ACM_E_NOTAVAIL (-1). Never compared under
+ * AC_HOSTLIB=verify. */
+#define AC_MAGIC_ACM_CAPS     0x00012000
+#define AC_MAGIC_ACM_PROBE    0x00012001
+#define AC_MAGIC_ACM_OPEN     0x00012002
+#define AC_MAGIC_ACM_INFO     0x00012003
+#define AC_MAGIC_ACM_CONTROL  0x00012004
+#define AC_MAGIC_ACM_FRAME    0x00012005
+#define AC_MAGIC_ACM_AUDIO    0x00012006
+#define AC_MAGIC_ACM_FEED     0x00012007
+#define AC_MAGIC_ACM_EVENTS   0x00012008
+#define AC_MAGIC_ACM_CLOSE    0x00012009
+#define AC_MAGIC_ACM_RESULT   0x0001200A
+#define AC_MAGIC_ACM_FAULT    0x0001200B
+/* uint32_t hostlib_w3d_vertices(block): Warp3D.library's per-vertex
+ * conversion for a whole primitive, fog off (hostlib/w3d/vertices.h has the
+ * block and the contract). Pure; the first id of Warp3D's range,
+ * $00013000-$000130FF (hostlib/ranges.lock). */
+#define AC_MAGIC_W3D_VERTICES 0x00013000
 /* GFOpenCrypto's operations (DalsinAI/gfopentls, library/oc_magic.h, which
  * has each one's exact contract; AC090's side is jit_crypto.c). Byte
  * arrays throughout; each writes only its first argument's range. */

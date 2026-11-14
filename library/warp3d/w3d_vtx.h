@@ -130,6 +130,16 @@ W3D_CONV_FN ULONG w3d_tri_elem(int kind, ULONG t, ULONG k)
 
 /* A colour mode as arrays.h's HL_WA_C_* (RGBA 0, ARGB 1, BGRA 2, RGB 3,
  * BGR 4, plus 8 for bytes), in w3d_colour_at's order of tests. */
+/* DrawArray and DrawElements use hostlib_w3d_arrays only where the runtime
+ * runs it as host code: hostlib_probe's answer for it (rc, the ABI, and its
+ * answer byte, HL_PROBE_HOST is bit 0). Elsewhere they keep their own loop,
+ * so a machine without the host function draws exactly as before. */
+#define W3D_HL_ARRAYS_VERSION 1u
+W3D_CONV_FN int w3d_hl_hosted(ULONG rc, UBYTE answer)
+{
+    return rc != 0 && (answer & 1u) != 0;
+}
+
 W3D_CONV_FN ULONG w3d_hl_cmode(ULONG m)
 {
     ULONG r = (m & W3D_CMODE_RGB) ? 3 : (m & W3D_CMODE_BGR) ? 4 : (m & W3D_CMODE_ARGB) ? 1 : (m & W3D_CMODE_BGRA) ? 2 : 0;

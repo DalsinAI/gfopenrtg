@@ -65,6 +65,8 @@ void hl_host_parallel(struct hl_ctx *hl, uint32_t parts,
     (void)hl; (void)parts; (void)fn; (void)block;
 }
 #include "../library/hostlib/w3d/vertices.c"
+#include "../library/hostlib/probe/probe.h"
+#include "../library/hostlib/hl_ids.h"
 
 #define SLOTS 512u
 #define VP_AT 0x01000u
@@ -140,6 +142,13 @@ int main(int argc, char **argv)
 {
     static const int ks[] = { UV_NONE, 16, 16, 8, 10, 13, 5, 0, -3, 32, -16 };
     long cases = argc > 1 ? atol(argv[1]) : 3000, c, verts = 0, indexed = 0, dbl = 0, kinds[3] = { 0, 0, 0 };
+    /* the probe gate (w3d_lib.c): only "runs as host code" from a runtime with the probe */
+    if (w3d_hl_hosted(0, 0) || w3d_hl_hosted(0, HL_PROBE_HOST) || w3d_hl_hosted(0, HL_PROBE_HOST | HL_PROBE_TOTAL) ||
+        w3d_hl_hosted(2, 0) || w3d_hl_hosted(2, HL_PROBE_TOTAL) || !w3d_hl_hosted(2, HL_PROBE_HOST) ||
+        !w3d_hl_hosted(2, HL_PROBE_HOST | HL_PROBE_TOTAL) || W3D_HL_ARRAYS_VERSION != 1u || HL_ID_W3D_ARRAYS != 0x00013001u) {
+        printf("FAIL: w3d_hl_hosted / W3D_ARRAYS id or version\n");
+        return 1;
+    }
     if (w3d_hl_cmode(W3D_CMODE_RGBA) != HL_WA_C_RGBA || w3d_hl_cmode(W3D_CMODE_ARGB) != HL_WA_C_ARGB ||
         w3d_hl_cmode(W3D_CMODE_BGRA) != HL_WA_C_BGRA || w3d_hl_cmode(W3D_CMODE_RGB) != HL_WA_C_RGB ||
         w3d_hl_cmode(W3D_CMODE_BGR | W3D_COLOR_UBYTE) != (HL_WA_C_BGR | HL_WA_C_UBYTE) ||

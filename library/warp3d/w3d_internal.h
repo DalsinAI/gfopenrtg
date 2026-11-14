@@ -56,6 +56,7 @@ struct W3DBase {
     int no_fog, no_persp, no_filter, no_light;
     long trace;                                 /* ENV:Warp3D/Trace n: the first n trace lines to the serial port */
     int quality;                                /* ENV:Warp3D/Perspective: 0 per 8 pixels (default) */
+    int hl_arrays;                              /* hostlib_w3d_arrays runs as host code here (hostlib_probe): 1, no: 0 */
 };
 
 /* A texture's private part (W3D_Texture.driver). Every texture is kept as

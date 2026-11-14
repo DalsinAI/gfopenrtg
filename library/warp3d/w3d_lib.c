@@ -20,6 +20,11 @@
 
 #include "w3d_internal.h"
 #include "w3d_calls.h"
+#include "w3d_vtx.h"
+/* hostlib_probe ($00011000): whether this runtime runs hostlib_w3d_arrays
+ * as host code. Its 68k body answers 0, as does a runtime without it. */
+#define HL_VENDORED 1
+#include "../hostlib/probe/probe.c"
 #include "../../include/gfopengpu/gfopengpu.h"
 #include "../../include/proto/gfopengpu.h"
 
@@ -233,6 +238,18 @@ void w3d_read_prefs(struct W3DBase *base)
     base->no_filter = !envflag("Warp3D/Filtering", 1);
     base->no_light = !envflag("Warp3D/Lighting", 1);
     base->trace = GetVar("Warp3D/Trace", v, sizeof v, GVF_GLOBAL_ONLY) > 0 ? StrToLong((STRPTR)v, &base->trace) > 0 ? base->trace : 0 : 0;
+    {
+        ULONG list[2], blk[HL_PB_LONGS], rc;
+        UBYTE answer[4] = { 0, 0, 0, 0 };
+        list[0] = HL_ID_W3D_ARRAYS;
+        list[1] = W3D_HL_ARRAYS_VERSION;
+        blk[HL_PB_N] = 1;
+        blk[HL_PB_LIST] = (ULONG)list;
+        blk[HL_PB_ANSWERS] = (ULONG)answer;
+        blk[HL_PB_FEATURES] = 0;
+        rc = hostlib_probe((hl_addr)blk);
+        base->hl_arrays = w3d_hl_hosted(rc, answer[0]);
+    }
 }
 
 /* Tracing, for finding out what a program asks of Warp3D: ENV:Warp3D/Trace

@@ -530,7 +530,8 @@ static void arrs_of(W3D_Context *c, struct w3d_arrs *a)
 /* ntri triangles of DrawArray or DrawElements from triangle first, three
  * stream vertices each, through hostlib_w3d_arrays (library/hostlib/w3d/
  * arrays.h): 1 when it wrote them all, 0 when it is not used here (the
- * cases of hl_vertices, positions as doubles, a negative stride) or does
+ * runtime does not run it as host code, the cases of hl_vertices,
+ * positions as doubles, a negative stride) or does
  * not take the inputs, and the caller converts them itself. */
 static int hl_arrays(struct w3dctx *x, const struct w3d_arrs *a, int kind, ULONG base, const void *ix, ULONG type,
                      ULONG first, ULONG ntri, const struct uvs *s, struct ovtx *o)
@@ -538,6 +539,7 @@ static int hl_arrays(struct w3dctx *x, const struct w3d_arrs *a, int kind, ULONG
 #ifndef W3D_HOST
     W3D_Context *c = x->ctx;
     ULONG blk[HL_WA_LONGS];
+    if (!W3DBase->hl_arrays) return 0;          /* no host function here: the loop below, as before */
     if (s->ku == UV_FLOAT || s->kv == UV_FLOAT || W3DBase->trace > 100000 || !no_vertex_fog(x)) return 0;
     if ((a->vpmode != W3D_VERTEX_F_F_F && a->vpmode != W3D_VERTEX_F_F_D) || a->vps < 0) return 0;
     if ((a->tp && a->tps < 0) || (a->cp && a->cps < 0) || (a->scp && a->scps < 0)) return 0;

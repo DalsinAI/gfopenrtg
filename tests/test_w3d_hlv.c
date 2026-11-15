@@ -28,6 +28,15 @@ _Static_assert(sizeof(W3D_Vertex) == 64, "W3D_Vertex is 64 bytes");
 #define W3D_TEXMAPPING (1 << 8)
 #define W3D_GOURAUD    (1 << 10)
 #define W3D_SPECULAR   (1 << 23)
+/* include/Warp3D/Warp3D.h's array modes, for w3d_vtx.h's array reader */
+#define W3D_VERTEX_F_F_F 0
+#define W3D_VERTEX_F_F_D 1
+#define W3D_COLOR_UBYTE  (0x02u << 30)
+#define W3D_CMODE_RGB    0x01
+#define W3D_CMODE_BGR    0x02
+#define W3D_CMODE_RGBA   0x04
+#define W3D_CMODE_ARGB   0x08
+#define W3D_CMODE_BGRA   0x10
 #include "../library/warp3d/w3d_conv.h"
 
 /* w3d_internal.h's, which needs the Amiga's headers */

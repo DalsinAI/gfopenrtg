@@ -183,6 +183,16 @@ callers = "Warp3D.library's draw() (gfopenrtg library/warp3d/w3d_draw.c): a prim
 owner = "Warp3D"
 
 [[function]]
+name = "hostlib_w3d_arrays"
+id = 0x00013001
+id_name = "W3D_ARRAYS"
+version = 1
+source = "w3d/vertices.c"
+header = "w3d/arrays.h"
+callers = "Warp3D.library's arrays() (gfopenrtg library/warp3d/w3d_draw.c): DrawArray and DrawElements triangles into the stream, fog off"
+owner = "Warp3D"
+
+[[function]]
 name = "hostlib_probe"
 id = 0x00011000
 id_name = "HOSTLIB_PROBE"

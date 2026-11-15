@@ -4,7 +4,7 @@
 #define HOSTLIB_HL_IDS_H
 
 #define HOSTLIB_ABI 2
-#define HOSTLIB_MANIFEST "258e312fa58c5abd"   /* sha256 of hostlib.toml, the first 16 hex digits */
+#define HOSTLIB_MANIFEST "7acdc59343b69d23"   /* sha256 of hostlib.toml, the first 16 hex digits */
 
 #define HL_ID_OGFX_PLANAR_RECT 0x00010100   /* hostlib_ogfx_planar_rect, version 1 */
 #define HL_ID_OGFX_CHUNKY_RECT 0x00010101   /* hostlib_ogfx_chunky_rect, version 1 */
@@ -20,6 +20,7 @@
 #define HL_ID_MGL_CONSTS 0x0001010b   /* hostlib_mgl_consts, version 1 */
 #define HL_ID_MGL_CACHED 0x0001010c   /* hostlib_mgl_cached, version 1 */
 #define HL_ID_W3D_VERTICES 0x00013000   /* hostlib_w3d_vertices, version 1 */
+#define HL_ID_W3D_ARRAYS 0x00013001   /* hostlib_w3d_arrays, version 1 */
 #define HL_ID_HOSTLIB_PROBE 0x00011000   /* hostlib_probe, version 1 */
 #define HL_ID_ACM_CAPS 0x00012000   /* hostlib_acm_caps, version 1 */
 #define HL_ID_ACM_PROBE 0x00012001   /* hostlib_acm_probe, version 1 */

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-#include "vertices.h"
+#include "arrays.h"
 #include "../hl_ids.h"
 
 /* The conversions are gfopenrtg's library/warp3d/w3d_conv.h, on the IEEE
@@ -183,3 +183,184 @@ HL_FN(hostlib_w3d_vertices)
     }
     return count;
 }
+
+/* ---- DrawArray / DrawElements (arrays.h) ---- */
+
+/* a float's depth as the stream holds it: the float as a double, exactly */
+static uint32_t wv_zf(uint32_t u)
+{
+    uint32_t e = (u >> 23) & 255, m = u & 0x7fffff, s = u & 0x80000000u;
+    if (!e) return 0;
+    return wv_zd(s | (e == 255 ? 2047u : e + 896u) << 20 | m >> 3, m << 29);
+}
+
+static uint32_t wa_elem(uint32_t prim, uint32_t t, uint32_t k)
+{
+    if (prim == HL_WA_LIST) return 3u * t + k;
+    if (prim == HL_WA_FAN) return k ? t + k : 0;
+    if (t & 1) return k == 0 ? t + 1 : k == 1 ? t : t + 2;
+    return t + k;
+}
+
+static uint32_t wa_rd(const uint8_t *p, uint32_t n)
+{
+    if (n == 1) return p[0];
+    if (n == 2) return (uint32_t)p[0] << 8 | p[1];
+    return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
+}
+
+static int wa_cmode(uint32_t m) { return (m & ~(HL_WA_C_UBYTE | 7u)) == 0 && (m & 7u) <= HL_WA_C_BGR; }
+static uint32_t wa_csize(uint32_t m) { return ((m & 7u) >= HL_WA_C_RGB ? 3u : 4u) * (m & HL_WA_C_UBYTE ? 1u : 4u); }
+
+/* a colour as ARGB32: colour_bytes() for bytes, w3d_colour(colour_at()) for floats */
+static uint32_t wa_colour(const uint8_t *p, uint32_t m)
+{
+    uint32_t c[4], i, n = (m & 7u) >= HL_WA_C_RGB ? 3u : 4u;
+    for (i = 0; i < n; i++) c[i] = m & HL_WA_C_UBYTE ? p[i] : wv_unit8(wa_rd(p + 4 * i, 4));
+    switch (m & 7u) {
+    case HL_WA_C_ARGB: return c[0] << 24 | c[1] << 16 | c[2] << 8 | c[3];
+    case HL_WA_C_BGRA: return c[3] << 24 | c[2] << 16 | c[1] << 8 | c[0];
+    case HL_WA_C_RGB:  return 255u << 24 | c[0] << 16 | c[1] << 8 | c[2];
+    case HL_WA_C_BGR:  return 255u << 24 | c[2] << 16 | c[1] << 8 | c[0];
+    default:           return c[3] << 24 | c[0] << 16 | c[1] << 8 | c[2];
+    }
+}
+
+/* One array: the bytes vertices VMIN .. VMAX use, from offset LO to HI of
+ * each; 0 when they do not fit. */
+struct wa_arr { hl_addr at; uint32_t n; const uint8_t *p; uint32_t stride; int32_t lo; };
+static int wa_span(struct wa_arr *a, hl_addr ptr, uint32_t stride, int32_t lo, int32_t hi,
+                   uint32_t vmin, uint32_t vmax, hl_addr out, uint32_t outn)
+{
+    int64_t from;
+    uint64_t n;
+    if (stride > HL_WA_STRIDE || (uint64_t)vmax * stride > 0x7fffffffu) return 0;
+    from = (int64_t)ptr + (int64_t)vmin * stride + lo;
+    n = (uint64_t)(vmax - vmin) * stride + (uint64_t)(hi - lo);
+    if (from < 0 || (uint64_t)from + n > 0xffffffffull || n > HL_WV_SPREAD) return 0;
+    if (!wv_apart((hl_addr)from, (uint32_t)n, out, outn)) return 0;
+    a->at = (hl_addr)from; a->n = (uint32_t)n; a->stride = stride; a->lo = lo; a->p = 0;
+    return 1;
+}
+/* vertex VI's bytes at offset OFF (VI - VMIN from the span's start) */
+#define WA_AT(a, rel, off) ((a).p + (uint32_t)((int64_t)(rel) * (a).stride + (off) - (a).lo))
+
+#if defined(HL_HOST) && defined(HOSTLIB_TEST_STOP)
+extern uint32_t hostlib_w3d_arrays_stop;
+extern void (*hostlib_w3d_arrays_between)(void);    /* the test's: changes an index after the scan */
+#endif
+
+HL_TAG(hostlib_w3d_arrays, HL_ID_W3D_ARRAYS)
+HL_FN(hostlib_w3d_arrays)
+{
+    uint32_t b[HL_WA_LONGS], i, t, k, elo, ehi, vmin, vmax, outn, nv;
+    int32_t voff = 0, woff = 0, tlo = 0, thi = 4;
+    struct wa_arr vp, tp, cp, sp;
+    hl_addr ix = 0;
+    const uint8_t *ixp = 0;
+    uint8_t *dst;
+    HL_NEED_R(block, HL_WA_BLOCK);
+    for (i = 0; i < HL_WA_LONGS; i++) b[i] = HL_ARG(i);
+    if (!b[HL_WA_NTRI] || b[HL_WA_NTRI] > HL_WA_MAXTRI || b[HL_WA_PRIM] > HL_WA_STRIP) return 0;
+    if (b[HL_WA_VPMODE] > HL_WA_VP_FFD || (b[HL_WA_FLAGS] & ~HL_WV_FLAGS_ALL)) return 0;
+    if (!wv_k_ok(b[HL_WA_KU]) || !wv_k_ok(b[HL_WA_KV]) || (b[HL_WA_OUT] & 1) || !b[HL_WA_VP]) return 0;
+    if (b[HL_WA_CP] && !wa_cmode(b[HL_WA_CPMODE])) return 0;
+    if (b[HL_WA_SCP] && !wa_cmode(b[HL_WA_SCPMODE])) return 0;
+    if (b[HL_WA_IX] ? b[HL_WA_IXSIZE] != 1 && b[HL_WA_IXSIZE] != 2 && b[HL_WA_IXSIZE] != 4 : b[HL_WA_IXSIZE] != 0) return 0;
+    if (b[HL_WA_TP]) {
+        voff = (int32_t)b[HL_WA_TPVOFF]; woff = (int32_t)b[HL_WA_TPWOFF];
+        if (voff < -HL_WA_OFFS || voff > HL_WA_OFFS || woff < -HL_WA_OFFS || woff > HL_WA_OFFS) return 0;
+        if (voff < tlo) tlo = voff;
+        if (woff < tlo) tlo = woff;
+        if (voff + 4 > thi) thi = voff + 4;
+        if (woff + 4 > thi) thi = woff + 4;
+    }
+    if ((uint64_t)b[HL_WA_FIRST] + b[HL_WA_NTRI] + 2 > HL_WA_ELEMENTS / 3) return 0;
+    if (b[HL_WA_PRIM] == HL_WA_LIST) { elo = 3 * b[HL_WA_FIRST]; ehi = 3 * (b[HL_WA_FIRST] + b[HL_WA_NTRI]) - 1; }
+    else { elo = b[HL_WA_PRIM] == HL_WA_FAN ? 0 : b[HL_WA_FIRST]; ehi = b[HL_WA_FIRST] + b[HL_WA_NTRI] + 1; }
+    nv = 3 * b[HL_WA_NTRI];
+    outn = nv * HL_WV_OVTX;
+    if ((uint64_t)b[HL_WA_OUT] + outn > 0xffffffffull) return 0;
+    if (!wv_apart(block, HL_WA_BLOCK, b[HL_WA_OUT], outn)) return 0;
+    if (b[HL_WA_IX]) {
+        uint32_t sz = b[HL_WA_IXSIZE], n = (ehi - elo + 1) * sz;
+        ix = b[HL_WA_IX] + elo * sz;
+        if ((uint64_t)b[HL_WA_IX] + (uint64_t)(ehi + 1) * sz > 0xffffffffull || n > HL_WV_SPREAD) return 0;
+        if (!wv_apart(ix, n, b[HL_WA_OUT], outn)) return 0;
+        HL_NEED_R(ix, n);
+        vmin = 0xffffffffu; vmax = 0;
+        for (t = 0; t < b[HL_WA_NTRI]; t++)
+            for (k = 0; k < 3; k++) {
+                uint32_t e = wa_elem(b[HL_WA_PRIM], b[HL_WA_FIRST] + t, k), a = ix + (e - elo) * sz;
+                uint32_t v = sz == 1 ? HL_RD8(a) : sz == 2 ? HL_RD16(a) : HL_RD32(a);
+                v += b[HL_WA_BASE];
+                if (v < vmin) vmin = v;
+                if (v > vmax) vmax = v;
+            }
+    } else {
+        if ((uint64_t)b[HL_WA_BASE] + ehi > 0xffffffffull) return 0;
+        vmin = b[HL_WA_BASE] + elo; vmax = b[HL_WA_BASE] + ehi;
+    }
+    if (!wa_span(&vp, b[HL_WA_VP], b[HL_WA_VPSTRIDE], 0, b[HL_WA_VPMODE] ? 16 : 12, vmin, vmax, b[HL_WA_OUT], outn)) return 0;
+    HL_NEED_R(vp.at, vp.n);
+    if (b[HL_WA_TP]) {
+        if (!wa_span(&tp, b[HL_WA_TP], b[HL_WA_TPSTRIDE], tlo, thi, vmin, vmax, b[HL_WA_OUT], outn)) return 0;
+        HL_NEED_R(tp.at, tp.n);
+    }
+    if (b[HL_WA_CP]) {
+        if (!wa_span(&cp, b[HL_WA_CP], b[HL_WA_CPSTRIDE], 0, (int32_t)wa_csize(b[HL_WA_CPMODE]), vmin, vmax, b[HL_WA_OUT], outn)) return 0;
+        HL_NEED_R(cp.at, cp.n);
+    }
+    if (b[HL_WA_SCP]) {
+        if (!wa_span(&sp, b[HL_WA_SCP], b[HL_WA_SCPSTRIDE], 0, (int32_t)wa_csize(b[HL_WA_SCPMODE]), vmin, vmax, b[HL_WA_OUT], outn)) return 0;
+        HL_NEED_R(sp.at, sp.n);
+    }
+    HL_NEED_W(b[HL_WA_OUT], outn);
+    HL_DECLARED();
+#if defined(HL_HOST) && defined(HOSTLIB_TEST_STOP)
+    if (hostlib_w3d_arrays_between) hostlib_w3d_arrays_between();
+#endif
+    if (ix) HL_PTR_R(ixp, ix, (ehi - elo + 1) * b[HL_WA_IXSIZE]);
+    HL_PTR_R(vp.p, vp.at, vp.n);
+    if (b[HL_WA_TP]) HL_PTR_R(tp.p, tp.at, tp.n);
+    if (b[HL_WA_CP]) HL_PTR_R(cp.p, cp.at, cp.n);
+    if (b[HL_WA_SCP]) HL_PTR_R(sp.p, sp.at, sp.n);
+    HL_PTR_W(dst, b[HL_WA_OUT], outn);
+    for (i = 0; i < nv; i++) {
+        uint32_t e = wa_elem(b[HL_WA_PRIM], b[HL_WA_FIRST] + i / 3, i % 3), v, rel, w, argb, spec, z;
+        const uint8_t *p;
+        uint8_t *o = dst + i * HL_WV_OVTX;
+        v = (ixp ? wa_rd(ixp + (e - elo) * b[HL_WA_IXSIZE], b[HL_WA_IXSIZE]) : e) + b[HL_WA_BASE];
+        rel = v - vmin;
+        if (rel > vmax - vmin) HL_DECLINE();     /* an index changed since the scan: outside the declared spans */
+        p = WA_AT(vp, rel, 0);
+        z = b[HL_WA_VPMODE] ? wv_zd(wa_rd(p + 8, 4), wa_rd(p + 12, 4)) : wv_zf(wa_rd(p + 8, 4));
+        argb = !(b[HL_WA_FLAGS] & HL_WV_GOURAUD) || !b[HL_WA_CP] ? b[HL_WA_CURRENT]
+             : wa_colour(WA_AT(cp, rel, 0), b[HL_WA_CPMODE]);
+        spec = 255u << 24;
+        if ((b[HL_WA_FLAGS] & HL_WV_SPECULAR) && b[HL_WA_SCP])
+            spec |= wa_colour(WA_AT(sp, rel, 0), b[HL_WA_SCPMODE]) & 0xffffffu;
+        wv_be(o, wv_fx(wa_rd(p, 4), 16));
+        wv_be(o + 4, wv_fx(wa_rd(p + 4, 4), 16));
+        wv_be(o + 8, argb);
+        if (b[HL_WA_TP]) {
+            const uint8_t *q = WA_AT(tp, rel, 0);
+            wv_be(o + 12, wv_uv(wa_rd(q, 4), b[HL_WA_KU]));
+            wv_be(o + 16, wv_uv(wa_rd(q + voff, 4), b[HL_WA_KV]));
+            w = wa_rd(q + woff, 4);
+        } else {
+            wv_be(o + 12, 0);
+            wv_be(o + 16, 0);
+            w = 0x3f800000u;
+        }
+        if ((int32_t)w <= 0 || w > 0x7f800000u) w = 0x358637BDu;
+        wv_be(o + 20, z);
+        wv_be(o + 24, w);
+        wv_be(o + 28, spec);
+#if defined(HL_HOST) && defined(HOSTLIB_TEST_STOP)
+        if (hostlib_w3d_arrays_stop && i + 1 == hostlib_w3d_arrays_stop) HL_DECLINE();
+#endif
+    }
+    return nv;
+}
+#undef WA_AT

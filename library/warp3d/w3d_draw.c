@@ -577,6 +577,56 @@ static void array_vertex(struct w3dctx *x, ULONG i, const struct uvs *s, struct 
     convert(x, &v, s, z, pargb, o, fogc, have_fogc);
 }
 
+static void arrs_of(W3D_Context *c, struct w3d_arrs *a)
+{
+    a->vp = (const UBYTE *)c->VertexPointer; a->vps = c->VPStride; a->vpmode = c->VPMode;
+    a->tp = (const UBYTE *)c->TexCoordPointer[0]; a->tps = c->TPStride[0]; a->tpv = c->TPVOffs[0]; a->tpw = c->TPWOffs[0];
+    a->cp = (const UBYTE *)c->ColorPointer; a->cps = c->CPStride; a->cpmode = c->CPMode;
+    a->scp = (const UBYTE *)c->SecondaryColorPointer; a->scps = c->SCPStride; a->scpmode = c->SCPMode;
+}
+
+/* ntri triangles of DrawArray or DrawElements from triangle first, three
+ * stream vertices each, through hostlib_w3d_arrays (library/hostlib/w3d/
+ * arrays.h): 1 when it wrote them all, 0 when it is not used here (the
+ * runtime does not run it as host code, the cases of hl_vertices,
+ * positions as doubles, a negative stride) or does
+ * not take the inputs, and the caller converts them itself. */
+static int hl_arrays(struct w3dctx *x, int kind, ULONG base, const void *ix, ULONG type,
+                     ULONG first, ULONG ntri, const struct uvs *s, struct ovtx *o)
+{
+#ifndef W3D_HOST
+    W3D_Context *c = x->ctx;
+    ULONG blk[HL_WA_LONGS];
+    struct w3d_arrs ar, *a = &ar;
+    if (!W3DBase->hl_arrays) return 0;          /* no host function here: main's loop below, unchanged */
+    arrs_of(c, a);
+    if (s->ku == UV_FLOAT || s->kv == UV_FLOAT || W3DBase->trace > 100000 || !no_vertex_fog(x)) return 0;
+    if ((a->vpmode != W3D_VERTEX_F_F_F && a->vpmode != W3D_VERTEX_F_F_D) || a->vps < 0) return 0;
+    if ((a->tp && a->tps < 0) || (a->cp && a->cps < 0) || (a->scp && a->scps < 0)) return 0;
+    blk[HL_WA_VP] = (ULONG)a->vp; blk[HL_WA_VPSTRIDE] = (ULONG)a->vps;
+    blk[HL_WA_VPMODE] = a->vpmode == W3D_VERTEX_F_F_D ? HL_WA_VP_FFD : HL_WA_VP_FFF;
+    blk[HL_WA_TP] = (ULONG)a->tp; blk[HL_WA_TPSTRIDE] = (ULONG)a->tps;
+    blk[HL_WA_TPVOFF] = (ULONG)a->tpv; blk[HL_WA_TPWOFF] = (ULONG)a->tpw;
+    blk[HL_WA_CP] = (ULONG)a->cp; blk[HL_WA_CPSTRIDE] = (ULONG)a->cps; blk[HL_WA_CPMODE] = w3d_hl_cmode(a->cpmode);
+    blk[HL_WA_SCP] = (ULONG)a->scp; blk[HL_WA_SCPSTRIDE] = (ULONG)a->scps; blk[HL_WA_SCPMODE] = w3d_hl_cmode(a->scpmode);
+    blk[HL_WA_IX] = (ULONG)ix;
+    blk[HL_WA_IXSIZE] = !ix ? 0 : type == W3D_INDEX_UBYTE ? 1 : type == W3D_INDEX_UWORD ? 2 : 4;
+    blk[HL_WA_BASE] = base;
+    blk[HL_WA_PRIM] = (ULONG)kind;              /* W3D_TRI_* are HL_WA_LIST, _FAN, _STRIP */
+    blk[HL_WA_FIRST] = first;
+    blk[HL_WA_NTRI] = ntri;
+    blk[HL_WA_OUT] = (ULONG)o;
+    blk[HL_WA_FLAGS] = ((c->state & W3D_GOURAUD) ? HL_WV_GOURAUD : 0) | ((c->state & W3D_SPECULAR) ? HL_WV_SPECULAR : 0);
+    blk[HL_WA_CURRENT] = w3d_colour(&x->current);
+    blk[HL_WA_KU] = (ULONG)(LONG)s->ku;
+    blk[HL_WA_KV] = (ULONG)(LONG)s->kv;
+    return hostlib_w3d_arrays((ULONG)blk) == ntri * 3;
+#else
+    (void)x; (void)kind; (void)base; (void)ix; (void)type; (void)first; (void)ntri; (void)s; (void)o;
+    return 0;
+#endif
+}
+
 static ULONG index_at(const void *ix, ULONG type, ULONG i)
 {
     if (!ix) return i;
@@ -602,6 +652,7 @@ static ULONG arrays(struct w3dctx *x, ULONG prim, ULONG base, ULONG count, ULONG
     switch (prim) {
     case W3D_PRIMITIVE_TRIANGLES: case W3D_PRIMITIVE_TRIFAN: case W3D_PRIMITIVE_TRISTRIP: {
         ULONG ntri = prim == W3D_PRIMITIVE_TRIANGLES ? count / 3 : count >= 3 ? count - 2 : 0, k = 0, done = 0;
+        int kind = prim == W3D_PRIMITIVE_TRIANGLES ? W3D_TRI_LIST : prim == W3D_PRIMITIVE_TRIFAN ? W3D_TRI_FAN : W3D_TRI_STRIP;
         struct ovtx a, b, cc;
         if (!ntri) return W3D_ILLEGALINPUT;
         while (done < ntri) {
@@ -610,7 +661,14 @@ static ULONG arrays(struct w3dctx *x, ULONG prim, ULONG base, ULONG count, ULONG
             if (!o) return W3D_QUEUEFAILED;
             w3d_select_texture(x, tex);
             k = 0;
-            for (j = 0; j < chunk; j++) {
+            if (hl_arrays(x, kind, base, ix, type, done, chunk, &s, o)) {
+                if (!(c->state & W3D_CULLFACE)) k = chunk * 3;
+                else for (j = 0; j < chunk; j++)     /* the front faces, in place: k <= 3j */
+                    if (!culled(x, &o[3 * j], &o[3 * j + 1], &o[3 * j + 2])) {
+                        if (k != 3 * j) { o[k] = o[3 * j]; o[k + 1] = o[3 * j + 1]; o[k + 2] = o[3 * j + 2]; }
+                        k += 3;
+                    }
+            } else for (j = 0; j < chunk; j++) {
                 ULONG tnum = done + j, i0, i1, i2;
                 if (prim == W3D_PRIMITIVE_TRIANGLES) { i0 = tnum * 3; i1 = i0 + 1; i2 = i0 + 2; }
                 else if (prim == W3D_PRIMITIVE_TRIFAN) { i0 = 0; i1 = tnum + 1; i2 = tnum + 2; }

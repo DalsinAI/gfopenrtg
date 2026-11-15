@@ -1,0 +1,60 @@
+SDL 2 for AmigaOS 3 in GFOpenGPU: keep an OpenGL window drawing across a full
+screen change. OS3_SetWindowFullscreen replaces the Intuition window and its
+RastPort but keeps the GL context and drawable. Finish the old target with one
+swap before the window closes, and swap once more after the new window or
+screen is open, so the drawable is aimed at the new RastPort and the new screen
+never shows stale damage. The caller's GL objects and FBO state are kept.
+Reworked onto the current OS3_SetWindowFullscreen (after 0013 and 0019) from
+Team 1's 1 Nov patch.
+diff --git a/src/video/amigaos3/SDL_os3window.c b/src/video/amigaos3/SDL_os3window.c
+index 883a3658..7579e769 100644
+--- a/src/video/amigaos3/SDL_os3window.c
++++ b/src/video/amigaos3/SDL_os3window.c
+@@ -573,6 +573,9 @@ void OS3_SetWindowFullscreen(_THIS, SDL_Window *window,
+     OS3_WindowData *data = (OS3_WindowData *)window->driverdata;
+     int w = 0, h = 0, depth = 32;
+     int rc, had_screen;
++#ifdef SDL_VIDEO_OPENGL
++    SDL_bool retarget_gl = SDL_FALSE;
++#endif
+ 
+     (void)display;
+     if (!data || window->is_destroying) {
+@@ -591,6 +594,18 @@ void OS3_SetWindowFullscreen(_THIS, SDL_Window *window,
+         }
+     }
+ 
++#ifdef SDL_VIDEO_OPENGL
++    /* The transition replaces the Intuition window and its RastPort, but not
++     * the OpenGL context or drawable. Finish the old target before it is
++     * closed. Keeping the drawable matters because the caller may have an FBO
++     * and cached render state bound to this context. */
++    if ((window->flags & SDL_WINDOW_OPENGL) &&
++        SDL_GL_GetCurrentWindow() == window &&
++        SDL_GL_GetCurrentContext() != NULL) {
++        retarget_gl = OS3_GL_SwapWindow(_this, window) == 0;
++    }
++#endif
++
+     /* The framebuffer goes through the device's functions (the video RAM
+      * wrapper first), and SDL makes a new one for the new window: SDL marks
+      * its surface invalid after this (SDL_OnWindowResized), and so does this,
+@@ -635,6 +650,18 @@ void OS3_SetWindowFullscreen(_THIS, SDL_Window *window,
+     if (rc < 0) {
+         SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "OS3: %s", SDL_GetError());
+     }
++
++#ifdef SDL_VIDEO_OPENGL
++    /* OS3_GL_SwapWindow aims the existing drawable at data->window->RPort on
++     * every swap. Present the complete current buffer once now so the new
++     * screen never inherits stale damage, while keeping the caller's GL
++     * objects and FBO state. */
++    if (retarget_gl && rc == 0 && OS3_GL_SwapWindow(_this, window) < 0) {
++        SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
++                     "OS3: couldn't retarget GL after fullscreen transition: %s",
++                     SDL_GetError());
++    }
++#endif
+ }
+ 
+ void OS3_DestroyWindow(_THIS, SDL_Window *window)

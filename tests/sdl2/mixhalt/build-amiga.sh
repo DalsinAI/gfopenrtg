@@ -12,3 +12,6 @@ mkdir -p "$OUT"
 "$PREFIX/bin/m68k-amigaos-gcc" -std=gnu11 -O2 -m68040 -m68881 -noixemul -Wall -Wextra \
     -o "$OUT/mixhalt" "$HERE/mixhalt.c" -lSDL2_mixer -lSDL2 -lm -lamiga
 ls -l "$OUT/mixhalt"
+"$PREFIX/bin/m68k-amigaos-gcc" -std=gnu11 -O2 -m68040 -noixemul -Wall \
+    -o "$OUT/tasks" "$HERE/tasks.c"
+ls -l "$OUT/tasks"

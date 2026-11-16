@@ -7,6 +7,7 @@
  * process's program. A lab aid for hangs such as Amoebax's music change. */
 #include <exec/execbase.h>
 #include <exec/tasks.h>
+#include <exec/semaphores.h>
 #include <dos/dosextens.h>
 #include <proto/exec.h>
 #include <proto/dos.h>
@@ -108,6 +109,50 @@ static void modules(void)
     }
 }
 
+/* The return addresses on a stack (a JSR or BSR just before) and the
+   semaphores it points at, with their owners. */
+static int is_code(ULONG v)
+{
+    return !(v & 1) && ((v >= 0x00f80000 && v < 0x01000000) || (v >= 0x00200000 && TypeOfMem((APTR)v)));
+}
+
+static const char *call_before(ULONG v)
+{
+    UWORD *w = (UWORD *)v;
+    if (w[-3] == 0x4eb9) return "jsr.l";
+    if (w[-3] == 0x61ff) return "bsr.l";
+    if ((w[-1] & 0xfff8) == 0x4e90) return "jsr(An)";
+    if ((w[-2] & 0xfff8) == 0x4ea8 || w[-2] == 0x4eba) return "jsr d16";
+    if ((w[-2] & 0xfff8) == 0x4eb0 || w[-2] == 0x4ebb) return "jsr idx";
+    if (w[-2] == 0x6100) return "bsr.w";
+    if ((w[-1] & 0xff00) == 0x6100 && (w[-1] & 0xff)) return "bsr.b";
+    if ((w[-4] & 0xfff8) == 0x4eb0) return "jsr idx32";
+    return NULL;
+}
+
+static void calls_and_sems(struct row *r)
+{
+    UBYTE *b = (UBYTE *)r->stack;
+    int n = r->nstack * 4, i;
+    for (i = 0; i + 4 <= n; i += 2) {
+        ULONG v = ((ULONG)b[i] << 24) | ((ULONG)b[i + 1] << 16) | ((ULONG)b[i + 2] << 8) | b[i + 3];
+        const char *c;
+        if (is_code(v) && (c = call_before(v)) != NULL)
+            printf("   +%03x ret %08lx (%s)\n", i, (unsigned long)v, c);
+        else if (!(v & 1) && v >= 0x00200000 && TypeOfMem((APTR)v) && TypeOfMem((APTR)(v + 46))) {
+            struct SignalSemaphore *ss = (struct SignalSemaphore *)v;
+            if (ss->ss_Link.ln_Type == NT_SIGNALSEM) {
+                struct MinNode *q;
+                printf("   +%03x sem %08lx owner %08lx nest %d queue %d waiters",
+                       i, (unsigned long)v, (unsigned long)ss->ss_Owner, ss->ss_NestCount, ss->ss_QueueCount);
+                for (q = ss->ss_WaitQueue.mlh_Head; q && q->mln_Succ && TypeOfMem(q); q = q->mln_Succ)
+                    printf(" %08lx", (unsigned long)((struct SemaphoreRequest *)q)->sr_Waiter);
+                printf("\n");
+            }
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     const char *pat = argc > 1 ? argv[1] : NULL;
@@ -142,6 +187,7 @@ int main(int argc, char **argv)
         for (j = 0; j < r->nstack; j++)
             printf("%s%08lx", j % 8 ? " " : "\n   ", (unsigned long)r->stack[j]);
         if (r->nstack) printf("\n");
+        if (r->nstack) calls_and_sems(r);
     }
     return 0;
 }

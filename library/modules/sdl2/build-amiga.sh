@@ -35,7 +35,7 @@ mkdir -p "$OUT"
 # what is printed, so the end says how it went and lists every warning.
 LOG=$OUT/build.log
 rc=0
-STOVE=$PREFIX sh "$HERE/build.sh" "$OUT" satellites > "$LOG" 2>&1 || rc=$?
+STOVE=$PREFIX sh "$HERE/build.sh" "$OUT" module stub static satellites > "$LOG" 2>&1 || rc=$?
 if [ "$rc" -ne 0 ]; then
     tail -n 200 "$LOG"
     exit "$rc"

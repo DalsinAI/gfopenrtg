@@ -78,10 +78,10 @@ $(OBJ)/img/%.o: $(IMG)/src/%.c
 $(OBJ)/mimg/%.o: $(IMG)/src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(MODFLAGS) $(IMG_DEFS) $(IMG_LADDER) -I$(IMG)/include -c $< -o $@
-$(OBJ)/img/%.o: $(MODDIR)/%.c $(MODDIR)/ogpu_image.h $(MODDIR)/sat_service.h $(MODDIR)/sat_path.h $(COMMON)/ogpu_path.h
+$(OBJ)/img/%.o: $(MODDIR)/%.c $(MODDIR)/ogpu_image.h $(MODDIR)/ogpu_image_size.c $(MODDIR)/sat_service.h $(MODDIR)/sat_path.h $(COMMON)/ogpu_path.h
 	@mkdir -p $(dir $@)
 	$(CC) $(OWN_CFLAGS) -c $< -o $@
-$(OBJ)/mimg/%.o: $(MODDIR)/%.c $(MODDIR)/ogpu_image.h $(MODDIR)/sat_service.h $(MODDIR)/sat_path.h $(COMMON)/ogpu_path.h
+$(OBJ)/mimg/%.o: $(MODDIR)/%.c $(MODDIR)/ogpu_image.h $(MODDIR)/ogpu_image_size.c $(MODDIR)/sat_service.h $(MODDIR)/sat_path.h $(COMMON)/ogpu_path.h
 	@mkdir -p $(dir $@)
 	$(CC) $(OWN_CFLAGS) $(MODFLAGS) -c $< -o $@
 # The GCC 16 stove's -m68040 float-to-int can save FPCR in the register a

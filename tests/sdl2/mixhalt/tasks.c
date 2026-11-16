@@ -113,7 +113,7 @@ static void modules(void)
    semaphores it points at, with their owners. */
 static int is_code(ULONG v)
 {
-    return !(v & 1) && ((v >= 0x00f80000 && v < 0x01000000) || (v >= 0x00200000 && TypeOfMem((APTR)v)));
+    return !(v & 1) && ((v >= 0x00f80010 && v < 0x01000000) || (v >= 0x00200010 && TypeOfMem((APTR)v) && TypeOfMem((APTR)(v - 8))));
 }
 
 static const char *call_before(ULONG v)
@@ -140,13 +140,16 @@ static void calls_and_sems(struct row *r)
         if (is_code(v) && (c = call_before(v)) != NULL)
             printf("   +%03x ret %08lx (%s)\n", i, (unsigned long)v, c);
         else if (!(v & 1) && v >= 0x00200000 && TypeOfMem((APTR)v) && TypeOfMem((APTR)(v + 46))) {
+            fflush(stdout);
             struct SignalSemaphore *ss = (struct SignalSemaphore *)v;
             if (ss->ss_Link.ln_Type == NT_SIGNALSEM) {
                 struct MinNode *q;
+                int k = 0;
                 printf("   +%03x sem %08lx owner %08lx nest %d queue %d waiters",
                        i, (unsigned long)v, (unsigned long)ss->ss_Owner, ss->ss_NestCount, ss->ss_QueueCount);
-                for (q = ss->ss_WaitQueue.mlh_Head; q && q->mln_Succ && TypeOfMem(q); q = q->mln_Succ)
-                    printf(" %08lx", (unsigned long)((struct SemaphoreRequest *)q)->sr_Waiter);
+                for (q = ss->ss_WaitQueue.mlh_Head; q && q->mln_Succ && TypeOfMem(q) && k < 8; q = q->mln_Succ, k++)
+                    printf(" %08lx@%08lx", (unsigned long)((struct SemaphoreRequest *)q)->sr_Waiter, (unsigned long)q);
+                if (k == 8) printf(" ...");
                 printf("\n");
             }
         }

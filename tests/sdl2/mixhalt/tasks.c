@@ -77,34 +77,33 @@ static void take(int *n, struct Task *t, const char *pat, int longs)
     }
 }
 
-/* gfopengpu.library's shared modules: its base holds a MinList of
-   { MinNode; BPTR seg; hdr; users; DateStamp; size; replaced; name[] }. */
+/* gfopengpu.library's shared modules: its base (0.29) holds, at byte 2782,
+   a MinList of { MinNode; BPTR seg; hdr; users; DateStamp; size; replaced;
+   name[] }. */
+#define MODULES_AT 2782
 static void modules(void)
 {
     struct Library *b;
-    UBYTE *base;
-    int off;
+    struct MinList *l;
+    struct MinNode *n;
+    int count = 0;
     Forbid();
     b = (struct Library *)FindName(&SysBase->LibList, (CONST_STRPTR)"gfopengpu.library");
     Permit();
     if (!b) { printf("no gfopengpu.library\n"); return; }
-    base = (UBYTE *)b;
-    for (off = 0; off < 4096; off += 2) {
-        struct MinList *l = (struct MinList *)(base + off);
-        struct MinNode *n = l->mlh_Head;
-        if (!n || ((ULONG)n & 1) || TypeOfMem(n) == 0) continue;
-        if (l->mlh_Tail != NULL || (APTR)n == (APTR)&l->mlh_Tail) continue;
-        for (; n && n->mln_Succ && TypeOfMem(n); n = n->mln_Succ) {
-            UBYTE *u = (UBYTE *)n;
-            BPTR seg = *(BPTR *)(u + 8);
-            const char *name = (const char *)(u + 37);
-            if (!strstr(name, "module")) break;
-            printf("module %s\n", name);
-            while (seg) {
-                ULONG *h = BADDR(seg);
-                printf("   hunk at %08lx size %08lx\n", (unsigned long)(h + 1), (unsigned long)h[-1]);
-                seg = *h;
-            }
+    printf("gfopengpu.library %u.%u at %08lx\n", b->lib_Version, b->lib_Revision, (unsigned long)b);
+    l = (struct MinList *)((UBYTE *)b + MODULES_AT);
+    if (l->mlh_Tail != NULL || !TypeOfMem(l->mlh_Head)) { printf("no module list there\n"); return; }
+    for (n = l->mlh_Head; n->mln_Succ && count < 32; n = n->mln_Succ, count++) {
+        UBYTE *u = (UBYTE *)n;
+        BPTR seg = *(BPTR *)(u + 8);
+        int k = 0;
+        printf("module %.200s\n", (const char *)(u + 37));
+        while (seg && k++ < 16) {
+            ULONG *h = BADDR(seg);
+            if (!TypeOfMem(h)) break;
+            printf("   hunk at %08lx size %08lx\n", (unsigned long)(h + 1), (unsigned long)h[-1]);
+            seg = *h;
         }
     }
 }

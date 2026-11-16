@@ -21,7 +21,15 @@ if [ -z "${SDK_HEADERS:-}" ]; then
         if [ -f "$d/cybergraphx/cybergraphics.h" ] && [ -f "$d/devices/ahi.h" ]; then SDK_HEADERS=$d; export SDK_HEADERS; break; fi
     done
 fi
-if [ -z "${VASM:-}" ] && [ -x "$PREFIX/bin/vasmm68k_mot" ]; then VASM=$PREFIX/bin/vasmm68k_mot; export VASM; fi
+# vasm: this stove's, else an OS 3.2 stove's (the open6 stoves have none)
+if [ -z "${VASM:-}" ]; then
+    for v in "$PREFIX/bin/vasmm68k_mot" \
+             "$HOME/AmiCradle/kitchen/stoves/os32/prefix/bin/vasmm68k_mot" \
+             "$HOME/AmiCradle/stoves/os32/prefix/bin/vasmm68k_mot" \
+             "$HOME/AmiCradle/kitchen/stoves/os32-gcc16/prefix/bin/vasmm68k_mot"; do
+        if [ -x "$v" ]; then VASM=$v; export VASM; break; fi
+    done
+fi
 mkdir -p "$OUT"
 # The whole log goes to OUT/build.log: the Cradle keeps only the end of
 # what is printed, so the end says how it went and lists every warning.

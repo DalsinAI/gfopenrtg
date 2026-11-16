@@ -35,12 +35,13 @@ mkdir -p "$OUT"
 # what is printed, so the end says how it went and lists every warning.
 LOG=$OUT/build.log
 rc=0
-STOVE=$PREFIX sh "$HERE/build.sh" "$OUT" module stub static tests > "$LOG" 2>&1 || rc=$?
+STOVE=$PREFIX sh "$HERE/build.sh" "$OUT" satellites > "$LOG" 2>&1 || rc=$?
 if [ "$rc" -ne 0 ]; then
     tail -n 200 "$LOG"
     exit "$rc"
 fi
 tail -n 20 "$LOG"
+ls -l "$OUT"; exit 0   # lab-only: satellites
 echo "warnings, each once (file:line, from $(grep -c 'warning:' "$LOG" || true) in all):"
 grep 'warning:' "$LOG" | sed -e "s|$OUT/sdl2-work/||" -e "s|$HOME/||" | sort | uniq -c || true
 

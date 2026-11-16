@@ -17,7 +17,10 @@
  *     compiler slip with __far), which is wrong once the data is a copy;
  *   - for a shared module (module_rt.h): its A4 in the table, calls into the
  *     program with the program's A4, and threads that start with the
- *     module's.
+ *     module's;
+ *   - malloc and free of its own (module_malloc.c), as libnix's free keeps
+ *     its lock when a pointer isn't its own, and a module's memory is used
+ *     from every task of the program.
  * Built -fbaserel32, every global here is the opening program's own copy. */
 #include <exec/types.h>
 #include <exec/execbase.h>
@@ -32,6 +35,7 @@
 #include <stabs.h>
 
 #include "module_rt.h"
+#include "module_malloc.c"
 
 /* libnix's globals, which its startup code would set. */
 struct ExecBase *SysBase;
@@ -220,9 +224,11 @@ int ogpu_module_begin(const struct OGPUModuleArgs *args, ULONG version, struct O
     ogpu_module_OpenGPUBase = args->OpenGPUBase;
     InitSemaphore(&vars_lock);
     vars = NULL;
+    module_malloc_init();
     starting = 1;
     if (setjmp(failed)) {
         starting = 0;
+        module_malloc_end();
         return 0;
     }
     level = 0;
@@ -244,4 +250,5 @@ void ogpu_module_end(void)
         }
         FreeVec(v);
     }
+    module_malloc_end();
 }

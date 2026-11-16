@@ -1,0 +1,24 @@
+name: Module malloc lock
+on:
+  pull_request:
+    paths:
+      - 'library/modules/common/**'
+      - 'tests/modules/host/**'
+      - 'tests/modules/test_module_malloc.py'
+      - '.github/workflows/modules-malloc-lock.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'library/modules/common/**'
+      - 'tests/modules/host/**'
+      - 'tests/modules/test_module_malloc.py'
+      - '.github/workflows/modules-malloc-lock.yml'
+  workflow_dispatch:
+jobs:
+  malloc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: libnix free hangs another task's malloc, the module's does not
+        run: cd tests/modules && python3 -m unittest -v test_module_malloc

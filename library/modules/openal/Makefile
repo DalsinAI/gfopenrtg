@@ -92,7 +92,7 @@ $(OUT)/libopenal_static.a: $(STATIC_OBJS)
 $(CORE_DIR)/module_start.o: $(COMMON)/module_start.S
 	@mkdir -p $(dir $@)
 	$(CC) $(CPU) $(MODULE_CFLAGS) -c $< -o $@
-$(CORE_DIR)/module_rt.o: $(COMMON)/module_rt.c $(COMMON)/module_rt.h
+$(CORE_DIR)/module_rt.o: $(COMMON)/module_rt.c $(COMMON)/module_rt.h $(COMMON)/module_malloc.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS_BASE) $(MODULE_CFLAGS) -c $< -o $@
 $(CORE_DIR)/openal_module.o: $(HERE)module/openal_module.c $(ROOT)/stubs/openal/openal_module.h $(HEADERS)

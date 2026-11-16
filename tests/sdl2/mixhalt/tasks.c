@@ -40,6 +40,16 @@ static void take(int *n, struct Task *t, const char *pat, int longs)
     r = &rows[(*n)++];
     r->t = t;
     strncpy(r->name, t->tc_Node.ln_Name ? t->tc_Node.ln_Name : "?", sizeof r->name - 1);
+    if (t->tc_Node.ln_Type == NT_PROCESS && ((struct Process *)t)->pr_CLI) {
+        struct CommandLineInterface *c = BADDR(((struct Process *)t)->pr_CLI);
+        UBYTE *b = BADDR(c->cli_CommandName);
+        if (b && b[0]) {
+            int k = b[0] < sizeof r->name - 2 ? b[0] : sizeof r->name - 2;
+            r->name[0] = '>';
+            memcpy(r->name + 1, b + 1, k);
+            r->name[k + 1] = 0;
+        }
+    }
     r->state = t->tc_State;
     r->pri = t->tc_Node.ln_Pri;
     r->wait = t->tc_SigWait;

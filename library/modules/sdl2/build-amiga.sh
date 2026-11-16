@@ -13,6 +13,14 @@ STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32-gcc16}
 OUT=${OUT:-$ROOT/build-amiga}
 # build.sh and the Makefile take the stove's prefix directory
 if [ -x "$STOVE/prefix/bin/m68k-amigaos-gcc" ]; then PREFIX=$STOVE/prefix; else PREFIX=$STOVE; fi
+# The CyberGraphX and AHI headers (build.sh's SDK_HEADERS): the stove's own
+# when it has them, else the OS 3.2 stove's, which moved under kitchen/.
+if [ -z "${SDK_HEADERS:-}" ]; then
+    for d in "$PREFIX/m68k-amigaos/include" "$HOME/AmiCradle/kitchen/stoves/os32/prefix/m68k-amigaos/include" \
+             "$HOME/AmiCradle/stoves/os32/prefix/m68k-amigaos/include"; do
+        if [ -f "$d/cybergraphx/cybergraphics.h" ] && [ -f "$d/devices/ahi.h" ]; then SDK_HEADERS=$d; export SDK_HEADERS; break; fi
+    done
+fi
 if [ -z "${VASM:-}" ] && [ -x "$PREFIX/bin/vasmm68k_mot" ]; then VASM=$PREFIX/bin/vasmm68k_mot; export VASM; fi
 mkdir -p "$OUT"
 # The whole log goes to OUT/build.log: the Cradle keeps only the end of

@@ -160,6 +160,10 @@ static void trace_big(const char *what, LONG a, LONG b, LONG c, LONG d, LONG w, 
 #define R_SPLIT_Y 0x118     /* acrtg-v10, the split (0.27): rows of the head from UNDER_AT, above a dragged screen */
 #define R_UNDER_AT 0x11C
 #define R_UNDER_ROW 0x120   /* bytes a row; 0: the one row at UNDER_AT on each */
+#define R_SHOW_AT 0x124     /* acrtg-v11 (0.28): a picture shown in the panned one's place; all ones none */
+#define R_SHOW_FENCE 0x128  /* what the next SHOW_AT waits for; 0: all the ring holds at its write */
+#define R_SHOWN 0x12C       /* where in video RAM the picture on the display is now */
+#define SHOW_NONE 0xFFFFFFFFUL
 #define SPLIT_BLANK (2 * VRAM_PAGE)   /* the blank row: 1920 pixels at 32 bits (acrtg's widest head), and more */
 #define C_MODE 1
 #define C_PAN 6
@@ -244,6 +248,7 @@ struct scr_g {
     struct ortg_watch watch[ORTG_MAX_MONITORS + 1];     /* 0.23: each board's watch (acrtg-v9) */
     WORD ptr_dx, ptr_dy;        /* 0.27: the offsets of the viewport the pointer was last moved on (a dragged screen's) */
     LONG blank_at[ORTG_MAX_MONITORS + 1];               /* 0.27: a blank row in each board's video RAM, above a dragged screen: its offset + 1; 0 not made, -1 none */
+    struct ortg_bitmap *instead[ORTG_MAX_MONITORS + 1]; /* 0.28: the picture each board shows in its screen's place (ORTG_ShowInstead), or NULL */
     struct ortg_blk blk[BLOCKS];
     int nblk;
     ULONG stats[ORTG_STAT_COUNT][4];
@@ -712,8 +717,13 @@ void ortg_free(struct ortg_bitmap *o)
 {
     if (!o) return;
     ortg_ogpu_settle();                             /* 0.21: no batch left running names it */
-    for (int n = 1; n <= ORTG_MAX_MONITORS; n++)
+    for (int n = 1; n <= ORTG_MAX_MONITORS; n++) {
+        if (SC->instead[n] && (SC->instead[n] == o || shown[n].bm == o)) {   /* 0.28: the board shows no memory given back */
+            reg(n, R_SHOW_AT, SHOW_NONE);
+            SC->instead[n] = NULL;
+        }
         if (shown[n].bm == o) shown[n].bm = NULL;
+    }
     if (o->pal_index < ORTG_PEN_TABLES && pen_owner[o->pal_index] == o) pen_owner[o->pal_index] = NULL;
     if (o->monitor && SC->watch[o->monitor].bm == o) {  /* 0.23: no watch on memory it gives back */
         if (SC->watch[o->monitor].on) reg(o->monitor, R_WATCH_SIZE, 0);
@@ -2468,6 +2478,7 @@ static void clipblit_patch(REG(a0, struct RastPort *srp), REG(d0, WORD sx), REG(
  * each one's edge and each one's own band was filled, which left B pen stripes
  * across a Shell window partly covered by another (review NEW 3). */
 #include "scroll_plan.h"                 /* the rules and the move, plain C for the host tests */
+#include "show_plan.h"
 #include "split_plan.h"                  /* 0.27: a dragged screen's split, plain C for the host tests */
 
 struct scroll_ctx { struct RastPort *rp; UBYTE pen; };
@@ -2885,6 +2896,7 @@ static void show_front(void)
             continue;
         }
         ortg_ogpu_settle();                         /* 0.21: shown whole, with nothing running on it */
+        SC->instead[n] = NULL;                      /* 0.28: the pan to another picture ends it on the board too */
         serx("ortg: showing ", (ULONG)o->vram_off);
         if (shown[n].w != o->width || shown[n].h != o->height || shown[n].fmt != o->format) {
             reg(n, R_WIDTH, o->width); reg(n, R_HEIGHT, o->height); reg(n, R_FORMAT, board_fmt[o->format]); reg(n, R_CLOCK, 0);
@@ -2919,6 +2931,50 @@ static void show_front(void)
         }
     }
     if (pointer) pointer_update(pointer->es_SimpleSprite.x, pointer->es_SimpleSprite.y, 0);
+}
+
+/* 0.28 (acrtg-v11): ORTG_ShowInstead and ORTG_ShownNow (gfopenrtg.h). The
+ * board is asked with SHOW_FENCE 0: the picture is shown once all the ring
+ * holds now has run, which is the caller's batch when it asks right after
+ * its submit. Under Forbid: show_front and ortg_free change what is shown. */
+static void shw_of(struct shw_pic *p, const struct ortg_bitmap *o)
+{
+    p->monitor = o->monitor; p->format = o->format; p->width = o->width; p->height = o->height;
+    p->off = o->vram_off; p->stride = o->stride;
+}
+
+LONG ortg_show_instead(struct BitMap *screen, struct BitMap *picture)
+{
+    struct ortg_bitmap *o = ortg_of(screen), *q = picture ? ortg_of(picture) : NULL;
+    struct shw_pic a, b;
+    LONG ok = 0;
+    int n;
+    if (!o || !(n = o->monitor) || n > ORTG_MAX_MONITORS || !board[n] || ugx_is(n)) return 0;
+    Forbid();
+    if (!picture) {
+        if (shown[n].bm == o && SC->instead[n]) { reg(n, R_SHOW_AT, SHOW_NONE); SC->instead[n] = NULL; }
+        ok = 1;
+    } else if (q) {
+        shw_of(&a, o); shw_of(&b, q);
+        if (shw_fits(&a, &b, rreg(n, R_VERSION), shown[n].bm == o)) {
+            reg(n, R_SHOW_FENCE, 0);
+            reg(n, R_SHOW_AT, q->vram_off);
+            SC->instead[n] = q;
+            ok = 1;
+        }
+    }
+    Permit();
+    return ok;
+}
+
+LONG ortg_shown_now(struct BitMap *screen, struct BitMap *picture)
+{
+    struct ortg_bitmap *o = ortg_of(screen), *q = picture ? ortg_of(picture) : NULL;
+    int n;
+    if (!o || !(n = o->monitor) || n > ORTG_MAX_MONITORS || !board[n] || ugx_is(n) || (picture && !q)) return 0;
+    if (shown[n].bm != o) return 0;
+    if (rreg(n, R_VERSION) < SHW_BOARD_VERSION) return !picture;
+    return rreg(n, R_SHOWN) == (q ? q : o)->vram_off;
 }
 
 /* graphics has no copper list to make for an GFOpenRTG viewport: the board shows it */

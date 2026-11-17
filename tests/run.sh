@@ -195,6 +195,16 @@ if [ -n "${ACVIRGL_LIB:-}" ] && [ -f "${VIRGL_SRC:-/nonexistent}/virgl_protocol.
         "$HERE/../host/virgl/acvirgl.c" -ldl
     # and with AC_VIRGL_BATCH=0: HELLO asks GL.module for a block a command
     AC_VIRGL_BATCH=0 AC_VIRGL_PIPELINE=0 "$OUT/test_acvirgl"
+    # two and three GL programs at once, one starting, resizing and ending beside another: as the PC runs
+    # virglrenderer (context 0 before every command), as the Pis do (AC_VIRGL_CTX0=create: a program
+    # already running lost its context when a second started), and at a window's size (a present in
+    # pieces then goes through a stage where there is one)
+    cc -std=gnu11 -O1 -g -Wall -Wextra -Werror -I"$VIRGL_SRC" -o "$OUT/test_acvirgl_two" "$HERE/test_acvirgl_two.c" \
+        "$HERE/../host/virgl/acvirgl.c" -ldl
+    "$OUT/test_acvirgl_two"
+    AC_VIRGL_CTX0=create "$OUT/test_acvirgl_two"
+    AC_VIRGL_CTX0=create AC_TWO_W=720 AC_TWO_H=540 "$OUT/test_acvirgl_two"
+    AC_VIRGL_CTX0=create AC_VIRGL_DIRECT=0 AC_VIRGL_STAGE=1 "$OUT/test_acvirgl_two"
 else
     echo "no ACVIRGL_LIB and VIRGL_SRC; the virgl run is skipped"
 fi

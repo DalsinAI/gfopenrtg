@@ -74,6 +74,20 @@ static void prog_start(const struct prog *p, const char *what)
     begin(); cx = cmd(ACV_CTX_CREATE, 3, a_ctx); c1 = cmd(ACV_RES_CREATE, 12, a_col); c2 = cmd(ACV_RES_CREATE, 12, a_zs);
     acvirgl_run(v, map, NULL, BLK, at - BLK);
     CHECK(result(cx) == 0 && result(c1) == 0 && result(c2) == 0, "%s: context %d, colour %d, depth %d", what, result(cx), result(c1), result(c2));
+    /* as GL.module's start: the capability sets asked for once the context is made */
+    {
+        uint32_t a_info[3] = { 2, 0, 0 }, a_caps[4] = { 2, 2, 0x20000, 0x8000 }, a_info1[3] = { 1, 0, 0 }, a_caps1[4] = { 1, 1, 0x20000, 0x8000 };
+        uint32_t ci, cc;
+        begin(); ci = cmd(ACV_CAPSET_INFO, 3, a_info);
+        acvirgl_run(v, map, NULL, BLK, at - BLK);
+        begin(); cmd(ACV_CAPSET_INFO, 3, a_info1);
+        acvirgl_run(v, map, NULL, BLK, at - BLK);
+        begin(); cmd(ACV_CAPS, 4, a_caps1);
+        acvirgl_run(v, map, NULL, BLK, at - BLK);
+        begin(); cc = cmd(ACV_CAPS, 4, a_caps);
+        acvirgl_run(v, map, NULL, BLK, at - BLK);
+        CHECK(result(ci) == 0 && result(cc) > 0, "%s: its capability set (%d, %d bytes)", what, result(ci), result(cc));
+    }
     cn = 0;
     le(VIRGL_CMD0(VIRGL_CCMD_CREATE_SUB_CTX, 0, 1)); le(1);
     le(VIRGL_CMD0(VIRGL_CCMD_SET_SUB_CTX, 0, 1)); le(1);

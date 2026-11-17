@@ -16,6 +16,7 @@
 #include "ogpu_image.h"
 #include "sat_path.h"
 #include "sat_service.h"
+#include "ogpu_image_size.c"
 
 #define MEDIA_DECODE "media.decode/1"
 #define MD_PROBE 1
@@ -152,6 +153,34 @@ SDL_Surface *ogpu_image_load(SDL_RWops *src, const char *type, int pass)
         extra[3] = 0;
         buf[0].ob_Data = file;
         buf[0].ob_Length = len;
+        /* One trip when the file's header gives the size (ogpu_image_size.c):
+           DECODE straight into the surface. Else, or when DECODE answers
+           another size, PROBE first as before. */
+        {
+            unsigned long qw, qh;
+            int qa;
+            if (ogpu_image_size(file, len, &qw, &qh, &qa) && qw <= 16384 && qh <= 16384) {
+                s = SDL_CreateRGBSurfaceWithFormat(0, (int)qw, (int)qh, 32,
+                                                   qa ? SDL_PIXELFORMAT_ARGB8888 : SDL_PIXELFORMAT_RGB888);
+                if (s && s->pitch == (int)(qw * 4)) {
+                    LONG rc;
+                    buf[1].ob_Data = s->pixels;
+                    buf[1].ob_Length = (ULONG)(qw * qh * 4);
+                    rc = sat_service_call(sv, MD_DECODE, 0, 2, buf, extra, &w2, &h2);
+                    if (rc == OSERR_OK && w2 == qw && h2 == qh) {
+                        goto decoded;
+                    }
+                    SDL_FreeSurface(s);
+                    s = NULL;
+                    if (rc != OSERR_OK && rc != OSERR_TOOSMALL) {
+                        goto decoded;       /* it can't be decoded there: PROBE would say so too */
+                    }
+                } else if (s) {
+                    SDL_FreeSurface(s);
+                    s = NULL;
+                }
+            }
+        }
         buf[1].ob_Data = info;
         buf[1].ob_Length = sizeof(info);
         if (sat_service_call(sv, MD_PROBE, 0, 2, buf, extra, &w, &h) == OSERR_OK && be32(info) == 1) {
@@ -174,6 +203,7 @@ SDL_Surface *ogpu_image_load(SDL_RWops *src, const char *type, int pass)
             SDL_FreeSurface(s);
             s = NULL;
         }
+    decoded:
         FreeVec(file);
         if (sv->lost) {
             /* It stopped answering: this program decodes on the CPU from now on. */

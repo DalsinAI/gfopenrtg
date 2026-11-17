@@ -1,0 +1,26 @@
+name: SDL2_image one-trip size reader
+on:
+  pull_request:
+    paths:
+      - 'library/modules/sdl2/satellites/module/ogpu_image*'
+      - 'tests/sdl2/host/image_size_main.c'
+      - 'tests/sdl2/test_image_size.py'
+      - '.github/workflows/sdl2-image-size.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'library/modules/sdl2/satellites/module/ogpu_image*'
+      - 'tests/sdl2/host/image_size_main.c'
+      - 'tests/sdl2/test_image_size.py'
+      - '.github/workflows/sdl2-image-size.yml'
+  workflow_dispatch:
+jobs:
+  size:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pillow (with WebP) to make the test pictures
+        run: python3 -m pip install --user pillow
+      - name: Header sizes match Pillow's, cut-short files never answer wrong
+        run: cd tests/sdl2 && python3 -m unittest -v test_image_size

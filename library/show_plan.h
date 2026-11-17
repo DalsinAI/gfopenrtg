@@ -20,10 +20,10 @@ struct shw_pic { unsigned char monitor, format; unsigned long width, height, off
 #define SHW_BOARD_VERSION 11UL
 
 /* 1: the board may show pic where it shows screen. version: the board's
- * (0 for uaegfx); shown: screen is what its head shows now. */
-static inline int shw_fits(const struct shw_pic *screen, const struct shw_pic *pic, unsigned long version, int shown)
+ * (0 for uaegfx); front: screen is what its head shows now. */
+static inline int shw_fits(const struct shw_pic *screen, const struct shw_pic *pic, unsigned long version, int front)
 {
-    if (!screen || !pic || !shown || version < SHW_BOARD_VERSION) return 0;
+    if (!screen || !pic || !front || version < SHW_BOARD_VERSION) return 0;
     if (!screen->monitor || pic->monitor != screen->monitor) return 0;
     if (pic->format != screen->format || pic->width != screen->width || pic->height != screen->height) return 0;
     if (!pic->stride || pic->stride != screen->stride || (pic->off & 3)) return 0;

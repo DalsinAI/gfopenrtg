@@ -84,6 +84,9 @@ int ortg_in_card(const struct ortg_bitmap *o);
 /* 0.23: ORTG_WrittenSpans (gfopenrtg.h): what the CPU wrote into bm by address since the last call, from the board's watch. */
 struct OpenRTGSpan;
 ULONG ortg_written_spans(struct BitMap *bm, struct OpenRTGSpan *s, ULONG max);
+/* 0.28: ORTG_ShowInstead and ORTG_ShownNow (gfopenrtg.h): a picture shown in a screen's place (acrtg-v11). */
+LONG ortg_show_instead(struct BitMap *screen, struct BitMap *picture);
+LONG ortg_shown_now(struct BitMap *screen, struct BitMap *picture);
 void ortg_free(struct ortg_bitmap *o);
 
 /* For pixels.c: the GFOpenRTG bitmap a BitMap is (or NULL); every visible

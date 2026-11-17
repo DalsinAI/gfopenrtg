@@ -19,9 +19,9 @@ mkdir -p "$OUT/libs"
 "$CC" --version | head -1
 sh "$HERE/build.sh" module "$OUT"
 SOFT="-specs=$ROOT/tools/m68k-soft-m68040.specs"
-for lib in openrtg cybergraphics; do
-    if [ "$lib" = openrtg ]; then
-        src="$HERE/openrtg_lib.c $HERE/modes.c $HERE/displaydb.c $HERE/screens.c $HERE/pixels.c $HERE/opengpu/ogpu_build.c $HERE/string.c $HERE/ortg_stub.c"
+for lib in gfopenrtg cybergraphics; do
+    if [ "$lib" = gfopenrtg ]; then
+        src="$HERE/openrtg_lib.c $HERE/modes.c $HERE/displaydb.c $HERE/screens.c $HERE/pixels.c $HERE/opengpu/ogpu_build.c $HERE/string.c $HERE/uaegfx.c $HERE/ortg_stub.c"
     else
         src="$ROOT/compat/cybergraphics_lib.c $HERE/ortg_stub.c"
     fi

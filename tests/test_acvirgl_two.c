@@ -25,7 +25,7 @@
 #include <sys/syscall.h>
 #endif
 
-#define ARENA (1u << 20)
+#define ARENA (16u << 20)
 static uint8_t *arena;
 static int vram_fd = -1;
 static uint8_t *map(void *u, uint32_t a, uint32_t len) { (void)u; return a < ARENA && len <= ARENA - a ? arena + a : NULL; }
@@ -56,7 +56,9 @@ static void le(uint32_t v) { uint32_t a = CMDS + cn * 4; arena[a] = (uint8_t)v; 
 static uint32_t f32(float f) { uint32_t u; memcpy(&u, &f, 4); return u; }
 
 static struct acvirgl *v;
-enum { RW = 64, RH = 64, TW = 128, TH = 80, TB = TW * 4 };
+/* the frame and its target: 64x64 in 128x80, or AC_TWO_W x AC_TWO_H (a real window's size: 720x540
+ * is past the pixels a stage wants by default, so a present in pieces goes through one) */
+static uint32_t RW = 64, RH = 64, TW = 128, TH = 80, TB = 128 * 4;
 
 /* A program: its context, its colour and depth resources, its target in "video RAM". */
 struct prog { uint32_t ctx, col, zs, target; float r, g, b; };
@@ -107,7 +109,7 @@ static int prog_frame_parts(const struct prog *p, const char *what, int n, int p
     acvirgl_run(v, map, NULL, BLK, at - BLK);
     acvirgl_settle(v, map, NULL, ACVIRGL_ALL);
     d = arena + p->target + 20 * TB + 30 * 4;       /* X, R, G, B */
-    ok = result(cs) == 0 && result(cp) == RW * RH
+    ok = result(cs) == 0 && result(cp) == (int32_t)(RW * RH)
          && abs((int)d[1] - (int)(p->r * 255.0f + 0.5f)) <= 1 && abs((int)d[2] - (int)(p->g * 255.0f + 0.5f)) <= 1
          && abs((int)d[3] - (int)(p->b * 255.0f + 0.5f)) <= 1;
     CHECK(ok, "%s, frame %d: submit %d, present %d, pixel %02x %02x %02x %02x", what, n, result(cs), result(cp), d[0], d[1], d[2], d[3]);
@@ -127,12 +129,17 @@ int main(void)
 {
     char err[256];
     /* ids as GL.module's on the Amiga: addresses, not small counts */
-    static const struct prog A = { 0x08c4a1ac, 0x08c50010, 0x08c50090, 0x60000, 0.25f, 0.5f, 0.75f };
-    static const struct prog B = { 0x08dd0c7c, 0x08de0010, 0x08de0090, 0x80000, 0.75f, 0.25f, 0.5f };
-    static const struct prog C = { 0x08ee0c7c, 0x08ef0010, 0x08ef0090, 0xA0000, 0.5f, 0.75f, 0.25f };
+    static const struct prog A = { 0x08c4a1ac, 0x08c50010, 0x08c50090, 0x100000, 0.25f, 0.5f, 0.75f };
+    static const struct prog B = { 0x08dd0c7c, 0x08de0010, 0x08de0090, 0x500000, 0.75f, 0.25f, 0.5f };
+    static const struct prog C = { 0x08ee0c7c, 0x08ef0010, 0x08ef0090, 0x900000, 0.5f, 0.75f, 0.25f };
     struct acvirgl_stats s0, s1;
     uint32_t a_hello[1] = { 0 };
     int i;
+    if (getenv("AC_TWO_W") && getenv("AC_TWO_H")) {
+        RW = (uint32_t)atoi(getenv("AC_TWO_W")); RH = (uint32_t)atoi(getenv("AC_TWO_H"));
+        if (RW < 16 || RW > 960 || RH < 16 || RH > 1000) { printf("acvirgl two: AC_TWO_W x AC_TWO_H out of range\n"); return 1; }
+        TW = RW + 64; TH = RH + 16; TB = TW * 4;
+    }
 #if defined(__linux__)
     vram_fd = (int)syscall(SYS_memfd_create, "test-vram", 1u | 2u);
     if (vram_fd >= 0 && !ftruncate(vram_fd, ARENA) && fcntl(vram_fd, 1033 /* F_ADD_SEALS */, 2 /* F_SEAL_SHRINK */) == 0) {

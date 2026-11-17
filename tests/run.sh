@@ -37,6 +37,10 @@ fi
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
     -o "$OUT/test_split_plan" "$HERE/test_split_plan.c"
 "$OUT/test_split_plan"
+# A picture shown in a screen's place (library/show_plan.h, what ORTG_ShowInstead asks the board for, acrtg-v11).
+cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
+    -o "$OUT/test_show_plan" "$HERE/test_show_plan.c"
+"$OUT/test_show_plan"
 # Draw and PolyDraw on 8-bit bitmaps (gfopenrtg.library 0.25, library/ortg_line.h) against
 # graphics.library's (GFOpenGfx's core): FRST_DOT, linpatcnt, JAM2, INVERSVID, through GFOpenGPU's LINE too.
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined -I"$HERE/host-include" \

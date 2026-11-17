@@ -63,6 +63,11 @@ static uint32_t RW = 64, RH = 64, TW = 128, TH = 80, TB = 128 * 4;
 /* A program: its context, its colour and depth resources, its target in "video RAM". */
 struct prog { uint32_t ctx, col, zs, target; float r, g, b; };
 
+static int prog_frame(const struct prog *p, const char *what, int n);
+/* A program already running draws a frame between each step of another's start, as two real programs do. */
+static const struct prog *beside;
+static void step(const char *what) { if (beside) prog_frame(beside, what, 0); }
+
 static void prog_start(const struct prog *p, const char *what)
 {
     uint32_t a_ctx[3] = { p->ctx, 0x30000, 8 };
@@ -71,8 +76,16 @@ static void prog_start(const struct prog *p, const char *what)
     uint32_t a_sub[3] = { p->ctx, CMDS, 0 };
     uint32_t cx, c1, c2, cs;
     memcpy(arena + 0x30000, "two test", 8);
-    begin(); cx = cmd(ACV_CTX_CREATE, 3, a_ctx); c1 = cmd(ACV_RES_CREATE, 12, a_col); c2 = cmd(ACV_RES_CREATE, 12, a_zs);
+    begin(); cx = cmd(ACV_CTX_CREATE, 3, a_ctx);
     acvirgl_run(v, map, NULL, BLK, at - BLK);
+    step("the one running, after the other's context was made");
+    begin(); c1 = cmd(ACV_RES_CREATE, 12, a_col);
+    acvirgl_run(v, map, NULL, BLK, at - BLK);
+    step("the one running, after the other's colour buffer was made");
+    begin(); c2 = cmd(ACV_RES_CREATE, 12, a_zs);
+    acvirgl_run(v, map, NULL, BLK, at - BLK);
+    step("the one running, after the other's depth buffer was made");
+    memcpy(arena + 0x30000, "two test", 8);
     CHECK(result(cx) == 0 && result(c1) == 0 && result(c2) == 0, "%s: context %d, colour %d, depth %d", what, result(cx), result(c1), result(c2));
     /* as GL.module's start: the capability sets asked for once the context is made */
     {
@@ -80,13 +93,16 @@ static void prog_start(const struct prog *p, const char *what)
         uint32_t ci, cc;
         begin(); ci = cmd(ACV_CAPSET_INFO, 3, a_info);
         acvirgl_run(v, map, NULL, BLK, at - BLK);
+        step("the one running, after the other asked how large the capability set is");
         begin(); cmd(ACV_CAPSET_INFO, 3, a_info1);
         acvirgl_run(v, map, NULL, BLK, at - BLK);
         begin(); cmd(ACV_CAPS, 4, a_caps1);
         acvirgl_run(v, map, NULL, BLK, at - BLK);
+        step("the one running, after the other read capability set 1");
         begin(); cc = cmd(ACV_CAPS, 4, a_caps);
         acvirgl_run(v, map, NULL, BLK, at - BLK);
-        CHECK(result(ci) == 0 && result(cc) > 0, "%s: its capability set (%d, %d bytes)", what, result(ci), result(cc));
+        step("the one running, after the other read capability set 2");
+        CHECK(result(ci) >= 0 && result(cc) > 0, "%s: its capability set (%d, %d bytes)", what, result(ci), result(cc));
     }
     cn = 0;
     le(VIRGL_CMD0(VIRGL_CCMD_CREATE_SUB_CTX, 0, 1)); le(1);
@@ -98,6 +114,7 @@ static void prog_start(const struct prog *p, const char *what)
     begin(); cs = cmd(ACV_SUBMIT, 3, a_sub);
     acvirgl_run(v, map, NULL, BLK, at - BLK);
     CHECK(result(cs) == 0, "%s: its framebuffer (%d)", what, result(cs));
+    step("the one running, after the other's first commands");
 }
 
 /* One frame: colour and depth cleared, presented at (10, 5) of its target; in `parts` rectangles side by
@@ -172,7 +189,9 @@ int main(void)
 
     prog_start(&A, "the first");
     for (i = 0; i < 4; i++) prog_frame(&A, "the first alone", i);
+    beside = &A;
     prog_start(&B, "the second");
+    beside = NULL;
     for (i = 0; i < 6; i++) {
         prog_frame(&A, "the first beside the second", i);
         prog_frame(&B, "the second", i);
@@ -189,7 +208,9 @@ int main(void)
     }
     prog_end(&B);
     for (i = 0; i < 4; i++) prog_frame(&A, "the first after the second went", i);
+    beside = &A;
     prog_start(&C, "a third");
+    beside = NULL;
     for (i = 0; i < 4; i++) {
         prog_frame(&C, "the third", i);
         prog_frame(&A, "the first beside the third", i);

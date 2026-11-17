@@ -84,12 +84,15 @@ static void prog_start(const struct prog *p, const char *what)
     CHECK(result(cs) == 0, "%s: its framebuffer (%d)", what, result(cs));
 }
 
-/* One frame: colour and depth cleared, presented at (10, 5) of its target. 1 when all of it went well. */
-static int prog_frame(const struct prog *p, const char *what, int n)
+/* One frame: colour and depth cleared, presented at (10, 5) of its target; in `parts` rectangles side by
+ * side (2: a window with another over its middle edge, which GFOpenRTG presents in pieces, and acvirgl
+ * then through a stage or read back rather than straight into video RAM). 1 when all of it went well. */
+static int prog_frame_parts(const struct prog *p, const char *what, int n, int parts)
 {
     uint32_t a_sub[3] = { p->ctx, CMDS, 0 };
-    uint32_t pa[12] = { p->ctx, p->col, 0, (10u << 16) | 5u, p->target, TB, OGPU_FMT_XRGB32, ((uint32_t)TW << 16) | TH, 0, 1,
-                        (10u << 16) | 5u, ((uint32_t)RW << 16) | RH };
+    uint32_t pa[14] = { p->ctx, p->col, 0, (10u << 16) | 5u, p->target, TB, OGPU_FMT_XRGB32, ((uint32_t)TW << 16) | TH, 0, (uint32_t)parts,
+                        (10u << 16) | 5u, ((uint32_t)(parts == 2 ? RW / 2 : RW) << 16) | RH,
+                        ((uint32_t)(10 + RW / 2) << 16) | 5u, ((uint32_t)(RW - RW / 2) << 16) | RH };
     uint32_t cs, cp;
     const uint8_t *d;
     int ok;
@@ -100,7 +103,7 @@ static int prog_frame(const struct prog *p, const char *what, int n)
     le(0);
     a_sub[2] = cn;
     memset(arena + p->target, 0xEE, TB * TH);
-    begin(); cs = cmd(ACV_SUBMIT, 3, a_sub); cp = cmd(ACV_PRESENT, 12, pa);
+    begin(); cs = cmd(ACV_SUBMIT, 3, a_sub); cp = cmd(ACV_PRESENT, 10 + 2 * parts, pa);
     acvirgl_run(v, map, NULL, BLK, at - BLK);
     acvirgl_settle(v, map, NULL, ACVIRGL_ALL);
     d = arena + p->target + 20 * TB + 30 * 4;       /* X, R, G, B */
@@ -110,6 +113,8 @@ static int prog_frame(const struct prog *p, const char *what, int n)
     CHECK(ok, "%s, frame %d: submit %d, present %d, pixel %02x %02x %02x %02x", what, n, result(cs), result(cp), d[0], d[1], d[2], d[3]);
     return ok;
 }
+
+static int prog_frame(const struct prog *p, const char *what, int n) { return prog_frame_parts(p, what, n, 1); }
 
 static void prog_end(const struct prog *p)
 {
@@ -151,6 +156,16 @@ int main(void)
         prog_frame(&A, "the first beside the second", i);
         prog_frame(&B, "the second", i);
     }
+    /* the second's window over part of the first's: the first presents in two pieces
+     * (a stage, or read back), the second straight into video RAM, turn about */
+    for (i = 0; i < 6; i++) {
+        prog_frame_parts(&A, "the first in two pieces beside the second", i, 2);
+        prog_frame(&B, "the second over the first", i);
+    }
+    for (i = 0; i < 4; i++) {
+        prog_frame(&A, "the first whole again", i);
+        prog_frame_parts(&B, "the second in two pieces", i, 2);
+    }
     prog_end(&B);
     for (i = 0; i < 4; i++) prog_frame(&A, "the first after the second went", i);
     prog_start(&C, "a third");
@@ -163,8 +178,8 @@ int main(void)
     prog_end(&C);
     acvirgl_stats(v, &s1);
     CHECK(s1.errors == s0.errors, "%llu errors", (unsigned long long)(s1.errors - s0.errors));
-    printf("acvirgl two: %llu presents, %llu of them written by the GPU\n", (unsigned long long)(s1.presents - s0.presents),
-           (unsigned long long)(s1.direct - s0.direct));
+    printf("acvirgl two: %llu presents, %llu of them written by the GPU, %llu through a stage\n", (unsigned long long)(s1.presents - s0.presents),
+           (unsigned long long)(s1.direct - s0.direct), (unsigned long long)(s1.staged - s0.staged));
     acvirgl_destroy(v);
     printf("acvirgl two: %d checks, %d failed\n", checks, fails);
     return fails ? 1 : 0;

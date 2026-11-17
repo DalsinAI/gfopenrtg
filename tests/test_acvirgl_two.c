@@ -68,42 +68,41 @@ static int prog_frame(const struct prog *p, const char *what, int n);
 static const struct prog *beside;
 static void step(const char *what) { if (beside) prog_frame(beside, what, 0); }
 
+/* One command in a block of its own, as GL.module sends those of its start; its result. */
+static int32_t one(unsigned c, int nargs, const uint32_t *args)
+{
+    uint32_t r;
+    begin(); r = cmd(c, nargs, args);
+    acvirgl_run(v, map, NULL, BLK, at - BLK);
+    return result(r);
+}
+
 static void prog_start(const struct prog *p, const char *what)
 {
     uint32_t a_ctx[3] = { p->ctx, 0x30000, 8 };
     uint32_t a_col[12] = { p->col, 2 /* PIPE_TEXTURE_2D */, 1 /* B8G8R8A8_UNORM */, 2 | 8, RW, RH, 1, 1, 0, 0, 0, p->ctx };
     uint32_t a_zs[12] = { p->zs, 2, 21 /* Z24X8_UNORM */, 1 /* depth/stencil */, RW, RH, 1, 1, 0, 0, 0, p->ctx };
     uint32_t a_sub[3] = { p->ctx, CMDS, 0 };
-    uint32_t cx, c1, c2, cs;
+    uint32_t a_info[3] = { 2, 0, 0 }, a_caps[4] = { 2, 2, 0x20000, 0x8000 };
+    uint32_t cs;
+    int32_t r;
     memcpy(arena + 0x30000, "two test", 8);
-    begin(); cx = cmd(ACV_CTX_CREATE, 3, a_ctx);
-    acvirgl_run(v, map, NULL, BLK, at - BLK);
+    r = one(ACV_CTX_CREATE, 3, a_ctx);
+    CHECK(r == 0, "%s: its context (%d)", what, (int)r);
     step("the one running, after the other's context was made");
-    begin(); c1 = cmd(ACV_RES_CREATE, 12, a_col);
-    acvirgl_run(v, map, NULL, BLK, at - BLK);
+    /* as GL.module's start: the capability set asked for once the context is made */
+    r = one(ACV_CAPSET_INFO, 3, a_info);
+    CHECK(r >= 0, "%s: its capability set's size (%d)", what, (int)r);
+    step("the one running, after the other asked how large the capability set is");
+    r = one(ACV_CAPS, 4, a_caps);
+    CHECK(r > 0, "%s: its capability set (%d bytes)", what, (int)r);
+    step("the one running, after the other read the capability set");
+    r = one(ACV_RES_CREATE, 12, a_col);
+    CHECK(r == 0, "%s: its colour buffer (%d)", what, (int)r);
     step("the one running, after the other's colour buffer was made");
-    begin(); c2 = cmd(ACV_RES_CREATE, 12, a_zs);
-    acvirgl_run(v, map, NULL, BLK, at - BLK);
+    r = one(ACV_RES_CREATE, 12, a_zs);
+    CHECK(r == 0, "%s: its depth buffer (%d)", what, (int)r);
     step("the one running, after the other's depth buffer was made");
-    memcpy(arena + 0x30000, "two test", 8);
-    CHECK(result(cx) == 0 && result(c1) == 0 && result(c2) == 0, "%s: context %d, colour %d, depth %d", what, result(cx), result(c1), result(c2));
-    /* as GL.module's start: the capability sets asked for once the context is made */
-    {
-        uint32_t a_info[3] = { 2, 0, 0 }, a_caps[4] = { 2, 2, 0x20000, 0x8000 }, a_info1[3] = { 1, 0, 0 }, a_caps1[4] = { 1, 1, 0x20000, 0x8000 };
-        uint32_t ci, cc;
-        begin(); ci = cmd(ACV_CAPSET_INFO, 3, a_info);
-        acvirgl_run(v, map, NULL, BLK, at - BLK);
-        step("the one running, after the other asked how large the capability set is");
-        begin(); cmd(ACV_CAPSET_INFO, 3, a_info1);
-        acvirgl_run(v, map, NULL, BLK, at - BLK);
-        begin(); cmd(ACV_CAPS, 4, a_caps1);
-        acvirgl_run(v, map, NULL, BLK, at - BLK);
-        step("the one running, after the other read capability set 1");
-        begin(); cc = cmd(ACV_CAPS, 4, a_caps);
-        acvirgl_run(v, map, NULL, BLK, at - BLK);
-        step("the one running, after the other read capability set 2");
-        CHECK(result(ci) >= 0 && result(cc) > 0, "%s: its capability set (%d, %d bytes)", what, result(ci), result(cc));
-    }
     cn = 0;
     le(VIRGL_CMD0(VIRGL_CCMD_CREATE_SUB_CTX, 0, 1)); le(1);
     le(VIRGL_CMD0(VIRGL_CCMD_SET_SUB_CTX, 0, 1)); le(1);
@@ -148,6 +147,31 @@ static int prog_frame_parts(const struct prog *p, const char *what, int n, int p
 }
 
 static int prog_frame(const struct prog *p, const char *what, int n) { return prog_frame_parts(p, what, n, 1); }
+
+/* A window made another size while its program runs: a new depth buffer (and the surface on it, the
+ * framebuffer on that), asked for with the program's own GL context the current one. */
+static void prog_new_depth(const struct prog *p, uint32_t handle, const char *what)
+{
+    uint32_t a_zs[12] = { handle, 2, 21 /* Z24X8_UNORM */, 1, RW, RH, 1, 1, 0, 0, 0, p->ctx };
+    uint32_t a_sub[3] = { p->ctx, CMDS, 0 }, h[1] = { handle };
+    int32_t r = one(ACV_RES_CREATE, 12, a_zs), r2;
+    cn = 0;
+    le(VIRGL_CMD0(VIRGL_CCMD_CREATE_OBJECT, VIRGL_OBJECT_SURFACE, VIRGL_OBJ_SURFACE_SIZE)); le(12); le(handle); le(21); le(0); le(0);
+    le(VIRGL_CMD0(VIRGL_CCMD_SET_FRAMEBUFFER_STATE, 0, VIRGL_SET_FRAMEBUFFER_STATE_SIZE(1))); le(1); le(12); le(10);
+    a_sub[2] = cn;
+    r2 = one(ACV_SUBMIT, 3, a_sub);
+    CHECK(r == 0 && r2 == 0, "%s: a new depth buffer (%d), its framebuffer (%d)", what, (int)r, (int)r2);
+    prog_frame(p, what, 0);
+    /* and the first one back, the new one let go of */
+    cn = 0;
+    le(VIRGL_CMD0(VIRGL_CCMD_SET_FRAMEBUFFER_STATE, 0, VIRGL_SET_FRAMEBUFFER_STATE_SIZE(1))); le(1); le(11); le(10);
+    le(VIRGL_CMD0(VIRGL_CCMD_DESTROY_OBJECT, VIRGL_OBJECT_SURFACE, 1)); le(12);
+    a_sub[2] = cn;
+    r2 = one(ACV_SUBMIT, 3, a_sub);
+    r = one(ACV_RES_UNREF, 1, h);
+    CHECK(r2 == 0, "%s: its first depth buffer again (%d)", what, (int)r2);
+    prog_frame(p, what, 1);
+}
 
 static void prog_end(const struct prog *p)
 {
@@ -206,8 +230,11 @@ int main(void)
         prog_frame(&A, "the first whole again", i);
         prog_frame_parts(&B, "the second in two pieces", i, 2);
     }
+    prog_new_depth(&A, 0x08c50110, "the first's window resized beside the second");
+    prog_frame(&B, "the second after the first's resize", 0);
     prog_end(&B);
     for (i = 0; i < 4; i++) prog_frame(&A, "the first after the second went", i);
+    prog_new_depth(&A, 0x08c50190, "the first's window resized on its own");
     beside = &A;
     prog_start(&C, "a third");
     beside = NULL;

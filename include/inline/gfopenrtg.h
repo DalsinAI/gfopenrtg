@@ -49,4 +49,8 @@
     LP2(0x7e, BOOL, ORTG_NativeSize, ULONG, monitor, d0, struct OpenRTGNativeSize *, size, a0, , OPENRTG_BASE_NAME)
 #define ORTG_WrittenSpans(bitmap, buf, max) \
     LP3(0x84, ULONG, ORTG_WrittenSpans, struct BitMap *, bitmap, a0, struct OpenRTGSpan *, buf, a1, ULONG, max, d0, , OPENRTG_BASE_NAME)
+#define ORTG_ShowInstead(screen, picture) \
+    LP2(0x8a, LONG, ORTG_ShowInstead, struct BitMap *, screen, a0, struct BitMap *, picture, a1, , OPENRTG_BASE_NAME)
+#define ORTG_ShownNow(screen, picture) \
+    LP2(0x90, LONG, ORTG_ShownNow, struct BitMap *, screen, a0, struct BitMap *, picture, a1, , OPENRTG_BASE_NAME)
 #endif

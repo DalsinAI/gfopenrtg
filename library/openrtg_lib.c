@@ -78,6 +78,10 @@
  * 0.26 (11 Nov 2026): the uaegfx backend (uaegfx.c, docs/design/UAEGFX-20261111.md): with no ACRTG
  * board fitted, the RTG board of Amiberry, WinUAE or FS-UAE is monitor 1, driven through the
  * emulator's own uaegfx.card. Looked for again when no monitor was found at the library's start.
+ *
+ * 0.28 (17 Nov 2026): ORTG_ShowInstead and ORTG_ShownNow (acrtg-v11): a finished frame in another
+ * bitmap shown in a screen's place once the batch that filled it has run, so a display that shows
+ * video RAM itself goes from one whole picture to the next (show_plan.h; layers' composited mode).
  */
 #include <exec/types.h>
 #include "ortg_state.h"
@@ -98,7 +102,7 @@
 
 #define REG(r, decl) register decl __asm(#r)   /* bebbo gcc: an argument in a register */
 #define LIB_VERSION 0
-#define LIB_REVISION 27
+#define LIB_REVISION 28
 
 /* The ACRTG board (amicradle's common/protocol/acrtg.h): Zorro III,
  * AmiCradle Team (0xDA15; 2011 before 1 October 2026), product 9 (16 MiB), product 15 (64 MiB, 0.14) or product 16
@@ -151,9 +155,9 @@ struct OpenRTGBase {
 int start(void) { return -1; }
 
 static const char lib_name[] = "gfopenrtg.library";
-static const char lib_id[] = "gfopenrtg.library 0.27 (13.11.2026) GFOpenRTG, AmiCradle Team\r\n";
+static const char lib_id[] = "gfopenrtg.library 0.28 (17.11.2026) GFOpenRTG, AmiCradle Team\r\n";
 /* For C:Version, which looks for "$VER:" in the file. */
-static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopenrtg.library 0.27 (13.11.2026) GFOpenRTG, AmiCradle Team";
+static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopenrtg.library 0.28 (17.11.2026) GFOpenRTG, AmiCradle Team";
 
 static struct Library *lib_init(REG(d0, struct OpenRTGBase *base), REG(a0, BPTR seglist), REG(a6, struct ExecBase *sys));
 static struct Library *lib_open(REG(a6, struct OpenRTGBase *base));
@@ -179,12 +183,16 @@ static LONG ORTG_PresentVirgl(REG(a1, struct RastPort *rp), REG(d0, LONG x), REG
 static BOOL ORTG_NativeSize(REG(d0, ULONG monitor), REG(a0, struct OpenRTGNativeSize *out), REG(a6, struct OpenRTGBase *base));
 static ULONG ORTG_WrittenSpans(REG(a0, struct BitMap *bm), REG(a1, struct OpenRTGSpan *buf), REG(d0, ULONG max), REG(a6, struct OpenRTGBase *base));
 
+static LONG ORTG_ShowInstead(REG(a0, struct BitMap *screen), REG(a1, struct BitMap *picture), REG(a6, struct OpenRTGBase *base));
+static LONG ORTG_ShownNow(REG(a0, struct BitMap *screen), REG(a1, struct BitMap *picture), REG(a6, struct OpenRTGBase *base));
+
 static const APTR lib_vectors[] = {
     (APTR)lib_open, (APTR)lib_close, (APTR)lib_expunge, (APTR)lib_null,
     (APTR)ORTG_MonitorCount, (APTR)ORTG_NextMode, (APTR)ORTG_GetMode,
     (APTR)ORTG_BestMode, (APTR)ORTG_SetModeList, (APTR)ORTG_BoardAddress, (APTR)ORTG_DisplayDatabase, (APTR)ORTG_Screens,
     (APTR)ORTG_WritePixels, (APTR)ORTG_ReadPixels, (APTR)ORTG_FillPixels, (APTR)ORTG_InvertPixels, (APTR)ORTG_BitMapInfo,
-    (APTR)ORTG_DrawStats, (APTR)ORTG_WritePixelsAlpha, (APTR)ORTG_PresentVirgl, (APTR)ORTG_NativeSize, (APTR)ORTG_WrittenSpans, (APTR)-1,
+    (APTR)ORTG_DrawStats, (APTR)ORTG_WritePixelsAlpha, (APTR)ORTG_PresentVirgl, (APTR)ORTG_NativeSize, (APTR)ORTG_WrittenSpans,
+    (APTR)ORTG_ShowInstead, (APTR)ORTG_ShownNow, (APTR)-1,
 };
 static const struct { ULONG size; const APTR *vectors; APTR data; APTR init; } lib_inittable = {
     sizeof(struct OpenRTGBase), lib_vectors, NULL, (APTR)lib_init,
@@ -512,6 +520,16 @@ static BOOL ORTG_BitMapInfo(REG(a0, struct BitMap *bm), REG(a1, struct OpenRTGBi
 static ULONG ORTG_WrittenSpans(REG(a0, struct BitMap *bm), REG(a1, struct OpenRTGSpan *buf), REG(d0, ULONG max), REG(a6, struct OpenRTGBase *base))
 {
     return ortg_written_spans(bm, buf, max);
+}
+
+static LONG ORTG_ShowInstead(REG(a0, struct BitMap *screen), REG(a1, struct BitMap *picture), REG(a6, struct OpenRTGBase *base))
+{
+    return ortg_show_instead(screen, picture);
+}
+
+static LONG ORTG_ShownNow(REG(a0, struct BitMap *screen), REG(a1, struct BitMap *picture), REG(a6, struct OpenRTGBase *base))
+{
+    return ortg_shown_now(screen, picture);
 }
 
 static ULONG ORTG_DrawStats(REG(a0, ULONG *counts), REG(d0, ULONG kinds), REG(d1, ULONG flags), REG(a6, struct OpenRTGBase *base))

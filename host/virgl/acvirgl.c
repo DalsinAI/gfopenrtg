@@ -97,7 +97,7 @@ struct vr_api {
  * Amiga a handle is the address of GLA's resource (gla_virgl.c), so the
  * handles are sparse 32-bit numbers: a hash table, open addressing,
  * handle 0 an empty slot. */
-struct av_res { uint32_t handle, format, bind, width, height; };
+struct av_res { uint32_t handle, format, bind, width, height, target; };
 #define AV_MAX_RES (1u << 20)               /* resources known at once */
 
 /* virgl_renderer_resource_info as virglrenderer.h gives it (1.0 and later);
@@ -2209,6 +2209,30 @@ int acvirgl_run(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), 
             }
         }
         if (v->ctx0_every) v->vr.force_ctx_0();
+        else if (v->vr.force_ctx_0) {
+            /* AC_VIRGL_CTX0=create (the Pis: a switch of GL context costs a
+             * tiler a flush): no context 0 before a context's own commands,
+             * but still before those virglrenderer carries out in "the
+             * current context" taking it for context 0: a texture made or
+             * let go of, and the capability sets. Left in a program's GL
+             * context, their GL work was done there: a framebuffer object
+             * virglrenderer keeps with a texture (for reading it back) is
+             * a name of the context it was made in, and letting the
+             * texture go deleted that name in whichever program's context
+             * was current, which could be that program's own framebuffer.
+             * Its next CLEAR or DRAW_VBO then got GL error 1286 and the
+             * context was dead: on the Pi 5, a GL program already running
+             * went black the moment a second one started (17 Nov 2026).
+             * Buffers (PIPE_BUFFER, target 0) have no such objects and
+             * come and go every frame: left as they were. */
+            int zero = 0;
+            switch (cmd) {
+            case ACV_CAPSET_INFO: case ACV_CAPS: zero = 1; break;
+            case ACV_RES_CREATE: zero = av_be32(a + 4) != 0; break;
+            case ACV_RES_UNREF: { const struct av_res *g = av_res_find(v, av_be32(a)); zero = !g || g->target != 0; break; }
+            }
+            if (zero) v->vr.force_ctx_0();
+        }
         switch (cmd) {
         case ACV_HELLO:
             av_put_be32(a, ACV_HOST_PRESENT | (v->no_batch ? ACV_HOST_NO_BATCH : 0) | (v->no_pipeline ? ACV_HOST_NO_PIPELINE : 0));
@@ -2283,7 +2307,7 @@ int acvirgl_run(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), 
             if (v->vr.resource_create(&ra, NULL, 0)) r = ACV_ERR_RENDERER;
             else {
                 struct av_res e;
-                e.format = ra.format; e.bind = ra.bind; e.width = ra.width; e.height = ra.height;
+                e.format = ra.format; e.bind = ra.bind; e.width = ra.width; e.height = ra.height; e.target = ra.target;
                 av_res_set(v, ra.handle, &e);
                 if (ctx) v->vr.ctx_attach_resource((int)ctx, (int)ra.handle);
             }

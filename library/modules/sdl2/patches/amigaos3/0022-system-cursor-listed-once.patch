@@ -1,0 +1,54 @@
+AmigaOS 3.x: a system cursor goes on SDL's cursor list once, so SDL_FreeCursor ends.
+
+--- a/src/video/amigaos3/SDL_os3mouse.c
++++ b/src/video/amigaos3/SDL_os3mouse.c
+@@ -344,14 +344,46 @@
+     return cursor;
+ }
+ 
++/* Open (2026): takes a cursor off SDL's list of cursors (SDL_mouse.c's
++   mouse->cursors), where SDL_CreateCursor put it. */
++static void OS3_UnlistCursor(SDL_Cursor *cursor)
++{
++    SDL_Mouse *mouse = SDL_GetMouse();
++    SDL_Cursor *prev = NULL, *curr;
++
++    if (!cursor) {
++        return;
++    }
++    for (curr = mouse->cursors; curr; prev = curr, curr = curr->next) {
++        if (curr == cursor) {
++            if (prev) {
++                prev->next = curr->next;
++            } else {
++                mouse->cursors = curr->next;
++            }
++            cursor->next = NULL;
++            return;
++        }
++    }
++}
++
+ static SDL_Cursor *OS3_CreateSystemCursor(SDL_SystemCursor id)
+ {
+     /* Use SDL's built-in default cursor data for all system cursor types.
+        Amiga Intuition doesn't have themed system cursors. */
++    SDL_Cursor *cursor;
++
+     (void)id;
+-    return SDL_CreateCursor(default_cdata, default_cmask,
+-                            DEFAULT_CWIDTH, DEFAULT_CHEIGHT,
+-                            DEFAULT_CHOTX, DEFAULT_CHOTY);
++    cursor = SDL_CreateCursor(default_cdata, default_cmask,
++                              DEFAULT_CWIDTH, DEFAULT_CHEIGHT,
++                              DEFAULT_CHOTX, DEFAULT_CHOTY);
++    /* Open (2026): SDL_CreateCursor has put the cursor on SDL's list, and
++       SDL_CreateSystemCursor puts what this returns on it again, so its
++       next pointed at itself and the next SDL_FreeCursor that walked past
++       it never returned (XBoing hung as it quit). Take it off here: the
++       caller lists it once (or, for the default cursor, keeps it off). */
++    OS3_UnlistCursor(cursor);
++    return cursor;
+ }
+ 
+ static int OS3_ShowCursor(SDL_Cursor *cursor)

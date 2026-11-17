@@ -202,7 +202,7 @@ $(OBJ)/mcommon/module_start.o: $(COMMON)/module_start.S
 $(OBJ)/mcommon/sat_entry.o: $(MODDIR)/sat_entry.S
 	@mkdir -p $(dir $@)
 	$(CC) $(CPU) $(MODFLAGS) -c $< -o $@
-$(OBJ)/mcommon/module_rt.o: $(COMMON)/module_rt.c $(COMMON)/module_rt.h
+$(OBJ)/mcommon/module_rt.o: $(COMMON)/module_rt.c $(COMMON)/module_rt.h $(COMMON)/module_malloc.c
 	@mkdir -p $(dir $@)
 	$(CC) $(OWN_CFLAGS) $(MODFLAGS) -c $< -o $@
 $(OBJ)/mcommon/sat_sdl.o: $(MODDIR)/sat_sdl.c $(MODDIR)/sat_rt.h

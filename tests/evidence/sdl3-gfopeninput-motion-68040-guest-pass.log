@@ -1,0 +1,12 @@
+GFOS_SDL3_MOTION_GUEST_BEGIN
+GFOS_SDL3_MOTION_BEGIN
+GFOS_SDL3_MOTION elapsed=5039 adds=1 removes=0 axisMin=-32514 axisMax=32767 motion=119 buttons=0 triggers=75
+GFOS_SDL3_MOTION elapsed=10070 adds=1 removes=0 axisMin=-32767 axisMax=32767 motion=244 buttons=12 triggers=125
+GFOS_SDL3_MOTION elapsed=15099 adds=1 removes=0 axisMin=-32767 axisMax=32767 motion=369 buttons=12 triggers=173
+GFOS_SDL3_MOTION elapsed=20127 adds=3 removes=2 axisMin=-32767 axisMax=32767 motion=445 buttons=37 triggers=221
+GFOS_SDL3_MOTION elapsed=25154 adds=3 removes=2 axisMin=-32767 axisMax=32767 motion=570 buttons=37 triggers=269
+GFOS_SDL3_MOTION elapsed=30182 adds=3 removes=2 axisMin=-32767 axisMax=32767 motion=695 buttons=50 triggers=343
+GFOS_SDL3_MOTION adds=3 removes=2 gamepad=3 min=-32767 max=32767 motion=814 buttons=50 trigger=411 status=PASS
+GFOS_SDL3_MOTION_END
+GFOS_SDL3_MOTION_GUEST_RC 0
+GFOS_SDL3_MOTION_GUEST_END

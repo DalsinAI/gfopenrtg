@@ -43,7 +43,7 @@ MODULE_LDFLAGS := $(if $(filter 1,$(SHARED)),-fbaserel32 -resident32)
 CFLAGS_BASE = -std=gnu11 $(OPT) $(CPU) -fno-delete-null-pointer-checks -noixemul -Wall -Wno-unused-parameter \
          -Wno-sign-compare -Wno-unused-but-set-variable \
          -I$(SDL)/include -I$(SDL)/include/build_config -I$(SDL)/src -I$(SDK_INC) -I$(ROOT)/include \
-         -I$(ROOT)/stubs/sdl3 -I$(COMMON) -D__AMIGAOS3__
+         -I$(ROOT)/stubs/sdl3 -I$(COMMON) -I$(ROOT)/library/modules/sdl2/include/gfopeninput -D__AMIGAOS3__
 
 SRCS_CORE = \
 	SDL.c SDL_assert.c SDL_error.c SDL_guid.c SDL_hashtable.c SDL_hints.c \

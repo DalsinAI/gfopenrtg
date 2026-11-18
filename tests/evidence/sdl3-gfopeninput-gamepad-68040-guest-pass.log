@@ -1,0 +1,7 @@
+GFOS_SDL3_GAMEPAD_GUEST_BEGIN
+GFOS_SDL3_GAMEPAD_BEGIN
+GFOS_SDL3_GAMEPAD open=PASS name=GFOpenInput test pad mapping=0300752315da00000100000000000000,GFOpenInput test pad,a:b0,b:b1,x:b2,y:b3,back:b4,guide:b5,start:b6,leftstick:b7,rightstick:b8,leftshoulder:b9,rightshoulder:b10,dpup:b11,dpdown:b12,dpleft:b13,dpright:b14,leftx:a0,lefty:a1,rightx:a2,righty:a3,lefttrigger:a4,righttrigger:a5,platform:Unknown (see SDL_platform.h),
+GFOS_SDL3_GAMEPAD rumble=1 xMin=-25849 xMax=32762 motionSamples=100 status=PASS
+GFOS_SDL3_GAMEPAD_END
+GFOS_SDL3_GAMEPAD_GUEST_RC 0
+GFOS_SDL3_GAMEPAD_GUEST_END

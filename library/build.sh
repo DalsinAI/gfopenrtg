@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 # gfopenrtg.library, cybergraphics.library and gfopengpu.library (bare: no startup code or C
 # library; the RomTag's stub comes first), C:GFOpenRTG and its monitor driver, with the os32 stove (bebbo's m68k-amigaos-gcc);
-# gfopengpu.library and its GFOpenGfx parts with GFOpenAmigaGCC 16.2.0-open4 or -open5 (OPENGPU_STOVE, below).
+# gfopengpu.library and its GFOpenGfx parts with GFOpenAmigaGCC 16.2.0-open9, -open8, -open6, -open5 or -open4 (OPENGPU_STOVE, below).
 #   library/build.sh [OUT_DIR]     (default build/)
 # (gfopengpu.library twice: OUT_DIR/gfopengpu.library for the disk, OUT_DIR/rom/gfopengpu.library
 # for the GF ROM, without GFOpenGfx's patches and core; OGPU_ROM=1 makes OUT_DIR/gfopengpu.library
@@ -23,15 +23,18 @@ STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32}
 CC=${CC:-$STOVE/prefix/bin/m68k-amigaos-gcc}
 NM=${NM:-${CC%gcc}nm}
 if [ "$TARGET" = module ]; then OUT=${1:-${OUT:-$ROOT/build}}; else OUT=${1:-$ROOT/build}; fi
-# gfopengpu.library is built with GFOpenAmigaGCC 16.2.0-open8, -open6, -open5 or -open4
+# gfopengpu.library is built with GFOpenAmigaGCC 16.2.0-open9, -open8, -open6, -open5 or -open4
 # (open5 changed only libpthread and the names, not the compiler; open6's
 # m68k-amigaos code is open5's, it adds the m68k-aros target; open8 is the
-# fold-mem-offsets fix, the stove from 14 Nov 2026), and with nothing
+# fold-mem-offsets fix, the stove from 14 Nov 2026; open9, os32-gcc16 since
+# 18 Nov 2026, is open8's compiler with libpthread's pthread_cond_signal and
+# libstdc++'s stoll/stoull/stold fixed: gfopengpu.library uses neither, and
+# its files come out byte for byte as open8's), and with nothing
 # else: GCC 6.5 (the os32 stove) miscompiles the CPU core's stroke walk, so
 # strokes painted with gradients or patterns came out wrong (gfopenrtg
 # #159; tests/amiga/vector's OpenGPUVectorCRC shows the core against the
 # host). OPENGPU_STOVE holds prefix/bin; OPENGPU_CC overrides the compiler.
-OPENGPU_GCC="16.2.0-open8 16.2.0-open6 16.2.0-open5 16.2.0-open4"   # any of these
+OPENGPU_GCC="16.2.0-open9 16.2.0-open8 16.2.0-open6 16.2.0-open5 16.2.0-open4"   # any of these
 OPENGPU_STOVE=${OPENGPU_STOVE:-$HOME/AmiCradle/stoves/os32-gcc16}
 OPENGPU_CC=${OPENGPU_CC:-$OPENGPU_STOVE/prefix/bin/m68k-amigaos-gcc}
 # -fno-delete-null-pointer-checks on every 68k compile: address 0 is memory on

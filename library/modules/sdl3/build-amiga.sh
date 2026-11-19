@@ -11,6 +11,13 @@ ROOT=$(CDPATH= cd -- "$HERE/../../.." && pwd)
 STOVE=${STOVE:-$HOME/AmiCradle/stoves/os32-gcc16}
 OUT=${OUT:-$ROOT/build-amiga}
 if [ -x "$STOVE/prefix/bin/m68k-amigaos-gcc" ]; then PREFIX=$STOVE/prefix; else PREFIX=$STOVE; fi
+# The AHI headers (build.sh's SDK_HEADERS): as library/modules/sdl2/build-amiga.sh.
+if [ -z "${SDK_HEADERS:-}" ]; then
+    for d in "$PREFIX/m68k-amigaos/include" "$HOME/AmiCradle/kitchen/stoves/os32/prefix/m68k-amigaos/include" \
+             "$HOME/AmiCradle/stoves/os32/prefix/m68k-amigaos/include"; do
+        if [ -f "$d/devices/ahi.h" ]; then SDK_HEADERS=$d; export SDK_HEADERS; break; fi
+    done
+fi
 mkdir -p "$OUT"
 # SDL's tree is built outside OUT (the Cradle lists every file in OUT).
 B=${SDL3_BUILD_DIR:-${TMPDIR:-/tmp}/sdl3-build-$$}

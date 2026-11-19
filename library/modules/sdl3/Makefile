@@ -103,7 +103,7 @@ SRCS_AMIGA = \
 	video/amigaos3/SDL_os3framebuffer.c video/amigaos3/SDL_os3events.c \
 	video/amigaos3/SDL_os3keyboard.c video/amigaos3/SDL_os3modes.c \
 	video/amigaos3/SDL_os3mouse.c video/amigaos3/SDL_os3messagebox.c \
-	video/amigaos3/SDL_os3gpu.c render/opengpu/SDL_render_opengpu.c \
+	video/amigaos3/SDL_os3gpu.c video/amigaos3/SDL_os3opengl.c render/opengpu/SDL_render_opengpu.c \
 	audio/amigaos3/SDL_os3audio.c \
 	thread/amigaos3/SDL_systhread.c thread/amigaos3/SDL_sysmutex.c \
 	thread/amigaos3/SDL_syssem.c thread/amigaos3/SDL_systls.c \
@@ -185,11 +185,27 @@ $(OUT)/SDL3.module: $(CORE_DIR)/module_start.o $(CORE_DIR)/module_rt.o $(CORE_DI
 	@echo "built $@ ($$(wc -c < $@) bytes)"
 
 # -ffixed-a4: the stub sets A4 around each call into the module (OGPU_A4).
-STUB_CFLAGS = $(CFLAGS_BASE) -ffixed-a4 -I$(SDL)/src/dynapi -I$(SDL)/src
-$(STUB_DIR)/SDL3_stub.o: $(ROOT)/stubs/sdl3/SDL3_stub.c $(ROOT)/stubs/sdl3/SDL3_stub.h $(ROOT)/stubs/sdl3/sdl3_module.h $(INLINE)
+# The window GL calls are a member of their own, SDL3_gl.o, so only a program
+# that calls them needs -lGL (as libSDL2.a): SDL_dynapi_procs.h is split into
+# SDL3_stub_procs.h (without them) and SDL3_gl_procs.h (only them; every
+# other line that isn't a function).
+GL_PROCS := SDL_GL_(CreateContext|DestroyContext|ExtensionSupported|GetAttribute|GetCurrentContext|GetCurrentWindow|GetProcAddress|GetSwapInterval|LoadLibrary|MakeCurrent|ResetAttributes|SetAttribute|SetSwapInterval|SwapWindow|UnloadLibrary)
+GLA_INC := -I$(ROOT)/library/modules/gl/gla
+STUB_CFLAGS = $(CFLAGS_BASE) -ffixed-a4 -I$(SDL)/src/dynapi -I$(SDL)/src -I$(STUB_DIR)
+$(STUB_DIR)/SDL3_stub_procs.h: $(SDL)/src/dynapi/SDL_dynapi_procs.h
+	@mkdir -p $(dir $@)
+	grep -Ev '^SDL_DYNAPI_PROC\([^,]*,$(GL_PROCS),' $< > $@
+$(STUB_DIR)/SDL3_gl_procs.h: $(SDL)/src/dynapi/SDL_dynapi_procs.h
+	@mkdir -p $(dir $@)
+	grep -E '^SDL_DYNAPI_PROC\([^,]*,$(GL_PROCS),|^#' $< > $@
+	test "$$(grep -c '^SDL_DYNAPI_PROC' $@)" = 15
+$(STUB_DIR)/SDL3_stub.o: $(ROOT)/stubs/sdl3/SDL3_stub.c $(ROOT)/stubs/sdl3/SDL3_stub.h $(ROOT)/stubs/sdl3/sdl3_module.h $(STUB_DIR)/SDL3_stub_procs.h $(INLINE)
 	@mkdir -p $(dir $@)
 	$(CC) $(STUB_CFLAGS) -c $< -o $@
-$(OUT)/libSDL3.a: $(STUB_DIR)/SDL3_stub.o
+$(STUB_DIR)/SDL3_gl.o: $(ROOT)/stubs/sdl3/SDL3_gl.c $(ROOT)/stubs/sdl3/SDL3_stub.h $(ROOT)/stubs/sdl3/sdl3_module.h $(STUB_DIR)/SDL3_gl_procs.h $(INLINE)
+	@mkdir -p $(dir $@)
+	$(CC) $(STUB_CFLAGS) $(GLA_INC) -c $< -o $@
+$(OUT)/libSDL3.a: $(STUB_DIR)/SDL3_stub.o $(STUB_DIR)/SDL3_gl.o
 	@rm -f $@; $(AR) rcs $@ $^; $(RANLIB) $@; echo "built $@"
 
 # SDL's tests, unchanged, under tests/sdl3/sdltest_run.c (their log on

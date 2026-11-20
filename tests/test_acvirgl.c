@@ -496,7 +496,7 @@ int main(void)
         /* scaled into the whole target, 64x64 into 128x80: written by the GPU where direct
          * presents are on, from either resource's way up; checked away from the tiles' edges */
         for (h = 1; h <= 3; h += 2) {
-            uint32_t sa[13] = { h, 1, 0, 0, T, TB, OGPU_FMT_XRGB32, ((uint32_t)TW << 16) | TH, ACV_PRESENT_SCALE, 1,
+            uint32_t sa[13] = { 1, h, 0, 0, T, TB, OGPU_FMT_XRGB32, ((uint32_t)TW << 16) | TH, ACV_PRESENT_SCALE, 1,
                                 0, ((uint32_t)TW << 16) | TH, ((uint32_t)TW << 16) | TH };
             uint32_t x, y, sok = 1, sp[14];
             for (y = 0; y < 64; y++)
@@ -505,7 +505,7 @@ int main(void)
                     q[0] = 0x55; q[1] = (uint8_t)((y / 8) * 30); q[2] = (uint8_t)((x / 8) * 30); q[3] = 0xFF;
                 }
             memcpy(sp, a_put, sizeof sp);
-            sp[0] = h;
+            sp[1] = h;
             begin(); cmd(ACV_PUT, 14, sp);
             acvirgl_run(v, map, NULL, BLK, at - BLK);
             memset(arena + T, 0xEE, TB * TH);

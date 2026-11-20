@@ -1,0 +1,24 @@
+A GL window drawn at a size of its own (SDL3.module's SDL_OPENGPU_GL_SIZE, in
+SDL_os3opengl.c) reports that size as its size in pixels, so a program sets
+its viewport to the frame, and the host stretches the frame into the window.
+AmiCradle Team, 2026.
+
+--- a/src/video/amigaos3/SDL_os3opengl.h
++++ b/src/video/amigaos3/SDL_os3opengl.h
+@@ -11,5 +11,6 @@
+ bool OS3_GL_SwapWindow(SDL_VideoDevice *, SDL_Window *);
+ bool OS3_GL_DestroyContext(SDL_VideoDevice *, SDL_GLContext);
+ void OS3_GL_ResizeWindow(SDL_VideoDevice *, SDL_Window *, int, int);
++void OS3_GL_PixelSize(SDL_Window *, int *, int *);
+ void OS3_GL_DefaultProfileConfig(SDL_VideoDevice *, int *, int *, int *);
+ #endif
+--- a/src/video/amigaos3/SDL_os3window.c
++++ b/src/video/amigaos3/SDL_os3window.c
+@@ -472,6 +472,7 @@
+     }
+ #if defined(SDL_VIDEO_OPENGL)
+     OS3_GL_ResizeWindow(_this, window, width, height);
++    OS3_GL_PixelSize(window, &width, &height);   /* a GL window drawn at another size: that one */
+ #endif
+     if (w) *w = width;
+     if (h) *h = height;

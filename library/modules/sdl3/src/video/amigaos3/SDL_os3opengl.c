@@ -97,8 +97,11 @@ static void OS3_GL_InnerSize(SDL_Window *window, ULONG *width, ULONG *height)
 static bool OS3_GL_RenderSize(ULONG *width, ULONG *height)
 {
     const char *s = SDL_GetHint("SDL_OPENGPU_GL_SIZE");
-    char *end;
+    char var[24], *end;
     long w, h;
+    if ((!s || !*s) && GetVar((STRPTR)"SDL_OPENGPU_GL_SIZE", (STRPTR)var, sizeof var, 0) > 0) {
+        s = var;   /* SDL's environment is the module's, empty: the Shell's and ENV:'s variables */
+    }
     if (!s || !*s) {
         return false;
     }

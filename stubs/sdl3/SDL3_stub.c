@@ -101,6 +101,19 @@ static LONG SDL3Stub_DynapiEntry(void)
     return SDL3Stub_module->dynapi_entry(SDL_DYNAPI_VERSION, &SDL3Stub_jump_table, sizeof(SDL3Stub_jump_table));
 }
 
+/* The program's GL, for SDL_GL_* (SDL3_gl.c sets it before main runs, when
+   the program calls any SDL_GL_ function): only a module with set_gl
+   (version 3) takes it; an older one has no OpenGL and says so. */
+const struct SDL3GLBridge *SDL3Stub_gl = NULL;
+
+static void SDL3Stub_SetGL(void)
+{
+    if (SDL3Stub_gl && SDL3Stub_module->head.version >= SDL3_MODULE_GL_VERSION) {
+        SDL3STUB_A4();
+        SDL3Stub_module->set_gl(SDL3Stub_gl);
+    }
+}
+
 void SDL3Stub_Init(void)
 {
     SDL3ModuleArgs args;
@@ -140,6 +153,7 @@ void SDL3Stub_Init(void)
     if (SDL3Stub_DynapiEntry() < 0) {
         SDL3Stub_Fail(SDL3_MODULE_FILE " is older than this program, or couldn't start. Install a newer GFOpenGPU.");
     }
+    SDL3Stub_SetGL();
     SDL3Stub_ready = 1;
 }
 
@@ -165,10 +179,12 @@ static void __attribute__((destructor)) SDL3Stub_Close(void)
     SDL3Stub_ready = SDL3Stub_failed;   /* after a failure, later calls still do nothing */
 }
 
-/* Every function except the varargs ones. */
+/* Every function except the varargs ones and the window GL calls (those are
+   SDL3_gl.c's, a member of their own: SDL3_stub_procs.h is SDL's list
+   without them, made by the Makefile). */
 #define SDL_DYNAPI_PROC SDL3STUB_PROC
 #define SDL_DYNAPI_PROC_NO_VARARGS
-#include "SDL_dynapi_procs.h"
+#include "SDL3_stub_procs.h"
 #undef SDL_DYNAPI_PROC
 #undef SDL_DYNAPI_PROC_NO_VARARGS
 

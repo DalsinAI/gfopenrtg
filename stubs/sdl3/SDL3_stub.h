@@ -63,6 +63,8 @@ extern SDL_DYNAPI_jump_table SDL3Stub_jump_table;
 extern int SDL3Stub_ready;
 extern APTR SDL3Stub_a4;            /* the module's A4 for this program */
 extern void SDL3Stub_Init(void);
+/* The program's GL for the module (SDL3_gl.c sets it before main runs). */
+extern const struct SDL3GLBridge *SDL3Stub_gl;
 
 /* Every call into the module: its A4 for the call, the program's after. */
 #define SDL3STUB_A4() OGPU_A4(SDL3Stub_a4)

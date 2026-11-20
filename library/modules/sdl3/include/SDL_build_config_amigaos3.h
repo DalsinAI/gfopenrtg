@@ -87,7 +87,10 @@
 #define SDL_VIDEO_DRIVER_DUMMY 1
 #define SDL_VIDEO_RENDER_OPENGPU 1 /* the Team's: patches/sdl3/0004, src/video/amigaos3/SDL_os3gpu.c */
 #define SDL_VIDEO_RENDER_SW 1
-#define SDL_AMIGAOS3_SW_ONLY 1     /* SDL3_68k's switch: no MiniGL */
+/* OpenGL through GFOpenGPU's GL module and the program's libGL.a
+   (src/video/amigaos3/SDL_os3opengl.c, the Team's, in place of SDL3_68k's
+   MiniGL one; SDL3.module 3). SDL3_68k's SDL_AMIGAOS3_SW_ONLY is off. */
+#define SDL_VIDEO_OPENGL 1
 #define SDL_AUDIO_DRIVER_AMIGAOS3 1
 #define SDL_AUDIO_DRIVER_DUMMY 1
 #define SDL_JOYSTICK_AMIGAOS3 1

@@ -22,6 +22,8 @@
    SDL_OPEN_LIBRARY_BUILD). */
 extern long SDL_DYNAPI_entry(unsigned long apiver, void *table, unsigned long tablesize);
 extern void SDL_Quit(void);
+/* src/video/amigaos3/SDL_os3opengl.c: the program's GL (version 3). */
+extern void SDL_OS3_SetGLBridge(const struct SDL3GLBridge *bridge);
 
 static void SDL3Module_Close(void)
 {
@@ -33,6 +35,7 @@ static struct SDL3ModuleTable SDL3Module_table = {
     { SDL3_MODULE_VERSION, 0, 0 },
     (LONG (*)(ULONG, void *, ULONG))SDL_DYNAPI_entry,
     SDL3Module_Close,
+    SDL_OS3_SetGLBridge,
 };
 
 struct OGPUModuleTable *ogpu_module_entry(SDL3ModuleArgs *args)

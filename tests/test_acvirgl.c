@@ -493,6 +493,37 @@ int main(void)
             acvirgl_stats(v, &s1);
             CHECK(result(c) == 16 * 8 + 8 * 8 && s1.direct == s0.direct, "direct: two rectangles go the ordinary way (%d)", result(c));
         }
+        /* scaled into the whole target, 64x64 into 128x80: written by the GPU where direct
+         * presents are on, from either resource's way up; checked away from the tiles' edges */
+        for (h = 1; h <= 3; h += 2) {
+            uint32_t sa[13] = { h, 1, 0, 0, T, TB, OGPU_FMT_XRGB32, ((uint32_t)TW << 16) | TH, ACV_PRESENT_SCALE, 1,
+                                0, ((uint32_t)TW << 16) | TH, ((uint32_t)TW << 16) | TH };
+            uint32_t x, y, sok = 1, sp[14];
+            for (y = 0; y < 64; y++)
+                for (x = 0; x < 64; x++) {
+                    uint8_t *q = arena + 0x40000 + (y * 64 + x) * 4;
+                    q[0] = 0x55; q[1] = (uint8_t)((y / 8) * 30); q[2] = (uint8_t)((x / 8) * 30); q[3] = 0xFF;
+                }
+            memcpy(sp, a_put, sizeof sp);
+            sp[0] = h;
+            begin(); cmd(ACV_PUT, 14, sp);
+            acvirgl_run(v, map, NULL, BLK, at - BLK);
+            memset(arena + T, 0xEE, TB * TH);
+            acvirgl_stats(v, &s0);
+            begin(); c = cmd(ACV_PRESENT, 13, sa);
+            acvirgl_run(v, map, NULL, BLK, at - BLK);
+            acvirgl_settle(v, map, NULL, ACVIRGL_ALL);
+            acvirgl_stats(v, &s1);
+            for (y = 0; y < TH; y++)
+                for (x = 0; x < TW; x++) {
+                    const uint8_t *d = arena + T + y * TB + x * 4;
+                    uint32_t rx = x * 64 / TW, ry = y * 64 / TH;
+                    if (rx % 8 < 2 || rx % 8 > 5 || ry % 8 < 2 || ry % 8 > 5) continue;
+                    if (d[1] != (uint8_t)((rx / 8) * 30) || d[2] != (uint8_t)((ry / 8) * 30) || d[3] != 0x55) sok = 0;
+                }
+            CHECK(result(c) == TW * TH && sok && s1.direct - s0.direct == (uint64_t)want,
+                  "direct: scaled, resource %u (%d, %d, %llu)", h, result(c), sok, (unsigned long long)(s1.direct - s0.direct));
+        }
         /* forgotten (a hole punched): taken again at the next present */
         {
             uint32_t pa[12] = { 1, 1, 0, 0, T, TB, OGPU_FMT_XRGB32, ((uint32_t)TW << 16) | TH, 0, 1, (2u << 16) | 3u, (16u << 16) | 8u };

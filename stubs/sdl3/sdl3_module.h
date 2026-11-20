@@ -67,7 +67,13 @@ struct SDL3GLTarget {
     LONG left, top;
     ULONG width, height;
     ULONG priv[16];
+    /* The box the frame is stretched into when the buffer is drawn at a size
+     * of its own (SDL_OPENGPU_GL_SIZE), set only when box_magic is
+     * SDL3_GL_BOX_MAGIC (older modules leave it out). */
+    ULONG box_magic;
+    ULONG box_width, box_height;
 };
+#define SDL3_GL_BOX_MAGIC 0x47424F58UL   /* 'GBOX' */
 
 struct SDL3GLBridge {
     ULONG version;              /* SDL3_GL_BRIDGE_VERSION */

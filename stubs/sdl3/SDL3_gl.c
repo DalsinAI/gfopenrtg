@@ -74,6 +74,8 @@ static void SDL3GL_Aim(struct SDL3GLTarget *t)
     p->os3.bitmap = NULL;
     p->os3.left = t->left;
     p->os3.top = t->top;
+    p->os3.box_w = t->box_magic == SDL3_GL_BOX_MAGIC ? (int)t->box_width : 0;
+    p->os3.box_h = t->box_magic == SDL3_GL_BOX_MAGIC ? (int)t->box_height : 0;
 }
 
 static APTR SDL3GL_Buffer(APTR d, const struct SDL3GLConfig *cfg, struct SDL3GLTarget *t)

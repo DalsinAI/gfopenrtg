@@ -222,6 +222,13 @@ static long present_virgl(void *user, const struct gla_virgl_frame *f)
     of.damage_w = (UWORD)(f->x1 - f->x0);
     of.damage_h = (UWORD)(f->y1 - f->y0);
     of.flags = 0;                       /* virgl's display targets are top-down, as GLA's frames */
+    of.box_w = of.box_h = 0;
+    if (t->box_w > 0 && t->box_h > 0 && t->box_w <= 0xFFFF && t->box_h <= 0xFFFF
+        && (t->box_w != (int)f->w || t->box_h != (int)f->h) && (gla_openrtg_base->lib_Version > 0 || gla_openrtg_base->lib_Revision >= 29)) {
+        of.flags |= ORTG_VIRGL_SCALE;   /* the host stretches the frame into the box */
+        of.box_w = (UWORD)t->box_w;
+        of.box_h = (UWORD)t->box_h;
+    }
     settle(t);                          /* an earlier frame's batch reaches the screen first */
     n = ORTG_PresentVirgl(r, t->left, t->top, &of);
     if (n >= 0) {

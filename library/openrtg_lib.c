@@ -82,6 +82,10 @@
  * 0.28 (17 Nov 2026): ORTG_ShowInstead and ORTG_ShownNow (acrtg-v11): a finished frame in another
  * bitmap shown in a screen's place once the batch that filled it has run, so a display that shows
  * video RAM itself goes from one whole picture to the next (show_plan.h; layers' composited mode).
+ *
+ * 0.29 (20 Nov 2026): ORTG_VIRGL_SCALE: ORTG_PresentVirgl stretches the whole frame into a box
+ * on the host (ACV_PRESENT_SCALE, acvirgl.c), so a GL program draws at a size of its own and
+ * fills a window or a screen at no cost to the 68k.
  */
 #include <exec/types.h>
 #include "ortg_state.h"
@@ -102,7 +106,7 @@
 
 #define REG(r, decl) register decl __asm(#r)   /* bebbo gcc: an argument in a register */
 #define LIB_VERSION 0
-#define LIB_REVISION 28
+#define LIB_REVISION 29
 
 /* The ACRTG board (amicradle's common/protocol/acrtg.h): Zorro III,
  * AmiCradle Team (0xDA15; 2011 before 1 October 2026), product 9 (16 MiB), product 15 (64 MiB, 0.14) or product 16
@@ -155,9 +159,9 @@ struct OpenRTGBase {
 int start(void) { return -1; }
 
 static const char lib_name[] = "gfopenrtg.library";
-static const char lib_id[] = "gfopenrtg.library 0.28 (17.11.2026) GFOpenRTG, AmiCradle Team\r\n";
+static const char lib_id[] = "gfopenrtg.library 0.29 (20.11.2026) GFOpenRTG, AmiCradle Team\r\n";
 /* For C:Version, which looks for "$VER:" in the file. */
-static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopenrtg.library 0.28 (17.11.2026) GFOpenRTG, AmiCradle Team";
+static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopenrtg.library 0.29 (20.11.2026) GFOpenRTG, AmiCradle Team";
 
 static struct Library *lib_init(REG(d0, struct OpenRTGBase *base), REG(a0, BPTR seglist), REG(a6, struct ExecBase *sys));
 static struct Library *lib_open(REG(a6, struct OpenRTGBase *base));

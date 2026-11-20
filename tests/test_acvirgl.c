@@ -190,6 +190,42 @@ int main(void)
             }
         CHECK(ok, "present: RGB565, flipped (%d)", result(c));
 
+        /* ACV_PRESENT_SCALE: the 64x64 resource, 8x8 tiles of one colour each, stretched
+         * into a 128x128 box at (10, 5) of a 200x150 target. Checked away from the tiles'
+         * edges, where nearest (the CPU's) and linear (the GPU's) agree. */
+        {
+            enum { SW = 200, SH = 150, SB = SW * 4, S = 0x80000 };
+            uint32_t sa[13] = { 1, 1, 0, (10u << 16) | 5u, S, SB, OGPU_FMT_XRGB32, ((uint32_t)SW << 16) | SH,
+                                ACV_PRESENT_SCALE, 1, (0u << 16) | 0u, ((uint32_t)SW << 16) | SH, (128u << 16) | 128u };
+            uint32_t sok = 1, sout = 1;
+            for (y = 0; y < 64; y++)
+                for (x = 0; x < 64; x++) {
+                    uint8_t *q = arena + 0x40000 + (y * 64 + x) * 4;
+                    q[0] = 0x55; q[1] = (uint8_t)((y / 8) * 30); q[2] = (uint8_t)((x / 8) * 30); q[3] = 0xFF;
+                }
+            begin(); cp = cmd(ACV_PUT, 14, a_put);
+            acvirgl_run(v, map, NULL, BLK, at - BLK);
+            memset(arena + S, 0xEE, SB * SH);
+            begin(); c = cmd(ACV_PRESENT, 13, sa);
+            acvirgl_run(v, map, NULL, BLK, at - BLK);
+            CHECK(result(c) == 128 * 128, "scaled present wrote %d pixels, want %d", result(c), 128 * 128);
+            for (y = 0; y < SH; y++)
+                for (x = 0; x < SW; x++) {
+                    const uint8_t *d = arena + S + y * SB + x * 4;
+                    if (x >= 10 && x < 138 && y >= 5 && y < 133) {
+                        uint32_t rx = (x - 10) / 2, ry = (y - 5) / 2;
+                        if (rx % 8 < 2 || rx % 8 > 5 || ry % 8 < 2 || ry % 8 > 5) continue;
+                        if (d[1] != (uint8_t)((rx / 8) * 30) || d[2] != (uint8_t)((ry / 8) * 30) || d[3] != 0x55) sok = 0;
+                    } else if (d[0] != 0xEE || d[1] != 0xEE || d[2] != 0xEE || d[3] != 0xEE) sout = 0;
+                }
+            CHECK(sok, "scaled present: each tile twice its size, where it lands");
+            CHECK(sout, "scaled present: nothing outside the box changed");
+            /* a scaled command without its box word */
+            begin(); c = cmd(ACV_PRESENT, 12, sa);
+            acvirgl_run(v, map, NULL, BLK, at - BLK);
+            CHECK(result(c) == ACV_ERR_BADCMD, "scaled present without the box (%d)", result(c));
+        }
+
         /* refusals: out of reach, an unknown resource, a bad format, bad flags */
         pa[4] = ARENA - 16; pa[5] = TB; pa[6] = OGPU_FMT_XRGB32; pa[8] = 0;
         begin(); c = cmd(ACV_PRESENT, 12, pa);
@@ -198,7 +234,7 @@ int main(void)
         acvirgl_run(v, map, NULL, BLK, at - BLK);
         CHECK(result(c) == ACV_ERR_NOMAP && result(x) == ACV_ERR_RENDERER && result(y) == ACV_ERR_BADCMD,
               "present refusals: %d %d %d", result(c), result(x), result(y));
-        pa[6] = OGPU_FMT_XRGB32; pa[8] = 2;
+        pa[6] = OGPU_FMT_XRGB32; pa[8] = 4;
         begin(); c = cmd(ACV_PRESENT, 12, pa);
         acvirgl_run(v, map, NULL, BLK, at - BLK);
         CHECK(result(c) == ACV_ERR_BADCMD, "present: unknown flags (%d)", result(c));
@@ -229,7 +265,7 @@ int main(void)
                (unsigned long long)s.submits, (unsigned long long)s.puts, (unsigned long long)s.gets, (unsigned long long)s.errors);
         printf("acvirgl: %llu presents, %llu rectangles, %llu pixels; %llu frame bytes read back\n", (unsigned long long)s.presents,
                (unsigned long long)s.present_rects, (unsigned long long)s.present_pixels, (unsigned long long)s.frame_get_bytes);
-        CHECK(s.presents == 2 && s.present_rects == 3 && s.present_pixels == 526 && s.frame_get_bytes == 0, "present counters");
+        CHECK(s.presents == 3 && s.present_rects == 4 && s.present_pixels == 526 + 128 * 128 && s.frame_get_bytes == 0, "present counters");
     }
 
     /* Deferred presents (acvirgl_defer_presents): the result at once, the

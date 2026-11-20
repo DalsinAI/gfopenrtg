@@ -1535,7 +1535,7 @@ int ortg_pieces(struct RastPort *rp, LONG x0, LONG y0, LONG x1, LONG y1, ortg_pi
  * (docs/design/Design-OpenGPU-Virgl-Direct-Present.md in DalsinAI/amicradle). */
 
 #define VP_FIXED    12                                  /* header, result and ten arguments */
-#define VP_WORDS    (4 * (VP_FIXED + 2 * ACV_PRESENT_MAX))  /* four commands a block */
+#define VP_WORDS    (4 * (VP_FIXED + 2 * ACV_PRESENT_MAX + 1))  /* four commands a block (+1: a scaled one's box) */
 
 struct vp_ctx {
     const struct OpenRTGVirglFrame *f;
@@ -1554,7 +1554,11 @@ static void vp_close(struct vp_ctx *v)
     ULONG n;
     if (v->cmd >= v->words) return;
     n = v->blk[v->cmd + 11];
-    v->blk[v->cmd] = ACV_HDR(ACV_PRESENT, VP_FIXED + 2 * n);
+    if (v->f->flags & ORTG_VIRGL_SCALE) {           /* the box, after the rectangles */
+        v->blk[v->words++] = OGPU_XY(v->f->box_w, v->f->box_h);
+        v->blk[v->cmd] = ACV_HDR(ACV_PRESENT, VP_FIXED + 2 * n + 1);
+    } else
+        v->blk[v->cmd] = ACV_HDR(ACV_PRESENT, VP_FIXED + 2 * n);
     v->cmd = v->words;
 }
 
@@ -1595,7 +1599,7 @@ static void vp_piece(void *c, struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1,
     if (v->cmd < v->words && (v->bm != bm || v->sx != sx || v->sy != sy || v->blk[v->cmd + 11] == ACV_PRESENT_MAX))
         vp_close(v);
     if (v->cmd >= v->words) {
-        if (v->words + VP_FIXED + 2 * ACV_PRESENT_MAX > VP_WORDS) vp_send(v);
+        if (v->words + VP_FIXED + 2 * ACV_PRESENT_MAX + 1 > VP_WORDS) vp_send(v);
         if (v->pixels < 0) return;
         w = v->blk + v->words;
         v->cmd = v->words;
@@ -1609,7 +1613,7 @@ static void vp_piece(void *c, struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1,
         w[7] = bm->stride;
         w[8] = fmt;
         w[9] = OGPU_XY(bm->width, bm->height);
-        w[10] = v->f->flags & ORTG_VIRGL_FLIP_Y ? ACV_PRESENT_FLIP_Y : 0;
+        w[10] = (v->f->flags & ORTG_VIRGL_FLIP_Y ? ACV_PRESENT_FLIP_Y : 0) | (v->f->flags & ORTG_VIRGL_SCALE ? ACV_PRESENT_SCALE : 0);
         w[11] = 0;
         v->words += VP_FIXED;
         v->bm = bm; v->sx = sx; v->sy = sy;
@@ -1629,7 +1633,10 @@ LONG ortg_present_virgl(struct RastPort *rp, LONG x, LONG y, const struct OpenRT
     if (!rp || !f || !f->width || !f->height || !ortg_S->opengpu || ogpu_off) return -1;
     if (OGPU_ANSWER(OGPU_Query(OGPU_OP_VIRGL, 0)) != OGPU_FULL) return -1;
     dw = f->width; dh = f->height;
-    if (f->damage_w && f->damage_h) { dx = f->damage_x; dy = f->damage_y; dw = f->damage_w; dh = f->damage_h; }
+    if (f->flags & ORTG_VIRGL_SCALE) {              /* the box, all of it: the host stretches the frame */
+        if (!f->box_w || !f->box_h) return -1;
+        dw = f->box_w; dh = f->box_h;
+    } else if (f->damage_w && f->damage_h) { dx = f->damage_x; dy = f->damage_y; dw = f->damage_w; dh = f->damage_h; }
     v.f = f; v.fx = x; v.fy = y;
     v.words = v.cmd = 0; v.bm = NULL; v.sx = v.sy = 0; v.pixels = 0;
     if (!(v.blk = AllocVec(VP_WORDS * 4, MEMF_ANY))) return -1;

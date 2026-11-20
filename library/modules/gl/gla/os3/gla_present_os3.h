@@ -12,6 +12,8 @@ struct gla_os3_target {
     struct RastPort *rp;        /* drawn through WritePixelArray (layers respected) */
     struct BitMap   *bitmap;    /* set only for a screen GL owns: drawn by GFOpenGPU directly */
     int left, top;              /* the GL area's corner in rp (or bitmap) */
+    int box_w, box_h;           /* a frame stretched into this box at left, top (virgl's
+                                   present, gfopenrtg.library 0.29); 0: its own size */
 };
 
 /* Point p at t; t must outlive the GL buffer that uses p. */

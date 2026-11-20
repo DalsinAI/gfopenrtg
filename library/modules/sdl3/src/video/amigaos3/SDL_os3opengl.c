@@ -20,7 +20,11 @@
     knows a window is a GL window (no framebuffer, no resize copy); its
     OS3_GL_DestroyContext call when the window closes frees the buffer.
   - SDL_OPENGPU_GL=cpu (hint or env) draws with softpipe even where the PC's
-    graphics chip is there. A swap interval other than 0 waits for the
+    graphics chip is there.
+  - SDL_OPENGPU_GL_SIZE=WxH (hint or env) draws a window's frames at that
+    size, whatever the window's: the host's present stretches each frame into
+    the window's inside (gfopenrtg.library 0.29 on virgl), and the window
+    reports that size as its size in pixels. A swap interval other than 0 waits for the
     vertical blank (WaitTOF).
 */
 #include "SDL_internal.h"
@@ -67,6 +71,7 @@ typedef struct OS3_GLWindow
     ULONG magic;
     APTR buffer;
     struct SDL3GLTarget target;
+    ULONG render_w, render_h;   /* SDL_OPENGPU_GL_SIZE; 0: the window's inside */
 } OS3_GLWindow;
 
 static void OS3_GL_Aim(SDL_Window *window, OS3_GLWindow *w)
@@ -80,10 +85,63 @@ static void OS3_GL_Aim(SDL_Window *window, OS3_GLWindow *w)
 
 static void OS3_GL_InnerSize(SDL_Window *window, ULONG *width, ULONG *height)
 {
-    int w = 0, h = 0;
-    OS3_GetWindowSizeInPixels(SDL_GetVideoDevice(), window, &w, &h);
+    SDL_WindowData *d = window->internal;
+    struct Window *sw = d ? d->syswin : NULL;
+    int w = sw ? sw->Width - sw->BorderLeft - sw->BorderRight : window->w;
+    int h = sw ? sw->Height - sw->BorderTop - sw->BorderBottom : window->h;
     *width = w > 0 ? (ULONG)w : 1;
     *height = h > 0 ? (ULONG)h : 1;
+}
+
+/* SDL_OPENGPU_GL_SIZE's WxH, or false. */
+static bool OS3_GL_RenderSize(ULONG *width, ULONG *height)
+{
+    const char *s = SDL_GetHint("SDL_OPENGPU_GL_SIZE");
+    char *end;
+    long w, h;
+    if (!s || !*s) {
+        return false;
+    }
+    w = SDL_strtol(s, &end, 10);
+    if (*end != 'x' && *end != 'X') {
+        return false;
+    }
+    h = SDL_strtol(end + 1, &end, 10);
+    if (*end || w < 1 || h < 1 || w > 4096 || h > 4096) {
+        return false;
+    }
+    *width = (ULONG)w;
+    *height = (ULONG)h;
+    return true;
+}
+
+/* The box a frame drawn at its own size is stretched into: the inside. */
+static void OS3_GL_Box(SDL_Window *window, OS3_GLWindow *w)
+{
+    ULONG width, height;
+    if (!w->render_w) {
+        w->target.box_magic = 0;
+        return;
+    }
+    OS3_GL_InnerSize(window, &width, &height);
+    w->target.box_magic = SDL3_GL_BOX_MAGIC;
+    w->target.box_width = width;
+    w->target.box_height = height;
+}
+
+void OS3_GL_PixelSize(SDL_Window *window, int *width, int *height)
+{
+    SDL_WindowData *d = window ? window->internal : NULL;
+    OS3_GLWindow *w = d ? (OS3_GLWindow *)d->gl_context : NULL;
+    ULONG rw, rh;
+    if (w && w->render_w) {
+        rw = w->render_w;
+        rh = w->render_h;
+    } else if (w || !window || !(window->flags & SDL_WINDOW_OPENGL) || !OS3_GL_RenderSize(&rw, &rh)) {
+        return;
+    }
+    *width = (int)rw;
+    *height = (int)rh;
 }
 
 void OS3_GL_DefaultProfileConfig(SDL_VideoDevice *_this, int *mask, int *major, int *minor)
@@ -175,7 +233,13 @@ static OS3_GLWindow *OS3_GL_Window(SDL_Window *window, const struct SDL3GLConfig
     }
     w->magic = OS3_GL_WINDOW_MAGIC;
     OS3_GL_Aim(window, w);
-    OS3_GL_InnerSize(window, &width, &height);
+    if (OS3_GL_RenderSize(&width, &height)) {
+        w->render_w = width;
+        w->render_h = height;
+    } else {
+        OS3_GL_InnerSize(window, &width, &height);
+    }
+    OS3_GL_Box(window, w);
     w->target.width = width;
     w->target.height = height;
     w->buffer = (APTR)OS3_GLCALL(OS3_gl->buffer, OS3_gl_display, cfg, &w->target);
@@ -281,7 +345,12 @@ bool OS3_GL_SwapWindow(SDL_VideoDevice *_this, SDL_Window *window)
     if (!OS3_gl || !c || !w) {
         return SDL_SetError("OpenGL: no context is current on this window");
     }
-    OS3_GL_InnerSize(window, &width, &height);
+    if (w->render_w) {
+        width = w->render_w;
+        height = w->render_h;
+    } else {
+        OS3_GL_InnerSize(window, &width, &height);
+    }
     if (width != w->target.width || height != w->target.height) {
         OS3_GLCALL(OS3_gl->buffer_resize, w->buffer, width, height);
         w->target.width = width;
@@ -290,6 +359,7 @@ bool OS3_GL_SwapWindow(SDL_VideoDevice *_this, SDL_Window *window)
         d->gl_height = (int)height;
     }
     OS3_GL_Aim(window, w);
+    OS3_GL_Box(window, w);
     if (!w->target.rp) {
         return true;   /* the window is between screens */
     }

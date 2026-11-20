@@ -148,8 +148,13 @@ struct OpenRTGVirglFrame {
     short          damage_x, damage_y;  /* the part that changed, in the resource; */
     unsigned short damage_w, damage_h;  /* 0 by 0: all of it */
     unsigned long  flags;           /* ORTG_VIRGL_FLIP_Y: row 0 is the bottom (GL) */
+    /* ORTG_VIRGL_SCALE (0.29): the whole frame stretched into a box box_w by
+     * box_h at x, y, by the host (ACV_PRESENT_SCALE); damage is not used.
+     * Read only when the flag is set, so older callers' structs end above. */
+    unsigned short box_w, box_h;
 };
 #define ORTG_VIRGL_FLIP_Y       1
+#define ORTG_VIRGL_SCALE        2
 
 /* ORTG_DrawStats (0.11): how GFOpenRTG drew on its bitmaps, by kind of
  * drawing, since it started or was last reset. Each kind has four counts:

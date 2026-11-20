@@ -73,6 +73,7 @@ static void SDL2GL_Aim(struct SDL2GLTarget *t)
     p->os3.bitmap = NULL;
     p->os3.left = t->left;
     p->os3.top = t->top;
+    p->os3.box_w = p->os3.box_h = 0;
 }
 
 static APTR SDL2GL_Buffer(APTR d, const struct SDL2GLConfig *cfg, struct SDL2GLTarget *t)

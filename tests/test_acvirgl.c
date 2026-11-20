@@ -265,7 +265,7 @@ int main(void)
                (unsigned long long)s.submits, (unsigned long long)s.puts, (unsigned long long)s.gets, (unsigned long long)s.errors);
         printf("acvirgl: %llu presents, %llu rectangles, %llu pixels; %llu frame bytes read back\n", (unsigned long long)s.presents,
                (unsigned long long)s.present_rects, (unsigned long long)s.present_pixels, (unsigned long long)s.frame_get_bytes);
-        CHECK(s.presents == 2 && s.present_rects == 3 && s.present_pixels == 526 && s.frame_get_bytes == 0, "present counters");
+        CHECK(s.presents == 3 && s.present_rects == 4 && s.present_pixels == 526 + 128 * 128 && s.frame_get_bytes == 0, "present counters");
     }
 
     /* Deferred presents (acvirgl_defer_presents): the result at once, the

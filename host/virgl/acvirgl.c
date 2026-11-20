@@ -135,6 +135,10 @@ typedef unsigned int av_glenum;
 #define AV_GL_SCISSOR_TEST          0x0C11
 #define AV_GL_COLOR_BUFFER_BIT      0x4000
 #define AV_GL_NEAREST               0x2600
+#define AV_GL_LINEAR                0x2601
+#define AV_GL_TEXTURE_WRAP_S        0x2802
+#define AV_GL_TEXTURE_WRAP_T        0x2803
+#define AV_GL_CLAMP_TO_EDGE         0x812F
 #define AV_GL_DEPTH_ATTACHMENT      0x8D00
 #define AV_GL_STENCIL_ATTACHMENT    0x8D20
 #define AV_GL_SYNC_GPU_COMMANDS_COMPLETE 0x9117
@@ -209,6 +213,7 @@ struct av_gl {
     int (*GetUniformLocation)(unsigned, const char *);
     void (*Uniform1i)(int, int);
     void (*Uniform4i)(int, int, int, int, int);
+    void (*Uniform4f)(int, float, float, float, float);   /* scaled presents; NULL: those through the CPU */
     void (*GenVertexArrays)(int, unsigned *);
     void (*BindVertexArray)(unsigned);
     void (*DrawArrays)(av_glenum, int, int);
@@ -254,6 +259,7 @@ struct av_vwin {
 struct av_pres {
     uint32_t ctx, handle, layer, addr, bpr, fmt, span;
     int sx, sy, rh, flip, nr;
+    int scale, bw, bh, rw;      /* ACV_PRESENT_SCALE: the resource (rw by rh) into the box at sx, sy, bw by bh */
     int rect[ACV_PRESENT_MAX][4];
     struct vr_box box;
     uint64_t fence;             /* deferred: the context's fence after the frame */
@@ -355,8 +361,8 @@ struct acvirgl {
     unsigned vr_gen, vr_gen_seen;   /* acvirgl_video_ram_forget's count, and the windows' */
     int direct_state;
     void *own_dpy, *own_ctx;    /* acvirgl's own GL context, sharing virglrenderer's objects */
-    unsigned own_prog, own_vao, own_samp;
-    int own_u_t, own_u_m;
+    unsigned own_prog, own_vao, own_samp, own_samp_lin;
+    int own_u_t, own_u_m, own_u_sc, own_u_q;
     struct av_vwin vw[AV_VWINS];
     unsigned vw_tick;
     int direct_said;            /* targets EGL wouldn't take, told in the log (the first few) */
@@ -840,7 +846,14 @@ static int32_t av_present_prep(struct acvirgl *v, uint8_t *(*map)(void *, uint32
     int lr, lg, lb, la, rw, rh, bx0 = 0x7FFFFFFF, by0 = 0x7FFFFFFF, bx1 = -1, by1 = -1, flip = (flags & ACV_PRESENT_FLIP_Y) != 0;
     const struct av_res *res;
     uint64_t pixels = 0, span;
-    if (n > ACV_PRESENT_MAX || nargs < 10 + 2 * n || (flags & ~(uint32_t)ACV_PRESENT_FLIP_Y)) return ACV_ERR_BADCMD;
+    int scale = (flags & ACV_PRESENT_SCALE) != 0, bw = 0, bh = 0;
+    if (n > ACV_PRESENT_MAX || nargs < 10 + 2 * n + (unsigned)scale
+        || (flags & ~(uint32_t)(ACV_PRESENT_FLIP_Y | ACV_PRESENT_SCALE))) return ACV_ERR_BADCMD;
+    if (scale) {
+        uint32_t bwh = av_be32(a + 40 + n * 8);
+        bw = (int)(bwh >> 16); bh = (int)(bwh & 0xFFFFu);
+        if (!bw || !bh) return 0;
+    }
     bpp = fmt == OGPU_FMT_XRGB32 || fmt == OGPU_FMT_ARGB32 ? 4 : fmt == OGPU_FMT_RGB565 ? 2 : 0;
     if (!bpp) return ACV_ERR_BADCMD;
     if (!n || !tw || !th) return 0;
@@ -848,6 +861,7 @@ static int32_t av_present_prep(struct acvirgl *v, uint8_t *(*map)(void *, uint32
     if (!(res = av_res_find(v, handle)) || !av_layout(res->format, &lr, &lg, &lb, &la))
         return ACV_ERR_RENDERER;
     rw = (int)res->width; rh = (int)res->height;
+    if (!scale) { bw = rw; bh = rh; }           /* unscaled: the box is the resource where it lands */
     /* The target's bytes, in 64 bits: bpr * (th - 1) passes 32 bits (bpr
      * 0x01000000, th 257), and a wrapped length would map one row while the
      * rows below it are written. Past 32 bits it is out of reach. */
@@ -864,11 +878,12 @@ static int32_t av_present_prep(struct acvirgl *v, uint8_t *(*map)(void *, uint32
         if (y1 > th) y1 = th;
         if (x0 < sx) x0 = sx;
         if (y0 < sy) y0 = sy;
-        if (x1 > sx + rw) x1 = sx + rw;
-        if (y1 > sy + rh) y1 = sy + rh;
+        if (x1 > sx + bw) x1 = sx + bw;
+        if (y1 > sy + bh) y1 = sy + bh;
         if (x0 >= x1 || y0 >= y1) continue;
         p->rect[p->nr][0] = x0; p->rect[p->nr][1] = y0; p->rect[p->nr][2] = x1; p->rect[p->nr][3] = y1; p->nr++;
         pixels += (uint64_t)(x1 - x0) * (uint64_t)(y1 - y0);
+        if (scale) continue;                    /* scaled: all of the resource is read, below */
         if (x0 - sx < bx0) bx0 = x0 - sx;
         if (x1 - sx > bx1) bx1 = x1 - sx;
         if (flip) {
@@ -880,6 +895,8 @@ static int32_t av_present_prep(struct acvirgl *v, uint8_t *(*map)(void *, uint32
         }
     }
     if (!p->nr) return 0;
+    if (scale) { bx0 = 0; by0 = 0; bx1 = rw; by1 = rh; }
+    p->scale = scale; p->bw = bw; p->bh = bh; p->rw = rw;
     p->ctx = ctx; p->handle = handle; p->layer = layer; p->addr = addr; p->bpr = bpr; p->fmt = fmt; p->span = (uint32_t)span;
     p->sx = sx; p->sy = sy; p->rh = rh; p->flip = flip;
     p->box.x = (uint32_t)bx0; p->box.y = (uint32_t)by0; p->box.z = layer;
@@ -931,6 +948,30 @@ static uint64_t av_present_write(const struct av_pres *p, uint8_t *dst, const ui
     const struct vr_box *box = &p->box;
     uint64_t pixels = 0;
     int i;
+    if (p->scale) {
+        /* the box's pixel (x, y) from the resource's (x - sx) * rw / bw, (y - sy) * rh / bh, nearest
+         * (the CPU's way, when the GPU can't write video RAM itself) */
+        for (i = 0; i < p->nr; i++) {
+            int x0 = p->rect[i][0], y0 = p->rect[i][1], x1 = p->rect[i][2], y1 = p->rect[i][3], x, y;
+            for (y = y0; y < y1; y++) {
+                int fy = (int)((int64_t)(y - p->sy) * p->rh / p->bh), ry = (p->flip ? p->rh - 1 - fy : fy) - (int)box->y;
+                const uint8_t *row;
+                if (rev) ry = (int)box->h - 1 - ry;
+                row = src + (size_t)ry * sstride;
+                for (x = x0; x < x1; x++) {
+                    const uint8_t *sp = row + (size_t)((int)((int64_t)(x - p->sx) * p->rw / p->bw) - (int)box->x) * 4;
+                    if (p->fmt == OGPU_FMT_RGB565) {
+                        uint8_t *dp = dst + (size_t)y * p->bpr + (size_t)x * 2;
+                        dp[0] = (uint8_t)((sp[lr] & 0xF8) | (sp[lg] >> 5));
+                        dp[1] = (uint8_t)(((sp[lg] & 0x1C) << 3) | (sp[lb] >> 3));
+                    } else
+                        av_row32(dst + (size_t)y * p->bpr + (size_t)x * 4, sp, 1, lr, lg, lb, la, p->fmt == OGPU_FMT_XRGB32);
+                }
+            }
+            pixels += (uint64_t)(x1 - x0) * (uint64_t)(y1 - y0);
+        }
+        return pixels;
+    }
     for (i = 0; i < p->nr; i++) {
         int x0 = p->rect[i][0], y0 = p->rect[i][1], x1 = p->rect[i][2], y1 = p->rect[i][3], x, y;
         for (y = y0; y < y1; y++) {
@@ -981,7 +1022,7 @@ static int av_gl_load(struct acvirgl *v)
     GLO(Flush) GLO(FenceSync) GLO(ClientWaitSync) GLO(DeleteSync) GLO(EGLImageTargetTexture2DOES) GLO(InvalidateFramebuffer)
     /* for direct presents */
     GLO(CreateShader) GLO(ShaderSource) GLO(CompileShader) GLO(GetShaderiv) GLO(DeleteShader) GLO(CreateProgram) GLO(AttachShader)
-    GLO(LinkProgram) GLO(GetProgramiv) GLO(UseProgram) GLO(GetUniformLocation) GLO(Uniform1i) GLO(Uniform4i) GLO(GenVertexArrays)
+    GLO(LinkProgram) GLO(GetProgramiv) GLO(UseProgram) GLO(GetUniformLocation) GLO(Uniform1i) GLO(Uniform4i) GLO(Uniform4f) GLO(GenVertexArrays)
     GLO(BindVertexArray) GLO(DrawArrays) GLO(Viewport) GLO(Scissor) GLO(ActiveTexture) GLO(GenSamplers) GLO(BindSampler)
     GLO(SamplerParameteri) GLO(WaitSync)
 #undef GLO
@@ -1322,16 +1363,17 @@ static int av_own_make(struct acvirgl *v)
     static const char vs[] =
         "void main() { gl_Position = vec4(float((gl_VertexID & 1) * 4 - 1), float((gl_VertexID >> 1) * 4 - 1), 0.0, 1.0); }\n";
     static const char fs[] =
-        "uniform sampler2D t;\nuniform ivec4 m;\nout vec4 o;\n"
+        "uniform sampler2D t;\nuniform ivec4 m;\nuniform int sc;\nuniform vec4 q;\nout vec4 o;\n"
         "void main() {\n"
         "    ivec2 f = ivec2(gl_FragCoord.xy);\n"
-        "    vec4 c = texelFetch(t, ivec2(f.x - m.x, m.y * f.y + m.z), 0);\n"
+        "    vec4 c = sc == 0 ? texelFetch(t, ivec2(f.x - m.x, m.y * f.y + m.z), 0)\n"
+        "                     : texture(t, vec2((gl_FragCoord.x - q.y) * q.x, gl_FragCoord.y * q.z + q.w));\n"
         "    o = vec4(m.w == 0 ? 0.0 : m.w == 1 ? c.a : 1.0, c.r, c.g, c.b);\n"
         "}\n";
     static const int a33[] = { AV_EGL_CONTEXT_MAJOR, 3, AV_EGL_CONTEXT_MINOR, 3, AV_EGL_CONTEXT_PROFILE, 1, AV_EGL_NONE };
     static const int a31[] = { AV_EGL_CONTEXT_MAJOR, 3, AV_EGL_CONTEXT_MINOR, 1, AV_EGL_NONE };
     static const int a30[] = { AV_EGL_CONTEXT_MAJOR, 3, AV_EGL_NONE };
-    char vsrc[256], fsrc[512];
+    char vsrc[256], fsrc[768];
     void *dpy = v->gl.GetCurrentDisplay(), *share = v->egl_current(), *cfg = NULL, *ctx;
     int cid = 0, type = 0, n = 0, gl, ok = 0, i;
     unsigned api, s1 = 0, s2 = 0, prog = 0;
@@ -1366,6 +1408,8 @@ static int av_own_make(struct acvirgl *v)
         v->gl.UseProgram(prog);
         v->own_u_t = v->gl.GetUniformLocation(prog, "t");
         v->own_u_m = v->gl.GetUniformLocation(prog, "m");
+        v->own_u_sc = v->gl.GetUniformLocation(prog, "sc");
+        v->own_u_q = v->gl.GetUniformLocation(prog, "q");
         v->gl.Uniform1i(v->own_u_t, 0);
         v->gl.GenVertexArrays(1, &v->own_vao);
         /* a sampler of its own: texelFetch needs no filter, but the frame's
@@ -1376,6 +1420,15 @@ static int av_own_make(struct acvirgl *v)
         else {
             v->gl.SamplerParameteri(v->own_samp, AV_GL_TEXTURE_MIN_FILTER, AV_GL_NEAREST);
             v->gl.SamplerParameteri(v->own_samp, AV_GL_TEXTURE_MAG_FILTER, AV_GL_NEAREST);
+            /* and a linear one for scaled presents */
+            v->gl.GenSamplers(1, &v->own_samp_lin);
+            if (v->gl.GetError()) v->own_samp_lin = 0;
+            else {
+                v->gl.SamplerParameteri(v->own_samp_lin, AV_GL_TEXTURE_MIN_FILTER, AV_GL_LINEAR);
+                v->gl.SamplerParameteri(v->own_samp_lin, AV_GL_TEXTURE_MAG_FILTER, AV_GL_LINEAR);
+                v->gl.SamplerParameteri(v->own_samp_lin, AV_GL_TEXTURE_WRAP_S, AV_GL_CLAMP_TO_EDGE);
+                v->gl.SamplerParameteri(v->own_samp_lin, AV_GL_TEXTURE_WRAP_T, AV_GL_CLAMP_TO_EDGE);
+            }
         }
         ok = v->gl.GetError() == 0 && v->own_vao;
     }
@@ -1501,6 +1554,7 @@ static int av_direct_start(struct acvirgl *v, struct av_pres *p)
     memset(&info, 0, sizeof info);
     if (v->vr.resource_get_info((int)p->handle, &info) || !info.tex_id || !av_current(v, p->ctx)) return 0;
     if (!v->own_ctx && !av_own_make(v)) { av_direct_off(v, "no GL context of its own with the program"); return 0; }
+    if (p->scale && (!v->own_samp_lin || !v->gl.Uniform4f || v->own_u_q < 0)) return 0;   /* scaled: through the CPU */
     /* the frame's drawing before ours: a fence after it in its own context */
     for (i = 0; i < 8 && v->gl.GetError(); i++) ;     /* virglrenderer's, not ours */
     if (!(fs = v->gl.FenceSync(AV_GL_SYNC_GPU_COMMANDS_COMPLETE, 0))) return 0;
@@ -1540,8 +1594,20 @@ static int av_direct_start(struct acvirgl *v, struct av_pres *p)
     v->gl.BindVertexArray(v->own_vao);
     v->gl.ActiveTexture(AV_GL_TEXTURE0);
     v->gl.BindTexture(AV_GL_TEXTURE_2D, info.tex_id);
-    if (v->own_samp) v->gl.BindSampler(0, v->own_samp);
     v->gl.Uniform4i(v->own_u_m, p->sx, s, t, p->fmt == OGPU_FMT_XRGB32 ? 0 : da == 4 ? 2 : 1);
+    if (p->scale) {
+        /* target (x, y) samples the resource at u = (x - sx) * rw / bw / W and v, the row
+         * ry = (y - sy) * rh / bh, flipped and turned as the texture keeps it, over H */
+        float k = (float)p->rh / (float)p->bh, W = (float)info.width, H = (float)info.height, sg = 1.0f, off = 0.0f;
+        if (p->flip) { sg = -1.0f; off = (float)p->rh; }
+        if (info.flags & VR_RESOURCE_Y_0_TOP) { sg = -sg; off = H - off; }
+        if (v->own_samp_lin) v->gl.BindSampler(0, v->own_samp_lin);
+        v->gl.Uniform1i(v->own_u_sc, 1);
+        v->gl.Uniform4f(v->own_u_q, (float)p->rw / ((float)p->bw * W), (float)p->sx, sg * k / H, (off - sg * k * (float)p->sy) / H);
+    } else {
+        if (v->own_samp) v->gl.BindSampler(0, v->own_samp);
+        v->gl.Uniform1i(v->own_u_sc, 0);
+    }
     v->gl.DrawArrays(AV_GL_TRIANGLES, 0, 3);
     v->gl.BindTexture(AV_GL_TEXTURE_2D, 0);
     v->gl.BindFramebuffer(AV_GL_FRAMEBUFFER, 0);

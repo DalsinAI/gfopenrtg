@@ -1,0 +1,26 @@
+# Copyright (c) 2026 AmiCradle Team. MIT licence.
+# One owner for every function (DESIGN.md section 13; docs/design/OpenGPU-Shared-Pipe.md section 6). Stage M1 of
+# docs/design/OpenGPU-Shared-Pipe-Plan.md: a new violation fails, and the debt list (tests/ownership.debt) may
+# lose lines but never gain one.
+name: Ownership
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  ownership:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: the check catches what it must and lets through what it must
+        run: sh tests/test_ownership_check.sh
+      - name: no new violation, no stale debt line, no line added to the debt list
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ -n "$BASE_REF" ]; then sh tests/ownership_check.sh --base "origin/$BASE_REF"
+          else sh tests/ownership_check.sh; fi

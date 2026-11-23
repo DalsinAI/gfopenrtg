@@ -12,6 +12,12 @@ We are The AmiCradle Team, who build AmiCradle alongside SacredTrees:
 - **Thufir**, **Kynes** and **Galen**, who started the work on SacredTrees's x86 cores.
 - **The threads**, each one taking a piece of the work from design to release.
 
+## Where code goes
+
+Every function in this repository has one owner: `DESIGN.md` section 13 has the matrix. Before adding code, find
+its row and put the code with that owner. A second implementation of anything is added only by a change that
+names which of the two will be deleted, and when. `tests/ownership_check.sh` checks what a script can.
+
 ## Copyright holder
 
 Original GFOpenRTG code, GFOpenGPU, tools, measurements and documentation are

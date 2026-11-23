@@ -1280,3 +1280,74 @@ What it means for the order of the work:
   on an RTG monitor, with the early start from the ACRTG ROM (section 4) as
   the way there. To decide when the appliance work resumes.
 
+## 13. Who owns what
+
+Stage M0.5 of `docs/design/OpenGPU-Shared-Pipe-Plan.md`, 23 November 2026. The design is
+`docs/design/OpenGPU-Shared-Pipe.md`; this section is the part of it that binds every change to this repository.
+
+**Every function has exactly one owner. If a second implementation appears, the change that adds it names which
+of the two will be deleted, and when.** A new feature starts by saying which row below it belongs to.
+
+### The matrix
+
+| Function | Owner | Forbidden elsewhere |
+|---|---|---|
+| virgl encoding | shared pipe (and Mesa's own driver) | Warp3D, MiniGL, TinyGL, EGL, OGLES3 |
+| Fixed-function shader generation (TGSI) | shared pipe | Warp3D, MiniGL |
+| Bound drawing state | pipe context | API contexts |
+| GPU resources and their lifetime | shared pipe | every front end |
+| stream3d 3D commands | shared pipe | every front end |
+| Back-end choice | gfopengpu | every front end |
+| Capability discovery | gfopengpu | every front end |
+| Reported capabilities | each front end, by its frozen rules | gfopengpu |
+| Presentation, rectangle walk, format conversion | OpenRTG | everybody else, Mesa included |
+| Composition, scanout, display modes | OpenRTG | everybody else |
+| graphics.library acceleration | gfopengpu (OGFX) | OpenRTG, front ends |
+| Video decode | ACMedia | everybody else |
+| Video presentation | OpenRTG | ACMedia |
+| Warp3D semantics | Warp3D.library | the pipe, gfopengpu |
+| GL semantics | minigl.library; Mesa for GL.module | the pipe, gfopengpu |
+| EGL semantics | EGL | the pipe, gfopengpu |
+
+Every object has one owner. A front end's texture refers to a pipe resource, which refers to a virgl resource or 68k memory; only the pipe frees them.
+
+### The boundaries
+
+- **OpenGPU and OpenRTG.** gfopengpu draws, and chooses and asks the back ends. OpenRTG owns screens, windows,
+  bitmaps, modes, composition and scanout, and is the only one that presents: pixels reach a screen, a window or
+  a bitmap through `ORTG_Present` and nothing else. graphics.library's acceleration (OGFX) stays in gfopengpu,
+  and its pixels reach the screen through OpenRTG.
+- **The pipe and the gfopengpu runtime.** The runtime is gfopengpu.library's own calls (`OGPU_Query`,
+  `OGPU_Submit`, `OGPU_Wait`, the modules, the contexts): no draw, texture, shader or present call. The shared
+  pipe (`library/pipe/`, from M2) owns the virgl encoding below Mesa, the state objects, the fixed-function
+  shader generator, the resources, the arenas and the stream3d emission. Our front ends reach it only through
+  its versioned table; programs never get it.
+- **OpenRTG and ACMedia.** ACMedia decodes. Its frames are surfaces like any other and are presented by
+  OpenRTG; ACMedia has no present of its own.
+
+### The Mesa exception
+
+GL.module carries Mesa, and Mesa keeps its own state tracker and its own virgl driver: there are exactly two
+state trackers, Mesa's and the pipe's. The exception ends there. GL.module's virgl goes out only through
+`OGPU_Submit` and `OGPU_Wait` (no host header, no board lookup), its capabilities come from `OGPU_Query`, and its
+frames reach the screen only through OpenRTG.
+
+### Resources, locks and capabilities
+
+- **Resources.** No front end allocates GPU-visible memory. A front end's texture is a wrapper around a pipe
+  resource; only the pipe frees what is under it, and only after the last block that used it has run (the plan,
+  2.3).
+- **Locks.** OpenRTG's bitmap lock is outermost. The pipe's screen lock is never held while waiting on a block.
+  No lock is held between frames, and none across a host round trip (the plan, 2.10).
+- **Capabilities.** `OGPU_Query` is the only place a library learns what the machine can do. Discovery happens
+  once, in gfopengpu. Each front end turns that answer into what its own API reports, by written rules, and
+  what it reports today is frozen before any of this is wired (the plan, 2.8).
+
+### How it is checked
+
+`tests/ownership_check.sh` checks the rules a script can check, on every pull request
+(`.github/workflows/ownership.yml`). What breaks a rule today is listed, file by file, in `tests/ownership.debt`, with the stage
+that clears it. That list only shrinks: the check fails on a violation that isn't on it, on a line added to it,
+and on a line that is no longer a violation. `tests/test_ownership_check.sh` tests the check itself.
+
+Decided for this work (Dale, 23 November 2026): the plan's decisions D1 to D6, as recommended, in its section 7.

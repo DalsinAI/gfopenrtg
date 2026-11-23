@@ -151,7 +151,8 @@ void gla_carry_close(struct gla_carry *c)
     struct gla_carry_mem m;
     if (!c) return;
     m = c->mem;
-    c->ops->ctx_destroy(c->ctx);        /* what is queued, then the context's end */
+    gla_carry_flush(c);                 /* everything queued runs first, as on the old route */
+    c->ops->ctx_destroy(c->ctx);
     c->ops->screen_close(c->screen);
     if (c->arena) m.free(m.user, c->arena);
     m.free(m.user, c);

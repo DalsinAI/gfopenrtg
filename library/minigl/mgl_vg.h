@@ -39,6 +39,7 @@
  * while the resource lives (as GL.module does). */
 struct vg_res {
     ULONG handle;
+    OGPUPipeRes *pr;                    /* the pipe's resource (0 on the old route, ENV:MiniGL/PipeOld) */
     ULONG fmt, w, h, levels;
     struct vg_res *next_dead;           /* retired: released after the frame's block */
 };
@@ -125,11 +126,12 @@ struct mgl_vg {
     ULONG *blk; ULONG cblk;             /* the block as sent */
     /* the command stream, little-endian words */
     ULONG *cmd; ULONG ncmd, ccmd;
-    ULONG seq;                          /* counts streams sent */
+    ULONG seq;                          /* counts streams sent (the pipe's sent() on its route) */
     ULONG pre_errors;                   /* commands the host refused in the last block */
     /* the arenas: vertices (32-bit words) and 16-bit indices */
-    UBYTE *va; ULONG nva, cva;
-    UWORD *ia; ULONG nia, cia;
+    UBYTE *va; ULONG nva_own, cva;
+    UWORD *ia; ULONG nia_own, cia;
+    ULONG *pnva, *pnia;                 /* their use: the pipe's counters on its route, nva_own and nia_own on the old */
     struct vg_res *colour, *depth, *vbuf, *ibuf;
     /* Where the arenas go in vbuf and ibuf (bytes): each block's after the
      * last one's, never over them. virglrenderer writes a buffer's PUT
@@ -139,6 +141,12 @@ struct mgl_vg {
     ULONG vb_off, vb_size, ib_base, ib_size;
     struct vg_res *dead;                /* resources released after the next block */
     ULONG grow_va, grow_ia, grow_cmd;   /* asked for at the next frame's start */
+
+    /* The shared pipe's route (stage M3's bridge; ENV:MiniGL/PipeOld=1 keeps the old one for a release): the
+     * pipe owns the block, the resources and the arenas; va, ia, cva, cia, vb_off and ib_base mirror its arenas
+     * (vg_sync), and the buffers' handles are these. */
+    OGPUPipeCtx *px;
+    ULONG vbuf_h, ibuf_h;
 
     ULONG next_obj;                     /* object handles: ours, per context */
     ULONG surf_c, surf_z;               /* the surfaces of colour and depth */
@@ -190,6 +198,13 @@ struct mgl_vg {
     ULONG draws, objects, frames, blocks, words, va_bytes, puts, renames;
 };
 
+/* The arenas' use, either route */
+#define VG_NVA(v) (*(v)->pnva)
+#define VG_NIA(v) (*(v)->pnia)
+/* The host's vertex and index buffers' handles, either route */
+#define VG_VBUF_H(v) ((v)->px ? (v)->vbuf_h : (v)->vbuf->handle)
+#define VG_IBUF_H(v) ((v)->px ? (v)->ibuf_h : (v)->ibuf->handle)
+
 /* ---- the encoder (mgl_vg_enc.c) --------------------------------------------------------------- */
 
 /* Room for n words in the stream; the frame is sent first when there is none. */
@@ -232,6 +247,21 @@ void mgl_vg_readback(GLcontext c, int x, int y, int w, int h, ULONG *argb, int s
 void mgl_vg_clear(GLcontext c, GLbitfield mask);
 void mgl_vg_switch(GLcontext c);        /* mglSwitchDisplay */
 void mgl_vg_finish(GLcontext c);        /* glFlush, glFinish */
+void vg_send_overflow(GLcontext c, ULONG stride);  /* glBegin's arena is full: sent, larger at the frame's end */
+
+/* The pipe's route (mgl_vg_pipe.c): the same calls, made by the shared pipe. */
+int vgp_open(GLcontext c);              /* 0: no virgl (as mgl_vg_open) */
+void vgp_close(GLcontext c);
+struct vg_res *vgp_res_create(GLcontext c, ULONG target, ULONG fmt, ULONG bind, ULONG w, ULONG h, ULONG levels);
+void vgp_res_release(GLcontext c, struct vg_res *r);
+void vgp_put(GLcontext c, struct vg_res *r, ULONG level, ULONG x, ULONG y, ULONG w, ULONG h, const void *src,
+             ULONG stride, ULONG swap);
+void vgp_send(GLcontext c, int present);
+void vgp_need(GLcontext c, ULONG va_bytes, ULONG ia_count);
+ULONG *vgp_cmd(GLcontext c, ULONG n);
+void vgp_overflow(GLcontext c, ULONG stride);
+int vgp_readback(GLcontext c, int x0, int y0, int x1, int y1, ULONG *buf);    /* 0 on success */
+void vg_sync(GLcontext c);              /* the arenas, the buffers' handles, what changed: from the pipe */
 
 /* The platform's part (mgl_vg_os3.c, or the PC test's). The transport is the pipe's (library/pipe/). */
 /* The present: append ACV_PRESENT (or nothing) to the block at p, which has

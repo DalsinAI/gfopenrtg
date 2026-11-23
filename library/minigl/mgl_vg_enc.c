@@ -16,6 +16,7 @@ ULONG *vg_cmd(GLcontext c, ULONG n)
 {
     struct mgl_vg *v = c->vg;
     ULONG *p;
+    if (v->px) return vgp_cmd(c, n);
     if (v->ncmd + n > v->ccmd) {
         /* draws reserve their room first (vg_need), so this is between draws */
         vg_send(c, 0);
@@ -72,7 +73,7 @@ void vg_set_vertex_buffer(GLcontext c, ULONG stride)
     ULONG *p = vg_cmd(c, VGC_VERTEX_BUFFER_WORDS);
     if (!p) return;
     /* this block's arena in the buffer (vg_ring) */
-    vgc_vertex_buffer(p, stride, c->vg->vb_off, c->vg->vbuf->handle);
+    vgc_vertex_buffer(p, stride, c->vg->vb_off, VG_VBUF_H(c->vg));
     c->vg->stride = stride;
 }
 
@@ -83,7 +84,7 @@ void vg_set_index_buffer(GLcontext c, ULONG offset)
 {
     ULONG *p = vg_cmd(c, VGC_INDEX_BUFFER_WORDS);
     if (!p) return;
-    vgc_index_buffer(p, c->vg->ibuf->handle, 2, offset);
+    vgc_index_buffer(p, VG_IBUF_H(c->vg), 2, offset);
     c->vg->ib_off = offset;
 }
 
@@ -99,7 +100,7 @@ void vg_draw(GLcontext c, ULONG prim, ULONG start, ULONG count, int indexed, LON
     if (!p) return;
     vgc_draw(p, prim, start, count, indexed, bias);
     c->vg->draws++;
-    if (mgl_trace > 2) mgl_log("draw prim %ld start %ld count %ld idx %ld bias %ld (nva %ld nia %ld ncmd %ld)", (long)prim, (long)start, (long)count, (long)indexed, (long)bias, (long)c->vg->nva, (long)c->vg->nia, (long)c->vg->ncmd);
+    if (mgl_trace > 2) mgl_log("draw prim %ld start %ld count %ld idx %ld bias %ld (nva %ld nia %ld ncmd %ld)", (long)prim, (long)start, (long)count, (long)indexed, (long)bias, (long)VG_NVA(c->vg), (long)VG_NIA(c->vg), (long)c->vg->ncmd);
 }
 
 void vg_constants(GLcontext c, int shader, const float *v, int vec4s)

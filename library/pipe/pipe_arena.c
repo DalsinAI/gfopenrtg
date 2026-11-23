@@ -130,7 +130,7 @@ int pipe_need(OGPUPipeCtx *x, ULONG va_bytes, ULONG ia_count, ULONG cmd_words)
 void *pipe_m_vtx_room(OGPUPipeCtx *x, ULONG bytes, ULONG *first)
 {
     void *p;
-    if (!x || pipe_need(x, bytes, 0, 1) < 0) return 0;
+    if (!x || !x->cva || pipe_need(x, bytes, 0, 1) < 0) return 0;
     p = x->va + x->nva;
     if (first) *first = x->nva;                 /* bytes from the arena's start, where VERTEX_BUFFER points */
     x->nva += bytes;
@@ -140,7 +140,7 @@ void *pipe_m_vtx_room(OGPUPipeCtx *x, ULONG bytes, ULONG *first)
 UWORD *pipe_m_idx_room(OGPUPipeCtx *x, ULONG count, ULONG *first)
 {
     UWORD *p;
-    if (!x || pipe_need(x, 0, count, 1) < 0) return 0;
+    if (!x || !x->cia || pipe_need(x, 0, count, 1) < 0) return 0;
     p = x->ia + x->nia;
     if (first) *first = x->nia;
     x->nia += count;
@@ -178,6 +178,8 @@ void pipe_m_arena_state(OGPUPipeCtx *x, struct OGPUPipeArenas *a)
 LONG pipe_m_room(OGPUPipeCtx *x, ULONG va_bytes, ULONG ia_count, ULONG cmd_words, ULONG pre_words)
 {
     if (!x) return 0;
+    if (!x->cva)                                /* version 6: no arenas, so room for none; the stream and the block */
+        return !va_bytes && !ia_count && x->ncmd + cmd_words <= x->ccmd && x->npre + pre_words + 64 <= x->cpre;
     return x->nva + va_bytes + 64 <= x->cva && x->nia + ia_count <= x->cia && x->ncmd + cmd_words <= x->ccmd
         && x->npre + pre_words + 64 <= x->cpre;
 }

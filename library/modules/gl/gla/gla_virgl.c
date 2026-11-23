@@ -17,6 +17,10 @@
  * the time it returns, so a resource is busy, and a fence not yet done, only
  * while a command that concerns it waits in the queue.
  *
+ * Since the GL stage of the shared pipe (24 November 2026) this file is the OLD route: gla_virgl_winsys_create
+ * makes gla_virgl_pipe.c's winsys, on library/pipe, unless gla_virgl_pipe_old is set (ENV:GFOpenGPU/GLPipeOld 1).
+ * It stays whole for one release, so a machine can fall back, and is then deleted.
+ *
  * Written for gfopenmesa's GLA core (8 October 2026), after virgl's own
  * winsys interface (virgl_winsys.h); Mesa's vtest winsys was the reference
  * for what each call must do. */
@@ -118,6 +122,7 @@
  * same ring, so only a frame's blocks before the present can overlap. */
 #define PIPELINE_DEFAULT 0
 
+int gla_virgl_pipe_old;                 /* 1: this file's own request blocks, not the shared pipe (ENV:GFOpenGPU/GLPipeOld) */
 int gla_virgl_batch_wanted = -1;        /* -1 the runtime's choice, 0 off, 1 on (ENV:GFOpenGPU/GLBatch) */
 int gla_virgl_pipeline_wanted = -1;     /* the same for pipelining (ENV:GFOpenGPU/GLPipeline) */
 int (*gla_virgl_send)(void *user, void *block, unsigned long bytes, unsigned long *ticket);
@@ -853,6 +858,8 @@ struct virgl_winsys *gla_virgl_winsys_create(struct sw_winsys *sws, const struct
     unsigned rh, rc;
     int ran;
     char *nm;
+    /* On the shared pipe (gla_virgl_pipe.c) unless the old route is asked for: this file's, for one release. */
+    if (!gla_virgl_pipe_old) { FREE(w); return gla_virgl_pipe_winsys_create(sws, t); }
     if (!w) { gla_note_why("no memory for virgl's winsys"); return NULL; }
     w->sws = sws;
     w->t = *t;

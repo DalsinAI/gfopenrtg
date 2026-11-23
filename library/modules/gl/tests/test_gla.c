@@ -294,6 +294,8 @@ static void frame_draws(int mode, int frame, GLuint vbo, GLuint tex)
 
 #ifdef GLA_TEST_VIRGL
 static unsigned long t_blocks;          /* request blocks the transport ran */
+static unsigned char pipe_pic[2][3][W * H * 3];     /* the 300-draw frames on the shared pipe */
+static double pipe_per[2][3];
 #endif
 
 /* DRAW_FRAMES frames of a mode on display d, the last one's picture in keep;
@@ -372,7 +374,7 @@ static void step(const char *what)
 #elif defined(GLA_TEST_VIRGL)
 #include "host/virgl/acvirgl.h"
 /* "Amiga memory" for the host side: an arena, addresses from 16 MiB. */
-#define ARENA (64u << 20)
+#define ARENA (192u << 20)
 #define BASE 0x01000000u
 static unsigned char *arena;
 static unsigned long arena_used;
@@ -418,6 +420,16 @@ static int t_send(void *u, void *block, unsigned long bytes, unsigned long *tick
 static int t_wait(void *u, unsigned long ticket) { (void)u; t_run_pending(ticket); return 0; }
 static int t_run(void *u, void *block, unsigned long bytes) { (void)u; t_run_pending(~0ul); return t_run1(block, bytes); }
 
+/* The shared pipe's transport here (library/pipe is linked into the GLA core since the GL stage, 24 Nov 2026): its
+ * memory is the arena's, an address the arena's (tests/gla_pipe_host.h gives the pipe's files ADDR), a block run
+ * as t_run runs one. */
+#include "library/modules/gl/tests/gla_pipe_host.h"
+unsigned int gla_pipe_host_addr(const void *p) { return (unsigned int)t_addr(NULL, p); }
+int ogpu_pipe_xport_ready(void) { return host != NULL; }
+int ogpu_pipe_xport_run(unsigned int *blk, unsigned int bytes) { return t_run(NULL, blk, bytes); }
+void *ogpu_pipe_xport_alloc(unsigned int bytes) { return t_alloc(NULL, bytes ? bytes : 4); }
+void ogpu_pipe_xport_free(void *p) { (void)p; }
+
 /* The direct present (ACV_PRESENT) as gfopenrtg.library sends it, into an
  * XRGB32 "screen" in the arena: one rectangle, the frame's changed part. */
 #include "include/gfopengpu/virgl.h"
@@ -458,6 +470,14 @@ static long present_direct(void *user, const struct gla_virgl_frame *f)
     presents++;
     return r;
 }
+#endif
+#if !defined(__amigaos__) && !defined(GLA_TEST_VIRGL)
+/* No virgl in this build of the test: the shared pipe (linked into the GLA core) has no transport. */
+unsigned int gla_pipe_host_addr(const void *p) { (void)p; return 0; }
+int ogpu_pipe_xport_ready(void) { return 0; }
+int ogpu_pipe_xport_run(unsigned int *blk, unsigned int bytes) { (void)blk; (void)bytes; return -1; }
+void *ogpu_pipe_xport_alloc(unsigned int bytes) { return calloc(1, bytes ? bytes : 4); }
+void ogpu_pipe_xport_free(void *p) { free(p); }
 #endif
 #if defined(GLA_TEST_VIRGL)
 /* The transport: GFOpenGPU's ring on the Amiga, the host side called directly here. */
@@ -639,6 +659,44 @@ int main(int argc, char **argv)
             }
 #endif
             gla_display_destroy(d);
+            /* The route: everything above went through the shared pipe (gla_virgl_pipe.c, the GL stage of 24 Nov
+             * 2026). The old route (gla_virgl.c's own request blocks, kept for one release: gla_virgl_pipe_old)
+             * must draw the same pictures, byte for byte. */
+            {
+                unsigned long old_got[3];
+                gla_virgl_pipe_old = 1;
+                if (!(d = gla_display_create_virgl(&t))) { printf("gla: virgl: no display (the old route)\n"); fails++; }
+                else {
+                    if ((r = run_scenes(d, old_got, NULL, dir, "virgl-old", NULL)) < 0) return 1;
+                    fails += r;
+                    for (i = 0; i < 3; i++)
+                        if (old_got[i] != got[i]) {
+                            printf("%s: the shared pipe's picture %08lx, the old route's %08lx\n", scenes[i].name, got[i], old_got[i]);
+                            fails++;
+                        }
+                    gla_display_destroy(d);
+                    printf("gla: the shared pipe and the old route: the same pictures\n");
+                }
+                gla_virgl_pipe_old = 0;
+            }
+            /* 300 draws a frame on the shared pipe, a command apart and batched; compared below with the old
+             * route's: the same pictures, and no more request blocks a frame. */
+            {
+                int b, m;
+                for (b = 0; b < 2; b++) {
+                    gla_virgl_batch_wanted = b;
+                    if (!(d = gla_display_create_virgl(&t))) { printf("gla: virgl: no display (the shared pipe, %d)\n", b); fails++; break; }
+                    for (m = 0; m < 3; m++) {
+                        if ((r = run_draws(d, m, pipe_pic[b][m], &pipe_per[b][m], NULL)) < 0) return 1;
+                        fails += r;
+                    }
+                    gla_display_destroy(d);
+                }
+                gla_virgl_batch_wanted = -1;
+                printf("gla: the shared pipe: blocks: %lu; queued commands refused: %lu\n", gla_virgl_blocks, gla_virgl_batch_errors);
+                if (gla_virgl_batch_errors) fails++;
+                gla_virgl_pipe_old = 1;     /* what follows is the old route's own batching and pipelining */
+            }
             /* 300 draws a frame, each command its own request block and then
              * batched (gla_virgl.c, 9 Nov 2026): the same pictures, byte for
              * byte, both near softpipe's, and fewer blocks batched */
@@ -695,7 +753,18 @@ int main(int argc, char **argv)
                         if (b && per[b][m] > per[0][m]) fails++;
                     }
                     printf("%s\n", line);
+                    /* the shared pipe's: the same picture, and no more blocks than the old route's */
+                    for (b = 0; b < 2 && b < nb; b++) {
+                        int same = !memcmp(pic[0][m], pipe_pic[b][m], sizeof pic[0][m]);
+                        printf("draws %s on the shared pipe, %s: %.1f request blocks a frame (the old route %.1f)%s\n",
+                               draw_modes[m], how[b], pipe_per[b][m], per[b][m], same ? "" : " (PICTURE DIFFERS)");
+                        if (!same) fails++;
+#if !defined(__amigaos__)
+                        if (pipe_per[b][m] > per[b][m]) fails++;
+#endif
+                    }
                 }
+                gla_virgl_pipe_old = 0;
 #if !defined(__amigaos__)
                 /* where Mesa flushes at every draw, batching must take the blocks a frame far down */
                 if (nb >= 2 && per[1][1] * 4 > per[0][1]) { printf("draws buffersubdata: batching kept %.1f of %.1f blocks a frame\n", per[1][1], per[0][1]); fails++; }

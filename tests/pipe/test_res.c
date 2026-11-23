@@ -11,7 +11,8 @@
  *   ring wrap with a block in flight (no PUT over what an earlier block's draws read);
  *   render-target and depth-buffer resize;
  * and the block's order (pre-commands, arenas, stream, post-commands, present), the arenas growing, read-back and a
- * context's end. Under AddressSanitizer: a version freed too early, or never, fails the run.
+ * context's end; and version 6 (the GL stage): a context without arenas, resources of any shape, transfers of any
+ * box, and the stream cut so that a PUT made after a draw runs after it, in the same block. Under AddressSanitizer: a version freed too early, or never, fails the run.
  *
  * Built 32-bit with VG_HOST (the blocks in the Amiga's order), as the pipe's other tests.
  *   tests/pipe/test_res.sh */
@@ -40,6 +41,11 @@ static struct {
     struct { ULONG h, off, bytes; } puts[64]; int nputs;     /* every buffer PUT: for the ring check */
     ULONG last_put[16]; int nlast;          /* the last block's PUT args (level..swap), for the first PUT */
     ULONG get_handle;
+    ULONG shape[5];                         /* the last create's depth, layers, last level, samples, flags */
+    ULONG get_args[12];                     /* the last GET's level..swap */
+    LONG get_result;                        /* what the next GETs answer */
+    int submits;                            /* SUBMITs in the last block */
+    ULONG put_after_submit;                 /* the last block: a PUT that came after a SUBMIT (its handle) */
     int fail_next;                          /* the next block doesn't run */
 } H;
 
@@ -62,6 +68,8 @@ LONG ogpu_pipe_xport_run(ULONG *blk, ULONG bytes)
     ULONG at = 0, words = bytes / 4, i;
     H.blocks++;
     H.order[0] = 0;
+    H.submits = 0;
+    H.put_after_submit = 0;
     if (H.fail_next) { H.fail_next = 0; return -1; }
     while (at < words) {
         ULONG hdr = VG_GETW(blk + at), cmd = ACV_HDR_CMD(hdr), n = ACV_HDR_WORDS(hdr);
@@ -77,6 +85,7 @@ LONG ogpu_pipe_xport_run(ULONG *blk, ULONG bytes)
             if (alive(h)) H.bad++;
             add(h);
             if (H.nmade < HMAX) { H.made[H.nmade] = h; H.mbytes[H.nmade++] = VG_GETW(blk + at + 6); }
+            for (i = 0; i < 5; i++) H.shape[i] = VG_GETW(blk + at + 8 + i);
             ord('c');
             break;
         }
@@ -89,18 +98,22 @@ LONG ogpu_pipe_xport_run(ULONG *blk, ULONG bytes)
             if (!alive(h)) H.bad++;
             if (H.nputs < 64) { H.puts[H.nputs].h = h; H.puts[H.nputs].off = VG_GETW(blk + at + 7); H.puts[H.nputs++].bytes = VG_GETW(blk + at + 14); }
             if (!strchr(H.order, 'p')) for (i = 0; i < 12; i++) H.last_put[i] = VG_GETW(blk + at + 4 + i);
+            if (strchr(H.order, 's')) H.put_after_submit = h;
             ord('p');
             break;
         }
         case ACV_GET:
             if (!alive(VG_GETW(blk + at + 2))) H.bad++;
             H.get_handle = VG_GETW(blk + at + 2);
+            for (i = 0; i < 12; i++) H.get_args[i] = VG_GETW(blk + at + 4 + i);
+            VG_PUTW(blk + at + 1, (ULONG)H.get_result);
             ord('g');
             break;
         case ACV_SUBMIT: {
             const ULONG *s = (const ULONG *)(unsigned long)VG_GETW(blk + at + 3);
             ULONG nw = VG_GETW(blk + at + 4), k;
-            H.nreads = 0;
+            if (!strchr(H.order, 's')) H.nreads = 0;        /* a block's reads, over all its SUBMITs */
+            H.submits++;
             for (k = 0; k + 1 < nw; k++)
                 if (VG_LE(s[k]) == READS) {
                     ULONG h = VG_LE(s[k + 1]);
@@ -493,6 +506,133 @@ int main(void)
         CHECK(v5[2] == 2 && v5[3] == ren, "two PUTs, no rename (%lu, %lu)", (unsigned long)v5[2], (unsigned long)(v5[3] - ren));
         ops->res_release(x, rb);
         ops->flush(x, 0);
+    }
+
+    /* ---- version 6 (the GL stage): a front end that brings its whole stream ---- */
+    {
+        const struct OGPUPipeOps *o6 = ogpu_pipe_ops(6);
+        static ULONG obk3[16], ocaps3[64], mem[256];
+        struct OGPUPipeOpen o;
+        struct OGPUPipeInfo info;
+        struct OGPUPipeResDesc2 d2;
+        struct OGPUPipeXfer t;
+        OGPUPipeScreen *s3;
+        OGPUPipeCtx *g;
+        OGPUPipeRes *ra, *rb, *x_tex;
+        ULONG v5[5], ha;
+        int alive0 = H.nalive, blocks0, n;
+        CHECK(o6 && o6->version >= 6 && o6 == ops, "the table, version 6");
+        memset(&o, 0, sizeof o);
+        o.size = sizeof o; o.emit_wanted = OGPU_EMIT_VIRGL; o.ctx_id = 0x3000; o.name = oname; o.name_len = 4;
+        o.blk = obk3; o.caps = ocaps3; o.caps_bytes = sizeof ocaps3;
+        s3 = ops->screen_open(&o, &info);
+        g = s3 ? ops->ctx_create(s3, OGPU_PIPE_CTX_NO_ARENAS) : 0;
+        CHECK(g != 0, "a context without arenas");
+        blocks0 = H.blocks;
+        ops->flush(g, 0);
+        CHECK(H.nalive == alive0 && H.blocks == blocks0 && !ops->queued(g), "no arenas: no buffers made on the host, nothing to send");
+        CHECK(ops->vtx_room(g, 64, 0) == 0 && ops->idx_room(g, 6, 0) == 0, "no arenas: no vertex or index room");
+        CHECK(ops->room(g, 0, 0, 1000, 32) == 1 && ops->room(g, 4, 0, 0, 0) == 0, "room: the stream and the block, never an arena");
+
+        /* any shape */
+        memset(&d2, 0, sizeof d2);
+        d2.size = sizeof d2; d2.target = 3; d2.format = VG_FMT_B8G8R8A8_UNORM; d2.bind = VG_BIND_SAMPLER_VIEW;
+        d2.width = 16; d2.height = 8; d2.depth = 4; d2.array_size = 1; d2.last_level = 2; d2.nr_samples = 0; d2.flags = 0x10;
+        ra = ops->res_create2(g, &d2);
+        CHECK(ra != 0 && ops->queued(g), "res_create2: queued");
+        ops->flush(g, 0);
+        CHECK(alive(ops->res_handle(ra)) && H.shape[0] == 4 && H.shape[1] == 1 && H.shape[2] == 2 && H.shape[3] == 0 && H.shape[4] == 0x10,
+              "res_create2: depth, layers, last level, samples and flags reach the host (%lu %lu %lu %lu %lx)",
+              (unsigned long)H.shape[0], (unsigned long)H.shape[1], (unsigned long)H.shape[2], (unsigned long)H.shape[3], (unsigned long)H.shape[4]);
+        d2.size = 8;
+        CHECK(ops->res_create2(g, &d2) == 0, "res_create2: a shorter struct is refused");
+        d2.size = sizeof d2; d2.target = VG_TARGET_BUFFER; d2.format = VG_FMT_R8_UNORM; d2.bind = VG_BIND_VERTEX_BUFFER;
+        d2.width = 1024; d2.height = 1; d2.depth = 1; d2.array_size = 1; d2.last_level = 0; d2.flags = 0;
+        rb = ops->res_create2(g, &d2);
+        ops->flush(g, 0);
+        ha = ops->res_handle(rb);
+
+        /* the order: a draw, then a PUT of what it read, then another draw: SUBMIT, PUT, SUBMIT, one block */
+        reads(g, rb);
+        CHECK(ops->stream_cut(g) == 0, "stream_cut: the stream so far among the pre-commands");
+        CHECK(ops->stream_cut(g) == 0, "stream_cut: nothing new, nothing done");
+        memset(&t, 0, sizeof t);
+        t.size = sizeof t; t.level = 0; t.stride = 0; t.layer_stride = 0;
+        t.box.x = 128; t.box.y = 0; t.box.z = 0; t.box.w = 64; t.box.h = 1; t.box.d = 1;
+        t.mem = mem; t.bytes = 64; t.swap = VG_SW32;
+        CHECK(ops->xfer(g, rb, &t) == 0, "xfer: a PUT queued");
+        CHECK(ops->res_handle(rb) == ha && (ops->res_pending(g, rb) & OGPU_PIPE_RES_PUT), "xfer: in place, never a new version");
+        reads(g, rb);
+        blocks0 = H.blocks;
+        ops->counts(g, v5);
+        ops->flush(g, 0);
+        CHECK(H.blocks == blocks0 + 1 && !strcmp(H.order, "sps"), "one block: draw, PUT, draw (%s)", H.order);
+        CHECK(H.put_after_submit == ha && H.submits == 2 && H.nreads == 2 && !H.bad, "the PUT ran after the draw that read the old bytes");
+        CHECK(H.last_put[3] == 128 && H.last_put[6] == 64 && H.last_put[10] == 64 && H.last_put[11] == VG_SW32, "xfer: the box, the bytes, the units");
+        ops->counts(g, v5);
+        CHECK(v5[0] == 1 && v5[1] == 4 && v5[2] == 1, "counted: 1 block, 4 stream words in two SUBMITs, 1 PUT (%lu %lu %lu)",
+              (unsigned long)v5[0], (unsigned long)v5[1], (unsigned long)v5[2]);
+        CHECK(ops->errors(g) == 0 && !ops->queued(g), "nothing refused, nothing left");
+
+        /* without the cut the pipe's own order holds: pre-commands, then the stream */
+        reads(g, rb);
+        ops->xfer(g, rb, &t);
+        ops->flush(g, 0);
+        CHECK(!strcmp(H.order, "ps"), "no cut: PUT, then the stream (%s)", H.order);
+
+        /* a GET: after everything made so far, its block sent now, the host's answer back */
+        reads(g, ra);
+        t.flags = OGPU_XFER_GET; t.level = 1; t.stride = 32; t.layer_stride = 128;
+        t.box.x = 2; t.box.y = 1; t.box.z = 3; t.box.w = 8; t.box.h = 4; t.box.d = 1; t.bytes = 128; t.swap = ACV_SWAP_NONE;
+        blocks0 = H.blocks;
+        CHECK(ops->xfer(g, ra, &t) == 0, "xfer: a GET");
+        CHECK(H.blocks == blocks0 + 1 && !strcmp(H.order, "sg") && H.get_handle == ops->res_handle(ra), "one block: the draws, then the GET (%s)", H.order);
+        CHECK(H.get_args[0] == 1 && H.get_args[1] == 32 && H.get_args[2] == 128 && H.get_args[5] == 3 && H.get_args[6] == 8
+              && H.get_args[7] == 4 && H.get_args[8] == 1 && H.get_args[10] == 128 && H.get_args[11] == ACV_SWAP_NONE,
+              "GET: level, strides, the box's layer, bytes and units");
+        H.get_result = -3;
+        CHECK(ops->xfer(g, ra, &t) == -3, "GET: the host's refusal comes back");
+        H.get_result = 0;
+        H.fail_next = 1;
+        CHECK(ops->xfer(g, ra, &t) == -1, "GET: a block that didn't run");
+        t.size = 4;
+        CHECK(ops->xfer(g, ra, &t) == -1, "xfer: a shorter struct is refused");
+
+        /* more PUTs than the block's pre-commands hold: sent as they fill, none lost, the order kept */
+        t.size = sizeof t; t.flags = 0; t.level = 0; t.stride = 0; t.layer_stride = 0;
+        t.box.x = 0; t.box.y = 0; t.box.z = 0; t.box.w = 64; t.box.h = 1; t.box.d = 1; t.bytes = 64; t.swap = VG_SW32;
+        ops->counts(g, v5);
+        for (n = 0; n < 1200; n++) {
+            reads(g, rb);
+            ops->stream_cut(g);
+            ops->xfer(g, rb, &t);
+        }
+        ops->flush(g, 0);
+        ops->counts(g, v5);
+        CHECK(v5[2] == 1200 && v5[1] == 2400 && v5[0] >= 2 && !H.bad, "1200 draws and PUTs: all sent, in %lu blocks", (unsigned long)v5[0]);
+
+        /* a cut in a context with arenas and vertices waiting: a block instead (the arenas' PUTs go before the stream) */
+        ops->flush(x, 0);
+        reads(x, x_tex = tex(x, 8, 8));
+        CHECK(ops->vtx_room(x, 64, 0) != 0, "x has an arena");
+        blocks0 = H.blocks;
+        CHECK(ops->stream_cut(x) == -1 && H.blocks == blocks0 + 1 && !strcmp(H.order, "cps"), "a cut with vertices waiting sends the block (%s)", H.order);
+        ops->res_release(x, x_tex);
+        ops->flush(x, 0);
+
+        /* the end: a resource let go of after the stream that names it; the context destroyed with a cut pending */
+        reads(g, rb);
+        ops->stream_cut(g);
+        ops->res_release(g, rb);
+        ops->flush(g, 0);
+        CHECK(!strcmp(H.order, "su") && !alive(ha) && !H.bad, "unref after the cut stream (%s)", H.order);
+        reads(g, ra);
+        ops->stream_cut(g);
+        reads(g, ra);
+        ops->res_release(g, ra);
+        ops->ctx_destroy(g);
+        ops->screen_close(s3);
+        CHECK(H.nalive == alive0 && !H.bad && strchr(H.order, 'd') != 0, "the context's end: nothing of it left on the host (%d, %d)", H.nalive, alive0);
     }
 
     /* ---- the contexts' end: their buffers let go of, the context destroyed ---- */

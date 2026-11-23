@@ -23,6 +23,13 @@
  * struct OGPUFFKey (section 2.4): MiniGL's object-space transform, lighting and two units, and Warp3D's screen-space
  * vertices, chroma, specular and vertex fog, in one key and one cache per context.
  *
+ * Version 6 (the GL stage, 24 November 2026): what a front end that brings its whole stream needs (GL.module: Mesa's
+ * virgl driver writes the stream, the pipe carries it). A context without the arenas (OGPU_PIPE_CTX_NO_ARENAS);
+ * resources of any shape (res_create2: depth, layers, samples); a transfer of any box, either way (xfer); and
+ * stream_cut, which keeps such a front end's order: its commands are first in, first out, and the pipe's block is
+ * pre-commands, stream, post-commands, so a PUT made after a draw would run before it. A cut puts the stream so far
+ * among the pre-commands as an ACV_SUBMIT of its own: what is made after the cut runs after it, in the same block.
+ *
  * Stage M2 (23 November 2026) fixes this table: version 1. From here on a change is a new member at the end and a
  * version bump, never a changed member. In M2 only the screen and the transport are real; the other members are 0
  * until their stage lands (M3 resources and arenas, M4 the context and state objects, M5 the fixed-function
@@ -36,7 +43,7 @@
 
 #include <exec/types.h>
 
-#define OGPU_PIPE_VERSION 5
+#define OGPU_PIPE_VERSION 6
 
 typedef struct ogpu_pipe_screen OGPUPipeScreen;   /* one per open (M2: per API context, as before) */
 typedef struct ogpu_pipe_ctx    OGPUPipeCtx;      /* one per API context: every call names it */
@@ -222,6 +229,30 @@ struct OGPUPipeResDesc {
 };
 #define OGPU_RES_STREAM 1
 
+/* ctx_create's flags (version 6; 0 as before) */
+#define OGPU_PIPE_CTX_NO_ARENAS 1UL       /* no vertex or index arena and none of their buffers on the host: the front
+                                           * end's stream names its own buffers (vtx_room and idx_room give 0) */
+
+/* Version 6: a resource of any shape, as virgl makes it (res_create2). */
+struct OGPUPipeResDesc2 {
+    ULONG size;                   /* sizeof (struct OGPUPipeResDesc2): the struct only grows at the end */
+    ULONG target, format, bind;   /* virgl's numbers */
+    ULONG width, height, depth, array_size, last_level, nr_samples;
+    ULONG flags;                  /* virgl's own resource flags */
+};
+
+/* Version 6: a box of a resource to or from Amiga memory (xfer). */
+struct OGPUPipeXfer {
+    ULONG size;                   /* sizeof (struct OGPUPipeXfer) */
+    ULONG flags;                  /* OGPU_XFER_ */
+    ULONG level, stride, layer_stride;
+    struct OGPUBox box;
+    void *mem;                    /* memory the host reaches */
+    ULONG bytes;                  /* of it, at most */
+    ULONG swap;                   /* the units the host turns round: virgl.h's ACV_SWAP_ */
+};
+#define OGPU_XFER_GET 1UL                 /* from the host into mem (else a PUT: mem to the host) */
+
 /* What a block changed, for a front end that writes its own bindings (changed(), M3's bridge) */
 #define OGPU_PIPE_CH_VBUF  1UL            /* the vertex buffer or this block's place in it: VERTEX_BUFFER again */
 #define OGPU_PIPE_CH_IBUF  2UL            /* the index buffer or its base: INDEX_BUFFER again */
@@ -345,6 +376,17 @@ struct OGPUPipeOps {
     void  (*buf_put)(OGPUPipeCtx *, OGPUPipeRes *, ULONG offset, const void *src, ULONG bytes, ULONG swap);
           /* bytes of Amiga memory into a buffer at offset, in place (never renamed: the front end keeps its own
            * ring, as Warp3D's batch memory does); read when the block runs */
+
+    /* ---- version 6 (the GL stage): a front end that brings its whole stream ---- */
+    OGPUPipeRes *(*res_create2)(OGPUPipeCtx *, const struct OGPUPipeResDesc2 *);
+    LONG  (*xfer)(OGPUPipeCtx *, OGPUPipeRes *, const struct OGPUPipeXfer *);
+          /* a PUT waits among the pre-commands and reads mem when the block runs (never renamed): 0, or -1 when it
+           * can't be queued. A GET goes after everything made so far (the stream cut first) and its block is sent
+           * now: 0 when the box came, the host's error, or -1 when the block didn't run */
+    LONG  (*stream_cut)(OGPUPipeCtx *);
+          /* the stream so far runs before any pre-command made from now on (an ACV_SUBMIT among them); 0, or -1
+           * when what there was had to be sent as a block instead (no room, or the arenas hold vertices) */
+    ULONG (*queued)(OGPUPipeCtx *);       /* nonzero when the block being built holds anything */
 
     /* new calls only ever added here, at the end */
 };

@@ -206,6 +206,7 @@ static BPTR lib_expunge(REG(a6, struct MGLBase *base))
  *                   when its back end isn't this 68k, else the 68k)
  *   Flip            1: a screen changes buffers instead of blitting the frame
  *   MaxTextureSize  what glGetIntegerv(GL_MAX_TEXTURE_SIZE) answers (default 1024)
+ *   PipeOld         1: the virgl route sends its own blocks, as before the shared pipe's M3 (for one release)
  *   Trace           n: n lines of trace to the serial port */
 static LONG env_long(const char *name, LONG dflt)
 {
@@ -227,6 +228,7 @@ void mgl_read_prefs(void)
     mgl_prefs.flip = env_long("MiniGL/Flip", 0) != 0;
     mgl_prefs.max_tex = env_long("MiniGL/MaxTextureSize", 1024);
     if (mgl_prefs.max_tex < 64 || mgl_prefs.max_tex > 2048) mgl_prefs.max_tex = 1024;
+    mgl_prefs.pipe_old = env_long("MiniGL/PipeOld", 0) != 0;
     mgl_trace = env_long("MiniGL/Trace", 0);
 }
 

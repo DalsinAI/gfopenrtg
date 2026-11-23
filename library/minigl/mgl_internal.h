@@ -390,6 +390,7 @@ struct mgl_prefs {                  /* chosen before mglCreateContext */
     int vbuf, mtexbuf;              /* mglChooseVertexBufferSize, mglChooseMtexBufferSize: hints */
     ULONG tex_names;                /* mglChooseTextureBufferSize: names below it (0: any) */
     int max_tex;                    /* ENV:MiniGL/MaxTextureSize: GL_MAX_TEXTURE_SIZE (0: 1024) */
+    int pipe_old;                   /* ENV:MiniGL/PipeOld: 1 the virgl route's own block and arenas (one release) */
 };
 extern struct mgl_prefs mgl_prefs;
 

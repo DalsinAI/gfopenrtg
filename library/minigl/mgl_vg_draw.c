@@ -32,9 +32,9 @@ static ULONG rgba_word(const float *col)
 /* The arena up to a multiple of stride: a vertex's place is its index. */
 static ULONG align(struct mgl_vg *v, ULONG stride)
 {
-    ULONG r = v->nva % stride;
-    if (r) v->nva += stride - r;
-    return v->nva / stride;
+    ULONG r = VG_NVA(v) % stride;
+    if (r) VG_NVA(v) += stride - r;
+    return VG_NVA(v) / stride;
 }
 
 /* Forward copy (dst below src may overlap). */
@@ -77,7 +77,7 @@ static void emit(GLcontext c, GLenum mode, ULONG first, ULONG n, struct vg_layou
     if (!n) return;
     need = indices_for(c, mode, n);
     if (!need && ix) need = n;
-    if (need && v->nia + need > v->cia) {
+    if (need && VG_NIA(v) + need > v->cia) {
         /* no room for the indices: what there is goes, and this draw's
          * vertices move to the start of the arena */
         ULONG stride = lay->stride, bytes = ix ? 0 : n * stride;
@@ -85,13 +85,13 @@ static void emit(GLcontext c, GLenum mode, ULONG first, ULONG n, struct vg_layou
             vg_send(c, 0);
             move_down(v->va, v->va + first * stride, bytes);
             first = 0;
-            v->nva = bytes;
+            VG_NVA(v) = bytes;
         } else return;                  /* callers reserve room for index lists (vg_need) */
     }
     vg_prepare(c, lay, swz, 0);         /* GL's provoking vertex is the last: a flat polygon's triangles end in its first */
     if (!need) { vg_draw(c, prim, first, n, 0, 0); return; }
-    start = v->nia;
-    o = v->ia + v->nia;
+    start = VG_NIA(v);
+    o = v->ia + VG_NIA(v);
 #define I(k) (ix ? (ULONG)ix[k] : (ULONG)(k))
     switch (mode) {
     case GL_QUADS:
@@ -117,8 +117,8 @@ static void emit(GLcontext c, GLenum mode, ULONG first, ULONG n, struct vg_layou
         break;
     }
 #undef I
-    v->nia = (ULONG)(o - v->ia);
-    vg_draw(c, prim, start, v->nia - start, 1, (LONG)first);
+    VG_NIA(v) = (ULONG)(o - v->ia);
+    vg_draw(c, prim, start, VG_NIA(v) - start, 1, (LONG)first);
 }
 
 /* ---- glBegin / glEnd ------------------------------------------------------------------------------- */
@@ -181,11 +181,10 @@ static void im_overflow(GLcontext c)
     }
     for (k = keep_from; k < n && nkeep < 4; k++, nkeep++) move_down(keep + nkeep * stride, first + k * stride, stride);
     emit(c, mode, v->im_first, draw, v->im_lay, 0, 0);
-    if (v->nva + stride > v->cva) v->grow_va = v->cva * 2;
-    vg_send(c, 0);
+    vg_send_overflow(c, stride);
     v->im_first = align(v, stride);
-    move_down(v->va + v->nva, keep, nkeep * stride);
-    v->nva += nkeep * stride;
+    move_down(v->va + VG_NVA(v), keep, nkeep * stride);
+    VG_NVA(v) += nkeep * stride;
     v->im_n = nkeep;
     v->im_mode = mode;
 }
@@ -197,8 +196,8 @@ void mgl_vg_vertex(GLcontext c, float x, float y, float z, float w)
     UBYTE *p;
     /* a primitive goes in parts past the arena's end, and at 65532 vertices
      * (its 16-bit relative indices, when it becomes triangles) */
-    if (v->nva + l->stride > v->cva || v->im_n >= VG_IM_MAX) im_overflow(c);
-    p = v->va + v->nva;
+    if (VG_NVA(v) + l->stride > v->cva || v->im_n >= VG_IM_MAX) im_overflow(c);
+    p = v->va + VG_NVA(v);
     VG_A32(p, vg_fbits(x)); VG_A32(p + 4, vg_fbits(y)); VG_A32(p + 8, vg_fbits(z)); VG_A32(p + 12, vg_fbits(w));
     if (!v->im_colok || c->color[0] != v->im_col[0] || c->color[1] != v->im_col[1] || c->color[2] != v->im_col[2] || c->color[3] != v->im_col[3]) {
         v->im_colok = 1;
@@ -219,7 +218,7 @@ void mgl_vg_vertex(GLcontext c, float x, float y, float z, float w)
                 VG_A32(q + 8, vg_fbits(c->tc[u][2])); VG_A32(q + 12, vg_fbits(c->tc[u][3]));
             }
     }
-    v->nva += l->stride;
+    VG_NVA(v) += l->stride;
     v->im_n++;
 }
 
@@ -228,9 +227,9 @@ void mgl_vg_end(GLcontext c)
     struct mgl_vg *v = c->vg;
     struct vg_layout *l = v->im_lay;
     if (v->im_close) {                  /* a split loop: its first vertex closes it */
-        if (v->nva + l->stride > v->cva) im_overflow(c);
-        move_down(v->va + v->nva, v->im_v0, l->stride);
-        v->nva += l->stride;
+        if (VG_NVA(v) + l->stride > v->cva) im_overflow(c);
+        move_down(v->va + VG_NVA(v), v->im_v0, l->stride);
+        VG_NVA(v) += l->stride;
         v->im_n++;
     }
     emit(c, v->im_mode, v->im_first, v->im_n, l, 0, 0);
@@ -344,8 +343,8 @@ void mgl_vg_draw_arrays(GLcontext c, GLenum mode, GLint first, GLsizei count)
     vg_need(c, (n + 1) * l->stride, indices_for(c, mode, n));
     l = array_layout(c, &swz);          /* the same, if the send made it again */
     base = align(v, l->stride);
-    copy_range(c, l, (ULONG)first, n, v->va + v->nva);
-    v->nva += n * l->stride;
+    copy_range(c, l, (ULONG)first, n, v->va + VG_NVA(v));
+    VG_NVA(v) += n * l->stride;
     emit(c, mode, base, n, l, swz, 0);
 }
 
@@ -375,15 +374,15 @@ void mgl_vg_draw_elements(GLcontext c, GLenum mode, GLsizei count, GLenum type, 
     if (locked) {
         if (!v->lk_valid || v->lk_lay != l || v->lk_seq != v->seq) {
             v->lk_base = align(v, l->stride);
-            copy_range(c, l, from, range, v->va + v->nva);
-            v->nva += range * l->stride;
+            copy_range(c, l, from, range, v->va + VG_NVA(v));
+            VG_NVA(v) += range * l->stride;
             v->lk_valid = 1; v->lk_lay = l; v->lk_seq = v->seq;
         }
         base = v->lk_base;
     } else {
         base = align(v, l->stride);
-        copy_range(c, l, from, range, v->va + v->nva);
-        v->nva += range * l->stride;
+        copy_range(c, l, from, range, v->va + VG_NVA(v));
+        VG_NVA(v) += range * l->stride;
     }
     /* the indices, less `sub`, as 16 bits: from the range's first, so they
      * fit; the vertex of index i is at base + (i - from) */

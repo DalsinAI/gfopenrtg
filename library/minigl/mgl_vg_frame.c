@@ -31,9 +31,10 @@
 
 struct vg_res *vg_res_create(GLcontext c, ULONG target, ULONG fmt, ULONG bind, ULONG w, ULONG h, ULONG levels)
 {
-    struct vg_res *r = mgl_alloc(sizeof *r);
+    struct vg_res *r;
     ULONG a[12], *p;
-    if (!r) return 0;
+    if (c->vg->px) return vgp_res_create(c, target, fmt, bind, w, h, levels);
+    if (!(r = mgl_alloc(sizeof *r))) return 0;
     r->handle = ADDR(r);
     r->fmt = fmt; r->w = w; r->h = h; r->levels = levels;
     a[0] = r->handle; a[1] = target; a[2] = fmt; a[3] = bind;
@@ -49,6 +50,7 @@ void vg_res_release(GLcontext c, struct vg_res *r)
     struct mgl_vg *v = c->vg;
     ULONG a[1];
     if (!r) return;
+    if (v->px) { vgp_res_release(c, r); return; }
     if (v->npost + VG_BLK_WORDS(1) > v->cpost) vg_send(c, 0);
     a[0] = r->handle;
     vg_blk_cmd(v->post + v->npost, ACV_RES_UNREF, 1, a);
@@ -60,7 +62,9 @@ void vg_res_release(GLcontext c, struct vg_res *r)
 void vg_put(GLcontext c, struct vg_res *r, ULONG level, ULONG x, ULONG y, ULONG w, ULONG h,
             const void *src, ULONG stride, ULONG bytes, ULONG swap)
 {
-    ULONG a[14], *p = vg_pre(c, VG_BLK_WORDS(14));
+    ULONG a[14], *p;
+    if (c->vg->px) { vgp_put(c, r, level, x, y, w, h, src, stride, swap); return; }
+    p = vg_pre(c, VG_BLK_WORDS(14));
     a[0] = r->handle; a[1] = c->vg->ctx_id; a[2] = level; a[3] = stride; a[4] = 0;
     a[5] = x; a[6] = y; a[7] = 0; a[8] = w; a[9] = h; a[10] = 1;
     a[11] = ADDR(src); a[12] = bytes; a[13] = swap;
@@ -137,18 +141,19 @@ void vg_send(GLcontext c, int present)
     ULONG *blk = v->blk, at = v->npre, a[14], submit_at = 0xFFFFFFFFUL, present_at = 0xFFFFFFFFUL, i;
     struct vg_res *r;
     ULONG t0 = mgl_trace > 0 ? mgl_millis() : 0, sent_va, sent_ia;
-    if (!at && !v->ncmd && !v->nva && !v->npost && !present) return;
-    if (v->nva) {
+    if (v->px) { vgp_send(c, present); return; }
+    if (!at && !v->ncmd && !VG_NVA(v) && !v->npost && !present) return;
+    if (VG_NVA(v)) {
         a[0] = v->vbuf->handle; a[1] = v->ctx_id; a[2] = 0; a[3] = 0; a[4] = 0;
-        a[5] = v->vb_off; a[6] = 0; a[7] = 0; a[8] = v->nva; a[9] = 1; a[10] = 1;
-        a[11] = ADDR(v->va); a[12] = v->nva; a[13] = VG_SW32;
+        a[5] = v->vb_off; a[6] = 0; a[7] = 0; a[8] = VG_NVA(v); a[9] = 1; a[10] = 1;
+        a[11] = ADDR(v->va); a[12] = VG_NVA(v); a[13] = VG_SW32;
         vg_blk_cmd(blk + at, ACV_PUT, 14, a);
         at += VG_BLK_WORDS(14);
-        v->va_bytes += v->nva;
+        v->va_bytes += VG_NVA(v);
     }
-    if (v->nia) {
+    if (VG_NIA(v)) {
         a[0] = v->ibuf->handle; a[1] = v->ctx_id; a[2] = 0; a[3] = 0; a[4] = 0;
-        a[5] = v->ib_base; a[6] = 0; a[7] = 0; a[8] = v->nia * 2; a[9] = 1; a[10] = 1; a[11] = ADDR(v->ia); a[12] = v->nia * 2; a[13] = VG_SW16;
+        a[5] = v->ib_base; a[6] = 0; a[7] = 0; a[8] = VG_NIA(v) * 2; a[9] = 1; a[10] = 1; a[11] = ADDR(v->ia); a[12] = VG_NIA(v) * 2; a[13] = VG_SW16;
         vg_blk_cmd(blk + at, ACV_PUT, 14, a);
         at += VG_BLK_WORDS(14);
     }
@@ -185,10 +190,10 @@ void vg_send(GLcontext c, int present)
     }
     if (mgl_trace > 0)
         mgl_log("virgl block: %ld words, stream %ld, vertices %ld bytes, %ld indices, %ld draws: %ld ms",
-                (long)at, (long)v->ncmd, (long)v->nva, (long)v->nia, (long)v->draws, (long)(mgl_millis() - t0));
+                (long)at, (long)v->ncmd, (long)VG_NVA(v), (long)VG_NIA(v), (long)v->draws, (long)(mgl_millis() - t0));
     while ((r = v->dead) != 0) { v->dead = r->next_dead; mgl_free(r); }
-    sent_va = v->nva; sent_ia = v->nia * 2;
-    v->npre = 0; v->ncmd = 0; v->nva = 0; v->nia = 0; v->npost = 0;
+    sent_va = VG_NVA(v); sent_ia = VG_NIA(v) * 2;
+    v->npre = 0; v->ncmd = 0; VG_NVA(v) = 0; VG_NIA(v) = 0; v->npost = 0;
     v->seq++;
     v->lk_valid = 0;
     v->dirty |= VG_D_IBUF;              /* the index arena starts again at 0 */
@@ -204,11 +209,12 @@ void vg_send(GLcontext c, int present)
 void vg_need(GLcontext c, ULONG va_bytes, ULONG ia_count)
 {
     struct mgl_vg *v = c->vg;
-    if (v->nva + va_bytes + 64 <= v->cva && v->nia + ia_count <= v->cia && v->ncmd + DRAW_ROOM <= v->ccmd
+    if (v->px) { vgp_need(c, va_bytes, ia_count); return; }
+    if (VG_NVA(v) + va_bytes + 64 <= v->cva && VG_NIA(v) + ia_count <= v->cia && v->ncmd + DRAW_ROOM <= v->ccmd
         && v->npre + 64 <= v->cpre)
         return;
-    if (v->nva + va_bytes + 64 > v->cva) v->grow_va = v->cva * 2;
-    if (v->nia + ia_count > v->cia) v->grow_ia = v->cia * 2;
+    if (VG_NVA(v) + va_bytes + 64 > v->cva) v->grow_va = v->cva * 2;
+    if (VG_NIA(v) + ia_count > v->cia) v->grow_ia = v->cia * 2;
     vg_send(c, 0);
     if (va_bytes + 64 > v->cva || ia_count > v->cia) {
         ULONG va = v->cva, ia = v->cia;
@@ -217,6 +223,15 @@ void vg_need(GLcontext c, ULONG va_bytes, ULONG ia_count)
         if (arenas(c, va, ia, v->ccmd)) vg_send(c, 0);   /* the new buffers made before they are used */
         v->grow_va = v->grow_ia = 0;
     }
+}
+
+/* glBegin's arena is full mid-primitive: what there is goes, and the arena is made larger at the frame's end. */
+void vg_send_overflow(GLcontext c, ULONG stride)
+{
+    struct mgl_vg *v = c->vg;
+    if (v->px) { vgp_overflow(c, stride); return; }
+    if (VG_NVA(v) + stride > v->cva) v->grow_va = v->cva * 2;
+    vg_send(c, 0);
 }
 
 /* ---- the context ----------------------------------------------------------------------------- */
@@ -270,11 +285,14 @@ int mgl_vg_open(GLcontext c)
 {
     struct mgl_vg *v;
     ULONG zfmt;
-    const struct OGPUPipeOps *pipe = ogpu_pipe_ops(OGPU_PIPE_VERSION);
+    const struct OGPUPipeOps *pipe;
+    if (!mgl_prefs.pipe_old) return vgp_open(c);
+    pipe = ogpu_pipe_ops(OGPU_PIPE_VERSION);
     if (!pipe || !ogpu_pipe_xport_ready()) { mgl_log("virgl: no gfopengpu.library, or no driver of it carries virgl"); return 0; }
     if (!(v = c->vg = mgl_alloc(sizeof *v))) return 0;
     v->pipe = pipe;
     v->ctx_id = ADDR(v);
+    v->pnva = &v->nva_own; v->pnia = &v->nia_own;
     v->cpre = PRE_WORDS; v->cpost = POST_WORDS;
     v->blk = mgl_alloc((PRE_WORDS + BLK_SLACK) * 4);
     v->post = mgl_alloc(POST_WORDS * 4);
@@ -321,7 +339,8 @@ void mgl_vg_close(GLcontext c)
     struct mgl_vg *v = c->vg;
     ULONG a[1];
     if (!v) return;
-    v->ncmd = 0; v->nva = 0; v->nia = 0;    /* nothing more is drawn */
+    if (v->px) { vgp_close(c); return; }
+    v->ncmd = 0; VG_NVA(v) = 0; VG_NIA(v) = 0;    /* nothing more is drawn */
     if (v->colour) vg_res_release(c, v->colour);
     if (v->depth) vg_res_release(c, v->depth);
     if (v->vbuf) vg_res_release(c, v->vbuf);
@@ -342,6 +361,11 @@ void mgl_vg_switch(GLcontext c)
     struct mgl_vg *v = c->vg;
     vg_send(c, 1);
     v->frames++;
+    if (v->px) {                        /* the pipe grew its arenas in end_frame; its counts join ours */
+        ULONG k[5];
+        v->pipe->counts(v->px, k);
+        v->blocks += k[0]; v->words += k[1]; v->puts += k[2]; v->renames += k[3]; v->va_bytes += k[4];
+    }
     if (v->grow_va || v->grow_ia || v->grow_cmd) {
         ULONG va = v->grow_va > v->cva ? v->grow_va : v->cva, ia = v->grow_ia > v->cia ? v->grow_ia : v->cia;
         ULONG cmd = v->grow_cmd > v->ccmd ? v->grow_cmd : v->ccmd;
@@ -394,6 +418,14 @@ void mgl_vg_readback(GLcontext c, int x, int y, int w, int h, ULONG *argb, int s
     vg_send(c, 0);
     buf = mgl_alloc((ULONG)(x1 - x0) * (ULONG)(y1 - y0) * 4);
     if (!buf) return;
+    if (v->px) {
+        if (vgp_readback(c, x0, y0, x1, y1, buf)) { mgl_free(buf); return; }
+        for (j = y0; j < y1; j++)
+            for (i = (ULONG)x0; i < (ULONG)x1; i++)
+                argb[(ULONG)(j - y) * stride + (i - (ULONG)x)] = GETW(&buf[(ULONG)(j - y0) * (ULONG)(x1 - x0) + (i - (ULONG)x0)]) | 0xFF000000UL;
+        mgl_free(buf);
+        return;
+    }
     a[0] = v->colour->handle; a[1] = v->ctx_id; a[2] = 0; a[3] = (ULONG)(x1 - x0) * 4; a[4] = 0;
     a[5] = (ULONG)x0; a[6] = (ULONG)y0; a[7] = 0; a[8] = (ULONG)(x1 - x0); a[9] = (ULONG)(y1 - y0); a[10] = 1;
     a[11] = ADDR(buf); a[12] = (ULONG)(x1 - x0) * (ULONG)(y1 - y0) * 4; a[13] = VG_SW32;

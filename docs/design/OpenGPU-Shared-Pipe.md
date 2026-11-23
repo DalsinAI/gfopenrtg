@@ -1,14 +1,14 @@
 # GFOS graphics: one shared pipe (OpenGPU and OpenRTG)
 
-Team 5, 23 Nov 2026. How our 3D and screen libraries stop duplicating each other, with Mesa's Gallium as the model. Written from gfopenrtg's main (a6cd53e) and its notes `Warp3D-Virgl-Route.md` and `MiniGL-Compatible-Plan.md`. A proposal: nothing here is built yet.
+Team 5, 23 Nov 2026. How our 3D and screen libraries stop duplicating each other, with Mesa's Gallium as the model. Written from gfopenrtg's main (a6cd53e) and its notes `Warp3D-Virgl-Route.md` and `MiniGL-Compatible-Plan.md`, with two outside reviews taken in. A proposal: nothing here is built yet.
 
 ## 1. The three rules
 
 1. **Only the shared pipe encodes virgl,** and Mesa's own virgl driver inside GL.module. Two encoders, both accounted for, never a third.
-2. **Only OpenRTG presents pixels** to a screen, a window or a bitmap, and only from an `ORTG_Surface`.
+2. **Only OpenRTG presents pixels** to a screen, a window or a bitmap, and only from an `ORTG_Surface`. That includes Mesa's frames: format conversion, flipping and the rectangle walk exist once.
 3. **Only the shared pipe owns GPU resources and cached GPU state; only gfopengpu chooses back ends and discovers capabilities.** A front end owns its API's state and nothing below it.
 
-Each rule is a CI check (section 6, step 1). Everything else in this note follows from them.
+Each rule is a CI check (section 7, step 1). Everything else in this note follows from them.
 
 ## 2. Why no new rendering API
 
@@ -28,14 +28,14 @@ virgl's command protocol is Gallium's interface written as words: every command 
 
 **It owns, and nothing else may:**
 - **State objects:** blend, depth-stencil-alpha, rasterizer, vertex layout, sampler; cached by key.
-- **The fixed-function shader generator:** OpenGL 1.1's equations (two texture units, fog, alpha, lighting, texgen, colour material), prebuilt for common cases, generated for the rest. It writes TGSI because virglrenderer takes TGSI; it is the only code that knows, so that can change later.
+- **The fixed-function shader generator:** OpenGL 1.1's equations (two texture units, fog, alpha, lighting, texgen, colour material). It writes TGSI because virglrenderer takes TGSI; it is the only code that knows, so that can change later. **It serves the virgl route only.** The 68k core keeps its own fixed-function rasteriser and takes stream3d with no shaders, so a machine with no host never pays for shader generation. The generator runs on the 68k (the shader text goes to the host with the frame): the common cases (the dozen or so MiniGL and Warp3D games use) are prebuilt as constant text, the rest are built on first use and cached per context. Its time per new shader and the size of the prebuilt set are measured (section 8).
 - **Resources:** textures, mip chains, depth buffers, rename-on-write, reference counts.
 - **Frame arenas:** vertex, index and command rings; overflow never drops geometry; at most about 2 ms per block.
 - **Two emitters:** virgl (through `include/gfopengpu/virgl_cmd.h`) for every accelerated back end, stream3d for the 68k core. A machine with no host has no virgl renderer, so both are needed. Which one a frame takes is decided here and nowhere else, so it is tested once for every front end.
 
 **Its interface is a versioned table.** Our front ends ship and update separately, so a library may meet an older or newer pipe than it was built with. gfopengpu hands our libraries `struct OGPUPipeOps` with `version` first (`OGPU_PIPE_VERSION 1`); a library asking for a newer version than the pipe has gets NULL; new calls are only added at the end; no library reaches past the table. The table has no present (rule 2). It is internal: programs never get it, so it is never a public API to freeze.
 
-**Mesa keeps its own state tracker,** which is why we carry it. It shares the lower half: its virgl goes out only through `OGPU_Submit`, and its frames reach the screen only through `ORTG_Present`. There are exactly two state trackers: Mesa's, and the pipe's for our fixed-function APIs.
+**Mesa keeps its own state tracker,** which is why we carry it. The boundary is explicit: GL.module's virgl goes out only through `OGPU_Submit`, and its frames reach the screen only through `ORTG_Present`, never through a conversion or flip of its own. There are exactly two state trackers: Mesa's, and the pipe's for our fixed-function APIs.
 
 ## 5. Front ends, OpenRTG and capabilities
 
@@ -57,12 +57,13 @@ MiniGL's and Warp3D's virgl routes exist only as plans. They are built on the pi
 - **`ORTG_Present(surface, target)`** is the only present. It does the format conversion (XRGB32, ARGB32, RGB565), the flip and the window's visible rectangles. It grows out of `ORTG_PresentVirgl`; `ACV_PRESENT`, the retained present and ACRTG direct become routes inside it.
 - ACMedia keeps decoding on the host; its frames are surfaces like any other, or go to the display plane when a film fills the screen.
 - P96 and CyberGraphX stay stubs over OpenRTG (`uaegfx.c` already is).
-- graphics.library's acceleration stays in gfopengpu (the OGFX calls emit stream commands); its pixels reach the screen through OpenRTG.
+- **graphics.library's acceleration stays in gfopengpu,** because the OGFX calls emit stream commands and moving them would teach OpenRTG stream opcodes it otherwise never needs. Its pixels reach the screen through OpenRTG. The CI check lists the OGFX calls as allowed.
 
 ### Capabilities: two levels
 
 - **What the back end can do:** `OGPU_Query(op, format)`, "full, partial or none". gfopengpu reads the host's virgl caps once and answers through it. The one source of truth.
-- **What each API reports:** each front end, from that answer, by its own written rules. On a host with 8 texture units, Warp3D and MiniGL still report 2 and GL reports 8. The rules are tested, so a new back end never changes what an old program sees.
+- **What each API reports:** each front end, from that answer, by its own written rules. On a host with 8 texture units, Warp3D and MiniGL still report 2 and GL reports 8.
+- **Frozen first.** Before the shared query is wired into a front end, everything that front end reports today (W3D_Query and W3D_GetDriverState, MiniGL's and GL's strings and limits) is recorded on each back end and kept as the reference. "What it answered yesterday" is the test, so a new back end never changes what an old program sees.
 
 ### Back end choice
 
@@ -83,21 +84,23 @@ Every object has one owner. A front end's texture refers to a pipe resource, whi
 
 ## 7. Order of work
 
-1. **The three rules as CI checks:** nothing but gfopengpu and gfopenrtg opens ACRTG; virgl words only through `virgl_cmd.h` or Mesa's driver; stream3d 3D ops only from the pipe; presenting only through gfopenrtg; no state cache or shader generator in a front end.
-2. **`virgl_cmd.h`,** used by GL.module's winsys and minigl's encoder. Proof: same pixels and counters in `tests/run_minigl.sh`.
-3. **The pipe, with MiniGL's virgl route as its first user:** both emitters and the versioned table from the start.
-4. **Warp3D on the pipe.** Proof: `test_w3d_vg.c`'s scenes against the 68k core within 8/255 per channel.
-5. **`ORTG_Surface` and `ORTG_Present`,** then retained surfaces and ACMedia frames moved onto them.
-6. **Capabilities through `OGPU_Query`,** each front end's reporting rules written and tested; one `ENV:GFOpenGPU/Driver`.
-7. **llvmpipe against our host core** on the Pi 5 and the x86. Every back end is maintenance for good: if llvmpipe matches, the host core and its Vulkan version go, and the core stays only for the 68k, as the reference for what stream commands mean.
+1. **The three rules as CI checks:** nothing but gfopengpu and gfopenrtg opens ACRTG; virgl words only through `virgl_cmd.h` or Mesa's driver; stream3d 3D ops only from the pipe (graphics.library's OGFX calls allowed); presenting only through gfopenrtg, Mesa's frames included; no state cache or shader generator in a front end.
+2. **The pipe's header before its code:** state-object keys, resource handles, arena rules and the `OGPUPipeOps` table, with `virgl_cmd.h`. MiniGL and Warp3D compile against it from the start, so they can't grow private shortcuts while the pipe is being built. GL.module's winsys and minigl's encoder move onto `virgl_cmd.h`; proof: the same pixels and counters in `tests/run_minigl.sh`.
+3. **The pipe, with MiniGL's virgl route as its first user,** both emitters and the versioned table from the start. **The pixel references start here:** every scene the pipe draws is checked through both emitters from its first commit (section 8).
+4. **Warp3D on the pipe,** its scenes (`test_w3d_vg.c`) under the same references and tolerance.
+5. **`ORTG_Surface` and `ORTG_Present`,** then retained surfaces, GL.module's frames and ACMedia frames moved onto them.
+6. **Capabilities:** each front end's answers recorded and frozen, then wired to `OGPU_Query`; one `ENV:GFOpenGPU/Driver`.
+7. **Back ends measured, the weaker retired:** llvmpipe against our host core and its Vulkan version, on the Pi 5 and the x86. Every back end is maintenance for good: if llvmpipe matches, the host core and its Vulkan version go, and the core stays only for the 68k, as the reference for what stream commands mean.
 
-## 8. Tests
+## 8. Tests and measurements
 
-- **Every scene through both emitters**, 68k core against virgl, 8/255 per channel with a one-pixel edge shift. One test set for all front ends, because only the pipe emits.
+- **Every scene through both emitters**, 68k core against virgl, within 8/255 per channel with a one-pixel edge shift, from the pipe's first scene. The reference pictures and tolerances live beside the scenes. One test set for all front ends, because only the pipe emits.
 - **Screens:** open and close, modes, palette and truecolour, several monitors, bitmaps.
 - **Warp3D:** contexts, textures, Z, blending, multitexture, render to texture (`w3dcheck`, `w3darrbench`, `scenes3d.c`).
 - **GL:** MGLTest, `tests/run_minigl.sh`, Mesa's demos, gears, texture stress, immediate mode.
 - **Films:** 1080p and 4K H.264, HEVC, several streams, no copies on the way to the screen.
-- **Reported capabilities** per front end and back end, against their rules.
-- **Deadlocks:** a screen lock, a Warp3D lock and a GL context held together, on each back end.
-- Commercial games (Quake, Quake II, BlitzQuake, RTCW) need data we can't ship: labs only, never repos or CI.
+- **Reported capabilities** per front end and back end, against the frozen answers.
+- **Deadlocks:** a screen lock, a Warp3D lock and a GL context held together, on each back end; and a 68k program holding a lock across a host round trip (a submit, a present, a readback), since the host's answer can wait on something that lock blocks. MiniGL already froze a machine by holding its display lock between frames.
+- **Shader generation:** time per new shader on a 68040 for the common MiniGL and Warp3D cases, the prebuilt set's size, and the first frame's cost.
+- **Back ends:** host timedemos, and at least one workload written the 68k way that stresses the bridge (many small draws and texture updates per frame), because that, not the host's raster speed, is what our machines mostly wait on.
+- Commercial games (Quake, Quake II, BlitzQuake, RTCW) need data we can't ship: labs only, never repos or CI. CI's references stay on our own tests.

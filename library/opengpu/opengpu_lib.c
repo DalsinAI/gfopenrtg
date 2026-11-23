@@ -78,6 +78,15 @@
  * host's order, wrong on a little-endian driver). A malformed input is the
  * new OGPU_ERR_DATA. Drivers that don't answer these keep falling through
  * to this core. Ask OGPU_Query(OGPU_OP_RFX_TILE, OGPU_FMT_ARGB32).
+ * 0.30: capabilities (gfopengpu/caps.h, stage MQ of the shared pipe plan;
+ * docs/design/OGPU-Query.md). OGPU_Query answers the ops 0x8000 to 0x80FF,
+ * which no stream command may use, from one discovery per boot: the first
+ * such question sends ACV_HELLO, ACV_CAPSET_INFO and ACV_CAPS through the
+ * driver's virgl route and keeps the caps in the base (ogpu_caps.c); later
+ * ones send nothing. A driver that goes (OGPU_ERR_DEVICE) makes the next
+ * question look again. Two calls: OGPU_QueryLimit (198) for numbers, and
+ * OGPU_QueryDriver (204) for one back end's answer. The base grows by 592
+ * bytes; nothing outside the library reads it.
  * 0.29: WriteChunkyPixels and WritePixelArray8 on a planar bitmap are
  * GFOpenGfx's core's on a real Amiga too, in Chip RAM after WaitBlit (they
  * are CPU work in graphics.library as well), and the core (gfopengfx
@@ -139,13 +148,15 @@
 #include "../../include/gfopengpu/module.h"
 #include "ogpu_module.h"
 #include "ogpu_retained.h"
+#include "ogpu_caps.h"
+#include "../../include/gfopengpu/caps.h"
 #include "../../include/gfopengpu/retained.h"
 #include "../ogfx/ogfx.h"
 #include <stddef.h>
 
 #define REG(r, decl) register decl __asm(#r)   /* bebbo gcc: an argument in a register */
 #define LIB_VERSION 0
-#define LIB_REVISION 29
+#define LIB_REVISION 30
 #define RESULTS 256                             /* the last batches' results, by fence (0.28; 16 before) */
 #define MAX_DRIVERS 8                           /* files looked at in LIBS:GFOpenGPU/ */
 #define ON_CPU 0                                /* dfence[] for a batch the CPU ran */
@@ -182,6 +193,8 @@ struct OpenGPUBase {
     struct Library *rs_gfx;                     /* graphics.library 39 or later */
     struct Library *rs_cgx;                     /* cybergraphics.library 41 or later, or NULL */
     UBYTE rs_tried;
+    /* 0.30: the capabilities, looked for once (ogpu_caps.c), under drv_lock */
+    struct ogpu_caps caps;
 };
 
 /* No writable globals (the library may run from ROM): each function takes
@@ -199,9 +212,9 @@ int start(void) { return -1; }
 const ULONG ogpu_ogfx_at = offsetof(struct OpenGPUBase, ogfx);
 
 static const char lib_name[] = "gfopengpu.library";
-static const char lib_id[] = "gfopengpu.library 0.29 (7.11.2026) GFOpenGPU, AmiCradle Team\r\n";
+static const char lib_id[] = "gfopengpu.library 0.30 (23.11.2026) GFOpenGPU, AmiCradle Team\r\n";
 /* For C:Version, which looks for "$VER:" in the file. */
-static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopengpu.library 0.29 (7.11.2026) GFOpenGPU, AmiCradle Team";
+static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopengpu.library 0.30 (23.11.2026) GFOpenGPU, AmiCradle Team";
 static const char cpu_name[] = "CPU";
 static const char dos_name[] = "dos.library";
 static const char drv_dir[] = "LIBS:GFOpenGPU";
@@ -230,6 +243,8 @@ static LONG OGPU_RetainedPresent(REG(a0, struct OGPURetained *rs), REG(a1, struc
                                  REG(d2, LONG width), REG(d3, LONG height), REG(a6, struct OpenGPUBase *base));
 static ULONG OGPU_RetainedStats(REG(a0, struct OGPURetained *rs), REG(a1, struct OGPURetainedStats *stats), REG(a6, struct OpenGPUBase *base));
 static void OGPU_RetainedDestroy(REG(a0, struct OGPURetained *rs), REG(a6, struct OpenGPUBase *base));
+static ULONG OGPU_QueryLimit(REG(d0, ULONG op), REG(a6, struct OpenGPUBase *base));
+static ULONG OGPU_QueryDriver(REG(d0, ULONG drv), REG(d1, ULONG op), REG(d2, ULONG format), REG(a6, struct OpenGPUBase *base));
 static void rs_libs_close(struct OpenGPUBase *base);
 static LONG low_memory(REG(a0, struct MemHandlerData *mhd), REG(a1, struct OpenGPUBase *base), REG(a6, struct ExecBase *sys));
 
@@ -247,6 +262,8 @@ static const APTR lib_vectors[] = {
     /* 0.25: retained surfaces, 162 to 192 (gfopengpu/retained.h) */
     (APTR)OGPU_RetainedCreate, (APTR)OGPU_RetainedPalette, (APTR)OGPU_RetainedMark,
     (APTR)OGPU_RetainedPresent, (APTR)OGPU_RetainedStats, (APTR)OGPU_RetainedDestroy,
+    /* 0.30: capabilities, 198 and 204 (gfopengpu/caps.h) */
+    (APTR)OGPU_QueryLimit, (APTR)OGPU_QueryDriver,
     (APTR)-1,
 };
 static const struct { ULONG size; const APTR *vectors; APTR data; APTR init; } lib_inittable = {
@@ -267,6 +284,11 @@ static struct Library *lib_init(REG(d0, struct OpenGPUBase *base), REG(a0, BPTR 
     base->lib.lib_Revision = LIB_REVISION;
     InitSemaphore(&base->lock);
     InitSemaphore(&base->drv_lock);
+#ifdef OGPU_WITH_3D
+    ogpu_caps_init(&base->caps, 1);
+#else
+    ogpu_caps_init(&base->caps, 0);
+#endif
     ogpu_modules_init(&base->modules, sys);
     ogfx_init(&base->ogfx, sys);
     /* Ahead of ramlib's handler, which expunges libraries: a module no
@@ -630,6 +652,7 @@ static long split_run(void *user, unsigned long start, unsigned long end, int dr
         }
         split_release(j);       /* the hardware has gone: this run and the rest here */
         base->drv = NULL;
+        ogpu_caps_reset(&base->caps);
     }
     split_release(j);           /* the driver's runs before this one are drawn first */
     if (base->drv && base->drv_last) base->drv->wait(base->drv_last);
@@ -665,10 +688,45 @@ static LONG split_submit(struct OpenGPUBase *base, const UBYTE *s, ULONG words, 
 
 /* ---- GFOpenGPU's calls ------------------------------------------------------------- */
 
+/* 0.30: one virgl request block through the driver, for the capabilities' discovery (under drv_lock) */
+static LONG caps_run(void *ctx, ULONG *blk, ULONG bytes)
+{
+    struct OpenGPUBase *base = ctx;
+    ULONG stream[3];
+    unsigned long df = 0;
+    if (!base->drv) return -1;
+    stream[0] = OGPU_HDR(OGPU_OP_VIRGL, 3);
+    stream[1] = (ULONG)blk;
+    stream[2] = bytes;
+    if (base->drv->submit(stream, 3, &df) != OGPU_OK) return -1;
+    base->drv_last = df;
+    return base->drv->wait(df) == OGPU_OK ? 0 : -1;
+}
+
+/* The capabilities, looked for on the first question after the library loads (or after the host went away):
+ * the driver carries virgl, or only the CPU answers. Under drv_lock, so two programs asking at once send one
+ * HELLO between them. */
+static void caps_look(struct OpenGPUBase *base)
+{
+    EXEC(base);
+    int have_virgl;
+    drivers_load(base);
+    ObtainSemaphore(&base->drv_lock);
+    if (!base->caps.looked) {
+        have_virgl = base->drv && OGPU_ANSWER(base->drv->supports(OGPU_OP_VIRGL, 0, 0)) == OGPU_FULL;
+        ogpu_caps_discover(&base->caps, have_virgl, caps_run, base, (ULONG)base->caps.caps);
+    }
+    ReleaseSemaphore(&base->drv_lock);
+}
+
 static ULONG OGPU_Query(REG(d0, ULONG op), REG(d1, ULONG format), REG(a6, struct OpenGPUBase *base))
 {
     EXEC(base);
     int answer = OGPU_NONE;
+    if (OGPU_OP_IS_CAP(op)) {
+        caps_look(base);
+        return ogpu_caps_answer(&base->caps, OGPU_DRV_BEST, op, format);
+    }
     drivers_load(base);
     if (base->drv) {
         ObtainSemaphore(&base->drv_lock);
@@ -680,6 +738,32 @@ static ULONG OGPU_Query(REG(d0, ULONG op), REG(d1, ULONG format), REG(a6, struct
     if (OGPU_ANSWER(answer) > OGPU_NONE)
         return (ULONG)OGPU_ANSWER(answer) | (1UL << 8) | ((ULONG)answer & OGPU_ONGPU_BIT);
     return (ULONG)ogpu_core_supports((int)op, (int)format) | (OGPU_BACKEND_CPU << 8);
+}
+
+static ULONG OGPU_QueryLimit(REG(d0, ULONG op), REG(a6, struct OpenGPUBase *base))
+{
+    if (!OGPU_OP_IS_CAP(op)) return 0;
+    caps_look(base);
+    return ogpu_caps_limit(&base->caps, op);
+}
+
+static ULONG OGPU_QueryDriver(REG(d0, ULONG drv), REG(d1, ULONG op), REG(d2, ULONG format), REG(a6, struct OpenGPUBase *base))
+{
+    EXEC(base);
+    int answer = OGPU_NONE;
+    if (OGPU_OP_IS_CAP(op)) {
+        caps_look(base);
+        return ogpu_caps_answer(&base->caps, drv, op, format);
+    }
+    /* a stream op: the CPU's own answer, or the driver's */
+    if (drv == OGPU_DRV_BEST) return OGPU_Query(op, format, base);
+    if (drv == OGPU_DRV_CPU) return (ULONG)ogpu_core_supports((int)op, (int)format) | (OGPU_BACKEND_CPU << 8);
+    if (drv != OGPU_DRV_ACRTG) return OGPU_NONE | (1UL << 8);
+    drivers_load(base);
+    ObtainSemaphore(&base->drv_lock);
+    if (base->drv) answer = base->drv->supports((int)op, (int)format, 0);
+    ReleaseSemaphore(&base->drv_lock);
+    return (ULONG)OGPU_ANSWER(answer) | (1UL << 8) | ((ULONG)answer & OGPU_ONGPU_BIT);
 }
 
 static STRPTR OGPU_BackEndName(REG(d0, ULONG index), REG(a6, struct OpenGPUBase *base))
@@ -717,8 +801,10 @@ static LONG OGPU_Submit(REG(a0, APTR stream), REG(d0, ULONG words), REG(a1, ULON
             r = base->drv->submit(stream, words, &df);
             base->drv_last = df;
             if (r == OGPU_ERR_DEVICE) {
-                /* The hardware has gone: this batch and every later one on the CPU. */
+                /* The hardware has gone: this batch and every later one on the CPU, and the capabilities
+                 * are looked for again (0.30) */
                 base->drv = NULL;
+                ogpu_caps_reset(&base->caps);
                 on_driver = 0;
                 df = ON_CPU;
             }

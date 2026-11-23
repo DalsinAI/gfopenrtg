@@ -553,6 +553,7 @@ int main(void)
         ha = ops->res_handle(rb);
 
         /* the order: a draw, then a PUT of what it read, then another draw: SUBMIT, PUT, SUBMIT, one block */
+        ops->counts(g, v5);
         reads(g, rb);
         CHECK(ops->stream_cut(g) == 0, "stream_cut: the stream so far among the pre-commands");
         CHECK(ops->stream_cut(g) == 0, "stream_cut: nothing new, nothing done");
@@ -564,7 +565,6 @@ int main(void)
         CHECK(ops->res_handle(rb) == ha && (ops->res_pending(g, rb) & OGPU_PIPE_RES_PUT), "xfer: in place, never a new version");
         reads(g, rb);
         blocks0 = H.blocks;
-        ops->counts(g, v5);
         ops->flush(g, 0);
         CHECK(H.blocks == blocks0 + 1 && !strcmp(H.order, "sps"), "one block: draw, PUT, draw (%s)", H.order);
         CHECK(H.put_after_submit == ha && H.submits == 2 && H.nreads == 2 && !H.bad, "the PUT ran after the draw that read the old bytes");

@@ -151,6 +151,28 @@ static const struct OGPUPipeOps ops = {
     .counts = pipe_m_counts,
     .need = pipe_m_need,
     .arenas = pipe_m_arena_state,
+    /* M4: state objects */
+    .blend_create = pipe_m_blend_create,
+    .dsa_create = pipe_m_dsa_create,
+    .raster_create = pipe_m_raster_create,
+    .sampler_create = pipe_m_sampler_create,
+    .layout_create = pipe_m_layout_create,
+    .cso_release = pipe_m_cso_release,
+    .bind_blend = pipe_m_bind_blend,
+    .bind_dsa = pipe_m_bind_dsa,
+    .bind_raster = pipe_m_bind_raster,
+    .bind_layout = pipe_m_bind_layout,
+    .set_constants = pipe_m_set_constants,
+    .set_viewport = pipe_m_set_viewport,
+    .set_scissor = pipe_m_set_scissor,
+    /* version 3 */
+    .obj_new = pipe_m_obj_new,
+    .cso_handle = pipe_m_cso_handle,
+    .state_reset = pipe_m_state_reset,
+    /* M5: the one fixed-function generator */
+    .ff_shader = pipe_m_ff_shader,
+    .bind_shader = pipe_m_bind_shader,
+    .ff_vs_consts = pipe_m_ff_vs_consts,
     /* the rest arrive with their stages (pipe.h) */
 };
 

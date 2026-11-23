@@ -17,6 +17,6 @@ if [ -z "${ACVIRGL_LIB:-}" ]; then echo "no ACVIRGL_LIB; Warp3D's virgl route is
 cc -m32 -std=gnu99 -DW3D_HOST -I"$HERE/host-include" -I"$ROOT/include" -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter \
     -o "$OUT/test_w3d_vg" "$HERE/test_w3d_vg.c" "$HERE/scenes3d.c" "$W/w3d_vg.c" "$W/w3d_vg_shader.c" \
     "$O/ogpu_core.c" "$O/ogpu_dwt.c" "$O/ogpu_3d.c" "$O/ogpu_build.c" "$O/ogpu_build3d.c" \
-    "$ROOT/library/pipe/pipe_screen.c" "$ROOT/library/pipe/pipe_block.c" "$ROOT/library/pipe/pipe_res.c" "$ROOT/library/pipe/pipe_arena.c" "$ROOT/library/pipe/pipe_xport_host.c" -lm
+    "$ROOT/library/pipe/pipe_screen.c" "$ROOT/library/pipe/pipe_block.c" "$ROOT/library/pipe/pipe_res.c" "$ROOT/library/pipe/pipe_arena.c" "$ROOT/library/pipe/pipe_state.c" "$ROOT/library/pipe/pipe_ff.c" "$ROOT/library/pipe/pipe_xport_host.c" -lm
 cc -std=gnu11 -O1 -g -Wall -Wextra -Werror -o "$OUT/minigl_vg_bridge" "$HERE/minigl_vg_bridge.c" "$ROOT/host/virgl/acvirgl.c" -ldl
 "$OUT/minigl_vg_bridge" "$OUT/test_w3d_vg" ${1:-300} -o "$OUT"

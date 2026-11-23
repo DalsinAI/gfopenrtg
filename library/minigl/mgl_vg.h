@@ -82,7 +82,8 @@ struct vg_layout {
     ULONG key;                          /* the attributes' formats, packed (4 bits each) */
     UBYTE off[VG_ATTRS];                /* byte offsets */
     UBYTE stride;
-    UWORD ve;                           /* its VERTEX_ELEMENTS object */
+    UWORD ve;                           /* its VERTEX_ELEMENTS object (the old route) */
+    OGPUPipeCSO *cso;                   /* ... the pipe's (the pipe's route) */
 };
 #define VG_LAYOUTS 16
 
@@ -262,6 +263,8 @@ ULONG *vgp_cmd(GLcontext c, ULONG n);
 void vgp_overflow(GLcontext c, ULONG stride);
 int vgp_readback(GLcontext c, int x0, int y0, int x1, int y1, ULONG *buf);    /* 0 on success */
 void vg_sync(GLcontext c);              /* the arenas, the buffers' handles, what changed: from the pipe */
+/* A pipe call that may send (a full stream): the mirrors brought up to date after it. */
+#define VGP(c, call) do { ULONG s_ = (c)->vg->seq; call; if ((c)->vg->pipe->sent((c)->vg->px) != s_) vg_sync(c); } while (0)
 
 /* The platform's part (mgl_vg_os3.c, or the PC test's). The transport is the pipe's (library/pipe/). */
 /* The present: append ACV_PRESENT (or nothing) to the block at p, which has

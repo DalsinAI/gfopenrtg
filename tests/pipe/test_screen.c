@@ -118,7 +118,9 @@ int main(void)
     CHECK(ogpu_pipe_ops(OGPU_PIPE_VERSION + 1) == 0, "no table for a later version");
     CHECK(ops->screen_open && ops->screen_close && ops->run, "M2's members are there");
     CHECK(ops->ctx_create && ops->res_create && ops->vtx_room && ops->end_frame && ops->arenas, "M3's members are there");
-    CHECK(!ops->blend_create && !ops->ff_shader && !ops->draw && !ops->stats, "later stages' members are 0");
+    CHECK(ops->blend_create && ops->bind_layout && ops->set_constants && ops->obj_new && ops->state_reset, "M4's members are there");
+    CHECK(ops->ff_shader && ops->bind_shader && ops->ff_vs_consts, "M5's members are there");
+    CHECK(!ops->bind_texture && !ops->draw && !ops->stats, "later stages' members are 0");
 
     /* an open: the blocks word for word as minigl.library and Warp3D.library sent them */
     host();

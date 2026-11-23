@@ -128,6 +128,13 @@ ULONG vg_tex_sampler(GLcontext c, struct mgl_tex *t)
        | (ULONG)VG_WRAP_CLAMP_TO_EDGE << 6 | min << 9 | mipf << 11 | mag << 13;
     key[0] = s0;
     key[1] = (ULONG)(t->vg ? t->vg->levels : 1);
+    if (v->px) {                        /* the pipe's sampler state for the key */
+        struct OGPUSamplerKey k;
+        OGPUPipeCSO *o;
+        k.s0 = key[0]; k.levels = key[1];
+        VGP(c, o = v->pipe->sampler_create(v->px, &k));
+        return v->pipe->cso_handle(o);
+    }
     for (i = 0; i < v->nsamp; i++) if (v->samp_key[i][0] == key[0] && v->samp_key[i][1] == key[1]) return v->samp_h[i];
     if (v->nsamp < (int)(sizeof v->samp_h / sizeof v->samp_h[0])) slot = v->nsamp++;
     else slot = 0;

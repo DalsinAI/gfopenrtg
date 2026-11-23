@@ -22,6 +22,7 @@
 #include "../../include/gfopengpu/virgl_cmd.h"
 
 static int failures, checks;
+#define PIPE_TEST_SLOTS 64        /* the pipe's blend table (pipe_int.h's PIPE_CACHE) */
 #define CHECK(cond, ...) do { checks++; if (!(cond)) { failures++; printf("FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
 
 /* The test's own stream word: "this stream reads resource H" (two words: the mark, the handle). */
@@ -183,7 +184,7 @@ int main(void)
     int i, k;
 
     ops = ogpu_pipe_ops(2);
-    CHECK(ops && ops->version == 2, "the table, version 2");
+    CHECK(ops && ops->version >= 2, "the table, version 2 or later");
     CHECK(ogpu_pipe_ops(1) == ops, "a version 1 caller gets the same table");
     host();
     x = open_ctx(&s, 0x1000, 0);
@@ -367,6 +368,67 @@ int main(void)
     ops->counts(x, v5);
     CHECK(v5[0] > 10 && v5[2] == 3 && v5[3] == 1, "the counts: %lu blocks, %lu puts, %lu renames",
           (unsigned long)v5[0], (unsigned long)v5[2], (unsigned long)v5[3]);
+
+    /* ---- stage M4: state objects, made once per key, bound and sent only when they change ---- */
+    {
+        struct OGPUBlendKey bk; struct OGPUDsaKey dk; struct OGPURasterKey rk; struct OGPUSamplerKey sk;
+        struct OGPULayout lk;
+        OGPUPipeCSO *b1, *b2, *sa;
+        ULONG *c0, *c1, h, o0;
+        float vp[6] = { 1, 2, 3, 4, 5, 6 }, k4[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+        ops->flush(x, 0);
+        ops->state_reset(x);
+#define WORDS(stmt) (c0 = ops->cmd_room(x, 0), stmt, c1 = ops->cmd_room(x, 0), (ULONG)(c1 - c0))
+        o0 = ops->obj_new(x);
+        CHECK(ops->obj_new(x) == o0 + 1, "object handles: one namespace, counting up");
+        bk.rt0 = 0x12345;
+        CHECK(WORDS(b1 = ops->blend_create(x, &bk)) == 12 && b1 && ops->cso_handle(b1) == o0 + 2,
+              "a blend object: created once (12 words), its handle the next");
+        CHECK(WORDS(b2 = ops->blend_create(x, &bk)) == 0 && b2 == b1, "the same key: the same object, nothing sent");
+        CHECK(WORDS(ops->bind_blend(x, b1)) == 2 && WORDS(ops->bind_blend(x, b1)) == 0, "bound once, not again");
+        bk.rt0 = 0x54321;
+        b2 = ops->blend_create(x, &bk);
+        CHECK(b2 != b1 && WORDS(ops->bind_blend(x, b2)) == 2, "another key: another object, bound");
+        dk.s0 = 7; dk.alpha_ref = 0;
+        CHECK(WORDS(ops->bind_dsa(x, ops->dsa_create(x, &dk))) == 6 + 2, "a DSA object (6 words) and its bind");
+        memset(&rk, 0, sizeof rk); rk.s0 = 2;
+        CHECK(WORDS(ops->bind_raster(x, ops->raster_create(x, &rk))) == 10 + 2, "a rasterizer object (10 words) and its bind");
+        sk.s0 = 1; sk.levels = 3;
+        CHECK(WORDS(sa = ops->sampler_create(x, &sk)) == 10 && ops->sampler_create(x, &sk) == sa, "a sampler state, once");
+        for (k = 0; k < 40; k++) { sk.s0 = 100 + (ULONG)k; ops->sampler_create(x, &sk); }
+        h = ops->cso_handle(ops->sampler_create(x, &sk));
+        CHECK(h != 0, "samplers past the table's 32: still made (%lu)", (unsigned long)h);
+        lk.key = 0x51; lk.n = 2; lk.e[0].offset = 0; lk.e[0].format = 31; lk.e[1].offset = 16; lk.e[1].format = 58;
+        CHECK(WORDS(b1 = ops->layout_create(x, &lk)) == 2 * 4 + 2 && ops->layout_create(x, &lk) == b1,
+              "a vertex layout (10 words), once per key");
+        CHECK(WORDS(ops->bind_layout(x, b1)) == 2, "the layout bound");
+        CHECK(WORDS(ops->set_viewport(x, vp)) == VGC_VIEWPORT_WORDS && WORDS(ops->set_viewport(x, vp)) == 0,
+              "the viewport sent once");
+        box.x = 1; box.y = 2; box.w = 3; box.h = 4;
+        CHECK(WORDS(ops->set_scissor(x, &box)) == VGC_SCISSOR_WORDS && WORDS(ops->set_scissor(x, &box)) == 0
+              && WORDS(ops->set_scissor(x, 0)) == 0, "the scissor sent once; none sends nothing");
+        CHECK(WORDS(ops->set_constants(x, OGPU_STAGE_VERTEX, k4, 2)) == VGC_CONSTANTS_WORDS(2)
+              && WORDS(ops->set_constants(x, OGPU_STAGE_VERTEX, k4, 2)) == 0
+              && WORDS(ops->set_constants(x, OGPU_STAGE_FRAGMENT, k4, 2)) == VGC_CONSTANTS_WORDS(2),
+              "constants sent when they changed, by stage");
+        k4[7] = 9;
+        CHECK(WORDS(ops->set_constants(x, OGPU_STAGE_VERTEX, k4, 2)) == VGC_CONSTANTS_WORDS(2), "one word changed: sent");
+        ops->state_reset(x);
+        CHECK(WORDS(ops->bind_layout(x, b1)) == 2 && WORDS(ops->set_viewport(x, vp)) == VGC_VIEWPORT_WORDS
+              && WORDS(ops->set_constants(x, OGPU_STAGE_VERTEX, k4, 2)) == VGC_CONSTANTS_WORDS(2),
+              "after a reset everything goes again");
+        /* a full probe: keys below 2048 hash to themselves, so multiples of 64 all start at slot 0 and fill its four
+         * probes; the fifth makes the slot's old object go (destroyed on the host) */
+        for (k = 1; k <= 4; k++) {
+            bk.rt0 = (ULONG)k * PIPE_TEST_SLOTS;
+            ops->blend_create(x, &bk);
+        }
+        bk.rt0 = 5 * PIPE_TEST_SLOTS;
+        CHECK(WORDS(b1 = ops->blend_create(x, &bk)) == VGC_DESTROY_WORDS + 12, "a full probe: one goes, the new made");
+        CHECK(WORDS(ops->blend_create(x, &bk)) == 0 && ops->blend_create(x, &bk) == b1, "and found after");
+        ops->flush(x, 0);
+#undef WORDS
+    }
 
     /* ---- the contexts' end: their buffers let go of, the context destroyed ---- */
     ops->res_release(x, 0);                 /* nothing happens */

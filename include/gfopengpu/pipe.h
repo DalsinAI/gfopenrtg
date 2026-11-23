@@ -36,7 +36,7 @@
 
 #include <exec/types.h>
 
-#define OGPU_PIPE_VERSION 4
+#define OGPU_PIPE_VERSION 5
 
 typedef struct ogpu_pipe_screen OGPUPipeScreen;   /* one per open (M2: per API context, as before) */
 typedef struct ogpu_pipe_ctx    OGPUPipeCtx;      /* one per API context: every call names it */
@@ -61,6 +61,22 @@ struct OGPURasterKey {
 struct OGPUSamplerKey {
     ULONG s0;                     /* wraps, filters, mip filter (virgl's sampler state word 0) */
     ULONG levels;                 /* the texture's levels: max LOD is levels - 1 */
+};
+/* Version 5 (stage M6): Warp3D's state, which MiniGL's keys above have no room for. The keys above are these with
+ * the extra words 0 (the same objects). */
+struct OGPUBlendKey2 {
+    ULONG rt0;
+    ULONG logic;                  /* 0: no logic op; else 0x100 | Gallium's logic op (blending is then off) */
+};
+struct OGPUDsaKey2 {
+    ULONG s0;
+    ULONG alpha_ref;
+    ULONG stencil;                /* virgl's DSA stencil word, the same for both faces (0: stencil off) */
+};
+struct OGPUSamplerKey2 {
+    ULONG s0;
+    ULONG levels;
+    ULONG border[4];              /* the border colour, r g b a (float bits) */
 };
 #define OGPU_LAYOUT_MAX 8
 struct OGPULayout {
@@ -320,6 +336,15 @@ struct OGPUPipeOps {
     void  (*state_reset)(OGPUPipeCtx *);                  /* nothing bound, nothing sent: the next binds all go */
     /* ---- version 4 (stage M5): ff_shader and bind_shader above are real ---- */
     ULONG (*ff_vs_consts)(const struct OGPUFFKey *);      /* vec4s of vertex constants a key's shader reads */
+    /* ---- version 5 (stage M6): Warp3D on the pipe ---- */
+    OGPUPipeCSO *(*blend_create2)(OGPUPipeCtx *, const struct OGPUBlendKey2 *);
+    OGPUPipeCSO *(*dsa_create2)(OGPUPipeCtx *, const struct OGPUDsaKey2 *);
+    OGPUPipeCSO *(*sampler_create2)(OGPUPipeCtx *, const struct OGPUSamplerKey2 *);
+    LONG  (*room)(OGPUPipeCtx *, ULONG va_bytes, ULONG ia_count, ULONG cmd_words, ULONG pre_words);
+          /* 1: the block has that room now (nothing is sent); 0: need() would send first */
+    void  (*buf_put)(OGPUPipeCtx *, OGPUPipeRes *, ULONG offset, const void *src, ULONG bytes, ULONG swap);
+          /* bytes of Amiga memory into a buffer at offset, in place (never renamed: the front end keeps its own
+           * ring, as Warp3D's batch memory does); read when the block runs */
 
     /* new calls only ever added here, at the end */
 };

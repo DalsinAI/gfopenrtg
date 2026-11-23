@@ -622,6 +622,20 @@ This is the riskiest stage, so it runs on its own and is tested before anything 
   - BlitzQuake timedemo within 2% of M0 on the lab.
 - **Switch:** `ENV:Warp3D/PipeOld=1` for one release.
 
+- **Done, 23 November 2026:** Warp3D's virgl route is on the pipe (`w3d_vg.c`; the pipe's context, resources, arenas,
+  state objects and the one fixed-function generator), `ENV:Warp3D/PipeOld=1` keeps the old route for one release.
+  The pipe's table is version 5: `blend_create2` (logic op), `dsa_create2` (stencil), `sampler_create2` (border colour),
+  `room` (does a draw fit without sending) and `buf_put` (a batch's vertex memory PUT from where it is, into Warp3D's own
+  ring, never renamed). MiniGL's keys are these with the extra words 0: the same objects, the same hash. A screen-space
+  vertex shader is cached without the colour bit (its text doesn't depend on it).
+  Gate, on llvmpipe as M0 was captured (bigguy's bridge now finds the Radeon; `LIBGL_ALWAYS_SOFTWARE=1`): the old route
+  as captured; the pipe route with all 32 pictures and every counter the same but one, the stream's words (77,617 to
+  78,610, +1.3%: the pipe's object caches, 64 slots with 4 probes, evict differently from Warp3D's 32-slot FIFO over the
+  300 random scenes), recorded in `captures.txt`. test_res 81/0, test_screen 33/0, test_ff 397,552 keys 0 different;
+  minigl.library, Warp3D.library and gfopengpu.library build for the 68k.
+  Not yet deleted: `w3d_vg_shader.c`, the old half of `w3d_vg.c` and MiniGL's PipeOld copies go one release after this
+  (the release that ships both PipeOld switches), so a machine can still fall back.
+
 ### M7: stream3d emission into the pipe (L)
 
 - `pipe_emit_s3d.c` is taken from `w3d_batch.c`'s builder.

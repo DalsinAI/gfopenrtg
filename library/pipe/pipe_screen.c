@@ -173,6 +173,12 @@ static const struct OGPUPipeOps ops = {
     .ff_shader = pipe_m_ff_shader,
     .bind_shader = pipe_m_bind_shader,
     .ff_vs_consts = pipe_m_ff_vs_consts,
+    /* M6: Warp3D */
+    .blend_create2 = pipe_m_blend_create2,
+    .dsa_create2 = pipe_m_dsa_create2,
+    .sampler_create2 = pipe_m_sampler_create2,
+    .room = pipe_m_room,
+    .buf_put = pipe_m_buf_put,
     /* the rest arrive with their stages (pipe.h) */
 };
 

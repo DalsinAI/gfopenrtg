@@ -44,6 +44,8 @@ struct w3dvg_os {
     void (*free)(void *user, void *p);
     void (*log)(void *user, const char *msg);           /* or 0 */
     void *user;
+    int pipe_old;                       /* 1: the route sends its own blocks, as before the shared pipe's M6
+                                           (ENV:Warp3D/PipeOld=1, for one release) */
 };
 
 /* What the host said at the start. */

@@ -427,7 +427,72 @@ int main(void)
         CHECK(WORDS(b1 = ops->blend_create(x, &bk)) == VGC_DESTROY_WORDS + 12, "a full probe: one goes, the new made");
         CHECK(WORDS(ops->blend_create(x, &bk)) == 0 && ops->blend_create(x, &bk) == b1, "and found after");
         ops->flush(x, 0);
+
+        /* ---- stage M6: Warp3D's keys; MiniGL's are them with the extra words 0 (the same objects) ---- */
+        {
+            struct OGPUBlendKey2 b2k; struct OGPUDsaKey2 d2k; struct OGPUSamplerKey2 s2k;
+            OGPUPipeCSO *o1;
+            ULONG *w;
+            bk.rt0 = 0x777;
+            b1 = ops->blend_create(x, &bk);
+            b2k.rt0 = 0x777; b2k.logic = 0;
+            CHECK(WORDS(o1 = ops->blend_create2(x, &b2k)) == 0 && o1 == b1, "blend: MiniGL's key is Warp3D's with no logic op");
+            b2k.logic = 0x100 | 6;
+            c0 = ops->cmd_room(x, 0);
+            o1 = ops->blend_create2(x, &b2k);
+            w = c0;
+            CHECK(o1 != b1 && (ULONG)(ops->cmd_room(x, 0) - c0) == 12 && w[2] == 2 && w[3] == 6 && w[4] == 0x777,
+                  "a logic op: its own object, S0 on and S1 the op");
+            dk.s0 = 9; dk.alpha_ref = 0x3F000000UL;
+            b1 = ops->dsa_create(x, &dk);
+            d2k.s0 = 9; d2k.alpha_ref = 0x3F000000UL; d2k.stencil = 0;
+            CHECK(ops->dsa_create2(x, &d2k) == b1, "DSA: MiniGL's key is Warp3D's with no stencil");
+            d2k.stencil = 0x1234;
+            c0 = ops->cmd_room(x, 0);
+            o1 = ops->dsa_create2(x, &d2k);
+            w = c0;
+            CHECK(o1 != b1 && w[2] == 9 && w[3] == 0x1234 && w[4] == 0x1234 && w[5] == 0x3F000000UL,
+                  "stencil: both faces, the alpha reference after");
+            sk.s0 = 5; sk.levels = 2;
+            sa = ops->sampler_create(x, &sk);
+            s2k.s0 = 5; s2k.levels = 2; s2k.border[0] = s2k.border[1] = s2k.border[2] = s2k.border[3] = 0;
+            CHECK(ops->sampler_create2(x, &s2k) == sa, "sampler: MiniGL's key is Warp3D's with a border of 0");
+            h = ops->cso_handle(sa);
+            s2k.border[3] = 0x3F800000UL;
+            c0 = ops->cmd_room(x, 0);
+            o1 = ops->sampler_create2(x, &s2k);
+            w = c0;
+            CHECK(ops->cso_handle(o1) != h && w[9] == 0x3F800000UL && ops->sampler_create2(x, &s2k) == o1,
+                  "a border colour: its own state, once");
+            ops->flush(x, 0);
+            CHECK(ops->room(x, 1024, 300, 100, 10) == 1, "room: an empty block has it");
+            CHECK(ops->room(x, 64UL * 1024 * 1024, 0, 0, 0) == 0, "room: not for more than the arena, and nothing sent");
+        }
 #undef WORDS
+    }
+
+    /* ---- stage M6: Warp3D's batch memory PUT from where it is, never renamed ---- */
+    {
+        struct OGPUPipeResDesc d;
+        OGPUPipeRes *rb;
+        static ULONG mem[64];
+        ULONG h0, v5[5], ren;
+        d.target = VG_TARGET_BUFFER; d.format = VG_FMT_R8_UNORM; d.bind = VG_BIND_VERTEX_BUFFER;
+        d.width = 4096; d.height = 1; d.levels = 1; d.flags = OGPU_RES_STREAM;
+        rb = ops->res_create(x, &d);
+        ops->flush(x, 0);
+        h0 = ops->res_handle(rb);
+        ops->counts(x, v5);
+        ren = v5[3];                        /* renames are counted from the context's start */
+        ops->buf_put(x, rb, 256, mem, sizeof mem, VG_SW32);
+        ops->res_used(x, rb);
+        ops->buf_put(x, rb, 512, mem, sizeof mem, VG_SW32);
+        CHECK(ops->res_handle(rb) == h0 && (ops->res_pending(x, rb) & OGPU_PIPE_RES_PUT), "buf_put: in place, waiting in the block");
+        ops->flush(x, 0);
+        ops->counts(x, v5);
+        CHECK(v5[2] == 2 && v5[3] == ren, "two PUTs, no rename (%lu, %lu)", (unsigned long)v5[2], (unsigned long)(v5[3] - ren));
+        ops->res_release(x, rb);
+        ops->flush(x, 0);
     }
 
     /* ---- the contexts' end: their buffers let go of, the context destroyed ---- */

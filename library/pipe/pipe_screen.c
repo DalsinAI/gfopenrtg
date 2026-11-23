@@ -12,7 +12,7 @@
  * Stage MQ moves the HELLO and the caps into gfopengpu.library's OGPU_Query, and this file keeps the context ids.
  *
  * A screen is the caller's alone (one per open): it holds no lock and sends no block of its own after the open. */
-#include "../../include/gfopengpu/pipe.h"
+#include "pipe_int.h"
 #include "../../include/gfopengpu/virgl_cmd.h"
 
 #ifndef ADDR
@@ -21,10 +21,12 @@
 
 struct ogpu_pipe_screen {
     ULONG emit;
+    ULONG ctx_id;                       /* the first context, made in the open's block (M3: ctx_create's) */
+    OGPUPipeCtx *ctx;
     ULONG host_flags, caps_bits, prim_mask;
 };
 
-static LONG pipe_run(OGPUPipeScreen *s, ULONG *blk, ULONG bytes)
+static LONG screen_run(OGPUPipeScreen *s, ULONG *blk, ULONG bytes)
 {
     (void)s;
     return ogpu_pipe_xport_run(blk, bytes);
@@ -48,6 +50,7 @@ static OGPUPipeScreen *screen_open(const struct OGPUPipeOpen *o, struct OGPUPipe
     if (!ogpu_pipe_xport_ready()) { info->status = OGPU_PIPE_OPEN_NO_TRANSPORT; return 0; }
     if (!(s = ogpu_pipe_xport_alloc(sizeof *s))) { info->status = OGPU_PIPE_OPEN_NO_RUN; return 0; }
     s->emit = OGPU_EMIT_VIRGL;
+    s->ctx_id = o->ctx_id;
     s->host_flags = s->caps_bits = 0;
     s->prim_mask = 0x7F;
     b = o->blk;
@@ -103,11 +106,51 @@ static void screen_close(OGPUPipeScreen *s)
     ogpu_pipe_xport_free(s);
 }
 
+/* M3: the screen's first context (the one its open made), with its block and arenas; one per screen until M4 */
+static OGPUPipeCtx *ctx_create(OGPUPipeScreen *s, ULONG flags)
+{
+    (void)flags;
+    if (!s || s->ctx) return 0;
+    return s->ctx = pipe_ctx_create(s, s->ctx_id);
+}
+
+static void ctx_destroy(OGPUPipeCtx *x)
+{
+    if (!x) return;
+    x->screen->ctx = 0;
+    pipe_ctx_destroy(x);
+}
+
 static const struct OGPUPipeOps ops = {
     .version = OGPU_PIPE_VERSION,
     .screen_open = screen_open,
     .screen_close = screen_close,
-    .run = pipe_run,
+    .run = screen_run,
+    /* M3: the context's block, resources and arenas */
+    .ctx_create = ctx_create,
+    .ctx_destroy = ctx_destroy,
+    .res_create = pipe_m_res_create,
+    .res_update = pipe_m_res_update,
+    .res_read = pipe_m_res_read,
+    .res_release = pipe_m_res_release,
+    .vtx_room = pipe_m_vtx_room,
+    .idx_room = pipe_m_idx_room,
+    .vtx_put_range = pipe_m_vtx_put_range,
+    .end_frame = pipe_m_end_frame,
+    .flush = pipe_m_flush,
+    /* version 2's bridge */
+    .res_write = pipe_m_res_write,
+    .res_ref = pipe_m_res_ref,
+    .res_handle = pipe_m_res_handle,
+    .res_used = pipe_m_res_used,
+    .res_pending = pipe_m_res_pending,
+    .cmd_room = pipe_m_cmd_room,
+    .sent = pipe_m_sent,
+    .errors = pipe_m_errors,
+    .changed = pipe_m_changed,
+    .counts = pipe_m_counts,
+    .need = pipe_m_need,
+    .arenas = pipe_m_arena_state,
     /* the rest arrive with their stages (pipe.h) */
 };
 

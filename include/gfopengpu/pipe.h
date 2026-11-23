@@ -9,6 +9,10 @@
  * The libraries reach the pipe only through the table ogpu_pipe_ops() returns, never through its files' own
  * functions, so the pipe can become LIBS:GFOpenGPU/Pipe.module later (stage M10) without touching them.
  *
+ * Version 2 (stage M3, 23 November 2026): the members M3 makes real (the context's block, resources, arenas; end_frame
+ * and flush early, as the block's send) and, at the end, the bridge a front end that still writes its own stream needs
+ * until its stages land (M4 to M7): its stream's room, renames, what a block changed, the arenas' state.
+ *
  * Stage M2 (23 November 2026) fixes this table: version 1. From here on a change is a new member at the end and a
  * version bump, never a changed member. In M2 only the screen and the transport are real; the other members are 0
  * until their stage lands (M3 resources and arenas, M4 the context and state objects, M5 the fixed-function
@@ -22,7 +26,7 @@
 
 #include <exec/types.h>
 
-#define OGPU_PIPE_VERSION 1
+#define OGPU_PIPE_VERSION 2
 
 typedef struct ogpu_pipe_screen OGPUPipeScreen;   /* one per open (M2: per API context, as before) */
 typedef struct ogpu_pipe_ctx    OGPUPipeCtx;      /* one per API context: every call names it */
@@ -83,6 +87,24 @@ struct OGPUPipeResDesc {
     ULONG flags;                  /* OGPU_RES_STREAM: rewritten every frame (rings, not renames) */
 };
 #define OGPU_RES_STREAM 1
+
+/* What a block changed, for a front end that writes its own bindings (changed(), M3's bridge) */
+#define OGPU_PIPE_CH_VBUF  1UL            /* the vertex buffer or this block's place in it: VERTEX_BUFFER again */
+#define OGPU_PIPE_CH_IBUF  2UL            /* the index buffer or its base: INDEX_BUFFER again */
+#define OGPU_PIPE_CH_SENT  4UL            /* a block went: anything the front end keeps per stream starts again */
+
+/* res_pending's bits */
+#define OGPU_PIPE_RES_DRAWN 1UL           /* a stream not yet sent reads it: a write renames it */
+#define OGPU_PIPE_RES_PUT   2UL           /* a PUT of it waits in the block: it reads the source memory when it runs */
+
+/* The arenas, as they are now (arenas(), M3's bridge): a front end that writes vertices itself adds to *nva and
+ * *nia, after need() made the room. */
+struct OGPUPipeArenas {
+    UBYTE *va; ULONG *nva; ULONG cva;     /* the vertex arena, its use (bytes), its size */
+    UWORD *ia; ULONG *nia; ULONG cia;     /* the index arena (16-bit), its use, its size */
+    ULONG vbuf, vb_off;                   /* the host's vertex buffer (handle) and this block's offset in it */
+    ULONG ibuf, ib_base;                  /* the index buffer and this block's base in it (bytes) */
+};
 
 struct OGPUDrawInfo {
     ULONG prim, first, count;
@@ -158,6 +180,21 @@ struct OGPUPipeOps {
           /* sends the frame; the hook (OpenRTG's) puts the present in the same block; fence for OGPU_Wait */
     LONG  (*flush)(OGPUPipeCtx *, ULONG *fence);   /* send what there is, no present (glFlush, a full batch) */
     void  (*stats)(OGPUPipeCtx *, struct OGPUPipeStats *);
+
+    /* ---- version 2 (stage M3): resources, and the bridge for front ends that still write their own stream ---- */
+
+    LONG  (*res_write)(OGPUPipeCtx *, OGPUPipeRes *);     /* before writing it: 1 when renamed (send it all again) */
+    void  (*res_ref)(OGPUPipeRes *);                      /* one more holder: res_release once more */
+    ULONG (*res_handle)(const OGPUPipeRes *);             /* its current version's handle (changes on a rename) */
+    void  (*res_used)(OGPUPipeCtx *, OGPUPipeRes *);      /* the stream being built reads it */
+    ULONG (*res_pending)(OGPUPipeCtx *, const OGPUPipeRes *);   /* OGPU_PIPE_RES_ */
+    ULONG *(*cmd_room)(OGPUPipeCtx *, ULONG words);       /* room in the stream (little-endian words); 0: too big */
+    ULONG (*sent)(OGPUPipeCtx *);                         /* blocks sent so far: the stream being built's number */
+    ULONG (*errors)(OGPUPipeCtx *);                       /* commands the host refused in the last block */
+    ULONG (*changed)(OGPUPipeCtx *);                      /* OGPU_PIPE_CH_ since the last call */
+    void  (*counts)(OGPUPipeCtx *, ULONG *v5);            /* blocks, words, puts, renames, vertex bytes; reset */
+    LONG  (*need)(OGPUPipeCtx *, ULONG va_bytes, ULONG ia_count, ULONG cmd_words);  /* 1: sent first, 0: room, -1 */
+    void  (*arenas)(OGPUPipeCtx *, struct OGPUPipeArenas *);
 
     /* new calls only ever added here, at the end */
 };

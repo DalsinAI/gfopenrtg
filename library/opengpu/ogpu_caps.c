@@ -15,7 +15,27 @@
 #include "ogpu_caps.h"
 #include "../../include/gfopengpu/caps.h"
 #include "../../include/gfopengpu/stream3d.h"
-#include "../../include/gfopengpu/virgl_cmd.h"
+#include "../../include/gfopengpu/virgl.h"
+
+/* A request block's words are in the Amiga's order (virgl.h); a PC test (VG_HOST) keeps them so on a little-endian
+ * machine. Written here rather than taken from virgl_cmd.h, which is the shared pipe's own (DESIGN.md section 13's
+ * virgl-cmd rule): gfopengpu.library sends only these three request blocks, never a command stream. */
+#ifdef VG_HOST
+#define BW_GET(p)    __builtin_bswap32(*(const ULONG *)(p))
+#define BW_PUT(p, v) (*(ULONG *)(p) = __builtin_bswap32((ULONG)(v)))
+#else
+#define BW_GET(p)    (*(const ULONG *)(p))
+#define BW_PUT(p, v) (*(ULONG *)(p) = (ULONG)(v))
+#endif
+static void blk_cmd(ULONG *p, ULONG cmd, ULONG n, const ULONG *args)
+{
+    ULONG i;
+    BW_PUT(p, ACV_HDR(cmd, n + 2));
+    BW_PUT(p + 1, 0);
+    for (i = 0; i < n; i++) BW_PUT(p + 2 + i, args[i]);
+}
+static LONG blk_result(const ULONG *b, ULONG at) { return (LONG)BW_GET(b + at + 1); }
+static ULONG blk_word(const ULONG *b, ULONG at) { return BW_GET(b + at); }
 
 /* virgl's word numbers in caps set 2 */
 #define CW_SAMPLER      1
@@ -72,31 +92,31 @@ void ogpu_caps_discover(struct ogpu_caps *c, int have_virgl, ogpu_caps_run_fn ru
 
     /* 1. HELLO and caps set 2's size */
     a[0] = 0;
-    vgc_blk_cmd(b, ACV_HELLO, 1, a);
+    blk_cmd(b, ACV_HELLO, 1, a);
     a[0] = 2; a[1] = 0; a[2] = 0;
-    vgc_blk_cmd(b + 3, ACV_CAPSET_INFO, 3, a);
+    blk_cmd(b + 3, ACV_CAPSET_INFO, 3, a);
     if (run(ctx, b, 8 * 4)) return;
-    if (vgc_result(b, 0) != ACV_PROTOCOL) return;
+    if (blk_result(b, 0) != ACV_PROTOCOL) return;
     c->virgl = 1;
-    c->host_flags = vgc_word(b, 2);
+    c->host_flags = blk_word(b, 2);
 
     /* 2. no set 2: set 1 */
-    if (!vgc_word(b, ri + 3)) {
+    if (!blk_word(b, ri + 3)) {
         set = 1;
         a[0] = 1; a[1] = 0; a[2] = 0;
-        vgc_blk_cmd(b, ACV_CAPSET_INFO, 3, a);
+        blk_cmd(b, ACV_CAPSET_INFO, 3, a);
         if (run(ctx, b, 5 * 4)) return;
         ri = 0;
-        if (!vgc_word(b, ri + 3)) return;               /* no caps at all: virgl, but nothing to answer from */
+        if (!blk_word(b, ri + 3)) return;               /* no caps at all: virgl, but nothing to answer from */
     }
 
     /* 3. the caps, into the struct */
-    n = vgc_word(b, ri + 4);
+    n = blk_word(b, ri + 4);
     if (n > sizeof c->caps) n = sizeof c->caps;
-    a[0] = set; a[1] = vgc_word(b, ri + 3); a[2] = caps_at; a[3] = n;
-    vgc_blk_cmd(b, ACV_CAPS, 4, a);
-    if (run(ctx, b, 6 * 4) || vgc_result(b, 0) <= 0) return;
-    n = (ULONG)vgc_result(b, 0) / 4;
+    a[0] = set; a[1] = blk_word(b, ri + 3); a[2] = caps_at; a[3] = n;
+    blk_cmd(b, ACV_CAPS, 4, a);
+    if (run(ctx, b, 6 * 4) || blk_result(b, 0) <= 0) return;
+    n = (ULONG)blk_result(b, 0) / 4;
     c->words = n > OGPU_CAPS_WORDS ? OGPU_CAPS_WORDS : n;
     c->set = (UBYTE)set;
 }
@@ -105,7 +125,7 @@ void ogpu_caps_discover(struct ogpu_caps *c, int have_virgl, ogpu_caps_run_fn ru
 
 static ULONG cw(const struct ogpu_caps *c, ULONG at)
 {
-    return at < c->words ? VG_GETW(&c->caps[at]) : 0;
+    return at < c->words ? BW_GET(&c->caps[at]) : 0;
 }
 
 /* a virgl format's bit in the mask at `at` */

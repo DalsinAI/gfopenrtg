@@ -18,7 +18,7 @@ cc -m32 -std=gnu99 -DMGL_HOST -I"$HERE/host-include" -I"$ROOT/include" -g -O1 -W
     "$M/mgl_out.c" "$M/mgl_list.c" "$M/mgl_glu.c" "$M/mgl_glut.c" "$M/mgl_choose.c" "$M/mgl_table.c" "$M/mgl_static.c" \
     "$M/mgl_vg_enc.c" "$M/mgl_vg_frame.c" "$M/mgl_vg_state.c" "$M/mgl_vg_shader.c" "$M/mgl_vg_draw.c" "$M/mgl_vg_tex.c" "$M/mgl_vg_pipe.c" \
     "$O/ogpu_core.c" "$O/ogpu_dwt.c" "$O/ogpu_3d.c" "$O/ogpu_build.c" "$O/ogpu_build3d.c" \
-    "$ROOT/library/pipe/pipe_screen.c" "$ROOT/library/pipe/pipe_block.c" "$ROOT/library/pipe/pipe_res.c" "$ROOT/library/pipe/pipe_arena.c" "$ROOT/library/pipe/pipe_xport_host.c" -lm
+    "$ROOT/library/pipe/pipe_screen.c" "$ROOT/library/pipe/pipe_block.c" "$ROOT/library/pipe/pipe_res.c" "$ROOT/library/pipe/pipe_arena.c" "$ROOT/library/pipe/pipe_state.c" "$ROOT/library/pipe/pipe_ff.c" "$ROOT/library/pipe/pipe_xport_host.c" -lm
 "$OUT/test_minigl" "$HERE/golden/minigl-scene.txt" ${1:-} -o "$OUT/minigl-scene.ppm"
 # The interface files are what the spec makes, and the table is laid out as
 # the spec's section 8 says (its own reading of the spec, then offsetof).

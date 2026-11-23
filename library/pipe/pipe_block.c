@@ -109,6 +109,7 @@ static void free_ctx(OGPUPipeCtx *x)
     ogpu_pipe_xport_free(x->cmd);
     ogpu_pipe_xport_free(x->va);
     ogpu_pipe_xport_free(x->ia);
+    ogpu_pipe_xport_free(x->text);
     ogpu_pipe_xport_free(x);
 }
 

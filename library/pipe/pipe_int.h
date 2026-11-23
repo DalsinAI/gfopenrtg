@@ -11,6 +11,9 @@
  *                  PUT and GET, the deferred unref
  *   pipe_arena.c   the vertex and index arenas, and the rings in the host's buffers (never a PUT over what an
  *                  earlier block's draws read)
+ *   pipe_ff.c      (M5, from mgl_vg_shader.c and w3d_vg_shader.c) the one fixed-function generator, by key
+ *   pipe_state.c   (M4, from mgl_vg_state.c) state objects by key, binding only what changed, the viewport, the
+ *                  scissor and the constants sent only when they change; the context's object handles
  * Plain C with no Amiga calls: memory and the transport are the pipe's transport's (pipe_xport_*), so the same files
  * build for the PC tests and, later, a native module (GF-91). */
 #ifndef OGPU_PIPE_INT_H
@@ -50,6 +53,21 @@ struct ogpu_pipe_res {
     ULONG put_seq;                          /* the stream whose block has a PUT of it waiting (+1; 0 none) */
 };
 
+/* A state object: its handle on the host (0: an empty slot). */
+struct ogpu_pipe_cso {
+    ULONG handle;
+};
+
+#define PIPE_CACHE     64                   /* blend, DSA and rasterizer objects a context keeps of each */
+#define PIPE_SAMPLERS  32
+#define PIPE_LAYOUTS   16
+#define PIPE_SHADERS   64                   /* shader variants a context keeps of each stage */
+
+struct pipe_cache {
+    ULONG key[PIPE_CACHE][5];
+    struct ogpu_pipe_cso cso[PIPE_CACHE];
+};
+
 struct ogpu_pipe_ctx {
     OGPUPipeScreen *screen;
     ULONG ctx_id;
@@ -68,6 +86,20 @@ struct ogpu_pipe_ctx {
     ULONG vb_off, vb_size, ib_base, ib_size;
     ULONG grow_va, grow_ia, grow_cmd;
     ULONG changed;                          /* OGPU_PIPE_CH_: what a front end that emits its own bindings must set */
+    /* state (pipe_state.c) */
+    ULONG next_obj, objects;                /* object handles: the context's one namespace */
+    struct pipe_cache c_blend, c_dsa, c_rs;
+    ULONG samp_key[PIPE_SAMPLERS][2]; struct ogpu_pipe_cso samp[PIPE_SAMPLERS]; int nsamp;
+    ULONG lay_key[PIPE_LAYOUTS]; struct ogpu_pipe_cso lay[PIPE_LAYOUTS]; int nlay;
+    ULONG b_blend, b_dsa, b_rs, b_ve;       /* bound (0: nothing known) */
+    ULONG vp[6]; LONG sc[4]; int vp_known, sc_known;   /* the viewport as float bits */
+    ULONG consts[2][OGPU_CONST_MAX * 4]; ULONG nconst[2];   /* as last sent, by stage */
+    /* shaders (pipe_ff.c) */
+    char *text;                             /* a shader's text, being made */
+    ULONG vs_key[PIPE_SHADERS][2], fs_key[PIPE_SHADERS][2], vs_h[PIPE_SHADERS], fs_h[PIPE_SHADERS];
+    int nvs, nfs;
+    struct ogpu_pipe_shader cur;            /* ff_shader's answer */
+    ULONG b_vs, b_fs;
     /* counts */
     ULONG blocks, words, puts, renames, va_bytes;
     int sending;                            /* in pipe_send: a send asked for from inside it waits */
@@ -113,6 +145,30 @@ UWORD *pipe_m_idx_room(OGPUPipeCtx *x, ULONG count, ULONG *first);
 ULONG pipe_m_vtx_put_range(OGPUPipeCtx *x, const void *mem, ULONG bytes);
 LONG  pipe_m_need(OGPUPipeCtx *x, ULONG va_bytes, ULONG ia_count, ULONG cmd_words);
 void  pipe_m_arena_state(OGPUPipeCtx *x, struct OGPUPipeArenas *a);
+
+/* pipe_state.c */
+ULONG pipe_m_obj_new(OGPUPipeCtx *x);
+ULONG pipe_m_cso_handle(const OGPUPipeCSO *o);
+void  pipe_m_state_reset(OGPUPipeCtx *x);
+OGPUPipeCSO *pipe_m_blend_create(OGPUPipeCtx *x, const struct OGPUBlendKey *b);
+OGPUPipeCSO *pipe_m_dsa_create(OGPUPipeCtx *x, const struct OGPUDsaKey *d);
+OGPUPipeCSO *pipe_m_raster_create(OGPUPipeCtx *x, const struct OGPURasterKey *r);
+OGPUPipeCSO *pipe_m_sampler_create(OGPUPipeCtx *x, const struct OGPUSamplerKey *s);
+OGPUPipeCSO *pipe_m_layout_create(OGPUPipeCtx *x, const struct OGPULayout *l);
+void  pipe_m_cso_release(OGPUPipeCtx *x, OGPUPipeCSO *o);
+void  pipe_m_bind_blend(OGPUPipeCtx *x, OGPUPipeCSO *o);
+void  pipe_m_bind_dsa(OGPUPipeCtx *x, OGPUPipeCSO *o);
+void  pipe_m_bind_raster(OGPUPipeCtx *x, OGPUPipeCSO *o);
+void  pipe_m_bind_layout(OGPUPipeCtx *x, OGPUPipeCSO *o);
+void  pipe_m_set_viewport(OGPUPipeCtx *x, const float v6[6]);
+void  pipe_m_set_scissor(OGPUPipeCtx *x, const struct OGPUBox *b);
+void  pipe_m_set_constants(OGPUPipeCtx *x, ULONG stage, const float *v, ULONG vec4s);
+
+/* pipe_ff.c */
+OGPUPipeShader *pipe_m_ff_shader(OGPUPipeCtx *x, const struct OGPUFFKey *k);
+void  pipe_m_bind_shader(OGPUPipeCtx *x, OGPUPipeShader *sh);
+ULONG pipe_m_ff_vs_consts(const struct OGPUFFKey *k);
+ULONG pipe_ff_text(const struct OGPUFFKey *k, int fragment, char *buf, ULONG cap);   /* the differential test's */
 
 /* pipe_arena.c */
 int   pipe_arenas(OGPUPipeCtx *x, ULONG va, ULONG ia, ULONG cmd);

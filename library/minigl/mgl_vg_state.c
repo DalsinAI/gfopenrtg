@@ -12,6 +12,7 @@
  * them so): the viewport turns GL's y round (OpenGL 1.1, 2.10.1), as
  * Mesa's state tracker does for such a surface. */
 #include "mgl_vg.h"
+#include "mgl_vg_ffkey.h"
 
 #define TEXT_BYTES 16384                /* a shader's text */
 
@@ -24,6 +25,7 @@ void vg_state_reset(GLcontext c)
     v->stride = 0;
     v->nvsc = v->nfsc = 0;
     for (i = 0; i < MGL_TEX_UNITS; i++) v->views[i] = v->samps[i] = 0xFFFFFFFFUL;
+    if (v->px) v->pipe->state_reset(v->px);
 }
 
 /* ---- OpenGL's numbers to Gallium's --------------------------------------------------------- */
@@ -125,6 +127,12 @@ static void blend(GLcontext c)
         rt |= eq << 1 | src << 4 | dst << 9 | eq << 14 | src << 17 | dst << 22;
     }
     rt |= (c->cmask & 15) << 27;
+    if (v->px) {                        /* the pipe's object for the key, bound when it changed */
+        struct OGPUBlendKey k;
+        k.rt0 = rt;
+        VGP(c, v->pipe->bind_blend(v->px, v->pipe->blend_create(v->px, &k)));
+        return;
+    }
     key[0] = rt;
     if (!(h = cached(&v->blend, key, 1, &slot))) {
         ULONG *p = make(c, &v->blend, key, 1, slot, VG_OBJ_BLEND, 11, &h);
@@ -146,6 +154,12 @@ static void dsa(GLcontext c)
     if (c->en & EN_ALPHA) s0 |= 1UL << 8 | func_of(c->alpha_func) << 9;
     key[0] = s0;
     key[1] = (c->en & EN_ALPHA) ? vg_fbits(c->alpha_ref) : 0;
+    if (v->px) {
+        struct OGPUDsaKey k;
+        k.s0 = key[0]; k.alpha_ref = key[1];
+        VGP(c, v->pipe->bind_dsa(v->px, v->pipe->dsa_create(v->px, &k)));
+        return;
+    }
     if (!(h = cached(&v->dsa, key, 2, &slot))) {
         ULONG *p = make(c, &v->dsa, key, 2, slot, VG_OBJ_DSA, 5, &h);
         if (p) { VG_W(p, s0); VG_W(p, 0); VG_W(p, 0); VG_W(p, key[1]); }
@@ -177,6 +191,12 @@ static void rasterizer(GLcontext c, int flat_first)
     key[2] = vg_fbits(c->line_width);
     key[3] = vg_fbits(units);
     key[4] = vg_fbits(scale);
+    if (v->px) {
+        struct OGPURasterKey k;
+        k.s0 = key[0]; k.point_size = key[1]; k.line_width = key[2]; k.offset_units = key[3]; k.offset_scale = key[4];
+        VGP(c, v->pipe->bind_raster(v->px, v->pipe->raster_create(v->px, &k)));
+        return;
+    }
     if (!(h = cached(&v->rs, key, 5, &slot))) {
         ULONG *p = make(c, &v->rs, key, 5, slot, VG_OBJ_RASTERIZER, 9, &h);
         if (p) {
@@ -206,6 +226,15 @@ struct vg_layout *vg_layout_of(GLcontext c, const UBYTE *fmt)
     l->key = key;
     for (i = 0; i < VG_ATTRS; i++) { l->off[i] = (UBYTE)off; off += af_bytes[fmt[i]]; if (fmt[i]) n++; }
     l->stride = (UBYTE)off;
+    if (v->px) {                        /* the pipe's VERTEX_ELEMENTS for the key */
+        struct OGPULayout pl;
+        pl.key = key; pl.n = 0;
+        for (i = 0; i < VG_ATTRS; i++)
+            if (fmt[i]) { pl.e[pl.n].offset = l->off[i]; pl.e[pl.n].format = af_format[fmt[i]]; pl.n++; }
+        VGP(c, l->cso = v->pipe->layout_create(v->px, &pl));
+        l->ve = 0;
+        return l;
+    }
     h = vg_new_obj(c);
     l->ve = (UWORD)h;
     p = vg_cmd(c, (ULONG)n * 4 + 2);
@@ -254,7 +283,12 @@ static void copy4(float *d, const float *s) { d[0] = s[0]; d[1] = s[1]; d[2] = s
 static void send_if_changed(GLcontext c, int type, const float *k, int n)
 {
     struct mgl_vg *v = c->vg;
-    float *last = type == VG_SHADER_VERTEX ? v->vsc : v->fsc;
+    float *last;
+    if (v->px) {                        /* the pipe sends them when they changed */
+        VGP(c, v->pipe->set_constants(v->px, type == VG_SHADER_VERTEX ? OGPU_STAGE_VERTEX : OGPU_STAGE_FRAGMENT, k, (ULONG)n));
+        return;
+    }
+    last = type == VG_SHADER_VERTEX ? v->vsc : v->fsc;
     int *nlast = type == VG_SHADER_VERTEX ? &v->nvsc : &v->nfsc, i;
     const ULONG *a = (const ULONG *)k;
     ULONG *b = (ULONG *)last;
@@ -369,6 +403,23 @@ static void viewport_scissor(GLcontext c)
     int i, same = 1;
     vp[0] = hw; vp[1] = -hh; vp[2] = (f - n) * 0.5f;
     vp[3] = (float)c->vp_x + hw; vp[4] = (float)(c->height - c->vp_y) - hh; vp[5] = (f + n) * 0.5f;
+    if (v->px) {                        /* the pipe sends them when they changed */
+        VGP(c, v->pipe->set_viewport(v->px, vp));
+        if (c->en & EN_SCISSOR) {
+            struct OGPUBox b;
+            sc[0] = c->sc_x; sc[2] = c->sc_x + c->sc_w;
+            sc[1] = c->height - (c->sc_y + c->sc_h); sc[3] = c->height - c->sc_y;
+            if (sc[0] < 0) sc[0] = 0;
+            if (sc[1] < 0) sc[1] = 0;
+            if (sc[2] > c->width) sc[2] = c->width;
+            if (sc[3] > c->height) sc[3] = c->height;
+            if (sc[2] < sc[0]) sc[2] = sc[0];
+            if (sc[3] < sc[1]) sc[3] = sc[1];
+            b.x = sc[0]; b.y = sc[1]; b.z = 0; b.w = (ULONG)(sc[2] - sc[0]); b.h = (ULONG)(sc[3] - sc[1]); b.d = 1;
+            VGP(c, v->pipe->set_scissor(v->px, &b));
+        }
+        return;
+    }
     for (i = 0; i < 6; i++) if (vp[i] != v->vp[i]) same = 0;
     if (!same || (v->dirty & VG_D_VIEWPORT)) {
         vg_set_viewport(c, vp);
@@ -469,12 +520,19 @@ void vg_prepare(GLcontext c, struct vg_layout *lay, int colswz, int flat_first)
         if (vch) { vg_sampler_views(c, MGL_TEX_UNITS, views); for (u = 0; u < MGL_TEX_UNITS; u++) v->views[u] = views[u]; }
         if (sch) { vg_sampler_states(c, MGL_TEX_UNITS, samps); for (u = 0; u < MGL_TEX_UNITS; u++) v->samps[u] = samps[u]; }
     }
-    h = shader(c, VG_SHADER_VERTEX, vk, spots);
-    if (h != v->b_vs) { vg_bind_shader(c, h, VG_SHADER_VERTEX); v->b_vs = h; }
-    h = shader(c, VG_SHADER_FRAGMENT, fk, 0);
-    if (h != v->b_fs) { vg_bind_shader(c, h, VG_SHADER_FRAGMENT); v->b_fs = h; }
+    if (v->px) {                        /* the pipe's one generator (stage M5): made once per key, bound when it changed */
+        struct OGPUFFKey k;
+        k.vs = vg_ff_vs(vk); k.fs = vg_ff_fs(fk); k.spots = spots;
+        VGP(c, v->pipe->bind_shader(v->px, v->pipe->ff_shader(v->px, &k)));
+    } else {
+        h = shader(c, VG_SHADER_VERTEX, vk, spots);
+        if (h != v->b_vs) { vg_bind_shader(c, h, VG_SHADER_VERTEX); v->b_vs = h; }
+        h = shader(c, VG_SHADER_FRAGMENT, fk, 0);
+        if (h != v->b_fs) { vg_bind_shader(c, h, VG_SHADER_FRAGMENT); v->b_fs = h; }
+    }
     /* the layout and the buffers */
-    if (lay->ve != v->b_ve) { vg_bind(c, VG_OBJ_VERTEX_ELEMENTS, lay->ve); v->b_ve = lay->ve; }
+    if (v->px) VGP(c, v->pipe->bind_layout(v->px, lay->cso));
+    else if (lay->ve != v->b_ve) { vg_bind(c, VG_OBJ_VERTEX_ELEMENTS, lay->ve); v->b_ve = lay->ve; }
     if (lay->stride != v->stride || (v->dirty & VG_D_VBUF)) { vg_set_vertex_buffer(c, lay->stride); v->dirty &= ~VG_D_VBUF; }
     vs_constants(c, vk, lights, nl);
     fs_constants(c);

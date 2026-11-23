@@ -31,6 +31,7 @@ ULONG vg_fbits(float f) { return vgc_fbits(f); }
 
 ULONG vg_new_obj(GLcontext c)
 {
+    if (c->vg->px) { c->vg->objects++; return c->vg->pipe->obj_new(c->vg->px); }   /* the context's one namespace */
     c->vg->objects++;
     return ++c->vg->next_obj;
 }

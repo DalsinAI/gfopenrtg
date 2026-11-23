@@ -37,8 +37,9 @@
 
 struct w3dvg;
 
+/* The platform's part. The transport is the shared pipe's (library/pipe/, stage M2 of
+ * docs/design/OpenGPU-Shared-Pipe-Plan.md): pipe_xport_os3.c on the Amiga, pipe_xport_host.c in the PC test. */
 struct w3dvg_os {
-    int (*run)(void *user, ULONG *blk, ULONG bytes);    /* one block, done when it returns; 0 on success */
     void *(*alloc)(void *user, ULONG bytes);            /* cleared, memory the host reaches */
     void (*free)(void *user, void *p);
     void (*log)(void *user, const char *msg);           /* or 0 */
@@ -51,7 +52,7 @@ struct w3dvg_info {
     ULONG caps_bits;
 };
 
-/* HELLO, the context, the caps: 0 when the host has no virgl for us. */
+/* HELLO, the context, the caps (the shared pipe's screen does them): 0 when the host has no virgl for us. */
 struct w3dvg *w3dvg_open(const struct w3dvg_os *os, struct w3dvg_info *info);
 void w3dvg_close(struct w3dvg *v);
 

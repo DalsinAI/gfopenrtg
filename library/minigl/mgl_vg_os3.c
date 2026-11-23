@@ -1,12 +1,9 @@
 /* Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * minigl.library's virgl route on AmigaOS: the transport and the present.
- *
- * A request block is one OGPU_OP_VIRGL command in a batch for
- * gfopengpu.library, done when OGPU_Wait returns (as GL.module's
- * gla_virgl_os3.c sends them). The host reaches Fast RAM by the Amiga's own
- * addresses, so an address is the pointer.
+ * minigl.library's virgl route on AmigaOS: the present. The transport is
+ * the shared pipe's (library/pipe/pipe_xport_os3.c, stage M2 of
+ * docs/design/OpenGPU-Shared-Pipe-Plan.md).
  *
  * The frame reaches the display (plan section 6):
  *  - a screen of its own, or the program's bitmap: ACV_PRESENT at the end
@@ -39,38 +36,6 @@ extern struct Library *OpenGPUBase;
 extern struct Library *CyberGfxBase;
 struct Library *mgl_ortg_base;
 static int ortg_tried;
-
-int vg_os_open(GLcontext c)
-{
-    (void)c;
-    if (!OpenGPUBase) { mgl_log("virgl: no gfopengpu.library"); return 0; }
-    if (OGPU_ANSWER(OGPU_Query(OGPU_OP_VIRGL, 0)) != OGPU_FULL) {
-        mgl_log("virgl: gfopengpu.library has no driver that carries virgl");
-        return 0;
-    }
-    return 1;
-}
-
-void vg_os_close(GLcontext c) { (void)c; }
-
-int vg_os_run(GLcontext c, ULONG *blk, ULONG bytes)
-{
-    ULONG stream[4], fence = 0;
-    struct OGPUBatch b;
-    LONG r;
-    (void)c;
-    ogpu_batch_init(&b, stream, 4);
-    ogpu_virgl(&b, (unsigned long)blk, bytes);
-    if (OGPU_Submit(stream, (ULONG)b.words, &fence) != OGPU_OK) return -1;
-    r = OGPU_Wait(fence);
-    if (r == OGPU_ERR_EXPIRED) {
-        /* other programs' batches came between: ours is done, not failed
-         * (gla_virgl_os3.c's rule) */
-        r = OGPU_Wait(OGPU_FENCE_ALL);
-        if (r == OGPU_ERR_EXPIRED) r = OGPU_OK;
-    }
-    return r == OGPU_OK ? 0 : -1;
-}
 
 /* ---- presenting ------------------------------------------------------------------------------ */
 

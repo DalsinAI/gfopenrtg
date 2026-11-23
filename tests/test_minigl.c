@@ -48,33 +48,13 @@ void MiniGLClose(void) { MiniGLDispatch = 0; }
 
 struct mgl_display { UBYTE *pix; };
 
-/* ---- the virgl route's transport: minigl_vg_bridge, when it runs this test -------------------- */
+/* ---- the virgl route: its transport is the pipe's (library/pipe/pipe_xport_host.c: minigl_vg_bridge,
+ * when it runs this test); the present is the test's -------------------------------------------- */
 
 #include "../library/minigl/mgl_vg.h"
 #include <unistd.h>
 
-static int bridge_r = -1, bridge_w = -1;
 static int vg_presents;
-
-int vg_os_open(GLcontext c)
-{
-    const char *e = getenv("MGL_VG_BRIDGE");
-    (void)c;
-    if (!e || sscanf(e, "%d,%d", &bridge_r, &bridge_w) != 2) return 0;
-    return 1;
-}
-
-void vg_os_close(GLcontext c) { (void)c; }
-
-int vg_os_run(GLcontext c, ULONG *blk, ULONG bytes)
-{
-    ULONG req[2];
-    int r = -1;
-    (void)c;
-    req[0] = (ULONG)blk; req[1] = bytes;
-    if (write(bridge_w, req, sizeof req) != (ssize_t)sizeof req || read(bridge_r, &r, sizeof r) != (ssize_t)sizeof r) return -1;
-    return r;
-}
 
 /* The frame into the drawing area, as ACV_PRESENT writes a screen's bitmap
  * (OGPU_FMT_ARGB32: A, R, G, B bytes). */

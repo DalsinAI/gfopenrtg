@@ -92,16 +92,16 @@ RTG='^(library/[^/]+|compat/.*)$'
 NONE='^$'
 
 {
-    rule host-header "" "$GPU|$RTG" "" '#[ \t]*include[ \t]*[<"][^">]*(acvirgl\.h|virglrenderer\.h|acrtg\.h)[">]'
-    rule virgl-cmd "" "$PIPE" "" '#[ \t]*include[ \t]*[<"][^">]*virgl_cmd\.h[">]'
-    rule present-export '\.sfd$' '^library/gfopenrtg_lib\.sfd$' 'OGPU_RetainedPresent' "${W}*Present${W}*[ \t]*\\("
+    rule host-header "" "$GPU|$RTG" "" '#[ \t]*include[ \t]*[<"][^">]*(acvirgl[.]h|virglrenderer[.]h|acrtg[.]h)[">]'
+    rule virgl-cmd "" "$PIPE" "" '#[ \t]*include[ \t]*[<"][^">]*virgl_cmd[.]h[">]'
+    rule present-export '[.]sfd$' '^library/gfopenrtg_lib[.]sfd$' 'OGPU_RetainedPresent' "${W}*Present${W}*[ \t]*[(]"
     rule acv-present "" "$PIPE|$RTG" "" "${B}ACV_PRESENT[A-Z_]*${E}"
-    rule stream3d "" "$PIPE|$GPU" 'OGPU_Query|OGPUR_Can|defined[ \t]*\(' \
-        "${B}(OGPU_OP_(TRIANGLES|RENDER3D|TEXENV|TEXTURE|DEPTH|CLEAR3D)${E}|ogpu_(triangles|triangles3d|render3d|texenv|texture|depth|clear3d)[ \t]*\()"
+    rule stream3d "" "$PIPE|$GPU" 'OGPU_Query|OGPUR_Can|defined[ \t]*[(]' \
+        "${B}(OGPU_OP_(TRIANGLES|RENDER3D|TEXENV|TEXTURE|DEPTH|CLEAR3D)${E}|ogpu_(triangles|triangles3d|render3d|texenv|texture|depth|clear3d)[ \t]*[(])"
     rule state-cache "" "$PIPE" "" "${B}(vg_cache|[A-Za-z0-9]+_(vs|fs)_text|VG_RING|vg_ring)${E}"
     rule host-caps "" "$PIPE|$GPU|$RTG" "" "${B}ACV_(HELLO|CAPSET_INFO|CAPS)${E}"
     rule board-open "" "$GPU|$RTG" "" "${B}FindConfigDev${E}"
-    rule mesa-present '^library/modules/gl/gla/os3/gla_present_os3\.c$' "$NONE" "" "${B}(WritePixelArray|ogpu_pixels|LockBitMapTags)${E}"
+    rule mesa-present '^library/modules/gl/gla/os3/gla_present_os3[.]c$' "$NONE" "" "${B}(WritePixelArray|ogpu_pixels|LockBitMapTags)${E}"
 } | sort -u > "$TMP/found"
 
 if [ "$LIST" = 1 ]; then cat "$TMP/found"; exit 0; fi

@@ -30,6 +30,7 @@
 /* The protocol's numbers, byte order and command writers are shared with
  * Warp3D.library's virgl route. */
 #include "../../include/gfopengpu/virgl_cmd.h"
+#include "../../include/gfopengpu/pipe.h"
 
 /* ---- resources -------------------------------------------------------------------------------- */
 
@@ -110,6 +111,8 @@ struct vg_layout {
 #define VG_RING        4                /* the vertex and index buffers: arenas long */
 
 struct mgl_vg {
+    const struct OGPUPipeOps *pipe;     /* the shared pipe (M2: its screen and transport) */
+    OGPUPipeScreen *screen;
     ULONG ctx_id;
     ULONG host_flags;                   /* HELLO's ACV_HOST_ */
     ULONG prim_mask;                    /* virgl_caps_v1.prim_mask */
@@ -230,15 +233,12 @@ void mgl_vg_clear(GLcontext c, GLbitfield mask);
 void mgl_vg_switch(GLcontext c);        /* mglSwitchDisplay */
 void mgl_vg_finish(GLcontext c);        /* glFlush, glFinish */
 
-/* The platform's part (mgl_vg_os3.c, or the PC test's). */
-int vg_os_open(GLcontext c);            /* the transport is there (else no virgl) */
-int vg_os_run(GLcontext c, ULONG *blk, ULONG bytes);
+/* The platform's part (mgl_vg_os3.c, or the PC test's). The transport is the pipe's (library/pipe/). */
 /* The present: append ACV_PRESENT (or nothing) to the block at p, which has
  * room for `room` words; returns the words written. After the block has
  * run, vg_os_presented is called with it. */
 ULONG vg_os_present(GLcontext c, ULONG *p, ULONG room);
 void vg_os_presented(GLcontext c, ULONG *blk, ULONG at);   /* blk 0: nothing was appended */
-void vg_os_close(GLcontext c);
 
 /* Where the display shows a frame (mgl_display.c): a screen's or the
  * program's bitmap (rp may be 0), or a window's RastPort at x, y. */

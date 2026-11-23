@@ -1,0 +1,6 @@
+/srv/samsung/nightly/t7m0/m2/build/m68k/Warp3D.library (318836 bytes)
+/srv/samsung/nightly/t7m0/m2/build/m68k/W3DTest (37976 bytes)
+/srv/samsung/nightly/t7m0/m2/build/m68k/W3DCheck (44328 bytes)
+/srv/samsung/nightly/t7m0/m2/build/m68k/W3DArrBench (30404 bytes)
+/srv/samsung/nightly/t7m0/m2/build/m68k/Warp3DPrefs (18124 bytes)
+include/Warp3D/Warp3D.h: every structure offset as 68k programs have it

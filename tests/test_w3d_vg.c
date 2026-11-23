@@ -28,6 +28,7 @@
 #include "../library/opengpu/ogpu_3d.h"
 #include "../include/gfopengpu/build3d.h"
 #include "../library/warp3d/w3d_vg.h"
+#include "../include/gfopengpu/pipe.h"
 #include "scenes3d.h"
 
 #define REG OGPU_SCENE3D_REGION
@@ -36,19 +37,8 @@
 static int failures, checks;
 #define CHECK(cond, ...) do { checks++; if (!(cond)) { failures++; printf("FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
 
-/* ---- the transport: the bridge's pipe ------------------------------------------------------- */
+/* ---- the platform: the transport is the pipe's (library/pipe/pipe_xport_host.c: the bridge's pipe) ---- */
 
-static int bridge_r = -1, bridge_w = -1;
-
-static int os_run(void *user, ULONG *blk, ULONG bytes)
-{
-    ULONG req[2];
-    int r = -1;
-    (void)user;
-    req[0] = (ULONG)blk; req[1] = bytes;
-    if (write(bridge_w, req, sizeof req) != (ssize_t)sizeof req || read(bridge_r, &r, sizeof r) != (ssize_t)sizeof r) return -1;
-    return r;
-}
 static void *os_alloc(void *user, ULONG bytes) { (void)user; return calloc(1, bytes ? bytes : 4); }
 static void os_free(void *user, void *p) { (void)user; free(p); }
 static void os_log(void *user, const char *m) { (void)user; if (getenv("W3D_LOG")) printf("  w3dvg: %s\n", m); }
@@ -614,7 +604,7 @@ int main(int argc, char **argv)
         else rounds = atol(argv[k]);
     }
     setvbuf(stdout, 0, _IOLBF, 0);
-    if (!e || sscanf(e, "%d,%d", &bridge_r, &bridge_w) != 2) { printf("test_w3d_vg: run me under minigl_vg_bridge\n"); return 2; }
+    if (!e || !ogpu_pipe_xport_ready()) { printf("test_w3d_vg: run me under minigl_vg_bridge\n"); return 2; }
     for (k = 0; k < 2; k++) {
         mem[k][0] = aligned_alloc(4096, REG); mem[k][1] = aligned_alloc(4096, REG);
         if (!mem[k][0] || !mem[k][1]) { printf("out of memory\n"); return 1; }
@@ -622,7 +612,7 @@ int main(int argc, char **argv)
         env[k].addr[0] = (unsigned long)mem[k][0]; env[k].addr[1] = (unsigned long)mem[k][1];
     }
     memset(&os, 0, sizeof os);
-    os.run = os_run; os.alloc = os_alloc; os.free = os_free; os.log = os_log;
+    os.alloc = os_alloc; os.free = os_free; os.log = os_log;
     V = w3dvg_open(&os, &info);
     CHECK(V != 0, "the route opens on the host");
     if (!V) return 1;

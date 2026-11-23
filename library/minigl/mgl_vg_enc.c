@@ -157,5 +157,5 @@ ULONG vg_word(const ULONG *blk, ULONG at) { return vgc_word(blk, at); }
 int vg_run(GLcontext c, ULONG *blk, ULONG words)
 {
     c->vg->blocks++;
-    return vg_os_run(c, blk, words * 4);
+    return c->vg->pipe->run(c->vg->screen, blk, words * 4) ? -1 : 0;
 }

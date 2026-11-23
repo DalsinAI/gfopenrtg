@@ -12,7 +12,6 @@ state-cache       library/minigl/mgl_vg_enc.c                                   
 state-cache       library/minigl/mgl_vg_frame.c                                     # M3
 state-cache       library/minigl/mgl_vg_state.c                                     # M4
 state-cache       library/minigl/mgl_vg_shader.c                                    # M5
-host-caps         library/minigl/mgl_vg_frame.c                                     # M2, then MQ
 acv-present       library/minigl/mgl_vg_frame.c                                     # M8
 acv-present       library/minigl/mgl_vg_os3.c                                       # M8
 stream3d          library/minigl/mgl_out.c                                          # M7
@@ -22,7 +21,6 @@ virgl-cmd         library/warp3d/w3d_vg.c                                       
 state-cache       library/warp3d/w3d_vg.c                                           # M6
 state-cache       library/warp3d/w3d_vg.h                                           # M6
 state-cache       library/warp3d/w3d_vg_shader.c                                    # M6
-host-caps         library/warp3d/w3d_vg.c                                           # M2, then MQ
 acv-present       library/warp3d/w3d_vg.c                                           # M8
 acv-present       library/warp3d/w3d_vg_os3.c                                       # M8
 stream3d          library/warp3d/w3d_vg.c                                           # M7 (it reads its own batches back)

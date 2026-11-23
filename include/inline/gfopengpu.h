@@ -76,4 +76,9 @@
     LP2(0xba, ULONG, OGPU_RetainedStats, struct OGPURetained *, rs, a0, struct OGPURetainedStats *, stats, a1, , OPENGPU_BASE_NAME)
 #define OGPU_RetainedDestroy(rs) \
     LP1NR(0xc0, OGPU_RetainedDestroy, struct OGPURetained *, rs, a0, , OPENGPU_BASE_NAME)
+/* 0.30: capabilities (gfopengpu/caps.h) */
+#define OGPU_QueryLimit(op) \
+    LP1(0xc6, ULONG, OGPU_QueryLimit, ULONG, op, d0, , OPENGPU_BASE_NAME)
+#define OGPU_QueryDriver(drv, op, format) \
+    LP3(0xcc, ULONG, OGPU_QueryDriver, ULONG, drv, d0, ULONG, op, d1, ULONG, format, d2, , OPENGPU_BASE_NAME)
 #endif

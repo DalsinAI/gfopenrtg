@@ -118,6 +118,25 @@ if command -v m68k-linux-gnu-gcc >/dev/null && command -v qemu-m68k >/dev/null; 
         -o "$OUT/test_retained-m68k" "$HERE/test_retained.c" "$OGPU/ogpu_retained.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c"
     qemu-m68k -cpu m68040 "$OUT/test_retained-m68k"
 fi
+# OGPU_Query's capabilities (gfopengpu.library 0.30, library/opengpu/ogpu_caps.c): discovery once,
+# every answer docs/design/OGPU-Query.md writes down. 32-bit, blocks in the Amiga's order; and on a
+# big-endian m68k, where the caps are read as the host wrote them.
+sh "$HERE/caps/test_caps.sh"
+if command -v m68k-linux-gnu-gcc >/dev/null && command -v qemu-m68k >/dev/null; then
+    m68k-linux-gnu-gcc -std=gnu99 -O2 -fno-delete-null-pointer-checks -m68040 -static -Wall -Wextra -Werror -Wno-unused-parameter \
+        -I"$HERE/host-include" -I"$HERE/../include" -o "$OUT/test_caps-m68k" "$HERE/caps/test_caps.c" "$OGPU/ogpu_caps.c"
+    qemu-m68k -cpu m68040 "$OUT/test_caps-m68k"
+fi
+# GF-91 (native modules for 68k, x86 and ARM): the parts with no Amiga calls in them build and pass on ARM64 too,
+# cross-built here and run under qemu, so every nightly proves the code a native module will carry.
+if command -v aarch64-linux-gnu-gcc >/dev/null && command -v qemu-aarch64-static >/dev/null; then
+    aarch64-linux-gnu-gcc -std=gnu99 -O2 -static -Wall -Wextra -Werror -Wno-unused-parameter -I"$HERE/host-include" -I"$HERE/../include" \
+        -o "$OUT/test_caps-arm64" "$HERE/caps/test_caps.c" "$OGPU/ogpu_caps.c"
+    qemu-aarch64-static "$OUT/test_caps-arm64"
+    aarch64-linux-gnu-gcc -std=c99 -O2 -static -Wall -Wextra -Werror \
+        -o "$OUT/test_retained-arm64" "$HERE/test_retained.c" "$OGPU/ogpu_retained.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c"
+    qemu-aarch64-static "$OUT/test_retained-arm64"
+fi
 # Stream v1.8 (OGPU_PATH_ALIASED) against its exact reference, and against cairo's
 # CAIRO_ANTIALIAS_NONE when cairo's headers are there (the browser's reference).
 ALIASED_CAIRO=""

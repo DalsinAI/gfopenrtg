@@ -11,6 +11,7 @@
 #include <gfopengpu/module.h>
 #include <gfopengpu/gfx.h>
 #include <gfopengpu/retained.h>
+#include <gfopengpu/caps.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -50,6 +51,9 @@ VOID OGPU_RetainedMark(struct OGPURetained *rs, LONG x, LONG y, LONG width, LONG
 LONG OGPU_RetainedPresent(struct OGPURetained *rs, struct RastPort *rp, LONG x, LONG y, LONG width, LONG height);
 ULONG OGPU_RetainedStats(struct OGPURetained *rs, struct OGPURetainedStats *stats);
 VOID OGPU_RetainedDestroy(struct OGPURetained *rs);
+/* -198, -204: capabilities (0.30) */
+ULONG OGPU_QueryLimit(ULONG op);
+ULONG OGPU_QueryDriver(ULONG drv, ULONG op, ULONG format);
 
 #ifdef __cplusplus
 }

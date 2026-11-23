@@ -123,6 +123,9 @@ static int hl_host_plain(uint32_t at, uint32_t n, int write) { (void)write; retu
 static int hl_host_aliased(uint32_t at, uint32_t n) { (void)at; (void)n; return 0; }
 static void hl_host_written(uint32_t at, uint32_t n) { (void)at; (void)n; }
 #include "hostlib/hl.h"
+/* hl.h's per-thread state buffer ; these tests have one thread. */
+static uint8_t ts_state[HL_STATE_MAX];
+uint8_t *hl_host_state_buf(void) { return ts_state; }
 #include "hostlib/text/text_strip.c"
 
 static void ts_put32(uint32_t at, ULONG v)

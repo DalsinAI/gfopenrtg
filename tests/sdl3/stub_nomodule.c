@@ -65,6 +65,28 @@ void CloseLibrary(struct Library *lib)
         closes++;
 }
 
+/* stubs/stub_tell.h: a CLI process on a console, so the reason goes on
+   Output only and there is never a requester. */
+static struct Process me = { { { 0, 0, NT_PROCESS, 0, 0 } }, 1 };
+static int requesters;
+struct Task *FindTask(CONST_STRPTR name)
+{
+    (void)name;
+    return &me.pr_Task;
+}
+
+LONG IsInteractive(BPTR fh)
+{
+    return fh != 0;
+}
+
+LONG EasyRequestArgs(struct Window *w, struct EasyStruct *es, ULONG *idcmp, APTR args)
+{
+    (void)w; (void)es; (void)idcmp; (void)args;
+    requesters++;
+    return 0;
+}
+
 BPTR Output(void)
 {
     return 1;

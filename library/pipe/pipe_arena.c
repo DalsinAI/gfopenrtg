@@ -173,3 +173,26 @@ void pipe_m_arena_state(OGPUPipeCtx *x, struct OGPUPipeArenas *a)
     a->ibuf = x->ibuf ? x->ibuf->ver->handle : 0; a->ib_base = x->ib_base;
 }
 
+
+/* Version 5 (M6): whether a draw fits now, without sending (Warp3D ends its run of merged draws first when not). */
+LONG pipe_m_room(OGPUPipeCtx *x, ULONG va_bytes, ULONG ia_count, ULONG cmd_words, ULONG pre_words)
+{
+    if (!x) return 0;
+    return x->nva + va_bytes + 64 <= x->cva && x->nia + ia_count <= x->cia && x->ncmd + cmd_words <= x->ccmd
+        && x->npre + pre_words + 64 <= x->cpre;
+}
+
+/* Version 5 (M6): Warp3D's batch memory into its own vertex buffer, PUT from where it is (the 68k copies nothing).
+ * The front end keeps the ring (never over what an earlier block's draws read), so this never renames. */
+void pipe_m_buf_put(OGPUPipeCtx *x, OGPUPipeRes *r, ULONG offset, const void *src, ULONG bytes, ULONG swap)
+{
+    ULONG a[14], *p;
+    if (!x || !r || !src || !bytes) return;
+    if (!(p = pipe_pre(x, VG_BLK_WORDS(14)))) return;
+    a[0] = r->ver->handle; a[1] = x->ctx_id; a[2] = 0; a[3] = 0; a[4] = 0;
+    a[5] = offset; a[6] = 0; a[7] = 0; a[8] = bytes; a[9] = 1; a[10] = 1;
+    a[11] = ADDR(src); a[12] = bytes; a[13] = swap;
+    vgc_blk_cmd(p, ACV_PUT, 14, a);
+    r->put_seq = x->seq + 1;
+    x->puts++;
+}

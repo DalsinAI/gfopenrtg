@@ -30,11 +30,12 @@ int w3d_vg_start(struct w3dctx *x, int need_chip)
     struct w3dvg_info info;
     if (!OpenGPUBase || !W3DBase->gpu_virgl) return 0;
     os.alloc = os_alloc; os.free = os_free; os.log = os_log; os.user = x;
+    os.pipe_old = W3DBase->pipe_old;    /* the route on the shared pipe (M6), unless ENV:Warp3D/PipeOld=1 */
     info.host_flags = info.caps_bits = 0;
     x->vg = w3dvg_open(&os, &info);
     if (!x->vg) { w3d_trace("virgl: the host has no virgl for Warp3D"); return 0; }
     W3DBase->virgl_chip = (info.host_flags & ACV_HOST_GPU) != 0;
-    w3d_trace("virgl: host flags %lx", (unsigned long)info.host_flags);
+    w3d_trace("virgl: host flags %lx%s", (unsigned long)info.host_flags, os.pipe_old ? ", the old route (PipeOld)" : ", on the shared pipe");
     if (need_chip && !W3DBase->virgl_chip) {
         /* Auto: the host draws virgl without a graphics chip, so GFOpenGPU */
         w3dvg_close(x->vg);

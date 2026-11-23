@@ -613,6 +613,7 @@ int main(int argc, char **argv)
     }
     memset(&os, 0, sizeof os);
     os.alloc = os_alloc; os.free = os_free; os.log = os_log;
+    os.pipe_old = getenv("W3D_PIPE_OLD") && atoi(getenv("W3D_PIPE_OLD"));   /* M6: the route before the shared pipe */
     V = w3dvg_open(&os, &info);
     CHECK(V != 0, "the route opens on the host");
     if (!V) return 1;

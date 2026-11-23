@@ -79,32 +79,49 @@ static ULONG *make(OGPUPipeCtx *x, struct pipe_cache *k, const ULONG *key, int n
     return p;
 }
 
-OGPUPipeCSO *pipe_m_blend_create(OGPUPipeCtx *x, const struct OGPUBlendKey *b)
+/* Version 5: Warp3D's logic op. MiniGL's keys are these with logic 0 (the same objects, the same hash). */
+OGPUPipeCSO *pipe_m_blend_create2(OGPUPipeCtx *x, const struct OGPUBlendKey2 *b)
 {
     OGPUPipeCSO *o;
-    ULONG key[1], *p;
+    ULONG key[2], *p;
     int slot, i;
-    key[0] = b->rt0;
-    if ((o = cached(&x->c_blend, key, 1, &slot)) != 0) return o;
-    p = make(x, &x->c_blend, key, 1, slot, VG_OBJ_BLEND, 11, &o);
+    key[0] = b->rt0; key[1] = b->logic;
+    if ((o = cached(&x->c_blend, key, 2, &slot)) != 0) return o;
+    p = make(x, &x->c_blend, key, 2, slot, VG_OBJ_BLEND, 11, &o);
     if (p) {
-        VG_W(p, 0); VG_W(p, 0);                     /* no logic op, no independent targets; dither off */
+        VG_W(p, b->logic ? 2 : 0);                  /* S0: the logic op on (no independent targets, dither off) */
+        VG_W(p, b->logic & 15);                     /* S1: which */
         VG_W(p, b->rt0);
         for (i = 1; i < 8; i++) VG_W(p, 0);
     }
     return o;
 }
 
-OGPUPipeCSO *pipe_m_dsa_create(OGPUPipeCtx *x, const struct OGPUDsaKey *d)
+OGPUPipeCSO *pipe_m_blend_create(OGPUPipeCtx *x, const struct OGPUBlendKey *b)
+{
+    struct OGPUBlendKey2 k;
+    k.rt0 = b->rt0; k.logic = 0;
+    return pipe_m_blend_create2(x, &k);
+}
+
+/* Version 5: Warp3D's stencil, the same word for both faces. */
+OGPUPipeCSO *pipe_m_dsa_create2(OGPUPipeCtx *x, const struct OGPUDsaKey2 *d)
 {
     OGPUPipeCSO *o;
-    ULONG key[2], *p;
+    ULONG key[3], *p;
     int slot;
-    key[0] = d->s0; key[1] = d->alpha_ref;
-    if ((o = cached(&x->c_dsa, key, 2, &slot)) != 0) return o;
-    p = make(x, &x->c_dsa, key, 2, slot, VG_OBJ_DSA, 5, &o);
-    if (p) { VG_W(p, d->s0); VG_W(p, 0); VG_W(p, 0); VG_W(p, d->alpha_ref); }
+    key[0] = d->s0; key[1] = d->alpha_ref; key[2] = d->stencil;
+    if ((o = cached(&x->c_dsa, key, 3, &slot)) != 0) return o;
+    p = make(x, &x->c_dsa, key, 3, slot, VG_OBJ_DSA, 5, &o);
+    if (p) { VG_W(p, d->s0); VG_W(p, d->stencil); VG_W(p, d->stencil); VG_W(p, d->alpha_ref); }
     return o;
+}
+
+OGPUPipeCSO *pipe_m_dsa_create(OGPUPipeCtx *x, const struct OGPUDsaKey *d)
+{
+    struct OGPUDsaKey2 k;
+    k.s0 = d->s0; k.alpha_ref = d->alpha_ref; k.stencil = 0;
+    return pipe_m_dsa_create2(x, &k);
 }
 
 OGPUPipeCSO *pipe_m_raster_create(OGPUPipeCtx *x, const struct OGPURasterKey *r)
@@ -124,12 +141,16 @@ OGPUPipeCSO *pipe_m_raster_create(OGPUPipeCtx *x, const struct OGPURasterKey *r)
 
 /* ---- samplers and layouts: small tables, the objects stay -------------------------------------------------------- */
 
-OGPUPipeCSO *pipe_m_sampler_create(OGPUPipeCtx *x, const struct OGPUSamplerKey *s)
+/* Version 5: with Warp3D's border colour (MiniGL's: 0). */
+OGPUPipeCSO *pipe_m_sampler_create2(OGPUPipeCtx *x, const struct OGPUSamplerKey2 *s)
 {
     ULONG h, *p;
-    int i, slot;
-    for (i = 0; i < x->nsamp; i++)
-        if (x->samp_key[i][0] == s->s0 && x->samp_key[i][1] == s->levels) return &x->samp[i];
+    int i, j, slot;
+    for (i = 0; i < x->nsamp; i++) {
+        if (x->samp_key[i][0] != s->s0 || x->samp_key[i][1] != s->levels) continue;
+        for (j = 0; j < 4 && x->samp_key[i][2 + j] == s->border[j]; j++) ;
+        if (j == 4) return &x->samp[i];
+    }
     if (x->nsamp < PIPE_SAMPLERS) slot = x->nsamp++;
     else slot = 0;                                  /* full: the first slot is used again (its object stays) */
     h = pipe_m_obj_new(x);
@@ -138,10 +159,19 @@ OGPUPipeCSO *pipe_m_sampler_create(OGPUPipeCtx *x, const struct OGPUSamplerKey *
         VG_W(p, VG_CMD0(VG_CCMD_CREATE_OBJECT, VG_OBJ_SAMPLER_STATE, 9));
         VG_W(p, h); VG_W(p, s->s0);
         VG_W(p, vgc_fbits(0.0f)); VG_W(p, vgc_fbits(0.0f)); VG_W(p, vgc_fbits((float)(s->levels - 1)));
-        VG_W(p, 0); VG_W(p, 0); VG_W(p, 0); VG_W(p, 0);
+        for (j = 0; j < 4; j++) VG_W(p, s->border[j]);
     }
-    x->samp_key[slot][0] = s->s0; x->samp_key[slot][1] = s->levels; x->samp[slot].handle = h;
+    x->samp_key[slot][0] = s->s0; x->samp_key[slot][1] = s->levels;
+    for (j = 0; j < 4; j++) x->samp_key[slot][2 + j] = s->border[j];
+    x->samp[slot].handle = h;
     return &x->samp[slot];
+}
+
+OGPUPipeCSO *pipe_m_sampler_create(OGPUPipeCtx *x, const struct OGPUSamplerKey *s)
+{
+    struct OGPUSamplerKey2 k;
+    k.s0 = s->s0; k.levels = s->levels; k.border[0] = k.border[1] = k.border[2] = k.border[3] = 0;
+    return pipe_m_sampler_create2(x, &k);
 }
 
 OGPUPipeCSO *pipe_m_layout_create(OGPUPipeCtx *x, const struct OGPULayout *l)

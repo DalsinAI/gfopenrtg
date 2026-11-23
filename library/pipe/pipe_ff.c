@@ -496,6 +496,7 @@ OGPUPipeShader *pipe_m_ff_shader(OGPUPipeCtx *x, const struct OGPUFFKey *k)
     if (!x || !k) return 0;
     scr = OGPU_FF_POS(k->vs) != 0;
     vk0 = k->vs; vk1 = k->spots; fk0 = k->fs;
+    if (scr) vk0 &= ~OGPU_FF_COL_ATTR;      /* the screen-space vertex shader is the same with or without (M6: one each) */
     if (!scr && OGPU_FF_FOG(k->fs)) vk1 |= 1UL << 16;
     if (scr) fk1 = (k->vs & (OGPU_FF_COL_ATTR | OGPU_FF_LINEAR)) | 1UL;
     if (!x->text && !(x->text = ogpu_pipe_xport_alloc(PIPE_TEXT_BYTES))) return 0;

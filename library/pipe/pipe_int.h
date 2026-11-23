@@ -89,7 +89,7 @@ struct ogpu_pipe_ctx {
     /* state (pipe_state.c) */
     ULONG next_obj, objects;                /* object handles: the context's one namespace */
     struct pipe_cache c_blend, c_dsa, c_rs;
-    ULONG samp_key[PIPE_SAMPLERS][2]; struct ogpu_pipe_cso samp[PIPE_SAMPLERS]; int nsamp;
+    ULONG samp_key[PIPE_SAMPLERS][6]; struct ogpu_pipe_cso samp[PIPE_SAMPLERS]; int nsamp;
     ULONG lay_key[PIPE_LAYOUTS]; struct ogpu_pipe_cso lay[PIPE_LAYOUTS]; int nlay;
     ULONG b_blend, b_dsa, b_rs, b_ve;       /* bound (0: nothing known) */
     ULONG vp[6]; LONG sc[4]; int vp_known, sc_known;   /* the viewport as float bits */
@@ -145,6 +145,8 @@ UWORD *pipe_m_idx_room(OGPUPipeCtx *x, ULONG count, ULONG *first);
 ULONG pipe_m_vtx_put_range(OGPUPipeCtx *x, const void *mem, ULONG bytes);
 LONG  pipe_m_need(OGPUPipeCtx *x, ULONG va_bytes, ULONG ia_count, ULONG cmd_words);
 void  pipe_m_arena_state(OGPUPipeCtx *x, struct OGPUPipeArenas *a);
+LONG  pipe_m_room(OGPUPipeCtx *x, ULONG va_bytes, ULONG ia_count, ULONG cmd_words, ULONG pre_words);
+void  pipe_m_buf_put(OGPUPipeCtx *x, OGPUPipeRes *r, ULONG offset, const void *src, ULONG bytes, ULONG swap);
 
 /* pipe_state.c */
 ULONG pipe_m_obj_new(OGPUPipeCtx *x);
@@ -155,6 +157,9 @@ OGPUPipeCSO *pipe_m_dsa_create(OGPUPipeCtx *x, const struct OGPUDsaKey *d);
 OGPUPipeCSO *pipe_m_raster_create(OGPUPipeCtx *x, const struct OGPURasterKey *r);
 OGPUPipeCSO *pipe_m_sampler_create(OGPUPipeCtx *x, const struct OGPUSamplerKey *s);
 OGPUPipeCSO *pipe_m_layout_create(OGPUPipeCtx *x, const struct OGPULayout *l);
+OGPUPipeCSO *pipe_m_blend_create2(OGPUPipeCtx *x, const struct OGPUBlendKey2 *b);
+OGPUPipeCSO *pipe_m_dsa_create2(OGPUPipeCtx *x, const struct OGPUDsaKey2 *d);
+OGPUPipeCSO *pipe_m_sampler_create2(OGPUPipeCtx *x, const struct OGPUSamplerKey2 *s);
 void  pipe_m_cso_release(OGPUPipeCtx *x, OGPUPipeCSO *o);
 void  pipe_m_bind_blend(OGPUPipeCtx *x, OGPUPipeCSO *o);
 void  pipe_m_bind_dsa(OGPUPipeCtx *x, OGPUPipeCSO *o);

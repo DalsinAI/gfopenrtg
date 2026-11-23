@@ -818,9 +818,11 @@ Tolerance everywhere it isn't 0: 8/255 a channel, with a one-pixel edge shift re
 
 ---
 
-## 7. Decisions needed
+## 7. Decisions
 
-| # | Decision | Recommendation |
+**Decided by Dale, 23 November 2026, 03:53:** "i think as recommended for now". All six stand as recommended. "For now" is his wording: any of them can be reopened, and a change is recorded here with its date.
+
+| # | Decision | Decided: as recommended |
 |---|---|---|
 | D1 | Static library first, Pipe.module later or never | Static through M9; module only if M10's RAM measurement shows it matters |
 | D2 | The pipe's shader language: TGSI only, or a path to NIR later | TGSI now (virglrenderer takes it, and both generators write it). The generator is the only code that knows, so a later change is local |
@@ -829,6 +831,7 @@ Tolerance everywhere it isn't 0: 8/255 a channel, with a one-pixel edge shift re
 | D5 | M11's margin: how close llvmpipe must be to the host cores before they go | Within 10% on the timedemos and no worse on the small-draw workload |
 | D6 | Where ACMedia's full-screen frames go: the display plane (OpenRTG) or its own path | OpenRTG's MEDIA route, so one owner presents |
 
+When each is first needed: D1 to D4 by M2, D6 by M8, D5 by M11.
 ---
 
 ## 8. Definition of done

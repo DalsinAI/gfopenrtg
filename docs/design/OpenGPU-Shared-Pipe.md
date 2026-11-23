@@ -62,7 +62,7 @@ The **pipe context** (conceptually Mesa's `pipe_context`) is the sole owner of w
 | GL.module | all of Mesa | the runtime, `ORTG_Present` |
 | OGLES3, EGL | contexts and surfaces | GL.module, OpenRTG |
 
-MiniGL's and Warp3D's virgl routes exist only as plans. They are built on the pipe from their first commit, so their own state caches, shader generators and encoders are never written.
+MiniGL's and Warp3D's virgl routes are already on main (`library/minigl/mgl_vg*.c`, `library/warp3d/w3d_vg*.c`), each with its own state cache, shader generator, resources, transport and present; `virgl_cmd.h` already shares their command writers. The pipe is extracted from them, step by step, each step proven against today's pixels: `OpenGPU-Shared-Pipe-Plan.md`.
 
 ### OpenRTG
 
@@ -117,6 +117,8 @@ Every object has one owner. A front end's texture refers to a pipe resource, whi
 
 ## 7. Order of work
 
+The detailed stages, gates, build and release plan are in `OpenGPU-Shared-Pipe-Plan.md` (M0 to M11, with the capability workstream MQ). In outline:
+
 - **Phase 0: CI enforcement,** mechanical:
   - only `library/opengpu` and the OpenRTG library may include the host headers (`acvirgl.h`, the ACRTG host header, `virglrenderer.h`) or open ACRTG;
   - only OpenRTG may export `ORTG_Present*`, and no other library exports a present;
@@ -129,7 +131,7 @@ Every object has one owner. A front end's texture refers to a pipe resource, whi
 - **Phase 4: MiniGL's virgl route on the pipe,** both emitters from the start; the pixel references start with its first scene.
 - **Phase 5: Warp3D on the pipe,** under the same references.
 - **Phase 6: `ORTG_Surface` and `ORTG_Present`,** then retained surfaces, GL.module's frames and ACMedia frames moved onto them.
-- **Phase 7: capabilities,** each front end's answers frozen, then wired to `OGPU_Query`; one `ENV:GFOpenGPU/Driver`.
+- **Phase 7: capabilities** (the plan's MQ, which runs early, right after the pipe's interface): each front end's answers frozen, then wired to `OGPU_Query`; one `ENV:GFOpenGPU/Driver`.
 - **Phase 8: the renderer elimination programme:** the measurement, then the deprecated back ends deleted on the date the decision names.
 
 ## 8. Tests and measurements

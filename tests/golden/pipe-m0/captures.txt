@@ -1,0 +1,84 @@
+# OpenGPU shared pipe, stage M0: the PC tests' pictures and counters (tests/pipe_m0.sh writes this)
+# virgl: run/usr/lib/x86_64-linux-gnu/libvirglrenderer.so.1
+counter run_3d.sh: ogpu3d emulated: 1000 random scenes with small buffers: 2460 on the GPU, 41 declined, 1175 texture uploads, 209 hits
+counter run_3d.sh: ogpu3d emulated: 2000 random scenes on the GPU path: 5120 commands on the GPU, 0 declined, 15850 triangles, 16997465 pixels, 2993 groups, 2995 dispatches
+counter run_3d.sh: ogpu3d emulated: all tests passed
+counter run_3d.sh: ogpu3d emulated: bench scenes (gpu): 18 commands on the GPU, 0 on the core, 4 texture uploads, 8 checked, 2 hits, 5760 staged rows
+counter run_3d.sh: ogpu3d emulated: golden scene 40c8f5f6 (the golden checksum)
+counter run_3d.sh: ogpu3d emulated: stream v1.7's SDL form: as the core
+counter run_minigl.sh: minigl: 65 checks, 0 failed
+counter run_minigl.sh: minigl ABI: 1039 checks, 0 failed
+counter run_minigl.sh: minigl scene: ARGB32 124d81ad, RGB565 8a7e23db
+counter run_minigl.sh: minigl_vg_bridge: 182 blocks, 62 submits (17003 words), 85 puts (9248534 bytes), 43 gets, 3 presents, 0 errors
+counter run_minigl.sh: minigl_vg_bridge: virglrenderer draws with GL on LLVMPIPE (LLVM 19.1.7, 256 bits)
+counter run_minigl.sh: minigl virgl: 81 checks, 0 failed
+counter run_minigl.sh: minigl virgl feature arrays         0 of 16384 pixels off
+counter run_minigl.sh: minigl virgl feature big            0 of 16384 pixels off
+counter run_minigl.sh: minigl virgl feature env            0 of 16384 pixels off
+counter run_minigl.sh: minigl virgl feature fog            0 of 16384 pixels off
+counter run_minigl.sh: minigl virgl feature fragment       0 of 16384 pixels off
+counter run_minigl.sh: minigl virgl feature light          0 of 16384 pixels off
+counter run_minigl.sh: minigl virgl feature multi        417 of 16384 pixels off
+counter run_minigl.sh: minigl virgl feature offset         0 of 16384 pixels off
+counter run_minigl.sh: minigl virgl feature rename       173 of 16384 pixels off
+counter run_minigl.sh: minigl virgl feature texcoord       0 of 16384 pixels off
+counter run_minigl.sh: minigl virgl scene: 1902 of 76800 pixels differ by more than 8 from the 68k route's, 1632 with a pixel's shift allowed
+counter run_w3d_conv.sh: 2000000 values: f2l 0 differ, fx 0, unit8 0, z (float) 0, z (double) 0 beyond 1 (worst 1 in 2^30)
+counter run_w3d_hlv.sh: ok   Warp3D arrays: 3000 runs (1030 lists, 976 fans, 994 strips; 2027 indexed, 709 double depths), 407073 vertices, hostlib_w3d_arrays = Warp3D's array reads (w3d_array_read) word for word
+counter run_w3d_hlv.sh: ok   Warp3D arrays: 3000 runs (1030 lists, 976 fans, 994 strips; 2027 indexed, 709 double depths), 407073 vertices, hostlib_w3d_arrays = Warp3D's array reads (w3d_array_read) word for word
+counter run_w3d_hlv.sh: ok   Warp3D culled fans and strips: 3000 cases, 89228 front triangles, in place = by index
+counter run_w3d_hlv.sh: ok   Warp3D culled fans and strips: 3000 cases, 89228 front triangles, in place = by index
+counter run_w3d_hlv.sh: ok   Warp3D vertices: 3000 primitives (1505 pointer lists), 198714 vertices, hostlib_w3d_vertices = Warp3D's convert() word for word
+counter run_w3d_hlv.sh: ok   Warp3D vertices: 3000 primitives (1505 pointer lists), 198714 vertices, hostlib_w3d_vertices = Warp3D's convert() word for word
+counter run_w3d_vg.sh: minigl_vg_bridge: 335 blocks, 306 submits (77617 words), 1246 puts (23278542 bytes), 8 gets, 269 presents, 52 errors
+counter run_w3d_vg.sh: minigl_vg_bridge: virglrenderer draws with GL on LLVMPIPE (LLVM 19.1.7, 256 bits)
+counter run_w3d_vg.sh: w3d virgl: 28 checks, 0 failed
+counter run_w3d_vg.sh: w3d virgl bench cow3d            320x240 ARGB32: pixels worst 212, mean 0.43, 1.19% over 8 (0.05% with a shift); 4x4 blocks worst  22, 0.60% over 8; 2 draws for 2306 triangles
+counter run_w3d_vg.sh: w3d virgl bench fill640          640x480 ARGB32: pixels worst 203, mean 30.16, 88.78% over 8 (57.69% with a shift); 4x4 blocks worst 161, 57.46% over 8; 2 draws for 4 triangles
+counter run_w3d_vg.sh: w3d virgl bench fill640-affine   640x480 ARGB32: pixels worst 208, mean 10.55, 61.38% over 8 (59.15% with a shift); 4x4 blocks worst  35, 8.64% over 8; 2 draws for 4 triangles
+counter run_w3d_vg.sh: w3d virgl bench fill640-gouraud  640x480 ARGB32: pixels worst   1, mean 0.33, 0.00% over 8 (0.00% with a shift); 4x4 blocks worst   1, 0.00% over 8; 2 draws for 4 triangles
+counter run_w3d_vg.sh: w3d virgl bench mgltest          320x240 RGB565: pixels worst  82, mean 6.45, 42.43% over 8 (25.95% with a shift); 4x4 blocks worst  30, 35.50% over 8; 3 draws for 16 triangles
+counter run_w3d_vg.sh: w3d virgl bench tiny             320x240 ARGB32: pixels worst   1, mean 0.00, 0.00% over 8 (0.00% with a shift); 4x4 blocks worst   0, 0.00% over 8; 2 draws for 6 triangles
+counter run_w3d_vg.sh: w3d virgl bench w3dtest          320x240 ARGB32: pixels worst 203, mean 4.46, 27.13% over 8 (19.70% with a shift); 4x4 blocks worst  26, 4.65% over 8; 2 draws for 16 triangles
+counter run_w3d_vg.sh: w3d virgl bench w3dtest-fastram  320x240 ARGB32: pixels worst 203, mean 4.46, 27.13% over 8 (19.70% with a shift); 4x4 blocks worst  26, 4.65% over 8; 2 draws for 16 triangles
+counter run_w3d_vg.sh: w3d virgl held frame: worst 2, 0 with a pixel's shift; 0 loads, 1 presents
+counter run_w3d_vg.sh: w3d virgl: host flags 0x4
+counter run_w3d_vg.sh: w3d virgl mixed 2D/3D scene (RGB565): worst 9, 709 of 76800 over 8, 58 with a pixel's shift; 1 loads, 2 presents, 0 declined, 0 refused
+counter run_w3d_vg.sh: w3d virgl mixed 2D/3D scene: worst 2, 0 of 76800 over 8, 0 with a pixel's shift; 1 loads, 2 presents, 0 declined, 0 refused
+counter run_w3d_vg.sh: w3d virgl random scenes: 54 run, 246 declined (left to the CPU), 0 refused by the host
+counter run_w3d_vg.sh: w3d virgl Z read z16+stencil : Z worst 1/1 (top 16 bits), stencil 0/0 off; colour worst 1, 0 with a shift; 0 refused
+counter run_w3d_vg.sh: w3d virgl Z read z16         : Z worst 1/1 (top 16 bits), stencil 0/0 off; colour worst 1, 0 with a shift; 0 refused
+counter run_w3d_vg.sh: w3d virgl Z read z32+stencil : Z worst 1/1 (top 16 bits), stencil 0/0 off; colour worst 1, 0 with a shift; 0 refused
+counter run_w3d_vg.sh: w3d virgl Z read z32         : Z worst 1/2 (top 16 bits), stencil 0/0 off; colour worst 1, 0 with a shift; 0 refused
+pixels run_minigl.sh/minigl-scene.ppm 88c75da7640b9aa2c63f69b1a62f3cfebcb321f5ae82304238233a55888e9fc6
+pixels run_minigl.sh/minigl-scene-virgl.ppm 6d2b826a51edb6ae66d8cfd01b867ca9a63ab5d7608dd2e4b578530c5cfc3e42
+pixels run_w3d_vg.sh/w3d-bench0-cpu.ppm c5fc4acde61219265dc5e86fc7d65fc7631263a3e43b65282be78da657fe85be
+pixels run_w3d_vg.sh/w3d-bench0-virgl.ppm a6ccb49b7641baad3b847bef5d1efaacb6ea436158efc182d0b8d08ae90a3d1b
+pixels run_w3d_vg.sh/w3d-bench1-cpu.ppm 7ef126b670b6682a2b476802864e73564e7367852a2e8db97174c2166591dae2
+pixels run_w3d_vg.sh/w3d-bench1-virgl.ppm c07d2cfb7096c81369548f2432a9d84e0e0128da2870b2067ca56e5299f3cc83
+pixels run_w3d_vg.sh/w3d-bench2-cpu.ppm 861b73918425b561c7e4d40b3a427349b05b29dd3063a78a685f2df72c3b3610
+pixels run_w3d_vg.sh/w3d-bench2-virgl.ppm 78ed0ff498567206bbadfc1a9768c18c45c920f35b3b0a9210834e06f625883f
+pixels run_w3d_vg.sh/w3d-bench3-cpu.ppm ee78c5262ba918e287614b75a36d9b95ad4cfbde41229d5d9afd67764a7dfcc7
+pixels run_w3d_vg.sh/w3d-bench3-virgl.ppm 761c7a74e6f5eb2f4b10188ece4a5840dcf724b44830d81b168538f0c2c2e565
+pixels run_w3d_vg.sh/w3d-bench4-cpu.ppm a9122207c4e285970bcfced9395c16084be473b542bc0ce1e831b436d469f55d
+pixels run_w3d_vg.sh/w3d-bench4-virgl.ppm d6891c0ddbb5f2203cfb8cbf7932e34a83f1886ab7f184f024c6fe1b0fbf59b6
+pixels run_w3d_vg.sh/w3d-bench5-cpu.ppm c5fc4acde61219265dc5e86fc7d65fc7631263a3e43b65282be78da657fe85be
+pixels run_w3d_vg.sh/w3d-bench5-virgl.ppm a6ccb49b7641baad3b847bef5d1efaacb6ea436158efc182d0b8d08ae90a3d1b
+pixels run_w3d_vg.sh/w3d-bench6-cpu.ppm 40e3b3622fae7329b52c33a41a9a2c5ab42c83fcb3c09b48af85a3739f9133cc
+pixels run_w3d_vg.sh/w3d-bench6-virgl.ppm 6640d879f0f14093b7c16ec7068ebd2887cd3fb40b01b2b948f274443d292632
+pixels run_w3d_vg.sh/w3d-bench7-cpu.ppm 76ebc9b82a8c6a0f19e2172c8a4df0bf65bf010b21732f32a569c92e43127c4b
+pixels run_w3d_vg.sh/w3d-bench7-virgl.ppm bd66b69f31a7e2886c4c15d3f10622ccbd77bd697173a2cdd8e601787980f5fe
+pixels run_w3d_vg.sh/w3d-hold-cpu.ppm 0487834f1ba034de8eab94615eefd5b856ee5967a7f35114c4209285c6f88d64
+pixels run_w3d_vg.sh/w3d-hold-virgl.ppm 3bc7f6e5242627012a18038e926134371f1b84c4cdfec4b50d73d1a257d89f67
+pixels run_w3d_vg.sh/w3d-mixed565-cpu.ppm 74b23628c7457d965cdeb7a4f0d1182e74f6f8f287d54ffb4025d5a6ee2e262c
+pixels run_w3d_vg.sh/w3d-mixed565-virgl.ppm f96aa4d4ad12339475af90bc5b0cb009d5fc68883764f18b2af3a777dab3cfb3
+pixels run_w3d_vg.sh/w3d-mixed-cpu.ppm 04d8b9534f979b9fe4aebdc555d9861c1c6e0c20396386f8b9674379e9e22a25
+pixels run_w3d_vg.sh/w3d-mixed-virgl.ppm 7bc04401f96bbaf57bb9af9a0bb700f7eee6ada606a93b9847529306d7e04d95
+pixels run_w3d_vg.sh/w3d-zread-z16-cpu.ppm 4030e9e31ad9857b2b4d5758448e94077156bac02e29b96632f0891411eb9ed4
+pixels run_w3d_vg.sh/w3d-zread-z16+stencil-cpu.ppm 4030e9e31ad9857b2b4d5758448e94077156bac02e29b96632f0891411eb9ed4
+pixels run_w3d_vg.sh/w3d-zread-z16+stencil-virgl.ppm 0ecfbcccc0c01b4c4cb72969d84a84ab59fba662427f9ed3bf34397edc341c4e
+pixels run_w3d_vg.sh/w3d-zread-z16-virgl.ppm 0ecfbcccc0c01b4c4cb72969d84a84ab59fba662427f9ed3bf34397edc341c4e
+pixels run_w3d_vg.sh/w3d-zread-z32-cpu.ppm 4030e9e31ad9857b2b4d5758448e94077156bac02e29b96632f0891411eb9ed4
+pixels run_w3d_vg.sh/w3d-zread-z32+stencil-cpu.ppm 4030e9e31ad9857b2b4d5758448e94077156bac02e29b96632f0891411eb9ed4
+pixels run_w3d_vg.sh/w3d-zread-z32+stencil-virgl.ppm 0ecfbcccc0c01b4c4cb72969d84a84ab59fba662427f9ed3bf34397edc341c4e
+pixels run_w3d_vg.sh/w3d-zread-z32-virgl.ppm 0ecfbcccc0c01b4c4cb72969d84a84ab59fba662427f9ed3bf34397edc341c4e

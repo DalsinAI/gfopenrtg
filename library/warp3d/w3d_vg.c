@@ -25,6 +25,7 @@
 #include "../../include/gfopengpu/stream3d.h"
 
 #include "../../include/gfopengpu/virgl_cmd.h"
+#include "../../include/gfopengpu/pipe.h"
 
 #define ADDR(p) ((ULONG)(p))
 
@@ -76,6 +77,8 @@ struct pipe {
 
 struct w3dvg {
     struct w3dvg_os os;
+    const struct OGPUPipeOps *pipe;     /* the shared pipe (M2: its screen and transport) */
+    OGPUPipeScreen *screen;
     ULONG ctx_id, host_flags, caps_bits;
     int gles;
     /* the block being built */
@@ -160,7 +163,7 @@ static LONG result(const ULONG *blk, ULONG at) { return (LONG)VG_GETW(blk + at +
 static int run(struct w3dvg *v, ULONG *blk, ULONG words)
 {
     v->st.blocks++;
-    return v->os.run(v->os.user, blk, words * 4);
+    return v->pipe->run(v->screen, blk, words * 4) ? -1 : 0;
 }
 
 static void block_send(struct w3dvg *v, int present);
@@ -1228,17 +1231,23 @@ static void free_all(struct w3dvg *v)
     if (v->cstage) v->os.free(v->os.user, v->cstage);
     dealloc(v, v->colour); dealloc(v, v->depth); dealloc(v, v->stage); dealloc(v, v->vbuf); dealloc(v, v->ibuf);
     dealloc(v, v->blk); dealloc(v, v->post); dealloc(v, v->cmd); dealloc(v, v->va); dealloc(v, v->ia); dealloc(v, v->text);
+    if (v->screen) v->pipe->screen_close(v->screen);
     v->os.free(v->os.user, v);
 }
 
 struct w3dvg *w3dvg_open(const struct w3dvg_os *os, struct w3dvg_info *info)
 {
     static const char name[] = "Warp3D.library";
-    struct w3dvg *v = os->alloc(os->user, sizeof *v);
-    ULONG a[4], *b, i, n, set = 2, *caps, ri;
+    const struct OGPUPipeOps *pipe = ogpu_pipe_ops(OGPU_PIPE_VERSION);
+    struct w3dvg *v;
+    struct OGPUPipeOpen o;
+    struct OGPUPipeInfo pi;
+    ULONG i;
     char *nm;
-    if (!v) return 0;
+    if (!pipe || !ogpu_pipe_xport_ready()) return 0;
+    if (!(v = os->alloc(os->user, sizeof *v))) return 0;
     v->os = *os;
+    v->pipe = pipe;
     v->ctx_id = ADDR(v);
     v->blk = alloc(v, (PRE_WORDS + BLK_SLACK + 64) * 4);
     v->post = alloc(v, POST_WORDS * 4);
@@ -1247,31 +1256,20 @@ struct w3dvg *w3dvg_open(const struct w3dvg_os *os, struct w3dvg_info *info)
     v->ia = alloc(v, IA_COUNT * 2);
     v->text = alloc(v, TEXT_BYTES);
     if (!v->blk || !v->post || !v->cmd || !v->va || !v->ia || !v->text) { free_all(v); return 0; }
-    b = v->blk;
     nm = (char *)v->post;
     for (i = 0; i < sizeof name; i++) nm[i] = name[i];
-    a[0] = 0;
-    blk_cmd(b, ACV_HELLO, 1, a);
-    a[0] = v->ctx_id; a[1] = ADDR(nm); a[2] = sizeof name - 1;
-    blk_cmd(b + 3, ACV_CTX_CREATE, 3, a);
-    a[0] = 2; a[1] = 0; a[2] = 0;
-    blk_cmd(b + 8, ACV_CAPSET_INFO, 3, a);
-    if (run(v, b, 13) || result(b, 0) != ACV_PROTOCOL || result(b, 3) != 0) { say(v, "virgl: no virgl on the host"); free_all(v); return 0; }
-    v->host_flags = VG_GETW(b + 2);
-    ri = 8;
-    if (!VG_GETW(b + ri + 3)) {
-        set = 1;
-        a[0] = 1;
-        blk_cmd(b, ACV_CAPSET_INFO, 3, a);
-        if (run(v, b, 5)) { free_all(v); return 0; }
-        ri = 0;
-    }
-    n = VG_GETW(b + ri + 4);
-    if (n > 1024) n = 1024;
-    caps = (ULONG *)v->va;
-    a[0] = set; a[1] = VG_GETW(b + ri + 3); a[2] = ADDR(caps); a[3] = n;
-    blk_cmd(b, ACV_CAPS, 4, a);
-    if (!run(v, b, 6) && result(b, 0) > 0 && (ULONG)result(b, 0) / 4 > 98) v->caps_bits = VG_GETW(&caps[98]);
+    /* HELLO, the context, the caps: the shared pipe's screen (library/pipe/pipe_screen.c), in the blocks this
+     * file sent before; no caps is no error here (caps_bits stays 0) */
+    o.size = sizeof o; o.emit_wanted = OGPU_EMIT_VIRGL;
+    o.ctx_id = v->ctx_id; o.name = nm; o.name_len = sizeof name - 1;
+    o.blk = v->blk;
+    o.caps = (ULONG *)v->va;
+    o.caps_bytes = 1024;
+    v->screen = pipe->screen_open(&o, &pi);
+    v->st.blocks += pi.blocks;
+    if (!v->screen) { say(v, "virgl: no virgl on the host"); free_all(v); return 0; }
+    v->host_flags = pi.host_flags;
+    v->caps_bits = pi.caps_bits;
     v->gles = (v->host_flags & ACV_HOST_GLES) != 0;
     v->b_blend = v->b_dsa = v->b_rs = v->b_vs = v->b_fs = v->b_ve = v->b_view = v->b_samp = 0xFFFFFFFFUL;
     v->b_sref = v->b_bconst = 0xFFFFFFFFUL;

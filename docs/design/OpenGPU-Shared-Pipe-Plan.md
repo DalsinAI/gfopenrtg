@@ -487,6 +487,7 @@ No stage both moves code and changes behaviour. Sizes: S is one PR of under 500 
 - **Freeze** the reported capabilities per front end and back end: `tests/golden/caps/`.
 - **Trace** the shader keys each test and game uses: the prebuilt list (2.4).
 - **Gate:** the captures are committed under `tests/golden/pipe-m0/` and reproduce twice in a row.
+- **Done on the PC tests, 23 November 2026:** `tests/pipe_m0.sh` runs `run_minigl.sh`, `run_w3d_vg.sh`, `run_w3d_conv.sh`, `run_w3d_hlv.sh` and `run_3d.sh` (virgl through `ACVIRGL_LIB`) and keeps the sha256 of each of their 32 pictures (both routes) and their counter lines in `tests/golden/pipe-m0/captures.txt`; `tests/pipe_m0.sh` with no argument checks against it. Two runs in a row on bigguy were identical once one line was left out: `run_3d.sh`'s `(auto)` bench, whose route choices depend on the machine's speed. **Still owed:** the lab half (MGLTest, `w3dcheck` and BlitzQuake on Instance-32, each route, 3 runs), the frozen caps (`tests/golden/caps/`) and the shader-key trace, which need the lab.
 
 ### M0.5: Architecture lockdown (S)
 
@@ -523,6 +524,7 @@ This stage fixes the **interface only**: `pipe.h` with the whole `OGPUPipeOps` t
 - **Delete:** `vg_os_run` and `vg_os_open` from `mgl_vg_os3.c`; `os_run` from `w3d_vg_os3.c`; the HELLO and caps copies in `mgl_vg_frame.c` and `w3dvg_open` (moved into the screen, and from there into gfopengpu in MQ).
 - **Gate:** M0's MiniGL and Warp3D host captures identical (pixels and counters), and a lab run of MGLTest and `w3dcheck` on the virgl route.
 - **Switch:** none needed (pure move).
+- **Done, 23 November 2026:** `include/gfopengpu/pipe.h` (the table, version 1, every member; only `screen_open`, `screen_close` and `run` filled), `library/pipe/pipe_screen.c`, `pipe_xport_os3.c`, `pipe_xport_host.c`, `build.sh` and `tests/pipe/test_screen.c` (29 checks against a pretend host: the blocks word for word, set 1, and every failure). Two changes to the sketch: `screen_open` takes a `struct OGPUPipeOpen` (the open's first block still carries the caller's first context, so the host sees the same blocks as before), and the table has `run`, the transport, which the front ends call for their own blocks until M3 to M7 move them. The pipe's memory is `AllocVec` through the transport (`ogpu_pipe_xport_alloc`). MiniGL and Warp3D open the screen and send every block through `run`; `vg_os_open`, `vg_os_run`, `vg_os_close`, Warp3D's `os_run` and the tests' two bridge clients are gone, and so are the two `host-caps` lines in `tests/ownership.debt`. Gate: `tests/pipe_m0.sh` identical; minigl.library and Warp3D.library build for the 68k.
 
 ### MQ: Capabilities (L, its own workstream)
 

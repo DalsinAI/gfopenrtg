@@ -81,6 +81,11 @@ for f in ogpu_core ogpu_dwt ogpu_3d ogpu_build ogpu_build3d; do
     "$CC" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -ffixed-a4 -fno-builtin $WARN -I"$ROOT/include" \
         -c -o "$OBJ/$f.o" "$OGPU/$f.c"
 done
+# The shared pipe's screen and transport (library/pipe/, stage M2): one copy, which both halves call (no float).
+for f in pipe_screen pipe_xport_os3; do
+    "$CC" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -ffixed-a4 -fno-builtin $WARN -I"$ROOT/include" \
+        -c -o "$OBJ/$f.o" "$ROOT/library/pipe/$f.c"
+done
 # The cores' memcpy (GCC 16 makes one for a structure copy) and the rest of
 # library/string.c, with the cores' flags: A4 stays the halves' (-ffixed-a4).
 "$CC" -m68040 -mnobitfield -O2 -fno-delete-null-pointer-checks -fomit-frame-pointer -ffixed-a4 -fno-builtin $WARN -I"$ROOT/include" \
@@ -90,6 +95,7 @@ build_half soft mglS_ "$SOFT" "$NIXDIR/libm020/libm.a" "$GCCDIR/libm020/libgcc.a
 "$CC" $SOFT $FLAGS -fno-toplevel-reorder -nostartfiles -nostdlib -o "$OUT/minigl.library" \
     "$HERE/mgl_lib.c" $(for f in $HOT; do echo "$OBJ/fpu/ren/$f.o"; done) $(for f in $HOT; do echo "$OBJ/soft/ren/$f.o"; done) \
     "$OBJ/ogpu_core.o" "$OBJ/ogpu_dwt.o" "$OBJ/ogpu_3d.o" "$OBJ/ogpu_build.o" "$OBJ/ogpu_build3d.o" "$OBJ/string.o" \
+    "$OBJ/pipe_screen.o" "$OBJ/pipe_xport_os3.o" \
     "$OBJ"/fpu/ren/lib*.a "$OBJ"/soft/ren/lib*.a -lgcc
 und=$("$NM" -u "$OUT/minigl.library" || true)
 [ -z "$und" ] || { echo "minigl.library: undefined $und" >&2; exit 1; }

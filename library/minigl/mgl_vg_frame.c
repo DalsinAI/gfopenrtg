@@ -233,41 +233,35 @@ static void free_vg(GLcontext c)
     c->vg = 0;
 }
 
-/* HELLO, the context, the caps: 0 when the host has no virgl for us. */
+/* HELLO, the context, the caps: 0 when the host has no virgl for us. The shared pipe's screen does it
+ * (library/pipe/pipe_screen.c), in the blocks this file sent before. */
 static int hello(GLcontext c)
 {
     struct mgl_vg *v = c->vg;
     static const char name[] = "minigl.library";
-    ULONG a[4], *b = v->blk, rh, rc, ri, rcap, n, set = 2, i;
-    ULONG *caps;
+    struct OGPUPipeOpen o;
+    struct OGPUPipeInfo info;
     char *nm = (char *)(v->post);       /* the name, in memory the host reaches */
+    ULONG i;
     for (i = 0; i < sizeof name; i++) nm[i] = name[i];
-    a[0] = 0;
-    vg_blk_cmd(b, ACV_HELLO, 1, a); rh = 0;
-    a[0] = v->ctx_id; a[1] = ADDR(nm); a[2] = sizeof name - 1;
-    vg_blk_cmd(b + 3, ACV_CTX_CREATE, 3, a); rc = 3;
-    a[0] = 2; a[1] = 0; a[2] = 0;
-    vg_blk_cmd(b + 8, ACV_CAPSET_INFO, 3, a); ri = 8;
-    if (vg_run(c, b, 13)) { mgl_log("virgl: the first block didn't run"); return 0; }
-    if (vg_result(b, rh) != ACV_PROTOCOL) { mgl_log("virgl: the host speaks another ACVirgl (%ld)", (long)vg_result(b, rh)); return 0; }
-    if (vg_result(b, rc) != 0) { mgl_log("virgl: the host refused a context (%ld)", (long)vg_result(b, rc)); return 0; }
-    v->host_flags = vg_word(b, rh + 2);
-    if (!vg_word(b, ri + 3)) {          /* no caps set 2: set 1 */
-        set = 1;
-        a[0] = 1;
-        vg_blk_cmd(b, ACV_CAPSET_INFO, 3, a);
-        if (vg_run(c, b, 5)) return 0;
-        ri = 0;
+    o.size = sizeof o; o.emit_wanted = OGPU_EMIT_VIRGL;
+    o.ctx_id = v->ctx_id; o.name = nm; o.name_len = sizeof name - 1;
+    o.blk = v->blk;
+    o.caps = (ULONG *)v->va;            /* the arena isn't in use yet */
+    o.caps_bytes = VG_CAPS_WORDS * 4;
+    v->screen = v->pipe->screen_open(&o, &info);
+    v->blocks += info.blocks;
+    switch (info.status) {
+    case OGPU_PIPE_OPEN_OK: break;
+    case OGPU_PIPE_OPEN_NO_TRANSPORT: mgl_log("virgl: gfopengpu.library has no driver that carries virgl"); return 0;
+    case OGPU_PIPE_OPEN_NO_RUN: mgl_log("virgl: the first block didn't run"); return 0;
+    case OGPU_PIPE_OPEN_PROTOCOL: mgl_log("virgl: the host speaks another ACVirgl (%ld)", (long)info.detail); return 0;
+    case OGPU_PIPE_OPEN_NO_CONTEXT: mgl_log("virgl: the host refused a context (%ld)", (long)info.detail); return 0;
+    default: mgl_log("virgl: no caps"); return 0;
     }
-    n = vg_word(b, ri + 4);
-    if (n > VG_CAPS_WORDS * 4) n = VG_CAPS_WORDS * 4;
-    caps = (ULONG *)v->va;              /* the arena isn't in use yet */
-    a[0] = set; a[1] = vg_word(b, ri + 3); a[2] = ADDR(caps); a[3] = n;
-    vg_blk_cmd(b, ACV_CAPS, 4, a); rcap = 0;
-    if (vg_run(c, b, 6) || vg_result(b, rcap) <= 0) { mgl_log("virgl: no caps"); return 0; }
-    n = (ULONG)vg_result(b, rcap) / 4;  /* the host gives them in our order, word by word */
-    v->prim_mask = n > 72 ? GETW(&caps[72]) : 0x7F;
-    v->caps_bits = n > 98 ? GETW(&caps[98]) : 0;
+    v->host_flags = info.host_flags;
+    v->prim_mask = info.prim_mask;
+    v->caps_bits = info.caps_bits;
     v->gles = (v->host_flags & ACV_HOST_GLES) != 0;
     return 1;
 }
@@ -276,8 +270,10 @@ int mgl_vg_open(GLcontext c)
 {
     struct mgl_vg *v;
     ULONG zfmt;
-    if (!vg_os_open(c)) return 0;
+    const struct OGPUPipeOps *pipe = ogpu_pipe_ops(OGPU_PIPE_VERSION);
+    if (!pipe || !ogpu_pipe_xport_ready()) { mgl_log("virgl: no gfopengpu.library, or no driver of it carries virgl"); return 0; }
     if (!(v = c->vg = mgl_alloc(sizeof *v))) return 0;
+    v->pipe = pipe;
     v->ctx_id = ADDR(v);
     v->cpre = PRE_WORDS; v->cpost = POST_WORDS;
     v->blk = mgl_alloc((PRE_WORDS + BLK_SLACK) * 4);
@@ -286,7 +282,11 @@ int mgl_vg_open(GLcontext c)
     /* the arenas' memory first (hello reads the caps into it); their buffers after */
     v->va = mgl_alloc(VA_BYTES);
     if (!v->va) { free_vg(c); return 0; }
-    if (!hello(c)) { vg_os_close(c); free_vg(c); return 0; }
+    if (!hello(c)) {
+        if (v->screen) v->pipe->screen_close(v->screen);
+        free_vg(c);
+        return 0;
+    }
     mgl_free(v->va); v->va = 0;
     if (!arenas(c, VA_BYTES, IA_COUNT, CMD_WORDS)) goto fail;
     /* colour and depth, at the drawable's size; their surfaces; the framebuffer */
@@ -331,7 +331,7 @@ void mgl_vg_close(GLcontext c)
     a[0] = v->ctx_id;
     vg_blk_cmd(v->blk, ACV_CTX_DESTROY, 1, a);
     vg_run(c, v->blk, VG_BLK_WORDS(1));
-    vg_os_close(c);
+    v->pipe->screen_close(v->screen);
     free_vg(c);
 }
 

@@ -17,6 +17,11 @@
 # across the two float ABIs. mgl_lib.c chooses one table at the first open
 # (AttnFlags; ENV:MINIGL_FORCE_SOFT). It keeps a4 for the programs whose
 # functions it calls (-ffixed-a4: small-data programs).
+# A third half is the wrapper over GL.module (wrap/, mglW_, mgl_table_wrap):
+# MiniGL's own files that aren't its renderer (displays, choices, GLU, GLUT),
+# built again with -DMGLW for the FPU, with wrap/'s files and the table and
+# thunks wrap/gen_wrap.py makes from the spec. mgl_lib.c takes it when the
+# machine has an FPU and GL.module (ENV:MiniGL/WrapOld=1: the old renderer).
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
@@ -50,10 +55,16 @@ build_half() {
     half=$1 pre=$2 cpu=$3; shift 3
     mkdir -p "$OBJ/$half/ren"
     for f in $HOT; do
-        "$CC" $cpu $FLAGS -fno-common -c -o "$OBJ/$half/$f.o" "$HERE/$f.c"
+        case $f in
+        mglw_table) "$CC" $cpu $FLAGS -fno-common -I"$HERE/wrap" -c -o "$OBJ/$half/$f.o" "$OBJ/wrapgen/$f.c" ;;
+        mglw_thunks) "$CC" $cpu -c -o "$OBJ/$half/$f.o" "$OBJ/wrapgen/$f.s" ;;
+        mglw_call) "$CC" $cpu -c -o "$OBJ/$half/$f.o" "$HERE/wrap/$f.s" ;;
+        mglw_*) "$CC" $cpu $FLAGS -fno-common -I"$OBJ/wrapgen" -c -o "$OBJ/$half/$f.o" "$HERE/wrap/$f.c" ;;
+        *) "$CC" $cpu $FLAGS -fno-common -c -o "$OBJ/$half/$f.o" "$HERE/$f.c" ;;
+        esac
     done
-    "$NM" -g --defined-only "$OBJ/$half"/mgl_*.o "$@" 2>/dev/null | awk -v p="$pre" -v h="$half" \
-        'NF == 3 && !seen[$3]++ { s = $3; if (s == "_mgl_table") print s, "_mgl_table_" h; else print s, "_" p substr(s, 2) }' > "$OBJ/$half/syms"
+    "$NM" -g --defined-only "$OBJ/$half"/mgl*.o "$@" 2>/dev/null | awk -v p="$pre" -v h="$half" \
+        'NF == 3 && !seen[$3]++ { s = $3; if (s == "_mgl_table" || s == "_mglw_table") print s, "_mgl_table_" h; else print s, "_" p substr(s, 2) }' > "$OBJ/$half/syms"
     for f in $HOT; do
         "$OBJCOPY" --redefine-syms="$OBJ/$half/syms" "$OBJ/$half/$f.o" "$OBJ/$half/ren/$f.o"
     done
@@ -92,11 +103,22 @@ done
     -c -o "$OBJ/string.o" "$ROOT/library/string.c"
 build_half fpu mglF_ "$FPU" "$GCCDIR/libm020/libm881/libgcc.a"
 build_half soft mglS_ "$SOFT" "$NIXDIR/libm020/libm.a" "$GCCDIR/libm020/libgcc.a"
+# The wrapper: its table, thunks and slots from the spec, then its half.
+mkdir -p "$OBJ/wrapgen"
+python3 "$HERE/wrap/gen_wrap.py" "$OBJ/wrapgen"
+BOTH=$HOT
+WRAP="mgl_math mgl_unpack mgl_glu mgl_glut mgl_display mgl_choose mglw_table mglw_thunks mglw_call mglw_session mglw_seam mglw_gl"
+HOT=$WRAP
+FLAGS="$FLAGS -DMGLW -I$OBJ/wrapgen"
+build_half wrap mglW_ "$FPU" "$GCCDIR/libm020/libm881/libgcc.a"
+FLAGS=${FLAGS% -DMGLW*}
+HOT=$BOTH
 "$CC" $SOFT $FLAGS -fno-toplevel-reorder -nostartfiles -nostdlib -o "$OUT/minigl.library" \
     "$HERE/mgl_lib.c" $(for f in $HOT; do echo "$OBJ/fpu/ren/$f.o"; done) $(for f in $HOT; do echo "$OBJ/soft/ren/$f.o"; done) \
+    $(for f in $WRAP; do echo "$OBJ/wrap/ren/$f.o"; done) \
     "$OBJ/ogpu_core.o" "$OBJ/ogpu_dwt.o" "$OBJ/ogpu_3d.o" "$OBJ/ogpu_build.o" "$OBJ/ogpu_build3d.o" "$OBJ/string.o" \
     "$OBJ/pipe_screen.o" "$OBJ/pipe_block.o" "$OBJ/pipe_res.o" "$OBJ/pipe_arena.o" "$OBJ/pipe_state.o" "$OBJ/pipe_ff.o" "$OBJ/pipe_xport_os3.o" \
-    "$OBJ"/fpu/ren/lib*.a "$OBJ"/soft/ren/lib*.a -lgcc
+    "$OBJ"/fpu/ren/lib*.a "$OBJ"/soft/ren/lib*.a "$OBJ"/wrap/ren/lib*.a -lgcc
 und=$("$NM" -u "$OUT/minigl.library" || true)
 [ -z "$und" ] || { echo "minigl.library: undefined $und" >&2; exit 1; }
 echo "$OUT/minigl.library ($(wc -c < "$OUT/minigl.library") bytes)"

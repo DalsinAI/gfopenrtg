@@ -19,6 +19,7 @@
  * Not carried over from MiniGL's own renderer: a palette changed after its textures were loaded doesn't reach
  * them (the indices aren't kept), and MGL_UBYTE_ARGB colour arrays are refused (GL_INVALID_ENUM). */
 #include <exec/types.h>
+#include <proto/dos.h>
 
 #include "mglw_session.h"
 
@@ -311,3 +312,87 @@ void GLColorTable(GLcontext c, GLenum target, GLenum internalformat, GLint width
         pal[i] = ((ULONG)rgba[3] << 24) | ((ULONG)rgba[0] << 16) | ((ULONG)rgba[1] << 8) | rgba[2];
     }
 }
+
+/* ---- GLU's two matrices, and the mgl* calls that were the renderer's ------------------------- */
+
+/* gluPerspective and gluLookAt (current context: they take none): the matrix made here and multiplied in, so no
+ * double crosses to the module. */
+void GLUPerspective(GLfloat fovy, GLfloat aspect, GLfloat znear, GLfloat zfar)
+{
+    GLcontext c = mgl_current;
+    float t, m[16];
+    int i;
+    if (!c) return;
+    t = mgl_tan(fovy * (MGL_PI / 360.0f));
+    if (t == 0.0f || aspect == 0.0f || znear == zfar) return;
+    for (i = 0; i < 16; i++) m[i] = 0.0f;
+    m[0] = 1.0f / (t * aspect);
+    m[5] = 1.0f / t;
+    m[10] = (zfar + znear) / (znear - zfar);
+    m[11] = -1.0f;
+    m[14] = 2.0f * zfar * znear / (znear - zfar);
+    CALL(c, glMultMatrixf, 1, (ULONG)m);
+}
+
+void GLULookAt(GLfloat ex, GLfloat ey, GLfloat ez, GLfloat cx, GLfloat cy, GLfloat cz, GLfloat ux, GLfloat uy, GLfloat uz)
+{
+    GLcontext c = mgl_current;
+    float f[3], s[3], u[3], m[16], l;
+    if (!c) return;
+    f[0] = cx - ex; f[1] = cy - ey; f[2] = cz - ez;
+    l = mgl_rsqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+    f[0] *= l; f[1] *= l; f[2] *= l;
+    s[0] = f[1] * uz - f[2] * uy; s[1] = f[2] * ux - f[0] * uz; s[2] = f[0] * uy - f[1] * ux;
+    l = mgl_rsqrt(s[0] * s[0] + s[1] * s[1] + s[2] * s[2]);
+    s[0] *= l; s[1] *= l; s[2] *= l;
+    u[0] = s[1] * f[2] - s[2] * f[1]; u[1] = s[2] * f[0] - s[0] * f[2]; u[2] = s[0] * f[1] - s[1] * f[0];
+    m[0] = s[0]; m[4] = s[1]; m[8] = s[2];
+    m[1] = u[0]; m[5] = u[1]; m[9] = u[2];
+    m[2] = -f[0]; m[6] = -f[1]; m[10] = -f[2];
+    m[3] = m[7] = m[11] = 0.0f;
+    m[12] = -(s[0] * ex + s[1] * ey + s[2] * ez);
+    m[13] = -(u[0] * ex + u[1] * ey + u[2] * ez);
+    m[14] = f[0] * ex + f[1] * ey + f[2] * ez;
+    m[15] = 1.0f;
+    CALL(c, glMultMatrixf, 1, (ULONG)m);
+}
+
+void MGLSetState(GLcontext c, GLenum cap, GLboolean state)
+{
+    if (state) GLEnable(c, cap);
+    else GLDisable(c, cap);
+}
+
+void MGLSetZOffset(GLcontext c, GLfloat offset)
+{
+    c->zoffset = offset;
+    zoffset(c);
+}
+
+/* The module has its own rule for small triangles: kept, and not used. */
+void MGLMinTriArea(GLcontext c, GLfloat area) { c->min_tri_area = area; }
+
+/* The module doesn't say what its textures take. */
+void MGLTexMemStat(GLcontext c, GLint *cur, GLint *peak)
+{
+    (void)c;
+    if (cur) *cur = 0;
+    if (peak) *peak = 0;
+}
+
+/* The matrix on top of a stack, in thousandths. The ones beneath it are the module's own: mglPrintMatrixStack
+ * prints the top one too. */
+void MGLPrintMatrix(GLcontext c, int mode)
+{
+    float m[16];
+    int r, k;
+    for (k = 0; k < 16; k++) m[k] = 0.0f;
+    CALL(c, glGetFloatv, 2, (ULONG)(mode == GL_PROJECTION ? 0x0BA7 : mode == GL_TEXTURE ? 0x0BA8 : 0x0BA6), (ULONG)m);
+    for (r = 0; r < 4; r++) {
+        LONG v[4];
+        for (k = 0; k < 4; k++) v[k] = mgl_f2l(m[k * 4 + r] * 1000.0f);
+        Printf((STRPTR)"  %8ld %8ld %8ld %8ld  (x1000)\n", v[0], v[1], v[2], v[3]);
+    }
+}
+
+void MGLPrintMatrixStack(GLcontext c, int mode) { MGLPrintMatrix(c, mode); }

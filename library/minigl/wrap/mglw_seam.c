@@ -195,6 +195,7 @@ void mgl_vg_writeback(GLcontext c, const ULONG *rgba)
 /* A new context: OpenGL's own defaults are the module's; MiniGL's clear colour is opaque white (spec 9.2). */
 void mgl_init_state(GLcontext c)
 {
+    c->unpack_align = c->pack_align = 4;
     current(c);
     mglw_invoke(c->s, GL(c, glClearColor), 4, FL(1.0f), FL(1.0f), FL(1.0f), FL(1.0f));
     mglw_invoke(c->s, GL(c, glViewport), 4, 0, 0, (ULONG)c->width, (ULONG)c->height);

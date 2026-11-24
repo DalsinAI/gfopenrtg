@@ -33,6 +33,11 @@ if [ "$rc" -ne 0 ]; then
 fi
 cp "$B/SDL3.module" "$B/libSDL3.a" "$OUT/"
 mkdir -p "$OUT/include" && cp -R "$B/include/SDL3" "$OUT/include/"
+# With TARGETS=... tests (build-amiga-tests.sh): the test programs, for a lab.
+if [ -d "$B/tests/sdl3" ]; then
+    mkdir -p "$OUT/tests"
+    for t in "$B"/tests/sdl3/*; do [ -f "$t" ] && cp "$t" "$OUT/tests/"; done
+fi
 rm -rf "$B"
 tail -n 12 "$LOG"
 echo "warnings: $(grep -c 'warning:' "$LOG" || true)"

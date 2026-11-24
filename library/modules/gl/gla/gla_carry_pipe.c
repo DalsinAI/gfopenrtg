@@ -14,13 +14,13 @@
  * ACV_SUBMIT among the pre-commands) and the PUT goes after it, in the same block; a create goes ahead of the
  * streams (nothing made earlier can name it) and an unref after them all.
  *
- * When a block goes: as gla_virgl.c's batching sent it (9 November 2026), so a frame is the same blocks as before:
+ * When a block goes: as the winsys of before the pipe sent it (9 November 2026), so a frame is the same blocks as before:
  *   - a GET, a fence waited for, a frame's present (gla_carry_flush), the context's end;
  *   - a PUT too big to copy (over Q_COPY, or no room left in the arena): read where it is, sent at once with what
  *     is queued before it, so no resource is ever busy when a call returns;
  *   - the caps of one block: Q_CMDS commands or Q_BYTES of data;
  *   - unbatched (GLBatch 0, or the runtime's ACV_HOST_NO_BATCH): after every command.
- * Blocks are waited for as they are sent (the pipe's transport); gla_virgl.c's pipelining, never on by default, is
+ * Blocks are waited for as they are sent (the pipe's transport); the old winsys's pipelining, never on by default, is
  * not carried over. */
 #include <exec/types.h>
 #include "gfopengpu/pipe.h"
@@ -239,7 +239,7 @@ int gla_carry_put(struct gla_carry *c, struct gla_carry_res *r, const struct gla
     if (rc) { looked(c); return -1; }
     if (!c->batch || !copied) {
         /* read where it is: sent now, with what is queued before it. Left queued, its resource would be busy, and
-         * Mesa then gives a buffer it rewrites whole a new resource rather than waiting (gla_virgl.c, 9 November) */
+         * Mesa then gives a buffer it rewrites whole a new resource rather than waiting (9 November) */
         c->ncmds++;
         if (send(c)) return -1;
         return !c->batch && c->ops->errors(c->ctx) ? -1 : 0;

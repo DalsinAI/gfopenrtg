@@ -2,8 +2,8 @@
  * SPDX-License-Identifier: MIT
  *
  * Stage M5's differential test (docs/design/OpenGPU-Shared-Pipe-Plan.md): the shared pipe's one fixed-function
- * generator (library/pipe/pipe_ff.c) against the two it replaces, minigl.library's mgl_vg_shader.c and
- * Warp3D.library's w3d_vg_shader.c. For every key enumerated, the text must be the same, byte for byte: then the
+ * generator (library/pipe/pipe_ff.c) against the two it replaced, minigl.library's mgl_vg_shader.c and
+ * Warp3D.library's w3d_vg_shader.c (kept as references in tests/pipe/ref/). For every key enumerated, the text must be the same, byte for byte: then the
  * host draws the same, and no draw is needed to show it.
  *   MiniGL: every fragment key; vertex keys exhaustively over the features that change the text's shape (colour
  *   order, units, matrices, texgen modes, lights 0 to 8 with every spot mask for up to 3, colour material modes,
@@ -20,6 +20,10 @@
 #include "test_ff_w3d.h"
 
 ULONG pipe_ff_text(const struct OGPUFFKey *k, int fragment, char *buf, ULONG cap);
+
+/* the reference generator (tests/pipe/ref/mgl_vg_shader.c): a text's length with the closing 0 */
+ULONG vg_vs_text(ULONG key, ULONG spots, char *buf, ULONG cap);   /* spots: which lights are spots */
+ULONG vg_fs_text(ULONG key, char *buf, ULONG cap);
 
 /* mgl_vg_state.c's, which mgl_vg_shader.c calls (that file brings the whole state code with it) */
 int vg_vs_consts(ULONG key)

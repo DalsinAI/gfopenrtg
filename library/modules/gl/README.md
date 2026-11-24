@@ -11,8 +11,6 @@ drivers:
   (`library/pipe`, through `gla/gla_carry_pipe.c`), which makes the ACVirgl
   request blocks (`include/gfopengpu/virgl.h`) as it does for
   minigl.library and Warp3D.library. It gives GL 4.3 and GLES 3.1.
-  `ENV:GFOpenGPU/GLPipeOld` set to `1` takes the winsys of before
-  (`gla/gla_virgl.c`, its own blocks), for one release.
 - **softpipe, on the 68k.** Used on every other Amiga, and wherever
   `OGPU_Query(OGPU_OP_VIRGL)` doesn't answer "full". It gives GL 3.3 and
   GLES 3.1.
@@ -124,7 +122,7 @@ gfopengpu.library's `OGPU_ModuleOpen` (`include/gfopengpu/module.h`):
   through what it gives set A4 too.
 - Each program has a virgl context of its own: the context id and the
   resource handles are the addresses of the program's own winsys and
-  resources (`gla/gla_virgl.c`). They were 1 and a count from 1 for every
+  resources (`gla/gla_virgl_pipe.c`). They were 1 and a count from 1 for every
   program, so two GL programs on virgl at once shared one context, and
   their resources clashed.
 - `tools/baserel_check.py` checks GL.module reaches its data only through

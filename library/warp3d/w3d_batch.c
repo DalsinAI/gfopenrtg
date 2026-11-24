@@ -20,12 +20,12 @@
  * A batch carries all the state it draws with, as GFOpenGPU's back ends keep
  * nothing between batches.
  *
- * Stage M7 part 2 of docs/design/OpenGPU-Shared-Pipe-Plan.md: on the virgl route the draw calls are calls to the
- * route (w3dvg_clip, w3dvg_triangles ...), which makes the shared pipe's calls from them; no batch is recorded
- * and read back (x->live). Only the vertices are kept, in the data area, until the batch ends. The drawing area's
- * bitmap is locked only around a send that reads or writes it (w3d_area_lock, asked for by the route), never
- * between two of the program's calls. With ENV:Warp3D/PipeOld=1 (one release) the route is the batch reader it
- * was, and the batch is recorded as on the other routes. */
+ * On the virgl route (docs/design/OpenGPU-Shared-Pipe-Plan.md, stage M7) the draw calls are calls to the route
+ * (w3dvg_clip, w3dvg_triangles ...), which makes the shared pipe's calls from them; no batch is recorded
+ * (x->live). Only the vertices are kept, in the data area, until the batch ends. The drawing area's bitmap is
+ * locked only around a send that reads or writes it (w3d_area_lock, asked for by the route), never between two of
+ * the program's calls. A drawing area the host can't take (not 32-bit ARGB or 16-bit 565) is drawn by the 3D core
+ * from a recorded batch, as on the CPU route. */
 #include <exec/memory.h>
 #include <graphics/rastport.h>
 #include <cybergraphx/cybergraphics.h>
@@ -129,6 +129,7 @@ int w3d_open_area(struct w3dctx *x, struct BitMap *bm, W3D_Bitmap *wbm, int yoff
 {
     W3D_Context *c = x->ctx;
     ULONG fmt;
+    ULONG was = (ULONG)c->drawregion + (ULONG)c->yoffset;   /* the area as the route knows it (live_start) */
     w3d_sync(x);                            /* the frame into the old area first */
     w3d_close_area(x);
     c->yoffset = yoffset;
@@ -155,6 +156,14 @@ int w3d_open_area(struct w3dctx *x, struct BitMap *bm, W3D_Bitmap *wbm, int yoff
     c->destalpha = (fmt & (W3D_FMT_A8R8G8B8 | W3D_FMT_A8B8G8R8 | W3D_FMT_R8G8B8A8 | W3D_FMT_B8G8R8A8)) ? W3D_TRUE : W3D_FALSE;
     x->direct = fmt == W3D_FMT_A8R8G8B8 || fmt == W3D_FMT_R5G6B5;
     x->fmt = fmt == W3D_FMT_R5G6B5 ? OGPU_FMT_RGB565 : OGPU_FMT_ARGB32;
+    /* w3d_sync above put the old area's frame into it. Where that area couldn't be locked the host still holds the
+     * frame, and it is that area's: an empty present would put it into this one (the route loads the new area's
+     * pixels only before a draw). So it is let go of when the area is another one, or one the route can't draw
+     * into. Nothing else leaves the route with a frame held: stopping the route (w3d_vg_stop) clears it too. */
+    if (x->vg_hold && (!x->direct || was != (ULONG)c->drawregion + (ULONG)c->yoffset)) {
+        x->vg_hold = 0;
+        w3d_trace("virgl: a held frame dropped (the drawing area changed)");
+    }
     if (!x->direct) {
         x->offbpr = (ULONG)c->width * 4;
         x->off = w3d_alloc(x->offbpr * (ULONG)c->height);
@@ -221,50 +230,26 @@ static void unlock_area(struct w3dctx *x)
     }
 }
 
-/* The batch on the virgl route; 0 when it ran there. A batch the route
- * can't run (a drawing area in a format the host isn't given, the host
- * failing) goes to the 3D core, after the host's Z is in memory. */
-static int vg_flush(struct w3dctx *x, UBYTE *stream, long words, int present)
-{
-    LONG e;
-    if (!x->vg || !x->direct) return -1;
-    e = w3dvg_run(x->vg, stream, words, (ULONG)x->vmem, x->s3.vused, present);
-    x->vg_hold = !present;
-    if (!e) return 0;
-    if (e > 0) {                            /* drawn, but not all of it */
-        x->vg_errors += (ULONG)e;
-        w3d_trace("virgl: %ld commands not drawn (%ld so far)", (long)e, (long)x->vg_errors);
-        return 0;
-    }
-    /* the block didn't run: the CPU from here on */
-    w3d_trace("virgl: the host failed a batch; the CPU draws from here");
-    x->vg_errors++;
-    w3dvg_read_z(x->vg);
-    w3d_vg_stop(x);
-    x->route = ROUTE_CPU;
-    return -1;
-}
-
 /* The lock for the route's sends (w3dvg_os.area_lock): held from here to w3d_area_unlock, which the route calls
  * once the block has run. */
 int w3d_area_lock(struct w3dctx *x, ULONG *address, ULONG *bpr)
 {
-    if (!x->held && !lock_area(x)) return 0;    /* a recorded batch: flush() has it already */
+    if (!lock_area(x)) return 0;
     *address = (ULONG)x->base;
     *bpr = x->bpr;
     return 1;
 }
 
-void w3d_area_unlock(struct w3dctx *x) { if (!x->held) unlock_area(x); }
+void w3d_area_unlock(struct w3dctx *x) { unlock_area(x); }
 
-/* The draws of a new batch go straight to the route: the graphics card draws them, into an area it can take, and
- * the route isn't the old batch reader. Decided when a batch starts; it holds until that batch has gone. */
+/* The draws of a new batch go straight to the route: the graphics card draws them, into an area it can take.
+ * Decided when a batch starts; it holds until that batch has gone. */
 static int live_now(struct w3dctx *x)
 {
-    return x->route == ROUTE_VIRGL && x->vg && x->direct && !W3DBase->pipe_old;
+    return x->route == ROUTE_VIRGL && x->vg && x->direct;
 }
 
-/* What a recorded batch starts with, as calls: the drawing area (which one; its memory is asked for when a send
+/* What a batch starts with, as calls: the drawing area (which one; its memory is asked for when a send
  * needs it) and the depth and stencil buffers. */
 static void live_start(struct w3dctx *x, int data)
 {
@@ -315,19 +300,7 @@ static ULONG flush(struct w3dctx *x, int present)
     UBYTE *stream;
     ULONG r = W3D_SUCCESS;
     if (x->live || (!x->s3.body && live_now(x))) return flush_live(x, present);
-    if (!x->s3.body) {
-        if (present && x->vg_hold && x->vg && lock_area(x)) {
-            /* nothing new, but the host's frame isn't in the area yet: SURFACE and TARGET alone */
-            area.address = (unsigned long)x->base; area.bpr = x->bpr; area.w = c->width; area.h = c->height; area.format = x->fmt;
-            words = x->s3o->finish(&x->s3, &area, &stream);
-            x->held = 1;
-            w3dvg_run(x->vg, stream, words, 0, 0, 1);
-            x->held = 0;
-            x->vg_hold = 0;
-            unlock_area(x);
-        }
-        return W3D_SUCCESS;
-    }
+    if (!x->s3.body) return W3D_SUCCESS;
     w3d_trace("flush %ld words %ld bytes", (long)x->s3.b.words, (long)x->s3.vused);
     x->sent_tex = 0;
     if (x->s3.b.overflow) r = W3D_QUEUEFAILED;
@@ -335,10 +308,7 @@ static ULONG flush(struct w3dctx *x, int present)
     /* SURFACE and TARGET in front of the commands */
     area.address = (unsigned long)x->base; area.bpr = x->bpr; area.w = c->width; area.h = c->height; area.format = x->fmt;
     words = x->s3o->finish(&x->s3, &area, &stream);
-    x->held = 1;
-    if (x->route == ROUTE_VIRGL && !vg_flush(x, stream, words, present)) {
-        /* drawn on the host */
-    } else if (x->route == ROUTE_GPU && OpenGPUBase) {
+    if (x->route == ROUTE_GPU && OpenGPUBase) {
         ULONG fence = 0;
         LONG e = OGPU_Submit(stream, (ULONG)words, &fence);
         if (e == OGPU_OK) e = OGPU_Wait(fence);
@@ -354,7 +324,6 @@ static ULONG flush(struct w3dctx *x, int present)
         ogpu3d_run(&x->d3, stream, words);
         if (x->vg) w3dvg_stale(x->vg);      /* the area and Z changed behind the host */
     }
-    x->held = 0;
     unlock_area(x);
     x->s3o->reset(&x->s3);
     return r;

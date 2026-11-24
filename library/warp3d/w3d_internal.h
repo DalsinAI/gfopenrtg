@@ -55,7 +55,6 @@ struct W3DBase {
     /* Speed against looks, as Wazp3D offered them (ENV:Warp3D/Fog, Perspective,
      * Filtering, Lighting: "0" turns one off; all on by default). */
     int no_fog, no_persp, no_filter, no_light;
-    int pipe_old;                       /* ENV:Warp3D/PipeOld=1: the virgl route as before the shared pipe (M6), one release */
     long trace;                                 /* ENV:Warp3D/Trace n: the first n trace lines to the serial port */
     int quality;                                /* ENV:Warp3D/Perspective: 0 per 8 pixels (default) */
     int hl_arrays;                              /* hostlib_w3d_arrays runs as host code here (hostlib_probe): 1, no: 0 */
@@ -142,7 +141,6 @@ struct w3dctx {
     int vg_hold;                                /* the host's frame is newer than the drawing area's (not presented yet) */
     int live;                                   /* this batch's draws go straight to the route (stage M7 part 2): only
                                                  * its vertices are kept, in the data area; nothing is recorded */
-    int held;                                   /* flush() holds the drawing area: the route's lock calls take nothing */
     ULONG vg_errors;                            /* commands the host refused or the route left out */
     /* the 3D core, for ROUTE_CPU */
     struct ogpu_core core;

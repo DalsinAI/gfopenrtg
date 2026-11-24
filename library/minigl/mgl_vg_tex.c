@@ -116,8 +116,8 @@ ULONG vg_tex_view(GLcontext c, struct mgl_tex *t)
 ULONG vg_tex_sampler(GLcontext c, struct mgl_tex *t)
 {
     struct mgl_vg *v = c->vg;
-    ULONG key[2], s0, h, *p;
-    int i, slot = -1, mip = t->vg && t->vg->levels > 1 && !c->no_mip && !mgl_prefs.no_mip;
+    ULONG key[2], s0;
+    int mip = t->vg && t->vg->levels > 1 && !c->no_mip && !mgl_prefs.no_mip;
     ULONG min = t->min == GL_NEAREST || t->min == GL_NEAREST_MIPMAP_NEAREST || t->min == GL_NEAREST_MIPMAP_LINEAR ? VG_FILTER_NEAREST : VG_FILTER_LINEAR;
     ULONG mipf = !mip || t->min == GL_NEAREST || t->min == GL_LINEAR ? VG_MIP_NONE
                : t->min == GL_NEAREST_MIPMAP_NEAREST || t->min == GL_LINEAR_MIPMAP_NEAREST ? VG_MIP_NEAREST : VG_MIP_LINEAR;
@@ -128,26 +128,13 @@ ULONG vg_tex_sampler(GLcontext c, struct mgl_tex *t)
        | (ULONG)VG_WRAP_CLAMP_TO_EDGE << 6 | min << 9 | mipf << 11 | mag << 13;
     key[0] = s0;
     key[1] = (ULONG)(t->vg ? t->vg->levels : 1);
-    if (v->px) {                        /* the pipe's sampler state for the key */
+    {                                   /* the pipe's sampler state for the key */
         struct OGPUSamplerKey k;
         OGPUPipeCSO *o;
         k.s0 = key[0]; k.levels = key[1];
         VGP(c, o = v->pipe->sampler_create(v->px, &k));
         return v->pipe->cso_handle(o);
     }
-    for (i = 0; i < v->nsamp; i++) if (v->samp_key[i][0] == key[0] && v->samp_key[i][1] == key[1]) return v->samp_h[i];
-    if (v->nsamp < (int)(sizeof v->samp_h / sizeof v->samp_h[0])) slot = v->nsamp++;
-    else slot = 0;
-    h = vg_new_obj(c);
-    p = vg_cmd(c, 10);
-    if (p) {
-        VG_W(p, VG_CMD0(VG_CCMD_CREATE_OBJECT, VG_OBJ_SAMPLER_STATE, 9));
-        VG_W(p, h); VG_W(p, s0);
-        VG_W(p, vg_fbits(0.0f)); VG_W(p, vg_fbits(0.0f)); VG_W(p, vg_fbits((float)(key[1] - 1)));
-        VG_W(p, 0); VG_W(p, 0); VG_W(p, 0); VG_W(p, 0);
-    }
-    v->samp_key[slot][0] = key[0]; v->samp_key[slot][1] = key[1]; v->samp_h[slot] = h;
-    return h;
 }
 
 /* Texels of level `level` changed in the box (mgl_tex_store, after). */

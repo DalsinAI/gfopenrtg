@@ -1,8 +1,12 @@
 /* Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
+ * A reference for tests/pipe/test_ff.sh only: Warp3D.library's own shader generator, as it was before the shared
+ * pipe's fixed-function generator (library/pipe/pipe_ff.c) took its place. The library no longer builds it; the
+ * test holds the pipe's text to it, byte for byte.
+ *
  * Warp3D.library's virgl route: the shaders, our own TGSI text, made from a
- * key when a draw first needs it (w3d_vg.c keeps them for the context).
+ * key when a draw first needs it.
  *
  * They draw what the 3D core draws (library/opengpu/ogpu_3d.c), in its
  * order: colour (the vertex's, or the current one), texture, chroma test,
@@ -18,8 +22,11 @@
  * interpolates the texture coordinates as the core does), COLOR, GENERIC[0]
  * the texture coordinates, GENERIC[1] specular RGB and the vertex's fog
  * factor, GENERIC[2] the vertex's w (table fog). */
-#include "w3d_vg.h"
-#include "../../include/gfopengpu/stream3d.h"
+#include "../../../library/warp3d/w3d_vg.h"
+#include "../../../include/gfopengpu/stream3d.h"
+
+ULONG w3dvg_vs_text(ULONG key, char *buf, ULONG cap);
+ULONG w3dvg_fs_text(ULONG key, char *buf, ULONG cap);
 
 struct sb { char *p; ULONG n, cap; };
 

@@ -7,25 +7,14 @@
 
 # MiniGL's virgl route: its own blocks, resources, arenas, state objects, shaders, caps and present
 virgl-cmd         library/minigl/mgl_vg.h                                           # M7
-state-cache       library/minigl/mgl_vg.h                                           # M3-M5
-state-cache       library/minigl/mgl_vg_enc.c                                       # M3
-state-cache       library/minigl/mgl_vg_frame.c                                     # M3
-state-cache       library/minigl/mgl_vg_state.c                                     # M4
-state-cache       library/minigl/mgl_vg_shader.c                                    # M5
-acv-present       library/minigl/mgl_vg_frame.c                                     # M8
 acv-present       library/minigl/mgl_vg_os3.c                                       # M8
 
 # Warp3D's virgl route, and its stream3d builder
 virgl-cmd         library/warp3d/w3d_vg.c                                           # M6
-state-cache       library/warp3d/w3d_vg.c                                           # M6
-state-cache       library/warp3d/w3d_vg.h                                           # M6
-state-cache       library/warp3d/w3d_vg_shader.c                                    # M6
 acv-present       library/warp3d/w3d_vg.c                                           # M8
 acv-present       library/warp3d/w3d_vg_os3.c                                       # M8
-stream3d          library/warp3d/w3d_vg.c                                           # M7 (it reads its own batches back)
 
 # GL.module (Mesa): the listed exception keeps its own virgl driver, but not its own caps, board lookup or present
-host-caps         library/modules/gl/gla/gla_virgl.c                                # MQ
 board-open        library/modules/gl/gla/os3/gla_notice_os3.c                       # MQ (why virgl wasn't used: from OGPU_Query)
 acv-present       library/modules/gl/gla/gla_core.h                                 # M8
 acv-present       library/modules/gl/gla/os3/gla_present_os3.c                      # M8

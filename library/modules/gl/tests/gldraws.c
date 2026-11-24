@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: MIT
  *
  * GLDraws (9 Nov 2026): GL's cost a draw, for the virgl transport's
- * batching (gla_virgl.c). Each frame is DRAWS quads, each its own draw, in
+ * batching (gla_virgl_pipe.c). Each frame is DRAWS quads, each its own draw, in
  * a grid over a WIDTH x HEIGHT buffer, fed one of three ways:
  *   immediate      glBegin/glEnd (Mesa's upload buffer)
  *   buffersubdata  one buffer object rewritten with glBufferSubData before

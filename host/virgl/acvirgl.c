@@ -94,7 +94,7 @@ struct vr_api {
 
 
 /* What ACV_PRESENT and the counters need of a resource, by handle. On the
- * Amiga a handle is the address of GLA's resource (gla_virgl.c), so the
+ * Amiga a handle is the address of GLA's resource (gla_virgl_pipe.c), so the
  * handles are sparse 32-bit numbers: a hash table, open addressing,
  * handle 0 an empty slot. */
 struct av_res { uint32_t handle, format, bind, width, height, target; };
@@ -565,7 +565,7 @@ static int av_bind(struct acvirgl *v, const char *path, char *err, int errlen)
     *(void **)&v->vr.resource_get_info = dlsym(v->dl, "virgl_renderer_resource_get_info");
     v->parts = getenv("AC_VIRGL_PARTS") && !strcmp(getenv("AC_VIRGL_PARTS"), "1");
     /* GL.module queues commands into one block until it needs their results
-     * (gla_virgl.c, 9 Nov 2026); AC_VIRGL_BATCH=0 asks it for a block a command, as before */
+     * (gla_carry_pipe.c, 9 Nov 2026); AC_VIRGL_BATCH=0 asks it for a block a command, as before */
     v->no_batch = getenv("AC_VIRGL_BATCH") && !strcmp(getenv("AC_VIRGL_BATCH"), "0");
     /* ... and sends blocks it needn't wait for without waiting; AC_VIRGL_PIPELINE=0 asks it to wait for each */
     v->no_pipeline = getenv("AC_VIRGL_PIPELINE") && !strcmp(getenv("AC_VIRGL_PIPELINE"), "0");

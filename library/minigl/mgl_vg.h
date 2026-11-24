@@ -3,16 +3,14 @@
  *
  * minigl.library's virgl route (IDEA 5, docs/design/MiniGL-Compatible-Plan.md):
  * GL 1.1 drawn on the host's GPU through GFOpenGPU's OGPU_OP_VIRGL, with our
- * own encoder, our own fixed-function shaders (TGSI text) and one request
- * block a frame. The state code, matrices, lists, GLU and GLUT are the
+ * own encoder, on the OpenGPU shared pipe (library/pipe/): its block, its
+ * resources, its arenas, its state objects and its fixed-function shaders. The state code, matrices, lists, GLU and GLUT are the
  * library's own; this route replaces the per-vertex work and the output.
  *
- *   mgl_vg_enc.c     the virgl command stream (little-endian words) and the
- *                    ACVirgl request block (the Amiga's order)
- *   mgl_vg_frame.c   the context on the host, resources, the frame's block,
- *                    presenting, reading back
- *   mgl_vg_state.c   GL state to keys to cached virgl objects, constants
- *   mgl_vg_shader.c  the fixed-function shaders, as TGSI text from keys
+ *   mgl_vg_enc.c     the virgl command stream (little-endian words)
+ *   mgl_vg_frame.c   frames, clears, reading back
+ *   mgl_vg_pipe.c    the context on the shared pipe: resources, sending
+ *   mgl_vg_state.c   GL state to the pipe's keys, constants
  *   mgl_vg_draw.c    glBegin/glEnd and arrays into the frame's arena, draws
  *   mgl_vg_tex.c     textures as host resources, renaming
  *   mgl_vg_os3.c     the transport and the present on AmigaOS (a PC test
@@ -39,9 +37,8 @@
  * while the resource lives (as GL.module does). */
 struct vg_res {
     ULONG handle;
-    OGPUPipeRes *pr;                    /* the pipe's resource (0 on the old route, ENV:MiniGL/PipeOld) */
+    OGPUPipeRes *pr;                    /* the pipe's resource */
     ULONG fmt, w, h, levels;
-    struct vg_res *next_dead;           /* retired: released after the frame's block */
 };
 
 /* A texture's host side (mgl_vg_tex.c), hung on struct mgl_tex. */
@@ -57,18 +54,7 @@ struct vg_tex {
     int whole;                          /* everything must go up */
 };
 
-/* ---- the state caches (mgl_vg_state.c) ---------------------------------------------------- */
-
-#define VG_CACHE 64                     /* objects of one kind a context keeps */
-
-struct vg_cache {
-    ULONG key[VG_CACHE][5];
-    UWORD handle[VG_CACHE];
-    UWORD n;
-};
-
-/* Shader variants a context keeps. */
-#define VG_SHADERS 64
+/* ---- vertex layouts (mgl_vg_state.c) ------------------------------------------------------ */
 
 /* Vertex layouts: one attribute set (VG_A_), with each one's format. */
 #define VG_A_POS     0                  /* always */
@@ -82,8 +68,7 @@ struct vg_layout {
     ULONG key;                          /* the attributes' formats, packed (4 bits each) */
     UBYTE off[VG_ATTRS];                /* byte offsets */
     UBYTE stride;
-    UWORD ve;                           /* its VERTEX_ELEMENTS object (the old route) */
-    OGPUPipeCSO *cso;                   /* ... the pipe's (the pipe's route) */
+    OGPUPipeCSO *cso;                   /* the pipe's VERTEX_ELEMENTS for it */
 };
 #define VG_LAYOUTS 16
 
@@ -110,70 +95,37 @@ struct vg_layout {
 #define VG_D_FSC       (1UL << 6)
 #define VG_D_ALL       0xFFFFFFFFUL
 
-#define VG_RING        4                /* the vertex and index buffers: arenas long */
-
 struct mgl_vg {
-    const struct OGPUPipeOps *pipe;     /* the shared pipe (M2: its screen and transport) */
+    const struct OGPUPipeOps *pipe;     /* the shared pipe: its screen and its context (the block, the resources,
+                                           the arenas and the objects are its own) */
     OGPUPipeScreen *screen;
+    OGPUPipeCtx *px;
     ULONG ctx_id;
     ULONG host_flags;                   /* HELLO's ACV_HOST_ */
     ULONG prim_mask;                    /* virgl_caps_v1.prim_mask */
     ULONG caps_bits;                    /* virgl_caps_v2.capability_bits */
     int gles;
 
-    /* the frame's block: commands before the stream (creates, puts), after it (unrefs) */
-    ULONG *pre; ULONG npre, cpre;
-    ULONG *post; ULONG npost, cpost;
-    ULONG *blk; ULONG cblk;             /* the block as sent */
-    /* the command stream, little-endian words */
-    ULONG *cmd; ULONG ncmd, ccmd;
-    ULONG seq;                          /* counts streams sent (the pipe's sent() on its route) */
+    ULONG seq;                          /* the pipe's sent(): counts streams sent */
     ULONG pre_errors;                   /* commands the host refused in the last block */
-    /* the arenas: vertices (32-bit words) and 16-bit indices */
-    UBYTE *va; ULONG nva_own, cva;
-    UWORD *ia; ULONG nia_own, cia;
-    ULONG *pnva, *pnia;                 /* their use: the pipe's counters on its route, nva_own and nia_own on the old */
-    struct vg_res *colour, *depth, *vbuf, *ibuf;
-    /* Where the arenas go in vbuf and ibuf (bytes): each block's after the
-     * last one's, never over them. virglrenderer writes a buffer's PUT
-     * unsynchronized (GL_MAP_UNSYNCHRONIZED_BIT), so a PUT over vertices an
-     * earlier block's draws still read changed those draws on the GPU. The
-     * buffers are VG_RING arenas long; past the end, new ones (vg_ring). */
-    ULONG vb_off, vb_size, ib_base, ib_size;
-    struct vg_res *dead;                /* resources released after the next block */
-    ULONG grow_va, grow_ia, grow_cmd;   /* asked for at the next frame's start */
-
-    /* The shared pipe's route (stage M3's bridge; ENV:MiniGL/PipeOld=1 keeps the old one for a release): the
-     * pipe owns the block, the resources and the arenas; va, ia, cva, cia, vb_off and ib_base mirror its arenas
-     * (vg_sync), and the buffers' handles are these. */
-    OGPUPipeCtx *px;
+    /* the arenas (vertices as 32-bit words, 16-bit indices), where they go in the host's buffers and the buffers'
+     * handles: the pipe's, mirrored here after anything that may have sent (vg_sync) */
+    UBYTE *va; ULONG cva;
+    UWORD *ia; ULONG cia;
+    ULONG *pnva, *pnia;                 /* their use: the pipe's counters */
+    ULONG vb_off, ib_base;
     ULONG vbuf_h, ibuf_h;
+    struct vg_res *colour, *depth;
 
-    ULONG next_obj;                     /* object handles: ours, per context */
     ULONG surf_c, surf_z;               /* the surfaces of colour and depth */
 
     /* what is bound */
     ULONG dirty;
-    ULONG b_blend, b_dsa, b_rs, b_vs, b_fs, b_ve;
     ULONG stride;                       /* the vertex buffer's, as set */
     ULONG ib_off;                       /* the index buffer's offset, as set */
-    struct vg_cache blend, dsa, rs, samp;
-    ULONG vs_key[VG_SHADERS * 2], fs_key[VG_SHADERS * 2];   /* key, spot lights */
-    char *text;                         /* a shader's text, being made */
-    UWORD vs_h[VG_SHADERS], fs_h[VG_SHADERS];
-    int nvs, nfs;
     struct vg_layout lay[VG_LAYOUTS];
     int nlay;
     ULONG views[MGL_TEX_UNITS], samps[MGL_TEX_UNITS];   /* bound */
-    float vp[6];
-    LONG sc[4];
-    ULONG blend_color[4];
-
-    /* constants, as last sent */
-    float vsc[VG_VS_CONSTS * 4];
-    int nvsc;
-    float fsc[VG_FS_CONSTS * 4];
-    int nfsc;
 
     /* glBegin/glEnd */
     struct vg_layout *im_lay;
@@ -192,19 +144,16 @@ struct mgl_vg {
     struct vg_layout *lk_lay;
     int lk_valid;
 
-    /* sampler states, by key */
-    ULONG samp_key[32][2], samp_h[32];
-    int nsamp;
     /* statistics (ENV:MiniGL/Trace) */
     ULONG draws, objects, frames, blocks, words, va_bytes, puts, renames;
 };
 
-/* The arenas' use, either route */
+/* The arenas' use */
 #define VG_NVA(v) (*(v)->pnva)
 #define VG_NIA(v) (*(v)->pnia)
-/* The host's vertex and index buffers' handles, either route */
-#define VG_VBUF_H(v) ((v)->px ? (v)->vbuf_h : (v)->vbuf->handle)
-#define VG_IBUF_H(v) ((v)->px ? (v)->ibuf_h : (v)->ibuf->handle)
+/* The host's vertex and index buffers' handles */
+#define VG_VBUF_H(v) ((v)->vbuf_h)
+#define VG_IBUF_H(v) ((v)->ibuf_h)
 
 /* ---- the encoder (mgl_vg_enc.c) --------------------------------------------------------------- */
 
@@ -227,10 +176,8 @@ void vg_sampler_states(GLcontext c, int n, const ULONG *h);
 ULONG vg_new_obj(GLcontext c);
 
 /* Block commands (the Amiga's order). */
-ULONG *vg_pre(GLcontext c, ULONG n);   /* room in the commands before the stream */
 void vg_blk_cmd(ULONG *p, ULONG cmd, ULONG n, const ULONG *args);
 #define VG_BLK_WORDS(n) ((n) + 2)
-int vg_run(GLcontext c, ULONG *blk, ULONG words);       /* one block now; 0 on success */
 LONG vg_result(const ULONG *blk, ULONG at);             /* the result word of the command at blk[at] */
 ULONG vg_word(const ULONG *blk, ULONG at);
 
@@ -250,7 +197,7 @@ void mgl_vg_switch(GLcontext c);        /* mglSwitchDisplay */
 void mgl_vg_finish(GLcontext c);        /* glFlush, glFinish */
 void vg_send_overflow(GLcontext c, ULONG stride);  /* glBegin's arena is full: sent, larger at the frame's end */
 
-/* The pipe's route (mgl_vg_pipe.c): the same calls, made by the shared pipe. */
+/* The same calls, made by the shared pipe (mgl_vg_pipe.c). */
 int vgp_open(GLcontext c);              /* 0: no virgl (as mgl_vg_open) */
 void vgp_close(GLcontext c);
 struct vg_res *vgp_res_create(GLcontext c, ULONG target, ULONG fmt, ULONG bind, ULONG w, ULONG h, ULONG levels);
@@ -293,7 +240,7 @@ int vg_vs_consts(ULONG key);
 struct vg_layout *vg_layout_of(GLcontext c, const UBYTE *fmt);   /* fmt[VG_ATTRS]: VG_AF_ */
 ULONG vg_mode(GLcontext c, GLenum mode);    /* GL's primitive to Gallium's, quads and polygons as 0xFF */
 
-/* ---- shaders (mgl_vg_shader.c) ----------------------------------------------------------------- */
+/* ---- the shaders' keys (the pipe's generator makes the text: mgl_vg_ffkey.h) ----------------------------------------------------------------- */
 
 /* Vertex shader keys */
 #define VS_COL_ATTR     (1UL << 0)      /* the colour from the arena (else the current one, a constant) */
@@ -367,11 +314,6 @@ ULONG vg_mode(GLcontext c, GLenum mode);    /* GL's primitive to Gallium's, quad
 #define FSC_FOG     3                   /* start, end, density, 1 / (end - start) */
 #define FSC_CONST   4                   /* 0, 1, 0.5, log2(e) */
 #define FSC_END     5
-
-/* A shader's text for a key: into buf (cap bytes), its length with the
- * closing 0 returned. */
-ULONG vg_vs_text(ULONG key, ULONG spots, char *buf, ULONG cap);   /* spots: which lights are spots */
-ULONG vg_fs_text(ULONG key, char *buf, ULONG cap);
 
 /* ---- drawing (mgl_vg_draw.c) ---------------------------------------------------------------- */
 

@@ -22,7 +22,7 @@
 /* ---- what mgl_lib.c and mgl_display.c give on the Amiga -------------------------------------- */
 
 GLcontext mgl_current;
-struct mgl_prefs mgl_prefs = { 16, 2, 0, 16, 0, 0, 0, 0, ROUTE_CPU, 0, 0, 0, 1, 1024, 4096, 0, 0, 0 };
+struct mgl_prefs mgl_prefs = { 16, 2, 0, 16, 0, 0, 0, 0, ROUTE_CPU, 0, 0, 0, 1, 1024, 4096, 0, 0 };
 long mgl_trace;
 struct Library *MiniGLBase;
 const MGLDispatchTable *MiniGLDispatch;
@@ -1097,7 +1097,6 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "-update")) update = 1;
         else golden = argv[i];
     }
-    mgl_prefs.pipe_old = getenv("MGL_PIPE_OLD") != 0;    /* ENV:MiniGL/PipeOld: the route before the shared pipe */
     if (getenv("MGL_VIRGL")) return virgl_main(ppm);
     MiniGLOpen();
     test_interface();

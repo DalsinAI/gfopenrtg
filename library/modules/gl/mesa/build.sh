@@ -164,10 +164,9 @@ CC=$(sed -n "s/^c = \[*'\{0,1\}\([^]']*\).*/\1/p" "${CROSS:+$TOP/$CROSS}" 2>/dev
 CC=${CC:-cc}
 cd "$B"
 eval "$CC $FLAGS -I$SRC/src/gallium/drivers -I$SRC/src/mesa/glapi -O2 -c $TOP/gla/gla_core.c -o gla_core.o"
-eval "$CC $FLAGS -I$SRC/src/gallium/drivers -I$SRC/src/virtio -I$REPO/include -O2 -c $TOP/gla/gla_virgl.c -o gla_virgl.o"
 # virgl's route on GFOpenGPU's shared pipe (the GL stage, 24 November 2026): the winsys (gla_virgl_pipe.c, Mesa's
 # side), the carrier (gla_carry_pipe.c, the pipe's side) and the pipe itself (library/pipe), linked in as it is into
-# minigl.library and Warp3D.library. gla_virgl.c stays for one release as the old route (ENV:GFOpenGPU/GLPipeOld 1).
+# minigl.library and Warp3D.library.
 # The pipe's files and the carrier take the target's flags only (FLAGS without Mesa's own -D, -I and -include: they
 # include no Mesa header). On AmigaOS an address is the pointer and the transport is the pipe's own
 # (pipe_xport_os3.c, through gfopengpu.library); elsewhere the test is the transport and gives the addresses
@@ -212,7 +211,7 @@ esac
 # Mesa's c11 threads name the pthread_mutexattr calls weakly; a static link must ask for them.
 WEAK="-Wl,-u,pthread_mutexattr_init -Wl,-u,pthread_mutexattr_settype -Wl,-u,pthread_mutexattr_destroy"
 $CC $MESA_LFLAGS -std=c99 -O2 -Wall -Wextra -Werror -I"$SRC/include" -I"$REPO" ${CROSS:+-static $WEAK} -o test_gla \
-    "$TOP/tests/test_gla.c" gla_core.o gla_virgl.o $PIPEOBJS gla_shader_cache.o $HOSTV $SHIM $PROGOBJS $FIXOBJS -Wl,--start-group $LIBS $OPT -Wl,--end-group \
+    "$TOP/tests/test_gla.c" gla_core.o $PIPEOBJS gla_shader_cache.o $HOSTV $SHIM $PROGOBJS $FIXOBJS -Wl,--start-group $LIBS $OPT -Wl,--end-group \
     $SYSLIBS ${CROSS:+-latomic}
 # What programs built on this (GFOpenDemos) need to link against it, as shell
 # assignments: LFLAGS for a program on libGL.a; MESA_LFLAGS, FLAGS and
@@ -220,7 +219,7 @@ $CC $MESA_LFLAGS -std=c99 -O2 -Wall -Wextra -Werror -I"$SRC/include" -I"$REPO" $
 # Mesa itself.
 q() { printf "%s='%s'\n" "$1" "$(printf %s "$2" | sed "s/'/'\\\\''/g")"; }
 { q CC "$CC"; q FLAGS "$FLAGS"; q LFLAGS "$LFLAGS"; q SRC "$SRC"; q LIBS "$LIBS"; q OPT "$OPT"
-  q SHIM "$SHIM"; q SYSLIBS "$SYSLIBS"; q WEAK "$WEAK"; q GLAOBJS "gla_core.o gla_virgl.o $PIPEOBJS gla_shader_cache.o"; q FIXOBJS "$FIXOBJS"
+  q SHIM "$SHIM"; q SYSLIBS "$SYSLIBS"; q WEAK "$WEAK"; q GLAOBJS "gla_core.o $PIPEOBJS gla_shader_cache.o"; q FIXOBJS "$FIXOBJS"
   q PROGOBJS "$PROGOBJS"; q MESA_LFLAGS "$MESA_LFLAGS"; } > gla-link.env
 case $NAME in *amigaos*)
     # The unstripped test is ~20 MB of symbols; the copy for the Amiga is stripped.

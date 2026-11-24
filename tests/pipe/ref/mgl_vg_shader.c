@@ -1,6 +1,10 @@
 /* Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
+ * A reference for tests/pipe/test_ff.sh only: minigl.library's own shader generator, as it was before the shared
+ * pipe's fixed-function generator (library/pipe/pipe_ff.c) took its place. The library no longer builds it; the
+ * test holds the pipe's text to it, byte for byte.
+ *
  * minigl.library's virgl route: the fixed-function pipeline as shaders of
  * our own, TGSI text virglrenderer reads (CREATE_OBJECT SHADER). Written
  * from the OpenGL 1.1 specification's equations: transform (2.10), colours
@@ -14,7 +18,10 @@
  * coordinates, unit 1's (those the layout has). Its outputs: position,
  * colour, GENERIC[0] and [1] (the units' coordinates), GENERIC[2] (the
  * eye distance, for fog). The alpha test is the DSA object's. */
-#include "mgl_vg.h"
+#include "../../../library/minigl/mgl_vg.h"
+
+ULONG vg_vs_text(ULONG key, ULONG spots, char *buf, ULONG cap);
+ULONG vg_fs_text(ULONG key, char *buf, ULONG cap);
 
 /* ---- text ---------------------------------------------------------------------------------- */
 

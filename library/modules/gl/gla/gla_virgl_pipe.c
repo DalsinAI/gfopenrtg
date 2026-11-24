@@ -6,9 +6,8 @@
  * (library/pipe) in the order it was made. The pipe sends the block: one OGPU_OP_VIRGL batch on the ACRTG board's
  * ring on the Amiga, which the Cradle's runtime gives to virglrenderer.
  *
- * This is gla_virgl.c with its own request blocks, queue and transport taken out (the GL stage of
- * docs/design/OpenGPU-Shared-Pipe-Plan.md, 24 November 2026). gla_virgl.c is kept whole for one release as the old
- * route (ENV:GFOpenGPU/GLPipeOld 1, gla_virgl_pipe_old) and then goes.
+ * It took the place of gla_virgl.c, the winsys with request blocks, a queue and a transport of its own (the GL stage
+ * of docs/design/OpenGPU-Shared-Pipe-Plan.md, 24 November 2026), which is gone.
  *
  * The host draws in its own memory; each resource also has a copy in memory the host reaches (Fast RAM on the
  * Amiga), which virgl maps, and PUT and GET move pixels between the two, turning units round on a big-endian Amiga:
@@ -46,7 +45,7 @@
 #endif
 
 /* The id the host knows a context by: virglrenderer has one namespace for all its clients, and every GL program on
- * the Amiga is one, so with 32-bit pointers it is the address of the program's own winsys (gla_virgl.c). A
+ * the Amiga is one, so with 32-bit pointers it is the address of the program's own winsys (this file). A
  * resource's handle is the pipe's. */
 #if UINTPTR_MAX == 0xffffffffu
 #define NEW_CTX_ID(w) ((uint32_t)(uintptr_t)(w))
@@ -87,6 +86,10 @@ struct gp_cmd_buf {
 };
 
 /* done once everything queued when it was made has run */
+int gla_virgl_batch_wanted = -1;        /* -1 the runtime's choice, 0 off, 1 on (ENV:GFOpenGPU/GLBatch) */
+unsigned long gla_virgl_batch_errors;   /* queued commands the host refused */
+unsigned long gla_virgl_blocks;         /* request blocks sent */
+
 struct gp_fence { struct pipe_reference reference; unsigned long seq; };
 
 static struct gp_ws *gp(struct virgl_winsys *w) { return (struct gp_ws *)w; }
@@ -379,7 +382,7 @@ static void gp_fence_reference(struct virgl_winsys *vws, struct pipe_fence_handl
 /* A finished frame. When the host can (ACV_HOST_PRESENT) and the present hook has a way, the host writes it
  * straight into the display; otherwise it comes back from the host into the resource's copy, then into the display
  * target, which shows it (the GLA core's present hook). `drawable` is the buffer's present hook. Until the plan's
- * M8 the present is the hook's own block, after the frame's (as in gla_virgl.c). */
+ * M8 the present is the hook's own block, after the frame's (as before the pipe). */
 static void gp_flush_frontbuffer(struct virgl_winsys *vws, struct virgl_cmd_buf *cb, struct virgl_hw_res *res,
                                  unsigned level, unsigned layer, void *drawable, struct pipe_box *sub_box)
 {
@@ -459,7 +462,7 @@ static void gp_destroy(struct virgl_winsys *vws)
 static void *cm_alloc(void *user, unsigned long bytes) { struct gp_ws *w = user; return w->t.alloc(w->t.user, bytes); }
 static void cm_free(void *user, void *p) { struct gp_ws *w = user; w->t.free(w->t.user, p); }
 
-struct virgl_winsys *gla_virgl_pipe_winsys_create(struct sw_winsys *sws, const struct gla_virgl_transport *t)
+struct virgl_winsys *gla_virgl_winsys_create(struct sw_winsys *sws, const struct gla_virgl_transport *t)
 {
     struct gp_ws *w = CALLOC_STRUCT(gp_ws);
     struct gla_carry_mem m;

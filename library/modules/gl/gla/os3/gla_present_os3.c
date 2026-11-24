@@ -17,7 +17,7 @@
  *    frame into its other texture (gla_present_set_async); a single buffer,
  *    a resize and the buffer's end wait for it (settle). With
  *    gfopengpu.library before 0.20 it is waited for at once, as before.
- *  - A frame virgl drew on the host's graphics chip (gla_virgl.c): with
+ *  - A frame virgl drew on the host's graphics chip (gla_virgl_pipe.c): with
  *    gfopenrtg.library 0.15, ORTG_PresentVirgl, which hands the host the
  *    visible rectangles and lets it write the frame straight in (ACV_PRESENT),
  *    a window's or a screen's alike. Otherwise it is read back and comes

@@ -58,6 +58,7 @@
 #include <dos/dosextens.h>
 #include <gfopengpu/build.h>
 #include <gfopengpu/virgl.h>
+#include <gfopengpu/caps.h>
 #include <gfopenrtg/gfopenrtg.h>
 
 #include "modes.h"

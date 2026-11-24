@@ -121,6 +121,7 @@ void ortg_ogpu_settle(void);
 struct OpenRTGVirglFrame;
 LONG ortg_present_virgl(struct RastPort *rp, LONG x, LONG y, const struct OpenRTGVirglFrame *f);
 /* 0.30: ORTG_Present and ORTG_PresentDone (gfopenrtg.h; routes in present_plan.h). */
+struct ORTG_PresentInfo;
 LONG ortg_present(struct ORTG_PresentInfo *in);
 void ortg_present_done(APTR token, const ULONG *blk, ULONG at);
 

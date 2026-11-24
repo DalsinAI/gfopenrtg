@@ -71,7 +71,7 @@ struct w3dvg {
     ULONG g_buf, b_vbuf;                /* the run's vertex buffer, the bound one */
     ULONG ctx_id, host_flags, caps_bits;
     int gles;
-    ULONG *blk;                         /* a block of this file's own: the open's, a Z read's */
+    ULONG *blk;                         /* the open's block (the screen's first) */
     UBYTE *va; ULONG nva;               /* vertices copied: the pipe's arena */
     UWORD *ia; ULONG nia;
     ULONG region, region_len;           /* the batch's vertex memory, read by the host from where it is */
@@ -139,11 +139,6 @@ static void blk_cmd(ULONG *p, ULONG cmd, ULONG n, const ULONG *args)
 #define BLK_WORDS(n) ((n) + 2)
 static LONG result(const ULONG *blk, ULONG at) { return (LONG)VG_GETW(blk + at + 1); }
 
-static int run(struct w3dvg *v, ULONG *blk, ULONG words)
-{
-    v->st.blocks++;
-    return v->pipe->run(v->screen, blk, words * 4) ? -1 : 0;
-}
 
 static void end_group(struct w3dvg *v);
 static void px_sync(struct w3dvg *v);
@@ -1214,8 +1209,8 @@ struct w3dvg *w3dvg_open(const struct w3dvg_os *os, struct w3dvg_info *info)
     v->os = *os;
     v->pipe = pipe;
     v->ctx_id = ADDR(v);
-    /* the block, the arenas, the shaders and every command are the pipe's: this file keeps the open's block (and Z
-     * reads) */
+    /* the block, the arenas, the shaders and every command are the pipe's: this file keeps the open's block
+     * (its name and caps) */
     v->blk = alloc(v, 1024 * 4);
     if (!v->blk) { free_all(v); return 0; }
     nm = (char *)(v->blk + 512);
@@ -1307,23 +1302,24 @@ void w3dvg_forget_z(struct w3dvg *v)
  * 8 bits the host doesn't keep). */
 void w3dvg_read_z(struct w3dvg *v)
 {
-    ULONG w, h, zw = 0, zh = 0, sw = 0, sh = 0, x, y, a[14], bytes;
+    ULONG w, h, zw = 0, zh = 0, sw = 0, sh = 0, x, y, bytes;
+    struct OGPUPipeXfer t;
     if (!v || !v->depth || !v->have_z || (!v->z_addr && !v->s_addr)) return;
     w = v->depth->w; h = v->depth->h;
     if (v->z_addr) { zw = v->z_w < w ? v->z_w : w; zh = v->z_h < h ? v->z_h : h; }
     if (v->s_addr) { sw = v->s_w < w ? v->s_w : w; sh = v->s_h < h ? v->s_h : h; }
     bytes = v->zfmt == VG_FMT_Z16_UNORM ? w * h * 2 : w * h * 4;
     if (!stage_mem(v, &v->zstage, &v->zstage_bytes, bytes)) return;
-    /* what was drawn goes first; then the GET in a block of its own */
+    /* what was drawn goes first; then the pipe's GET, in a block of its own */
     px_commit(v);
     v->pipe->flush(v->px, 0);
     px_sync(v);
-    a[0] = v->depth->handle; a[1] = v->ctx_id; a[2] = 0; a[3] = bytes / h; a[4] = 0;
-    a[5] = 0; a[6] = 0; a[7] = 0; a[8] = w; a[9] = h; a[10] = 1;
-    a[11] = ADDR(v->zstage); a[12] = bytes; a[13] = v->zfmt == VG_FMT_Z16_UNORM ? ACV_SWAP_16 : ACV_SWAP_32;
-    blk_cmd(v->blk, ACV_GET, 14, a);
+    t.size = sizeof t; t.flags = OGPU_XFER_GET; t.level = 0; t.stride = bytes / h; t.layer_stride = 0;
+    t.box.x = t.box.y = t.box.z = 0; t.box.w = w; t.box.h = h; t.box.d = 1;
+    t.mem = v->zstage; t.bytes = bytes; t.swap = v->zfmt == VG_FMT_Z16_UNORM ? ACV_SWAP_16 : ACV_SWAP_32;
     v->errors = 0;
-    if (run(v, v->blk, BLK_WORDS(14)) || result(v->blk, 0)) { v->errors++; say(v, "virgl: the host refused the Z read"); }
+    if (v->pipe->xfer(v->px, v->depth->pr, &t)) { v->errors++; say(v, "virgl: the host refused the Z read"); }
+    px_sync(v);
     v->st.refused += v->errors;
     if (v->errors) return;
     for (y = 0; y < h; y++) {

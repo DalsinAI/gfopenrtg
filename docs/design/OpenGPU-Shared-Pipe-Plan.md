@@ -685,6 +685,15 @@ Added 24 November 2026. MiniGL keeps its ABI (the -30 call, dispatch ABI 5, 840 
 - **Not carried over:** a palette changed after its textures were loaded does not reach them; `MGL_UBYTE_ARGB` colour arrays are refused; `mglPrintMatrixStack` prints only the top matrix; `mglTexMemStat` answers 0.
 - **Left:** GL.module's frame cost; then the wrapper becomes the default and MiniGL's renderer (`mgl_state.c`, `mgl_vertex.c`, `mgl_pipe.c`, `mgl_out.c`, `mgl_vg*.c`) goes, a release later.
 
+### Pipe version 7: the frame's commands (S–M)
+
+Added 24 November 2026, on Dale's yes to the design note (the pipe writes every command; no fallback switch; MiniGL's own renderer too). After M6 and M3 to M5, Warp3D and MiniGL used the pipe for their contexts, resources, arenas, state objects and shaders, but still wrote about a dozen virgl commands by hand: surfaces and the framebuffer, sampler views and their binding, the vertex and index buffers and the draw, the clear, the stencil reference, the blend colour, the stipple, Warp3D's BLIT of a 16-bit area and its own GET of the depth buffer.
+
+- **The pipe (step 1, PR 26):** `OGPU_PIPE_VERSION` 7. The seven version 1 members never filled are real: `bind_framebuffer`, `bind_texture`, `set_blend_colour`, `set_stencil_ref`, `begin_frame`, `draw`, `clear`. Added at the end: `draw_buf` (any vertex or index buffer, with its stride), `set_stipple`, `copy` (BLIT). `library/pipe/pipe_frame.c`: a resource's surface and sampler view are the pipe's, made at its first bind (again for a renamed version) and destroyed at its last release; units' views and samplers, the buffers, the stencil reference, the blend colour and the stipple are sent only when they changed (compared as bits). A unit whose texture is let go of while bound is left as the host has it until it is bound again (Warp3D's way); MiniGL binds every unit for each draw. `tests/pipe/test_draw.sh` (24 checks) holds the pipe to the words the front ends wrote by hand.
+- **Warp3D (step 2, PR 27)** and **MiniGL (step 3, PR 28):** no frame command written by hand; `mgl_vg_enc.c` is gone. The depth read (step 4) is the pipe's `xfer` GET.
+- **Gate:** all 32 M0 pictures the same. Two counters moved, recorded in `captures.txt`: Warp3D's stream words 78,796 to 79,316 (+0.7%: the pipe destroys the views and surfaces of what Warp3D's close lets go of, 2 words each; read from the code, not traced), and MiniGL's submits 62 to 43 with the same 17,003 words (the open's surfaces now go with the first draw, not in a stream of their own).
+- **Left:** `virgl-cmd` debt lines for `w3d_vg.c` and `mgl_vg.h`: both files still take the protocol's numbers and the arena write macros from `virgl_cmd.h`. Those go when the numbers move to a header of their own (or the files go); not in this stage.
+
 ### M7: stream3d emission into the pipe (L)
 
 - `pipe_emit_s3d.c` is taken from `w3d_batch.c`'s builder.

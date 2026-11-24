@@ -30,9 +30,9 @@ counter run_w3d_hlv.sh: ok   Warp3D culled fans and strips: 3000 cases, 89228 fr
 counter run_w3d_hlv.sh: ok   Warp3D culled fans and strips: 3000 cases, 89228 front triangles, in place = by index
 counter run_w3d_hlv.sh: ok   Warp3D vertices: 3000 primitives (1505 pointer lists), 198714 vertices, hostlib_w3d_vertices = Warp3D's convert() word for word
 counter run_w3d_hlv.sh: ok   Warp3D vertices: 3000 primitives (1505 pointer lists), 198714 vertices, hostlib_w3d_vertices = Warp3D's convert() word for word
-counter run_w3d_vg.sh: minigl_vg_bridge: 335 blocks, 306 submits (78610 words), 1246 puts (23278542 bytes), 8 gets, 269 presents, 52 errors
+counter run_w3d_vg.sh: minigl_vg_bridge: 584 blocks, 530 submits (78796 words), 1254 puts (20105800 bytes), 8 gets, 271 presents, 52 errors
 counter run_w3d_vg.sh: minigl_vg_bridge: virglrenderer draws with GL on LLVMPIPE (LLVM 19.1.7, 256 bits)
-counter run_w3d_vg.sh: w3d virgl: 28 checks, 0 failed
+counter run_w3d_vg.sh: w3d virgl: 40 checks, 0 failed
 counter run_w3d_vg.sh: w3d virgl bench cow3d            320x240 ARGB32: pixels worst 212, mean 0.43, 1.19% over 8 (0.05% with a shift); 4x4 blocks worst  22, 0.60% over 8; 2 draws for 2306 triangles
 counter run_w3d_vg.sh: w3d virgl bench fill640          640x480 ARGB32: pixels worst 203, mean 30.16, 88.78% over 8 (57.69% with a shift); 4x4 blocks worst 161, 57.46% over 8; 2 draws for 4 triangles
 counter run_w3d_vg.sh: w3d virgl bench fill640-affine   640x480 ARGB32: pixels worst 208, mean 10.55, 61.38% over 8 (59.15% with a shift); 4x4 blocks worst  35, 8.64% over 8; 2 draws for 4 triangles
@@ -41,6 +41,8 @@ counter run_w3d_vg.sh: w3d virgl bench mgltest          320x240 RGB565: pixels w
 counter run_w3d_vg.sh: w3d virgl bench tiny             320x240 ARGB32: pixels worst   1, mean 0.00, 0.00% over 8 (0.00% with a shift); 4x4 blocks worst   0, 0.00% over 8; 2 draws for 6 triangles
 counter run_w3d_vg.sh: w3d virgl bench w3dtest          320x240 ARGB32: pixels worst 203, mean 4.46, 27.13% over 8 (19.70% with a shift); 4x4 blocks worst  26, 4.65% over 8; 2 draws for 16 triangles
 counter run_w3d_vg.sh: w3d virgl bench w3dtest-fastram  320x240 ARGB32: pixels worst 203, mean 4.46, 27.13% over 8 (19.70% with a shift); 4x4 blocks worst  26, 4.65% over 8; 2 draws for 16 triangles
+counter run_w3d_vg.sh: w3d virgl direct calls: the drawing area locked 567 times (323 presents, 581 loads with Z's), given back 567 times
+counter run_w3d_vg.sh: w3d virgl frame held for the lock: worst 2, 0 with a pixel's shift
 counter run_w3d_vg.sh: w3d virgl held frame: worst 2, 0 with a pixel's shift; 0 loads, 1 presents
 counter run_w3d_vg.sh: w3d virgl: host flags 0x4
 counter run_w3d_vg.sh: w3d virgl mixed 2D/3D scene (RGB565): worst 9, 709 of 76800 over 8, 58 with a pixel's shift; 1 loads, 2 presents, 0 declined, 0 refused

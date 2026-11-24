@@ -99,6 +99,15 @@ static void host(ULONG flags)
     H.caps[72] = 0x7FF; H.caps[89] = 32; H.caps[98] = 0x55; H.caps[121] = 16384;
 }
 
+/* the renderer string in caps set 2 (bytes 696-759), as virglrenderer fills it on a little-endian host: the
+ * host's ACV_CAPS puts each word in the Amiga's order, so a word's value is its four bytes read little-endian */
+static void renderer(const char *name)
+{
+    ULONG k;
+    for (k = 0; k < 64; k++) H.caps[174 + k / 4] &= ~(0xFFu << (8 * (k % 4)));
+    for (k = 0; k < 63 && name[k]; k++) H.caps[174 + k / 4] |= (ULONG)(unsigned char)name[k] << (8 * (k % 4));
+}
+
 #define ANS(q)  OGPU_ANSWER(q)
 #define BE(q)   OGPU_BACKEND(q)
 #define GPU(q)  OGPU_ONGPU(q)
@@ -272,6 +281,37 @@ int main(void)
     ogpu_caps_init(&c, 1);
     ogpu_caps_discover(&c, 1, run, 0, ROOM_AT);
     CHECK(c.virgl && !c.set && H.blocks == 2, "no caps sets at all: two blocks, no caps asked");
+
+    /* ---- a host that leaves ACV_HOST_GPU out of HELLO: the renderer string says it ---- */
+    host(ACV_HOST_PRESENT);
+    renderer("AMD Radeon RX 460 Graphics (radeonsi, polaris11, ACO, DRM 3.61)");
+    ogpu_caps_init(&c, 1);
+    ogpu_caps_discover(&c, 1, run, 0, ROOM_AT);
+    CHECK(ogpu_caps_renderer_on_chip(&c) == 1, "a Radeon's renderer string: a graphics chip");
+    CHECK(c.host_flags == (ACV_HOST_GPU | ACV_HOST_PRESENT), "HELLO without ACV_HOST_GPU, a chip's renderer: GPU (%lx)",
+          (unsigned long)c.host_flags);
+    CHECK(ANS(ogpu_caps_answer(&c, OGPU_DRV_BEST, OGPU_OP_REAL_GPU, 0)) == OGPU_FULL, "... and REAL_GPU answers FULL");
+    host(ACV_HOST_PRESENT);
+    renderer("llvmpipe (LLVM 19.1.7, 256 bits)");
+    ogpu_caps_init(&c, 1);
+    ogpu_caps_discover(&c, 1, run, 0, ROOM_AT);
+    CHECK(ogpu_caps_renderer_on_chip(&c) == 0 && c.host_flags == ACV_HOST_PRESENT, "llvmpipe: no chip");
+    CHECK(ANS(ogpu_caps_answer(&c, OGPU_DRV_BEST, OGPU_OP_LLVM_PIPE, 0)) == OGPU_FULL, "... and LLVM_PIPE answers FULL");
+    host(ACV_HOST_PRESENT);
+    renderer("zink Vulkan 1.3(llvmpipe (LLVM 19.1.7, 256 bits) (MESA_LLVMPIPE))");
+    ogpu_caps_init(&c, 1);
+    ogpu_caps_discover(&c, 1, run, 0, ROOM_AT);
+    CHECK(ogpu_caps_renderer_on_chip(&c) == 0 && !(c.host_flags & ACV_HOST_GPU), "zink on lavapipe: no chip");
+    host(ACV_HOST_PRESENT);
+    ogpu_caps_init(&c, 1);
+    ogpu_caps_discover(&c, 1, run, 0, ROOM_AT);
+    CHECK(ogpu_caps_renderer_on_chip(&c) == -1 && c.host_flags == ACV_HOST_PRESENT, "no renderer string: as HELLO said");
+    host(ACV_HOST_PRESENT);
+    renderer("AMD Radeon RX 460 Graphics");
+    H.set2 = 0;
+    ogpu_caps_init(&c, 1);
+    ogpu_caps_discover(&c, 1, run, 0, ROOM_AT);
+    CHECK(c.set == 1 && c.host_flags == ACV_HOST_PRESENT, "caps set 1 has no renderer string: as HELLO said");
 
     printf("%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;

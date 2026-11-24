@@ -4,3 +4,4 @@
 #include <exec/types.h>
 extern struct Library *DOSBase;
 LONG SetVar(CONST_STRPTR name, CONST_STRPTR buffer, LONG size, ULONG flags);
+LONG GetVar(CONST_STRPTR name, STRPTR buffer, LONG size, ULONG flags);

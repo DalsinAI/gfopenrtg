@@ -422,6 +422,13 @@ static void test_choice(void)
           "no extension: one is added");
     CHECK(mw_sibling("a.b/c", ".ogg", out, sizeof out) && !strcmp(out, "a.b/c.ogg"), "a dot in a drawer's name isn't one");
     CHECK(!mw_sibling("long-name.ogg", ".wav", out, 8), "too long: 0");
+    CHECK(mw_dos_name("PROGDIR:/data/sounds/throw.wav", out, sizeof out) &&
+              !strcmp(out, "PROGDIR:data/sounds/throw.wav"),
+          "PROGDIR:/data/x (OpenLieroX's join) is PROGDIR:data/x");
+    CHECK(mw_dos_name("Work://a/b.ogg", out, sizeof out) && !strcmp(out, "Work:a/b.ogg"), "every slash after the colon goes");
+    CHECK(!mw_dos_name("PROGDIR:data/x.wav", out, sizeof out), "a name with no slash after its colon: 0");
+    CHECK(!mw_dos_name("data//x.wav", out, sizeof out), "no colon: 0, left as it is");
+    CHECK(!mw_dos_name("PROGDIR:/long-name.wav", out, 10), "too long: 0");
     CHECK(mw_is_wav_name("x.WAV") && mw_is_wav_name("d/x.wav") && !mw_is_wav_name("x.ogg") && !mw_is_wav_name("wav"),
           "WAV names");
     CHECK(mw_on_68k("this CPU (gfopensound-decoders.library)"), "gfopensound.datatype's own CPU");

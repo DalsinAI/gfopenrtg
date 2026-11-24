@@ -294,6 +294,8 @@ static void frame_draws(int mode, int frame, GLuint vbo, GLuint tex)
 
 #ifdef GLA_TEST_VIRGL
 static unsigned long t_blocks;          /* request blocks the transport ran */
+#endif
+#if defined(__amigaos__) || defined(GLA_TEST_VIRGL)
 static unsigned char pipe_pic[2][3][W * H * 3];     /* the 300-draw frames on the shared pipe */
 static double pipe_per[2][3];
 #endif

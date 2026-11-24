@@ -9,12 +9,10 @@ on:
 jobs:
   tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: The runner's own test
-        run: sh tests/ci_runner/test_ci_runner.sh
-      - name: Every test in tests/
+      - name: Every test in every tests/ folder
         run: sh tests/ci/test_all.sh

@@ -8,11 +8,12 @@
  * mgl_current, the one current-context variable, which programs write and
  * every entry reads.
  *
- * The table it answers is the wrapper's (wrap/): MiniGL's calls as GL.module's, which draws them (through the
- * host's GPU, or on the 68k), when the machine has an FPU and LIBS:GFOpenGPU/GL.module is there. Otherwise, and
- * for one release when ENV:MiniGL/WrapOld is 1, it is MiniGL's own renderer's. That front end is built twice
- * (build.sh): for the FPU and soft; the half this machine can run is taken (an FPU in AttnFlags, and
- * ENV:MINIGL_FORCE_SOFT not set). The first open chooses, and the choice is kept.
+ * The table it answers is MiniGL's own renderer's. That front end is built twice (build.sh): for the FPU and
+ * soft; the half this machine can run is taken (an FPU in AttnFlags, and ENV:MINIGL_FORCE_SOFT not set). When
+ * ENV:MiniGL/Wrap is 1, the machine has an FPU and LIBS:GFOpenGPU/GL.module is there, the table is the wrapper's
+ * (wrap/) instead: MiniGL's calls as GL.module's, which draws them (through the host's GPU, or on the 68k). The
+ * wrapper draws the same picture and is the slower of the two today (MGLTest, 24 November 2026), so it is asked
+ * for, not the default. The first open chooses, and the choice is kept.
  *
  * Also here: the libraries the rest uses, ENV:MiniGL/ preferences, the
  * mglChoose* and mglProhibit* requests' defaults (spec 9.2), memory, the
@@ -166,7 +167,7 @@ static int open_libs(struct MGLBase *base)
     }
     if (!mgl_handed) {
         int fpu = (SysBase->AttnFlags & (AFF_68881 | AFF_68882 | AFF_FPU40)) != 0;
-        if (fpu && !env_set("MINIGL_FORCE_SOFT") && env_long("MiniGL/WrapOld", 0) == 0 && have_gl_module())
+        if (fpu && !env_set("MINIGL_FORCE_SOFT") && env_long("MiniGL/Wrap", 0) != 0 && have_gl_module())
             mgl_handed = &mgl_table_wrap;
         else
             mgl_handed = fpu && !env_set("MINIGL_FORCE_SOFT") ? &mgl_table_fpu : &mgl_table_soft;
@@ -232,8 +233,8 @@ static BPTR lib_expunge(REG(a6, struct MGLBase *base))
  *   Flip            1: a screen changes buffers instead of blitting the frame
  *   MaxTextureSize  what glGetIntegerv(GL_MAX_TEXTURE_SIZE) answers (default 1024)
  *   PipeOld         1: the virgl route sends its own blocks, as before the shared pipe's M3 (for one release)
- *   WrapOld         1: MiniGL's own renderer draws, as before the wrapper over GL.module (for one release;
- *                   read at the library's first open)
+ *   Wrap            1: the wrapper over GL.module draws (wrap/), not MiniGL's own renderer (read at the
+ *                   library's first open; needs an FPU and LIBS:GFOpenGPU/GL.module)
  *   Trace           n: n lines of trace to the serial port */
 static LONG env_long(const char *name, LONG dflt)
 {

@@ -18,6 +18,10 @@ for changing it.
   (gfopengpu.library's 3D ops), `Virgl` (the host's GPU through GFOpenGPU's
   virgl path: `mgl_vg*.c`, docs/design/MiniGL-Compatible-Plan.md), or `Auto`
   (virgl where gfopengpu.library carries it, else as GFOpenGPU or CPU).
+- **Over GL.module (opt-in).** `ENV:MiniGL/Wrap` set to 1 before the library is
+  first opened: MiniGL's calls go to GL.module (`wrap/`), which draws them. It
+  needs an FPU and `LIBS:GFOpenGPU/GL.module`. Same picture, slower today; see
+  docs/design/OpenGPU-Shared-Pipe-Plan.md, the GL stage, part 2.
 - **Preferences.** `ENV:MiniGL/Flip`, `ENV:MiniGL/MaxTextureSize` (default
   1024), `ENV:MiniGL/Trace`, `ENV:MINIGL_FORCE_SOFT`.
 

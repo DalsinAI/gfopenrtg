@@ -20,8 +20,8 @@
 # A third half is the wrapper over GL.module (wrap/, mglW_, mgl_table_wrap):
 # MiniGL's own files that aren't its renderer (displays, choices, GLU, GLUT),
 # built again with -DMGLW for the FPU, with wrap/'s files and the table and
-# thunks wrap/gen_wrap.py makes from the spec. mgl_lib.c takes it when the
-# machine has an FPU and GL.module (ENV:MiniGL/WrapOld=1: the old renderer).
+# thunks wrap/gen_wrap.py makes from the spec. mgl_lib.c takes it when
+# ENV:MiniGL/Wrap is 1 and the machine has an FPU and GL.module.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)

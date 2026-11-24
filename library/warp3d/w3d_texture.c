@@ -335,7 +335,7 @@ LIBCALL ULONG LIB_W3D_SetChromaTestBounds(REG(a0, W3D_Context *c), REG(a1, W3D_T
     t->chroma_hi = (upper >> 8) | (upper << 24);
     t->chroma_mode = (int)mode;
     CTX(c)->r3d_dirty = 1;
-    CTX(c)->list_at = -1;
+    CTX(c)->s3.list_at = -1;
     return W3D_SUCCESS;
 }
 

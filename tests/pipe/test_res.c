@@ -533,6 +533,7 @@ int main(void)
         CHECK(H.nalive == alive0 && H.blocks == blocks0 && !ops->queued(g), "no arenas: no buffers made on the host, nothing to send");
         CHECK(ops->vtx_room(g, 64, 0) == 0 && ops->idx_room(g, 6, 0) == 0, "no arenas: no vertex or index room");
         CHECK(ops->room(g, 0, 0, 1000, 32) == 1 && ops->room(g, 4, 0, 0, 0) == 0, "room: the stream and the block, never an arena");
+        CHECK(ops->need(g, 4096, 0, 0) == -1 && ops->need(g, 0, 0, 16) == -1, "need: refused, with no arena to grow");
 
         /* any shape */
         memset(&d2, 0, sizeof d2);

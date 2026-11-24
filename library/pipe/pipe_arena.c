@@ -159,7 +159,8 @@ ULONG pipe_m_vtx_put_range(OGPUPipeCtx *x, const void *mem, ULONG bytes)
 
 LONG pipe_m_need(OGPUPipeCtx *x, ULONG va_bytes, ULONG ia_count, ULONG cmd_words)
 {
-    return x ? pipe_need(x, va_bytes, ia_count, cmd_words) : -1;
+    if (!x || !x->cva) return -1;               /* version 6: a context with no arenas has none to grow */
+    return pipe_need(x, va_bytes, ia_count, cmd_words);
 }
 
 /* Where the arenas are now, for a front end that writes its own bindings and its own vertices (MiniGL, M3 to M7):

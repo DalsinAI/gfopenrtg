@@ -141,8 +141,8 @@ struct w3dctx {
     struct w3dvg *vg;
     int vg_hold;                                /* the host's frame is newer than the drawing area's (not presented yet) */
     int live;                                   /* this batch's draws go straight to the route (stage M7 part 2): only
-    int held;                           /* flush() holds the drawing area: the route's lock calls take nothing */
                                                  * its vertices are kept, in the data area; nothing is recorded */
+    int held;                                   /* flush() holds the drawing area: the route's lock calls take nothing */
     ULONG vg_errors;                            /* commands the host refused or the route left out */
     /* the 3D core, for ROUTE_CPU */
     struct ogpu_core core;

@@ -7,8 +7,12 @@ drivers:
 - **virgl, on the PC's graphics chip.** On AmiCradle, gfopengpu.library
   carries OGPU_OP_VIRGL to the ACRTG board's ring, and the runtime hands it
   to virglrenderer (`host/virgl/acvirgl.c`). The GLA core's winsys
-  (`gla/gla_virgl.c`) turns virgl's calls into ACVirgl request blocks
-  (`include/gfopengpu/virgl.h`). It gives GL 4.3 and GLES 3.1.
+  (`gla/gla_virgl_pipe.c`) hands virgl's calls to OpenGPU's shared pipe
+  (`library/pipe`, through `gla/gla_carry_pipe.c`), which makes the ACVirgl
+  request blocks (`include/gfopengpu/virgl.h`) as it does for
+  minigl.library and Warp3D.library. It gives GL 4.3 and GLES 3.1.
+  `ENV:GFOpenGPU/GLPipeOld` set to `1` takes the winsys of before
+  (`gla/gla_virgl.c`, its own blocks), for one release.
 - **softpipe, on the 68k.** Used on every other Amiga, and wherever
   `OGPU_Query(OGPU_OP_VIRGL)` doesn't answer "full". It gives GL 3.3 and
   GLES 3.1.

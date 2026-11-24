@@ -482,6 +482,14 @@ The `glA...` forms (`glASwapBuffers()` and the rest) pass the program's
       (present the program's own way then). `OGPU_RetainedPresent` comes
       here itself, so programs keep calling it.
   - `ORTG_PRESENT_VSYNC`: wait for the display's next frame first.
+  - `ORTG_PRESENT_AFTER` (MEMORY, 0.32; check `ORTG_AFTER_REVISION`): the
+    program's own GFOpenGPU batches, sent and not waited for, still write
+    the source, up to the fence in `after` (`OGPU_Submit`'s). GFOpenGPU
+    reads the source after them in its own order, and GFOpenRTG waits for
+    `after` only where the CPU reads the source. A renderer's drawing and
+    its present then cost one wait, not two. Earlier libraries ignore the
+    flag, so wait for your batches yourself there. A struct that ends at
+    `token` (68 bytes, from 0.30 and 0.31 programs) is still taken.
   - `ORTG_PRESENT_PREPARE`: the present goes into the program's own
     request block (`blk`, with `room` words free), so a frame costs no
     block of its own; the answer is the words written, 0 when it can't go

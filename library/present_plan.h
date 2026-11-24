@@ -89,6 +89,16 @@ static inline unsigned long prs_cmd(unsigned long *p, unsigned long ctx, unsigne
     return PRS_CMD_WORDS;
 }
 
+/* MEMORY with ORTG_PRESENT_AFTER (0.32): whether a piece of bytes bytes
+ * must wait for the caller's fence after before it is written. A piece
+ * up to stage_max bytes is copied by the CPU (and a piece the CPU writes
+ * is read by it), so it waits; a bigger one goes to GFOpenGPU's PIXELS,
+ * which reads the source after the caller's batches in GFOpenGPU's order. */
+static inline int prs_after_wait(unsigned long after, unsigned long bytes, unsigned long stage_max, int cpu)
+{
+    return after != 0 && (cpu || bytes <= stage_max);
+}
+
 /* The source's part (x0, y0, x1, y1 inclusive, NULL: all) clamped to the
  * source; 0 when nothing is left. */
 static inline int prs_part(const short *src4, unsigned long w, unsigned long h, long *x0, long *y0, long *x1, long *y1)

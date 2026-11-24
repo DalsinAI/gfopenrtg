@@ -31,6 +31,7 @@
 
 #include "screens.h"
 #include "pixels.h"
+#include "present_plan.h"           /* prs_after_wait (0.32) */
 
 /* ---- colours to pens ------------------------------------------------------------- */
 
@@ -180,6 +181,7 @@ struct pix_ctx {
     LONG dw, dh;                /* its size there */
     UBYTE mask, value;
     ULONG argb;                 /* fill: the colour */
+    ULONG after;                /* write: 0.32, ORTG_PRESENT_AFTER's fence; 0 once waited for */
 };
 
 /* Which of n source pixels the target pixel r of d (another size) shows: the
@@ -260,6 +262,11 @@ static void write_piece(void *v, struct ortg_bitmap *bm, LONG x0, LONG y0, LONG 
     if (bm->bpp != 1 && !c->mask) return;
     if ((of = ogpu_source(c, bm, &table, &xrgb)) != 0) {
         LONG bpp = of == OGPU_FMT_ARGB32 ? 4 : of == OGPU_FMT_RGB565 ? 2 : 1;
+        /* 0.32: a piece the CPU copies waits for the caller's batches; a bigger one is read after them */
+        if (prs_after_wait(c->after, (ULONG)(x1 - x0 + 1) * (ULONG)bpp * (ULONG)(y1 - y0 + 1), ORTG_STAGE_MAX, 0)) {
+            ortg_ogpu_wait(c->after);
+            c->after = 0;
+        }
         const UBYTE *src = (const UBYTE *)c->px->data + (c->px->y + y0 - dy - c->at_y) * c->px->modulo + (c->px->x + x0 - dx - c->at_x) * bpp;
         if (xrgb ? ortg_ogpu_pixels_xrgb(bm, x0, y0, x1, y1, src, (ULONG)c->px->modulo, of, table)
                  : ortg_ogpu_pixels(bm, x0, y0, x1, y1, src, (ULONG)c->px->modulo, of, table)) {
@@ -276,6 +283,10 @@ static void write_piece(void *v, struct ortg_bitmap *bm, LONG x0, LONG y0, LONG 
         }
     }
     ortg_stat(ORTG_STAT_PIXELS, 0, (ULONG)(x1 - x0 + 1) * (ULONG)(y1 - y0 + 1));
+    if (prs_after_wait(c->after, 0, 0, 1)) {    /* 0.32: the CPU reads the source */
+        ortg_ogpu_wait(c->after);
+        c->after = 0;
+    }
     ortg_ogpu_settle();             /* 0.21: the CPU on the bitmap: what GFOpenGPU has running first */
     if (bm->bpp == 4 && (fmt == ORTG_PIX_ARGB || fmt == ORTG_PIX_0RGB)
         && c->dw == c->px->width && c->dh == c->px->height) {
@@ -422,6 +433,11 @@ static void end(struct Layer *l)
 
 LONG ortg_write_pixels(struct RastPort *rp, LONG x, LONG y, const struct OpenRTGPixels *px)
 {
+    return ortg_write_pixels_after(rp, x, y, px, 0);
+}
+
+LONG ortg_write_pixels_after(struct RastPort *rp, LONG x, LONG y, const struct OpenRTGPixels *px, ULONG after)
+{
     struct pix_ctx c;
     struct Layer *lay;
     LONG done;
@@ -429,12 +445,14 @@ LONG ortg_write_pixels(struct RastPort *rp, LONG x, LONG y, const struct OpenRTG
     c.px = px; c.at_x = x; c.at_y = y;
     c.dw = px->dest_width > 0 ? px->dest_width : px->width;
     c.dh = px->dest_height > 0 ? px->dest_height : px->height;
-    c.mask = rp->Mask; c.value = 0;
+    c.mask = rp->Mask; c.value = 0; c.after = after;
     done = c.dw * c.dh;
     lay = begin(rp);
     if (!ortg_pieces(rp, x, y, x + c.dw - 1, y + c.dh - 1, write_piece, &c)) {
         /* a planar RastPort: a row of pens at a time through graphics */
-        UBYTE *pens = AllocVec((ULONG)c.dw + 16, MEMF_ANY);
+        UBYTE *pens;
+        if (prs_after_wait(c.after, 0, 0, 1)) ortg_ogpu_wait(c.after);     /* 0.32: the CPU reads the source */
+        pens = AllocVec((ULONG)c.dw + 16, MEMF_ANY);
         if (pens) {
             for (LONG j = 0; j < c.dh; j++) {
                 const UBYTE *row = (const UBYTE *)px->data + src_y(&c, j) * px->modulo;

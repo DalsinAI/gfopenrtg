@@ -155,6 +155,10 @@ int w3d_open_area(struct w3dctx *x, struct BitMap *bm, W3D_Bitmap *wbm, int yoff
     c->destalpha = (fmt & (W3D_FMT_A8R8G8B8 | W3D_FMT_A8B8G8R8 | W3D_FMT_R8G8B8A8 | W3D_FMT_B8G8R8A8)) ? W3D_TRUE : W3D_FALSE;
     x->direct = fmt == W3D_FMT_A8R8G8B8 || fmt == W3D_FMT_R5G6B5;
     x->fmt = fmt == W3D_FMT_R5G6B5 ? OGPU_FMT_RGB565 : OGPU_FMT_ARGB32;
+    /* w3d_sync above put the old area's frame into it. Where that area couldn't be locked the host still holds the
+     * frame; the route can't draw into this new area, so the frame is of an area that has gone and is let go of.
+     * Nothing else leaves the route with a frame held: stopping the route (w3d_vg_stop) clears it too. */
+    if (!x->direct && x->vg_hold) { x->vg_hold = 0; w3d_trace("virgl: a held frame dropped (the drawing area changed)"); }
     if (!x->direct) {
         x->offbpr = (ULONG)c->width * 4;
         x->off = w3d_alloc(x->offbpr * (ULONG)c->height);
@@ -291,12 +295,7 @@ static ULONG flush(struct w3dctx *x, int present)
     UBYTE *stream;
     ULONG r = W3D_SUCCESS;
     if (x->live || (!x->s3.body && live_now(x))) return flush_live(x, present);
-    if (!x->s3.body) {
-        /* a frame the host still held is of an area the route drew into; this one it can't take, so that frame
-         * is let go of */
-        if (x->vg_hold) { x->vg_hold = 0; w3d_trace("virgl: a held frame dropped (the drawing area changed)"); }
-        return W3D_SUCCESS;
-    }
+    if (!x->s3.body) return W3D_SUCCESS;
     w3d_trace("flush %ld words %ld bytes", (long)x->s3.b.words, (long)x->s3.vused);
     x->sent_tex = 0;
     if (x->s3.b.overflow) r = W3D_QUEUEFAILED;

@@ -15,5 +15,5 @@ G="$ROOT/library/modules/gl/gla"
 cc -m32 -std=gnu99 -DVG_HOST -I"$ROOT/tests/host-include" -I"$ROOT/include" -I"$G" -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter \
     -fsanitize=address,undefined -fno-sanitize-recover=undefined -o "$OUT/test_gla_carry" \
     "$HERE/test_gla_carry.c" "$G/gla_carry_pipe.c" \
-    "$P/pipe_screen.c" "$P/pipe_block.c" "$P/pipe_res.c" "$P/pipe_arena.c" "$P/pipe_state.c" "$P/pipe_ff.c"
+    "$P/pipe_screen.c" "$P/pipe_block.c" "$P/pipe_res.c" "$P/pipe_arena.c" "$P/pipe_state.c" "$P/pipe_frame.c" "$P/pipe_ff.c"
 ASAN_OPTIONS=detect_leaks=1 "$OUT/test_gla_carry"

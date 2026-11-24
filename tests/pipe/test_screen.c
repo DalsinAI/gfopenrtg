@@ -121,7 +121,7 @@ int main(void)
     CHECK(ops->blend_create && ops->bind_layout && ops->set_constants && ops->obj_new && ops->state_reset, "M4's members are there");
     CHECK(ops->ff_shader && ops->bind_shader && ops->ff_vs_consts, "M5's members are there");
     CHECK(ops->blend_create2 && ops->dsa_create2 && ops->sampler_create2 && ops->room && ops->buf_put, "M6's members are there");
-    CHECK(!ops->bind_texture && !ops->draw && !ops->stats, "later stages' members are 0");
+    CHECK(ops->bind_texture && ops->draw && ops->draw_buf && ops->copy && !ops->res_dirty && !ops->stats, "version 7's frame members are real; res_dirty and stats stay 0");
 
     /* an open: the blocks word for word as minigl.library and Warp3D.library sent them */
     host();

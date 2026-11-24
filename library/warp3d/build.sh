@@ -46,7 +46,7 @@ done
 "$CC" $FLAGS -fno-toplevel-reorder -fno-builtin -nostartfiles -nostdlib -o "$OUT/Warp3D.library" \
     "$HERE/w3d_lib.c" "$HERE/w3d_ctx.c" "$HERE/w3d_batch.c" "$HERE/w3d_draw.c" "$HERE/w3d_texture.c" "$HERE/w3d_query.c" \
     "$HERE/w3d_vg.c" "$HERE/w3d_vg_os3.c" \
-    "$ROOT/library/pipe/pipe_screen.c" "$ROOT/library/pipe/pipe_block.c" "$ROOT/library/pipe/pipe_res.c" "$ROOT/library/pipe/pipe_arena.c" "$ROOT/library/pipe/pipe_state.c" "$ROOT/library/pipe/pipe_ff.c" "$ROOT/library/pipe/pipe_emit_s3d.c" \
+    "$ROOT/library/pipe/pipe_screen.c" "$ROOT/library/pipe/pipe_block.c" "$ROOT/library/pipe/pipe_res.c" "$ROOT/library/pipe/pipe_arena.c" "$ROOT/library/pipe/pipe_state.c" "$ROOT/library/pipe/pipe_frame.c" "$ROOT/library/pipe/pipe_ff.c" "$ROOT/library/pipe/pipe_emit_s3d.c" \
     "$ROOT/library/pipe/pipe_xport_os3.c" \
     "$OUT/w3d-obj/ogpu_core.o" "$OUT/w3d-obj/ogpu_dwt.o" "$OUT/w3d-obj/ogpu_3d.o" "$OUT/w3d-obj/ogpu_build.o" "$OUT/w3d-obj/ogpu_build3d.o" \
     "$ROOT/library/string.c" -noixemul -lm -lgcc

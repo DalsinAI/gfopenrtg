@@ -11,5 +11,5 @@ OUT=${OUT:-$ROOT/build/tests}
 mkdir -p "$OUT"
 cc -m32 -std=gnu99 -DVG_HOST -I"$ROOT/tests/host-include" -I"$ROOT/include" -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter \
     -fsanitize=address,undefined -fno-sanitize-recover=undefined -o "$OUT/test_pipe_screen" \
-    "$HERE/test_screen.c" "$ROOT/library/pipe/pipe_screen.c" "$ROOT/library/pipe/pipe_block.c" "$ROOT/library/pipe/pipe_res.c" "$ROOT/library/pipe/pipe_arena.c" "$ROOT/library/pipe/pipe_state.c" "$ROOT/library/pipe/pipe_ff.c"
+    "$HERE/test_screen.c" "$ROOT/library/pipe/pipe_screen.c" "$ROOT/library/pipe/pipe_block.c" "$ROOT/library/pipe/pipe_res.c" "$ROOT/library/pipe/pipe_arena.c" "$ROOT/library/pipe/pipe_state.c" "$ROOT/library/pipe/pipe_frame.c" "$ROOT/library/pipe/pipe_ff.c"
 ASAN_OPTIONS=detect_leaks=1 "$OUT/test_pipe_screen"

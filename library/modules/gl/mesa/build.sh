@@ -174,9 +174,9 @@ eval "$CC $FLAGS -I$SRC/src/gallium/drivers -I$SRC/src/mesa/glapi -O2 -c $TOP/gl
 eval "$CC $FLAGS -I$SRC/src/gallium/drivers -I$SRC/src/virtio -I$REPO/include -O2 -c $TOP/gla/gla_virgl_pipe.c -o gla_virgl_pipe.o"
 PIPEFLAGS=$(for x in $FLAGS; do case $x in -m*|-noixemul|-fbaserel32|-fno-delete-null-pointer-checks) printf '%s ' "$x" ;; esac; done)
 case $NAME in
-    *amigaos*) PIPEFLAGS="$PIPEFLAGS -mnobitfield -fomit-frame-pointer -fno-builtin"; PIPESRC="pipe_screen pipe_block pipe_res pipe_arena pipe_state pipe_ff pipe_xport_os3" ;;
-    host)      PIPEFLAGS="$PIPEFLAGS -DVG_HOST -I$REPO/tests/host-include -include $TOP/tests/gla_pipe_host.h"; PIPESRC="pipe_screen pipe_block pipe_res pipe_arena pipe_state pipe_ff" ;;
-    *)         PIPEFLAGS="$PIPEFLAGS -I$REPO/tests/host-include -include $TOP/tests/gla_pipe_host.h"; PIPESRC="pipe_screen pipe_block pipe_res pipe_arena pipe_state pipe_ff" ;;
+    *amigaos*) PIPEFLAGS="$PIPEFLAGS -mnobitfield -fomit-frame-pointer -fno-builtin"; PIPESRC="pipe_screen pipe_block pipe_res pipe_arena pipe_state pipe_frame pipe_ff pipe_xport_os3" ;;
+    host)      PIPEFLAGS="$PIPEFLAGS -DVG_HOST -I$REPO/tests/host-include -include $TOP/tests/gla_pipe_host.h"; PIPESRC="pipe_screen pipe_block pipe_res pipe_arena pipe_state pipe_frame pipe_ff" ;;
+    *)         PIPEFLAGS="$PIPEFLAGS -I$REPO/tests/host-include -include $TOP/tests/gla_pipe_host.h"; PIPESRC="pipe_screen pipe_block pipe_res pipe_arena pipe_state pipe_frame pipe_ff" ;;
 esac
 PIPEOBJS="gla_virgl_pipe.o gla_carry_pipe.o"
 $CC $PIPEFLAGS -I"$REPO/include" -I"$TOP/gla" -O2 -Wall -Wextra -Wno-unused-parameter -c "$TOP/gla/gla_carry_pipe.c" -o gla_carry_pipe.o

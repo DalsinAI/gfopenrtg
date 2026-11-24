@@ -1782,8 +1782,11 @@ LONG ortg_present(struct ORTG_PresentInfo *in)
     if (in->flags & ORTG_PRESENT_PREPARE) in->token = NULL;
     if (in->kind == ORTG_SURF_VIRGL) {
         /* every VIRGL route needs gfopengpu.library: opened now if no screen opening has (a program's own
-         * process asks, as ORTG_MonitorCount's does); without it -1, and the caller presents its own way */
-        if (!ortg_S->opengpu && !prs_tried) { prs_tried = 1; late_opengpu(1); }
+         * process asks, as ORTG_MonitorCount's does); without it -1, and the caller presents its own way.
+         * Only a process may load it from disk (late_opengpu looks), so a plain task's present doesn't
+         * use up the one try: the first present from a process with GFOpenRTG's screens on makes it. */
+        if (!ortg_S->opengpu && !prs_tried && SC->on
+            && ((struct Task *)FindTask(NULL))->tc_Node.ln_Type == NT_PROCESS) { prs_tried = 1; late_opengpu(1); }
         if (!ortg_S->opengpu || ogpu_off) return -1;
     }
     if (in->flags & ORTG_PRESENT_VSYNC) WaitTOF();

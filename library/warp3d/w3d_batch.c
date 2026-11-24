@@ -249,13 +249,13 @@ static int vg_flush(struct w3dctx *x, UBYTE *stream, long words, int present)
  * once the block has run. */
 int w3d_area_lock(struct w3dctx *x, ULONG *address, ULONG *bpr)
 {
-    if (!lock_area(x)) return 0;
+    if (!x->held && !lock_area(x)) return 0;    /* a recorded batch: flush() has it already */
     *address = (ULONG)x->base;
     *bpr = x->bpr;
     return 1;
 }
 
-void w3d_area_unlock(struct w3dctx *x) { unlock_area(x); }
+void w3d_area_unlock(struct w3dctx *x) { if (!x->held) unlock_area(x); }
 
 /* The draws of a new batch go straight to the route: the graphics card draws them, into an area it can take, and
  * the route isn't the old batch reader. Decided when a batch starts; it holds until that batch has gone. */
@@ -280,6 +280,7 @@ static void live_start(struct w3dctx *x, int data)
 static ULONG flush_live(struct w3dctx *x, int present)
 {
     int shown = 0;
+    ULONG r = W3D_SUCCESS;
     LONG e;
     if (!x->s3.body) {
         if (!(present && x->vg_hold)) return W3D_SUCCESS;
@@ -291,6 +292,7 @@ static ULONG flush_live(struct w3dctx *x, int present)
     x->sent_tex = 0;
     e = w3dvg_end(x->vg, present, &shown);
     x->vg_hold = !shown;
+    if (present && !shown) r = W3D_NOTVISIBLE;  /* the area couldn't be locked: the frame waits on the host */
     x->s3o->reset(&x->s3);
     if (e > 0) {                                /* drawn, but not all of it */
         x->vg_errors += (ULONG)e;
@@ -302,7 +304,7 @@ static ULONG flush_live(struct w3dctx *x, int present)
         w3d_vg_stop(x);
         x->route = ROUTE_CPU;
     }
-    return W3D_SUCCESS;
+    return r;
 }
 
 static ULONG flush(struct w3dctx *x, int present)
@@ -318,7 +320,9 @@ static ULONG flush(struct w3dctx *x, int present)
             /* nothing new, but the host's frame isn't in the area yet: SURFACE and TARGET alone */
             area.address = (unsigned long)x->base; area.bpr = x->bpr; area.w = c->width; area.h = c->height; area.format = x->fmt;
             words = x->s3o->finish(&x->s3, &area, &stream);
+            x->held = 1;
             w3dvg_run(x->vg, stream, words, 0, 0, 1);
+            x->held = 0;
             x->vg_hold = 0;
             unlock_area(x);
         }
@@ -331,6 +335,7 @@ static ULONG flush(struct w3dctx *x, int present)
     /* SURFACE and TARGET in front of the commands */
     area.address = (unsigned long)x->base; area.bpr = x->bpr; area.w = c->width; area.h = c->height; area.format = x->fmt;
     words = x->s3o->finish(&x->s3, &area, &stream);
+    x->held = 1;
     if (x->route == ROUTE_VIRGL && !vg_flush(x, stream, words, present)) {
         /* drawn on the host */
     } else if (x->route == ROUTE_GPU && OpenGPUBase) {
@@ -349,6 +354,7 @@ static ULONG flush(struct w3dctx *x, int present)
         ogpu3d_run(&x->d3, stream, words);
         if (x->vg) w3dvg_stale(x->vg);      /* the area and Z changed behind the host */
     }
+    x->held = 0;
     unlock_area(x);
     x->s3o->reset(&x->s3);
     return r;

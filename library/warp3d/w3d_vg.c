@@ -1118,6 +1118,7 @@ static void end_group(struct w3dvg *v)
             if (hi > v->region_top) v->region_top = hi;
             if (v->pipe->sent(v->px) != v->seq) {   /* the PUT filled the block: the run's indices went with it */
                 say(v, "virgl: a run of draws was cut by a block (dropped)");
+                v->declined++;
                 px_sync(v);
                 return;
             }

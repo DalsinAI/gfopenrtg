@@ -1,0 +1,82 @@
+#!/bin/sh
+# Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
+# SPDX-License-Identifier: MIT
+# M8's gate: acvirgl_present_bench within 2% of M0 (917bd97). What an ACV_PRESENT costs on the host is
+# acvirgl.c's; the bench is built with M0's acvirgl.c and with this tree's, and the two run in turns
+# (ROUNDS each, so a busy machine weighs on both alike). The mean present time of each is compared.
+# M0's file comes from git (git show); without git only this tree's is measured, and the test says so.
+#   tests/pipe/test_present_bench.sh
+# ACVIRGL_LIB: the virglrenderer library (default the machine's); VIRGL_SRC: its source's src/ (for
+# virgl_protocol.h; looked for when unset); BENCH_ARGS: the bench's arguments (default 300 640 480 now).
+set -eu
+HERE=$(cd "$(dirname "$0")" && pwd)
+ROOT=$(cd "$HERE/../.." && pwd)
+M0=917bd97
+: "${ACVIRGL_LIB:=/usr/lib/x86_64-linux-gnu/libvirglrenderer.so.1}"
+: "${ROUNDS:=5}"
+: "${BENCH_ARGS:=300 640 480 now}"
+if [ ! -e "$ACVIRGL_LIB" ]; then echo "test_present_bench: no $ACVIRGL_LIB: cannot run here"; exit 1; fi
+export ACVIRGL_LIB
+if [ -z "${VIRGL_SRC:-}" ]; then
+    for d in /usr/src /usr/local/src /opt /srv /home; do
+        f=$(find "$d" -maxdepth 6 -name virgl_protocol.h -path '*/src/*' 2>/dev/null | head -n 1)
+        if [ -n "$f" ]; then VIRGL_SRC=$(dirname "$f"); break; fi
+    done
+fi
+if [ ! -f "${VIRGL_SRC:-/nonexistent}/virgl_protocol.h" ]; then
+    echo "test_present_bench: no virgl_protocol.h (set VIRGL_SRC to virglrenderer's src/)"; exit 1
+fi
+echo "virgl_protocol.h from $VIRGL_SRC"
+OUT=$(mktemp -d)
+trap 'rm -rf "$OUT"' EXIT
+
+build() {   # $1 acvirgl.c, $2 the bench
+    cc -std=gnu11 -O2 -Wall -Wextra -I"$VIRGL_SRC" -I"$ROOT/host/virgl" -o "$2" "$ROOT/tests/acvirgl_present_bench.c" "$1" -ldl
+}
+build "$ROOT/host/virgl/acvirgl.c" "$OUT/bench_now"
+have_m0=0
+if git -C "$ROOT" cat-file -e "$M0:host/virgl/acvirgl.c" 2>/dev/null; then
+    mkdir -p "$OUT/m0"
+    git -C "$ROOT" show "$M0:host/virgl/acvirgl.c" > "$OUT/m0/acvirgl.c"
+    cp "$ROOT/host/virgl/acvirgl.h" "$OUT/m0/acvirgl.h"
+    build "$OUT/m0/acvirgl.c" "$OUT/bench_m0"
+    have_m0=1
+    # the two acvirgl.c as the compiler sees them, comments gone
+    if cmp -s "$ROOT/host/virgl/acvirgl.c" "$OUT/m0/acvirgl.c"; then echo "acvirgl.c: the same file as M0's"
+    else
+        cc -fpreprocessed -dD -E -P "$ROOT/host/virgl/acvirgl.c" > "$OUT/now.i" 2>/dev/null || :
+        cc -fpreprocessed -dD -E -P "$OUT/m0/acvirgl.c" > "$OUT/m0.i" 2>/dev/null || :
+        if [ -s "$OUT/now.i" ] && cmp -s "$OUT/now.i" "$OUT/m0.i"; then echo "acvirgl.c: only comments changed since M0"
+        else echo "acvirgl.c: code changed since M0"; fi
+    fi
+else
+    echo "test_present_bench: no git history here: M0's acvirgl.c not built, only this tree measured"
+fi
+
+mean_of() { sed -n 's/^bench: present (the 68k waits) \([0-9.]*\) us mean.*/\1/p' "$1"; }
+i=0
+: > "$OUT/now.txt"; : > "$OUT/m0.txt"
+while [ $i -lt "$ROUNDS" ]; do
+    for b in now m0; do
+        [ $b = m0 ] && [ $have_m0 = 0 ] && continue
+        # shellcheck disable=SC2086
+        "$OUT/bench_$b" $BENCH_ARGS > "$OUT/run.txt" 2>&1 || { cat "$OUT/run.txt"; echo "test_present_bench: $b failed"; exit 1; }
+        if grep -q "ERRORS\|^no virgl" "$OUT/run.txt"; then cat "$OUT/run.txt"; echo "test_present_bench: $b gave errors"; exit 1; fi
+        m=$(mean_of "$OUT/run.txt")
+        [ -n "$m" ] || { cat "$OUT/run.txt"; echo "test_present_bench: no mean from $b"; exit 1; }
+        echo "$m" >> "$OUT/$b.txt"
+        [ $i = 0 ] && [ $b = now ] && sed -n '1p' "$OUT/run.txt"
+        echo "round $((i + 1)) $b: present $m us mean"
+    done
+    i=$((i + 1))
+done
+avg() { awk '{ s += $1; n++ } END { if (n) printf "%.1f", s / n }' "$1"; }
+med() { sort -n "$1" | awk '{ a[NR] = $1 } END { if (NR % 2) printf "%.1f", a[(NR + 1) / 2]; else printf "%.1f", (a[NR / 2] + a[NR / 2 + 1]) / 2 }'; }
+echo "this tree: mean $(avg "$OUT/now.txt") us, median $(med "$OUT/now.txt") us over $ROUNDS runs"
+[ $have_m0 = 1 ] || exit 0
+echo "M0 ($M0): mean $(avg "$OUT/m0.txt") us, median $(med "$OUT/m0.txt") us over $ROUNDS runs"
+# the medians compared (a busy machine's outliers weigh less): within 2%, either way
+awk -v a="$(med "$OUT/now.txt")" -v b="$(med "$OUT/m0.txt")" 'BEGIN {
+    d = (a - b) / b * 100; printf "present: %+.1f%% against M0 (median)\n", d
+    if (d > 2) { print "test_present_bench: slower than M0 by more than 2%"; exit 1 }
+    print "within 2%"; exit 0 }'

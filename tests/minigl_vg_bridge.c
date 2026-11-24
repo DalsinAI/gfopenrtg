@@ -11,7 +11,9 @@
  * Yama's ptrace scope 1).
  *   minigl_vg_bridge PROGRAM [ARGS...]
  * ACVIRGL_LIB names libvirglrenderer.so.1. The child finds the pipe's
- * descriptors in MGL_VG_BRIDGE ("read,write"). Exits as the child does. */
+ * descriptors in MGL_VG_BRIDGE ("read,write"). Exits as the child does.
+ * MGL_VG_TALLY=1: at the end, the stream's virgl commands by command and
+ * object, with their words (tests/pipe/test_w3d_tally.sh). */
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
@@ -62,6 +64,46 @@ static void write_back(void)
     nsh = 0;
 }
 
+/* MGL_VG_TALLY: the virgl commands of each SUBMIT, before the host runs them. */
+static uint64_t tally_n[256][256], tally_w[256][256];
+
+static void tally_block(uint32_t addr, uint32_t bytes)
+{
+    uint32_t words = bytes / 4, at = 0;
+    const uint8_t *b = map(NULL, addr, words * 4);
+    if (!b) return;
+    while (at + 2 <= words) {
+        uint32_t hdr = (uint32_t)b[at * 4] << 24 | (uint32_t)b[at * 4 + 1] << 16 | (uint32_t)b[at * 4 + 2] << 8 | b[at * 4 + 3];
+        uint32_t cmd = hdr >> 16, len = hdr & 0xFFFF;
+        if (len < 2 || at + len > words) break;
+        if (cmd == 10 && len >= 5) {                    /* ACV_SUBMIT: context, address, words */
+            const uint8_t *a = b + (at + 2) * 4;
+            uint32_t cmds = (uint32_t)a[4] << 24 | (uint32_t)a[5] << 16 | (uint32_t)a[6] << 8 | a[7];
+            uint32_t ndw = (uint32_t)a[8] << 24 | (uint32_t)a[9] << 16 | (uint32_t)a[10] << 8 | a[11];
+            const uint8_t *s = ndw && ndw <= 0x01000000u ? map(NULL, cmds, ndw * 4) : NULL;
+            uint32_t i = 0;
+            while (s && i < ndw) {
+                uint32_t w = (uint32_t)s[i * 4] | (uint32_t)s[i * 4 + 1] << 8 | (uint32_t)s[i * 4 + 2] << 16 | (uint32_t)s[i * 4 + 3] << 24;
+                uint32_t c = w & 0xFF, o = (w >> 8) & 0xFF, l = w >> 16;
+                tally_n[c][o]++;
+                tally_w[c][o] += l + 1;
+                i += l + 1;
+            }
+        }
+        at += len;
+    }
+}
+
+static void tally_print(void)
+{
+    int c, o;
+    for (c = 0; c < 256; c++)
+        for (o = 0; o < 256; o++)
+            if (tally_n[c][o])
+                printf("minigl_vg_bridge: tally cmd %d obj %d: %llu commands, %llu words\n", c, o,
+                       (unsigned long long)tally_n[c][o], (unsigned long long)tally_w[c][o]);
+}
+
 static int full_read(int fd, void *p, size_t n)
 {
     size_t got = 0;
@@ -80,6 +122,7 @@ int main(int argc, char **argv)
     struct acvirgl_stats st;
     int down[2], up[2], status = 0;
     uint32_t req[2];
+    int tally = getenv("MGL_VG_TALLY") && !strcmp(getenv("MGL_VG_TALLY"), "1");
     if (argc < 2) { fprintf(stderr, "usage: minigl_vg_bridge PROGRAM [ARGS...]\n"); return 2; }
     if (!(v = acvirgl_create(NULL, err, sizeof err))) { printf("minigl_vg_bridge: skipped (%s)\n", err); return 0; }
     printf("minigl_vg_bridge: virglrenderer draws with %s on %s\n", acvirgl_api(v), acvirgl_renderer(v));
@@ -97,7 +140,9 @@ int main(int argc, char **argv)
     }
     close(down[1]); close(up[0]);
     while (full_read(down[0], req, sizeof req)) {
-        int32_t r = acvirgl_run(v, map, NULL, req[0], req[1]);
+        int32_t r;
+        if (tally) tally_block(req[0], req[1]);
+        r = acvirgl_run(v, map, NULL, req[0], req[1]);
         write_back();
         if (bad) { r = -100; bad = 0; }
         if (write(up[1], &r, sizeof r) != sizeof r) break;
@@ -108,6 +153,7 @@ int main(int argc, char **argv)
            (unsigned long long)st.blocks, (unsigned long long)st.submits, (unsigned long long)st.submit_words,
            (unsigned long long)st.puts, (unsigned long long)st.put_bytes, (unsigned long long)st.gets,
            (unsigned long long)st.presents, (unsigned long long)st.errors);
+    if (tally) tally_print();
     acvirgl_destroy(v);
     return WIFEXITED(status) ? WEXITSTATUS(status) : 3;
 }

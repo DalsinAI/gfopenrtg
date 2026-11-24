@@ -17,11 +17,9 @@
 void vg_state_reset(GLcontext c)
 {
     struct mgl_vg *v = c->vg;
-    int i;
     v->dirty = VG_D_ALL;
     v->stride = 0;
-    for (i = 0; i < MGL_TEX_UNITS; i++) v->views[i] = v->samps[i] = 0xFFFFFFFFUL;
-    v->pipe->state_reset(v->px);
+    v->pipe->state_reset(v->px);        /* the units and what the pipe sent are forgotten too */
 }
 
 /* ---- OpenGL's numbers to Gallium's --------------------------------------------------------- */
@@ -294,7 +292,7 @@ void vg_prepare(GLcontext c, struct vg_layout *lay, int colswz, int flat_first)
     ULONG vk = 0, fk = 0, spots = 0;
     int lights[8], nl = 0, i;
     if (v->dirty & VG_D_FB) {
-        vg_set_framebuffer(c);
+        VGP(c, v->pipe->bind_framebuffer(v->px, v->colour->pr, v->depth->pr));   /* the surfaces are the pipe's */
         v->dirty &= ~VG_D_FB;
     }
     viewport_scissor(c);
@@ -324,43 +322,41 @@ void vg_prepare(GLcontext c, struct vg_layout *lay, int colswz, int flat_first)
         vk |= VS_FOG;
         fk |= FS_FOG_SET(c->fog_mode == GL_EXP ? 2 : c->fog_mode == GL_EXP2 ? 3 : 1);
     }
-    /* the texture units (OpenGL 1.1 3.7.5, ARB_multitexture) */
+    /* the texture units (OpenGL 1.1 3.7.5, ARB_multitexture): the pipe sends their views and samplers with the
+     * draw, when they changed */
     {
-        ULONG views[MGL_TEX_UNITS], samps[MGL_TEX_UNITS];
-        int u, vch = 0, sch = 0;
+        int u;
         for (u = 0; u < MGL_TEX_UNITS; u++) {
             struct mgl_tex *t = mgl_tex_unit(c, u);
-            views[u] = samps[u] = 0;
-            if (t && (views[u] = vg_tex_view(c, t)) != 0) {
+            struct vg_res *view = 0;
+            OGPUPipeCSO *samp = 0;
+            if (t && (view = vg_tex_view(c, t)) != 0) {
                 GLenum m = c->env_mode[u];
                 int e = m == GL_REPLACE ? FS_ENV_REPLACE : m == GL_DECAL ? FS_ENV_DECAL : m == GL_BLEND ? FS_ENV_BLEND
                       : m == GL_ADD ? FS_ENV_ADD : FS_ENV_MODULATE;
                 int rgb = t->base != OGPU_TEXBASE_ALPHA, a = t->base == OGPU_TEXBASE_RGBA || t->base == OGPU_TEXBASE_ALPHA
                         || t->base == OGPU_TEXBASE_LUM_ALPHA || t->base == OGPU_TEXBASE_INTENSITY;
-                samps[u] = vg_tex_sampler(c, t);
+                samp = vg_tex_sampler(c, t);
                 fk |= u ? FS_ENV1_SET(e) | (rgb ? FS_RGB1 : 0) | (a ? FS_A1 : 0) : FS_ENV0_SET(e) | (rgb ? FS_RGB0 : 0) | (a ? FS_A0 : 0);
                 vk |= u ? VS_TC1 : VS_TC0;
                 if ((lay->key >> ((VG_A_TC0 + u) * 4)) & 15) vk |= u ? VS_TC1_ATTR : VS_TC0_ATTR;
                 if (!c->tex_identity[u]) vk |= u ? VS_TC1_MAT : VS_TC0_MAT;
                 vk |= u ? VS_GEN1_SET(vg_gen_of(c, 1)) : VS_GEN0_SET(vg_gen_of(c, 0));
             }
-            if (views[u] != v->views[u]) vch = 1;
-            if (samps[u] != v->samps[u]) sch = 1;
+            v->pipe->bind_texture(v->px, (ULONG)u, view ? view->pr : 0, samp);
         }
         if (VS_GEN0(vk) == 3 || VS_GEN1(vk) == 3) {
             if ((lay->key >> (VG_A_NORMAL * 4)) & 15) vk |= VS_NRM_ATTR;
         }
-        if (vch) { vg_sampler_views(c, MGL_TEX_UNITS, views); for (u = 0; u < MGL_TEX_UNITS; u++) v->views[u] = views[u]; }
-        if (sch) { vg_sampler_states(c, MGL_TEX_UNITS, samps); for (u = 0; u < MGL_TEX_UNITS; u++) v->samps[u] = samps[u]; }
     }
     {                                   /* the pipe's one generator (stage M5): made once per key, bound when it changed */
         struct OGPUFFKey k;
         k.vs = vg_ff_vs(vk); k.fs = vg_ff_fs(fk); k.spots = spots;
         VGP(c, v->pipe->bind_shader(v->px, v->pipe->ff_shader(v->px, &k)));
     }
-    /* the layout and the buffers */
+    /* the layout; the vertex buffer goes with the draw, at this stride (the pipe binds it when it changed) */
     VGP(c, v->pipe->bind_layout(v->px, lay->cso));
-    if (lay->stride != v->stride || (v->dirty & VG_D_VBUF)) { vg_set_vertex_buffer(c, lay->stride); v->dirty &= ~VG_D_VBUF; }
+    v->stride = lay->stride;
     vs_constants(c, vk, lights, nl);
     fs_constants(c);
 }

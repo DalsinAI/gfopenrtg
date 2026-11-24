@@ -37,38 +37,18 @@ static struct vg_tex *tv_of(struct mgl_tex *t)
     return t->vg;
 }
 
-static void destroy_view(GLcontext c, ULONG h)
-{
-    ULONG *p;
-    int u;
-    if (!h) return;
-    for (u = 0; u < MGL_TEX_UNITS; u++) if (c->vg->views[u] == h) c->vg->views[u] = 0xFFFFFFFFUL;
-    p = vg_cmd(c, 2);
-    if (p) { VG_W(p, VG_CMD0(VG_CCMD_DESTROY_OBJECT, VG_OBJ_SAMPLER_VIEW, 1)); VG_W(p, h); }
-}
-
-/* A new resource version: all levels go up, the old one goes after the block. */
+/* A new resource version: all levels go up, the old one goes after the block (its sampler view, the pipe's, goes
+ * with it; the new one's is made at its first draw). */
 static int new_version(GLcontext c, struct mgl_tex *t, struct vg_tex *tv, int levels)
 {
     struct vg_res *r = vg_res_create(c, VG_TARGET_2D, VG_FMT_B8G8R8A8_UNORM, VG_BIND_SAMPLER_VIEW,
                                      (ULONG)t->w, (ULONG)t->h, (ULONG)levels);
-    ULONG *p, fmt;
     if (!r) return 0;
-    if (tv->res) { destroy_view(c, tv->view); vg_res_release(c, tv->res); }
+    if (tv->res) vg_res_release(c, tv->res);
     tv->res = r;
     tv->w = t->w; tv->h = t->h; tv->levels = levels;
     tv->whole = 1;
-    tv->view = vg_new_obj(c);
-    fmt = VG_FMT_B8G8R8A8_UNORM;
-    if (c->vg->caps_bits & (1UL << 1)) fmt |= (ULONG)VG_TARGET_2D << 24;   /* VIRGL_CAP_TEXTURE_VIEW */
-    p = vg_cmd(c, 7);
-    if (p) {
-        VG_W(p, VG_CMD0(VG_CCMD_CREATE_OBJECT, VG_OBJ_SAMPLER_VIEW, 6));
-        VG_W(p, tv->view); VG_W(p, r->handle); VG_W(p, fmt);
-        VG_W(p, 0);                                     /* layers 0 .. 0 */
-        VG_W(p, (ULONG)(levels - 1) << 8);              /* levels 0 .. levels - 1 */
-        VG_W(p, 0 | 1 << 3 | 2 << 6 | 3 << 9);          /* R, G, B, A as they are */
-    }
+    c->vg->objects++;                   /* its view */
     return 1;
 }
 
@@ -92,7 +72,7 @@ static void upload(GLcontext c, struct mgl_tex *t, struct vg_tex *tv)
     tv->put = c->vg->seq;
 }
 
-ULONG vg_tex_view(GLcontext c, struct mgl_tex *t)
+struct vg_res *vg_tex_view(GLcontext c, struct mgl_tex *t)
 {
     struct mgl_vg *v = c->vg;
     struct vg_tex *tv = tv_of(t);
@@ -109,11 +89,11 @@ ULONG vg_tex_view(GLcontext c, struct mgl_tex *t)
     if (tv->gen != t->generation && tv->boxgen != t->generation) tv->whole = 1;   /* changed without a box (a palette) */
     if (tv->gen != t->generation || tv->whole) upload(c, t, tv);
     tv->used = v->seq;
-    return tv->view;
+    return tv->res;
 }
 
 /* The sampler state for t's filters and wraps, cached by key. */
-ULONG vg_tex_sampler(GLcontext c, struct mgl_tex *t)
+OGPUPipeCSO *vg_tex_sampler(GLcontext c, struct mgl_tex *t)
 {
     struct mgl_vg *v = c->vg;
     ULONG key[2], s0;
@@ -133,7 +113,7 @@ ULONG vg_tex_sampler(GLcontext c, struct mgl_tex *t)
         OGPUPipeCSO *o;
         k.s0 = key[0]; k.levels = key[1];
         VGP(c, o = v->pipe->sampler_create(v->px, &k));
-        return v->pipe->cso_handle(o);
+        return o;
     }
 }
 
@@ -165,7 +145,7 @@ void mgl_vg_tex_free(GLcontext c, struct mgl_tex *t)
     if (!tv) return;
     if (c->vg) {
         if (tv->put == c->vg->seq) vg_send(c, 0);
-        if (tv->res) { destroy_view(c, tv->view); vg_res_release(c, tv->res); }
+        if (tv->res) vg_res_release(c, tv->res);        /* its view goes with it */
     } else mgl_free(tv->res);
     mgl_free(tv);
     t->vg = 0;

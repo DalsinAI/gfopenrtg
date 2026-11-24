@@ -2,9 +2,8 @@
  * SPDX-License-Identifier: MIT
  *
  * minigl.library's virgl route on the OpenGPU shared pipe (docs/design/OpenGPU-Shared-Pipe-Plan.md): the context's
- * block, its resources and its arenas are the pipe's (library/pipe/), reached only through its table. What MiniGL
- * still writes itself goes through the pipe's version 2 bridge: the stream (cmd_room), the arenas' memory and use
- * (arenas), what a block changed (changed). */
+ * block, its resources, its arenas and every command of the frame are the pipe's (library/pipe/), reached only
+ * through its table (version 7). MiniGL fills the arenas itself: their memory and use come from arenas(). */
 #include "mgl_vg.h"
 
 /* The arenas, the buffers' handles and what a block changed: the pipe's, mirrored where the drawing code reads
@@ -13,15 +12,13 @@ void vg_sync(GLcontext c)
 {
     struct mgl_vg *v = c->vg;
     struct OGPUPipeArenas a;
-    ULONG ch, s;
+    ULONG s;
     v->pipe->arenas(v->px, &a);
     v->va = a.va; v->pnva = a.nva; v->cva = a.cva;
     v->ia = a.ia; v->pnia = a.nia; v->cia = a.cia;
     v->vbuf_h = a.vbuf; v->vb_off = a.vb_off;
     v->ibuf_h = a.ibuf; v->ib_base = a.ib_base;
-    ch = v->pipe->changed(v->px);
-    if (ch & OGPU_PIPE_CH_VBUF) v->dirty |= VG_D_VBUF;
-    if (ch & OGPU_PIPE_CH_IBUF) v->dirty |= VG_D_IBUF;
+    (void)v->pipe->changed(v->px);      /* the buffers are bound by the pipe, which sees their changes itself */
     s = v->pipe->sent(v->px);
     if (s != v->seq) {
         v->seq = s;
@@ -67,15 +64,37 @@ void vgp_put(GLcontext c, struct vg_res *r, ULONG level, ULONG x, ULONG y, ULONG
     if (v->pipe->sent(v->px) != s) vg_sync(c);
 }
 
-/* ---- the stream and the arenas ------------------------------------------------------------------------------- */
+/* ---- the frame's commands ------------------------------------------------------------------------------------ */
 
-ULONG *vgp_cmd(GLcontext c, ULONG n)
+ULONG vg_fbits(float f) { return vgc_fbits(f); }
+
+void vg_clear(GLcontext c, ULONG buffers, const float *rgba, float depth)
 {
     struct mgl_vg *v = c->vg;
-    ULONG s = v->seq, *p = v->pipe->cmd_room(v->px, n);    /* 0: larger than the stream, larger at the frame's end */
-    if (v->pipe->sent(v->px) != s) vg_sync(c);
-    return p;
+    VGP(c, v->pipe->clear(v->px, buffers, rgba, depth, 0));
 }
+
+void vg_draw(GLcontext c, ULONG prim, ULONG start, ULONG count, int indexed, LONG bias)
+{
+    struct mgl_vg *v = c->vg;
+    struct OGPUDrawBuf d;
+    d.size = sizeof d;
+    d.prim = prim; d.first = start; d.count = count; d.indexed = indexed ? 16 : 0; d.bias = bias;
+    d.stride = v->stride;
+    d.vbuf = d.ibuf = 0;                /* the arenas: the pipe adds this block's places in its buffers */
+    d.vb_offset = d.ib_offset = 0;
+    VGP(c, v->pipe->draw_buf(v->px, &d));
+    v->draws++;
+    if (mgl_trace > 2) mgl_log("draw prim %ld start %ld count %ld idx %ld bias %ld (nva %ld nia %ld)", (long)prim, (long)start, (long)count, (long)indexed, (long)bias, (long)VG_NVA(v), (long)VG_NIA(v));
+}
+
+/* ---- the block ----------------------------------------------------------------------------------------------- */
+
+void vg_blk_cmd(ULONG *p, ULONG cmd, ULONG n, const ULONG *args) { vgc_blk_cmd(p, cmd, n, args); }
+LONG vg_result(const ULONG *blk, ULONG at) { return vgc_result(blk, at); }
+ULONG vg_word(const ULONG *blk, ULONG at) { return vgc_word(blk, at); }
+
+/* ---- the arenas ---------------------------------------------------------------------------------------------- */
 
 void vgp_need(GLcontext c, ULONG va_bytes, ULONG ia_count)
 {
@@ -173,22 +192,13 @@ int vgp_open(GLcontext c)
     /* the pipe's context: the one the open made, with its block, its arenas and their buffers */
     if (!(v->px = pipe->ctx_create(v->screen, 0))) goto fail;
     vg_sync(c);
-    /* colour and depth, at the drawable's size; their surfaces; the framebuffer */
+    /* colour and depth, at the drawable's size (their surfaces are the pipe's, made at the first draw's bind) */
     zfmt = mgl_prefs.zbits == 16 ? VG_FMT_Z16_UNORM : VG_FMT_Z24X8_UNORM;
     v->colour = vg_res_create(c, VG_TARGET_2D, VG_FMT_B8G8R8A8_UNORM, VG_BIND_RENDER_TARGET | VG_BIND_SAMPLER_VIEW,
                               (ULONG)c->width, (ULONG)c->height, 1);
     v->depth = vg_res_create(c, VG_TARGET_2D, zfmt, VG_BIND_DEPTH_STENCIL, (ULONG)c->width, (ULONG)c->height, 1);
     if (!v->colour || !v->depth) goto fail;
-    {
-        ULONG *p;
-        v->surf_c = vg_new_obj(c);
-        v->surf_z = vg_new_obj(c);
-        p = vg_cmd(c, 12);
-        VG_W(p, VG_CMD0(VG_CCMD_CREATE_OBJECT, VG_OBJ_SURFACE, 5));
-        VG_W(p, v->surf_c); VG_W(p, v->colour->handle); VG_W(p, VG_FMT_B8G8R8A8_UNORM); VG_W(p, 0); VG_W(p, 0);
-        VG_W(p, VG_CMD0(VG_CCMD_CREATE_OBJECT, VG_OBJ_SURFACE, 5));
-        VG_W(p, v->surf_z); VG_W(p, v->depth->handle); VG_W(p, zfmt); VG_W(p, 0); VG_W(p, 0);
-    }
+    v->objects += 2;
     vg_state_reset(c);
     vg_send(c, 0);                      /* made now, to see the host take them */
     if (v->pre_errors) { mgl_log("virgl: the host refused the context's resources"); goto fail; }

@@ -110,7 +110,7 @@ static void s3d_clear3d(struct OGPUPipeS3D *e, LONG kind, LONG x, LONG y, LONG w
 static LONG s3d_finish(struct OGPUPipeS3D *e, const struct OGPUPipeS3DBuf *surface, UBYTE **stream)
 {
     struct OGPUBatch pre;
-    ULONG prefix[32];
+    ULONG prefix[32];                   /* SURFACE and TARGET are 6 and 2 words; a front end's prefix_words is 16 */
     LONG pw = e->prefix_words > 32 ? 32 : e->prefix_words, body = e->body ? e->b.words : 0;
     UBYTE *s, *p;
     LONG i;

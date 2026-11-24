@@ -141,6 +141,15 @@ struct w3dvg {
     int g_on;
     ULONG g_layout, g_stride, g_base, g_ifirst, g_tex;
     ULONG errors;
+    /* direct calls (w3dvg_begin, stage M7 part 2): the batch's vertex memory fills as the draws come, so each run of
+     * draws PUTs the part it reads when it ends, at one place in the ring for the whole batch */
+    int grow;
+    ULONG g_lo, g_hi;                   /* the run's part of the region (offsets); g_hi 0: none */
+    ULONG region_top;                   /* the region's end as drawn from, this batch */
+    ULONG declined;                     /* commands of this batch left out */
+    int area_locked;                    /* the platform's lock on the drawing area is held (a load or a present) */
+    int presented;                      /* the last block carried the present */
+    int lost;                           /* a block of this batch didn't run (the host is gone): its draws are lost */
     struct w3dvg_stats st;
 };
 
@@ -302,11 +311,13 @@ static void px_sync(struct w3dvg *v)
 {
     ULONG s = v->pipe->sent(v->px);
     if (s != v->seq) {
-        if (v->rb_seq == v->seq + 1) v->rb_off += (v->region_len + 255) & ~255UL;
-        v->rb_seq = 0;
+        if (!v->grow) {
+            if (v->rb_seq == v->seq + 1) v->rb_off += (v->region_len + 255) & ~255UL;
+            v->rb_seq = 0;
+        }
         v->st.blocks += s - v->seq;
         v->seq = s;
-        if (v->g_on) { v->g_on = 0; say(v, "virgl: a run of draws was cut by a block (dropped)"); }
+        if (v->g_on) { v->g_on = 0; v->g_lo = v->g_hi = 0; say(v, "virgl: a run of draws was cut by a block (dropped)"); }
         v->b_stride = v->b_vboff = v->b_iboff = 0xFFFFFFFFUL;
         v->b_vbuf = 0;
     }
@@ -371,12 +382,30 @@ static void block_begin(struct w3dvg *v)
 /* Where the copied vertices start in the vertex buffer, in this block. */
 static ULONG va_at(struct w3dvg *v) { return v->px ? v->vb_block : v->vb_block + ((v->region_len + 255) & ~255UL); }
 
-static ULONG present_cmd(struct w3dvg *v, ULONG *p)
+/* The drawing area's memory for a send that reads or writes it (a load, a present): the batch's SURFACE, or, with
+ * direct calls, the platform's, locked from here until area_put. 0: not to be had now. */
+static int area_get(struct w3dvg *v, ULONG *addr, ULONG *bpr)
+{
+    const ULONG *t = v->slot[v->target];
+    if (!v->os.area_lock) { *addr = t[0]; *bpr = t[1]; return 1; }
+    if (v->area_locked || !v->os.area_lock(v->os.user, addr, bpr)) return 0;
+    v->area_locked = 1;
+    return 1;
+}
+
+static void area_put(struct w3dvg *v)
+{
+    if (!v->area_locked) return;
+    v->area_locked = 0;
+    v->os.area_unlock(v->os.user);
+}
+
+static ULONG present_cmd(struct w3dvg *v, ULONG *p, ULONG addr, ULONG bpr)
 {
     const ULONG *t = v->slot[v->target];
     ULONG a[12], fmt = t[4] == OGPU_FMT_RGB565 ? OGPU_FMT_RGB565 : OGPU_FMT_ARGB32;
     a[0] = v->ctx_id; a[1] = v->colour->handle; a[2] = 0; a[3] = 0;
-    a[4] = t[0]; a[5] = t[1]; a[6] = fmt;
+    a[4] = addr; a[5] = bpr; a[6] = fmt;
     a[7] = (t[2] << 16) | (t[3] & 0xFFFF); a[8] = 0; a[9] = 1;
     a[10] = 0; a[11] = (t[2] << 16) | (t[3] & 0xFFFF);
     blk_cmd(p, ACV_PRESENT, 12, a);
@@ -386,16 +415,20 @@ static ULONG present_cmd(struct w3dvg *v, ULONG *p)
 static ULONG px_present_prepare(void *user, ULONG ctx, ULONG handle, ULONG *p, ULONG room)
 {
     struct w3dvg *v = user;
+    ULONG addr, bpr;
     (void)ctx; (void)handle;
     if (room < BLK_WORDS(12)) return 0;
+    if (!area_get(v, &addr, &bpr)) return 0;    /* not visible now: the frame stays on the host */
+    v->presented = 1;
     v->st.presents++;
-    return present_cmd(v, p);
+    return present_cmd(v, p, addr, bpr);
 }
 
 static void px_present_finish(void *user, const ULONG *blk, ULONG at)
 {
     struct w3dvg *v = user;
     if (blk && result(blk, at) < 0) { v->errors++; say(v, "virgl: the present failed"); }
+    area_put(v);                        /* the block ran: the drawing area is the program's again */
 }
 
 static void block_send(struct w3dvg *v, int present)
@@ -404,16 +437,19 @@ static void block_send(struct w3dvg *v, int present)
     ULONG rl = (v->region_len + 255) & ~255UL;
     struct res *r;
     if (v->px) {
+        int wanted = present && v->colour && (v->host_flags & ACV_HOST_PRESENT);
         px_commit(v);
-        if (present && v->colour && (v->host_flags & ACV_HOST_PRESENT)) {
+        v->presented = 0;
+        if (wanted) {
             struct OGPUPresentHook h;
             h.prepare = px_present_prepare; h.finish = px_present_finish; h.user = v;
-            v->pipe->end_frame(v->px, &h, 0);   /* the arenas grow here when a block of the frame found them small */
-        } else
-            v->pipe->flush(v->px, 0);
+            if (v->pipe->end_frame(v->px, &h, 0) < 0) v->lost = 1;  /* the arenas grow here when a block found them small */
+        } else if (v->pipe->flush(v->px, 0) < 0) v->lost = 1;
+        area_put(v);                    /* (a block that went without its hook's second call) */
         if (v->pipe->errors(v->px)) { v->errors += v->pipe->errors(v->px); say(v, "virgl: the host refused commands of a block"); }
         px_sync(v);
-        if (present) v->have_frame = 0;
+        /* the drawing area couldn't be had for the present: the frame is still the host's */
+        if (present && !(wanted && v->os.area_lock && !v->presented)) v->have_frame = 0;
         return;
     }
     if (!v->open) return;
@@ -445,7 +481,7 @@ static void block_send(struct w3dvg *v, int present)
     at += v->npost;
     if (present && v->colour && (v->host_flags & ACV_HOST_PRESENT)) {
         present_at = at;
-        at += present_cmd(v, b + at);
+        at += present_cmd(v, b + at, v->slot[v->target][0], v->slot[v->target][1]);
         v->st.presents++;
     }
     if (at) {
@@ -575,26 +611,49 @@ static void put_rows(struct w3dvg *v, struct res *r, ULONG w, ULONG h, ULONG src
 }
 
 /* The drawing area's pixels into the colour buffer (the frame's first draw). */
-static void load(struct w3dvg *v)
+/* With the platform's lock held for a load, the block goes now, so the lock ends before the call returns. */
+static void load_sent(struct w3dvg *v)
+{
+    if (!v->area_locked) return;
+    end_group(v);
+    px_commit(v);
+    if (v->px) {
+        if (v->pipe->flush(v->px, 0) < 0) v->lost = 1;
+        if (v->pipe->errors(v->px)) v->errors += v->pipe->errors(v->px);
+        px_sync(v);
+    }
+    area_put(v);
+}
+
+/* 0: the drawing area's memory isn't to be had now (nothing is loaded). */
+static int load(struct w3dvg *v)
 {
     const ULONG *t = v->slot[v->target];
-    ULONG *p;
+    ULONG *p, addr, bpr;
+    if (t[4] != OGPU_FMT_ARGB32 && t[4] != OGPU_FMT_RGB565) { v->have_frame = 1; v->frame_addr = t[0]; v->st.loads++; return 1; }
+    if (t[4] == OGPU_FMT_RGB565 && !v->stage
+        && !(v->stage = res_create(v, VG_TARGET_2D, VG_FMT_B5G6R5_UNORM, VG_BIND_SAMPLER_VIEW, t[2], t[3], 1))) {
+        v->have_frame = 1; v->frame_addr = t[0]; v->st.loads++;
+        return 1;
+    }
+    if (!area_get(v, &addr, &bpr)) return 0;
     v->have_frame = 1;
     v->frame_addr = t[0];
     v->st.loads++;
     if (t[4] == OGPU_FMT_ARGB32) {
-        put_rows(v, v->colour, t[2], t[3], t[0], t[1], 4, ACV_SWAP_32, &v->cstage, &v->cstage_bytes);
-        return;
+        put_rows(v, v->colour, t[2], t[3], addr, bpr, 4, ACV_SWAP_32, &v->cstage, &v->cstage_bytes);
+        load_sent(v);
+        return 1;
     }
-    if (t[4] != OGPU_FMT_RGB565) return;
-    if (!v->stage && !(v->stage = res_create(v, VG_TARGET_2D, VG_FMT_B5G6R5_UNORM, VG_BIND_SAMPLER_VIEW, t[2], t[3], 1))) return;
-    put_rows(v, v->stage, t[2], t[3], t[0], t[1], 2, ACV_SWAP_16, &v->cstage, &v->cstage_bytes);
+    put_rows(v, v->stage, t[2], t[3], addr, bpr, 2, ACV_SWAP_16, &v->cstage, &v->cstage_bytes);
     p = cmd(v, 22);
     VG_W(p, VG_CMD0(VG_CCMD_BLIT, 0, 21));
     VG_W(p, 0xF);                          /* RGBA, nearest, no scissor */
     VG_W(p, 0); VG_W(p, 0);
     VG_W(p, v->colour->handle); VG_W(p, 0); VG_W(p, VG_FMT_B8G8R8A8_UNORM); VG_W(p, 0); VG_W(p, 0); VG_W(p, 0); VG_W(p, t[2]); VG_W(p, t[3]); VG_W(p, 1);
     VG_W(p, v->stage->handle); VG_W(p, 0); VG_W(p, VG_FMT_B5G6R5_UNORM); VG_W(p, 0); VG_W(p, 0); VG_W(p, 0); VG_W(p, t[2]); VG_W(p, t[3]); VG_W(p, 1);
+    load_sent(v);
+    return 1;
 }
 
 /* Memory's Z (and stencil) into the depth buffer: the first draw or part
@@ -645,7 +704,7 @@ static int ready(struct w3dvg *v, int fills_all)
     depth_for(v);
     if (!v->have_frame || v->frame_addr != v->slot[v->target][0]) {
         if (fills_all) { v->have_frame = 1; v->frame_addr = v->slot[v->target][0]; }
-        else load(v);
+        else if (!load(v)) return 0;
     }
     return 1;
 }
@@ -1049,6 +1108,21 @@ static void end_group(struct w3dvg *v)
     if (!v->g_on) return;
     v->g_on = 0;
     n = v->nia - v->g_ifirst;
+    if (v->g_hi) {
+        /* direct calls: the part of the batch's vertex memory this run reads goes up now, before its draw */
+        ULONG lo = v->g_lo, hi = v->g_hi;
+        v->g_lo = v->g_hi = 0;
+        if (n) {
+            v->pipe->buf_put(v->px, v->rbuf->pr, v->rb_at + lo, (const void *)(v->region + lo), hi - lo, ACV_SWAP_32);
+            v->st.puts++; v->st.put_bytes += hi - lo;
+            if (hi > v->region_top) v->region_top = hi;
+            if (v->pipe->sent(v->px) != v->seq) {   /* the PUT filled the block: the run's indices went with it */
+                say(v, "virgl: a run of draws was cut by a block (dropped)");
+                px_sync(v);
+                return;
+            }
+        }
+    }
     if (!n) return;
     if (v->b_iboff != v->ib_block + v->g_ifirst * 2) {
         vgc_index_buffer(cmd(v, VGC_INDEX_BUFFER_WORDS), v->px ? v->ibuf_h : v->ibuf->handle, 2, v->ib_block + v->g_ifirst * 2);
@@ -1067,7 +1141,7 @@ static void need(struct w3dvg *v, ULONG vbytes, ULONG indices)
         if (v->pipe->room(v->px, vbytes, indices, DRAW_ROOM, 512)) return;
         end_group(v);
         px_commit(v);
-        v->pipe->flush(v->px, 0);
+        if (v->pipe->flush(v->px, 0) < 0) v->lost = 1;
         if (v->pipe->errors(v->px)) v->errors += v->pipe->errors(v->px);
         v->pipe->need(v->px, vbytes, indices, DRAW_ROOM);   /* an arena too small for the draw grows */
         px_sync(v);
@@ -1142,14 +1216,12 @@ static void indices(struct w3dvg *v, int prim, ULONG first, ULONG n, const UBYTE
 }
 
 /* TRIANGLES, the 3D form. */
-static LONG triangles(struct w3dvg *v, const UBYTE *a, long args)
+static LONG triangles(struct w3dvg *v, ULONG vaddr, ULONG vcount, ULONG stride, ULONG iaddr, ULONG icount, ULONG isize,
+                      ULONG texw, ULONG layout)
 {
-    ULONG vaddr = rd32(a), vcount = rd32(a + 4), stride = rd32(a + 8), iaddr = rd32(a + 12), icount = rd32(a + 16);
-    ULONG isize = rd32(a + 20), texw = rd32(a + 24) & 0xFFFF, layout = args >= 9 ? rd32(a + 32) : 0;
     int prim = (int)(layout & OGPU_LAY_PRIM_MASK), textured;
-    ULONG n = iaddr ? icount : vcount, tris, off, first, bytes, view = 0, samp = 0, maxv, buf;
+    ULONG n = iaddr ? icount : vcount, tris, off, first, bytes, view = 0, samp = 0, maxv, buf, rlo = 0, rhi = 0;
     struct pipe pp;
-    if (args < 9) return -1;            /* SDL's form: not Warp3D's */
     if (!vcount || n < 3) return 0;
     if (prim > OGPU_LAY_FAN || stride < (ULONG)vsize_of(layout) || (iaddr && isize != 1 && isize != 2 && isize != 4)) return -1;
     if (texw < 16) return -1;           /* a SURFACE slot as texture: not Warp3D's */
@@ -1178,7 +1250,13 @@ static LONG triangles(struct w3dvg *v, const UBYTE *a, long args)
     buf = v->px ? v->vbuf_h : v->vbuf->handle;
     if (((stride | vaddr) & 3) == 0 && v->region_len && vaddr >= v->region && vaddr + bytes <= v->region + v->region_len
         && (!v->px || v->rbuf)) {
-        if (v->px) {
+        if (v->px && v->grow) {
+            /* direct calls: the run PUTs its part when it ends (end_group), at the batch's place in the ring */
+            rlo = vaddr - v->region;
+            rhi = rlo + ((bytes + 3) & ~3UL);
+            off = v->rb_at + rlo;
+            buf = v->rbuf->handle;
+        } else if (v->px) {
             /* the batch's vertex memory, PUT from where it is once a block, into the ring's next place */
             if (v->rb_seq != v->seq + 1) {
                 px_region_room(v);
@@ -1227,6 +1305,10 @@ static LONG triangles(struct w3dvg *v, const UBYTE *a, long args)
         /* the state may have sent the block (a full stream): the run starts again */
         if (!v->g_on) { group_for(v, buf, off, layout, stride, textured ? v->t_addr : 0, maxv, &first); bind_vbuf(v); }
     } else v->st.merged++;
+    if (rhi && v->g_on) {
+        if (!v->g_hi || rlo < v->g_lo) v->g_lo = rlo;
+        if (rhi > v->g_hi) v->g_hi = rhi;
+    }
     indices(v, prim, first, n, iaddr ? (const UBYTE *)iaddr : 0, isize, 0);
     return 0;
 }
@@ -1304,10 +1386,9 @@ static int whole(struct w3dvg *v, LONG x, LONG y, LONG w, LONG h)
     return x == 0 && y == 0 && w == (LONG)t[2] && h == (LONG)t[3];
 }
 
-static LONG fill(struct w3dvg *v, const UBYTE *a)
+static LONG fill(struct w3dvg *v, LONG x, LONG y, LONG w, LONG h, ULONG raw)
 {
-    ULONG xy = rd32(a), wh = rd32(a + 4), raw = rd32(a + 8), argb;
-    LONG x = (WORD)(xy >> 16), y = (WORD)(xy & 0xFFFF), w = (LONG)(wh >> 16), h = (LONG)(wh & 0xFFFF);
+    ULONG argb;
     int fmt = (int)v->slot[v->target][4];
     if (!clipped(v, &x, &y, &w, &h)) return 0;
     if (fmt == OGPU_FMT_RGB565) {
@@ -1325,10 +1406,8 @@ static LONG fill(struct w3dvg *v, const UBYTE *a)
     return 0;
 }
 
-static LONG clear3d(struct w3dvg *v, const UBYTE *a)
+static LONG clear3d(struct w3dvg *v, ULONG kind, LONG x, LONG y, LONG w, LONG h, ULONG val)
 {
-    ULONG kind = rd32(a), xy = rd32(a + 4), wh = rd32(a + 8), val = rd32(a + 12);
-    LONG x = (WORD)(xy >> 16), y = (WORD)(xy & 0xFFFF), w = (LONG)(wh >> 16), h = (LONG)(wh & 0xFFFF);
     if (kind & OGPU_KIND_READBACK) return 0;    /* the frame reaches memory at the present */
     if (kind > OGPU_KIND_STENCIL) return -1;
     if (!colour_for(v)) return -1;
@@ -1352,19 +1431,128 @@ static LONG clear3d(struct w3dvg *v, const UBYTE *a)
 
 /* ---- the batch ------------------------------------------------------------------------------------ */
 
+/* The calls a batch is made of (stage M7 part 2). Warp3D's draw calls make them as they come (w3d_batch.c); the
+ * reader below makes them from a recorded batch, for the route of before the shared pipe (ENV:Warp3D/PipeOld=1,
+ * one release) and the PC test. */
+
+static void batch_start(struct w3dvg *v, ULONG vbase, ULONG vlen, int grow)
+{
+    v->errors = 0;
+    v->declined = 0;
+    v->lost = 0;
+    v->region = vbase;
+    v->region_len = vlen <= REGION_MAX ? vlen : 0;
+    v->grow = grow && v->px && v->region_len;
+    v->g_lo = v->g_hi = 0;
+    v->region_top = 0;
+    block_begin(v);
+    if (v->grow) {
+        if (v->rbuf) v->rb_at = v->rb_off;      /* the batch's one place in the ring */
+        else v->grow = 0;                       /* no ring: the vertices are copied */
+    }
+}
+
+void w3dvg_begin(struct w3dvg *v, ULONG vbase, ULONG vcap) { batch_start(v, vbase, vcap, 1); }
+
+void w3dvg_area(struct w3dvg *v, ULONG address, ULONG bpr, LONG w, LONG h, ULONG format)
+{
+    end_group(v);
+    v->slot[0][0] = address; v->slot[0][1] = bpr; v->slot[0][2] = (ULONG)w; v->slot[0][3] = (ULONG)h; v->slot[0][4] = format;
+    if (format != OGPU_FMT_ARGB32 && format != OGPU_FMT_RGB565) { v->declined++; return; }
+    if (v->target != 0) v->sc_dirty = 1;
+    v->target = 0;
+    v->vp_dirty = 1;
+    v->vc_ok = 0;
+}
+
+void w3dvg_clip(struct w3dvg *v, LONG x, LONG y, LONG w, LONG h)
+{
+    end_group(v);
+    v->cx = x; v->cy = y; v->cw = w; v->ch = h;
+}
+
+void w3dvg_render3d(struct w3dvg *v, const ULONG *args)
+{
+    int i;
+    end_group(v);
+    for (i = 0; i < OGPU_R3D_ARGS; i++) v->r3d[i] = args[i];
+}
+
+void w3dvg_texenv(struct w3dvg *v, ULONG mode, ULONG colour)
+{
+    end_group(v);
+    v->env = mode; v->envc = colour;
+}
+
+void w3dvg_texture(struct w3dvg *v, ULONG address, ULONG bpr, LONG w, LONG h, ULONG format, ULONG generation,
+                   ULONG min, ULONG mag, ULONG wrap_s, ULONG wrap_t, ULONG border, ULONG levels, const ULONG *level_addrs)
+{
+    ULONG i;
+    end_group(v);
+    if (!levels) levels = 1;
+    if (levels > OGPU_TEX_LEVELS) { v->t_addr = 0; v->declined++; return; }
+    v->t_addr = address; v->t_bpr = bpr; v->t_w = (ULONG)w; v->t_h = (ULONG)h; v->t_fmt = format;
+    v->t_gen = generation; v->t_filter = min | (mag << 8); v->t_wrap = wrap_s | (wrap_t << 8); v->t_border = border;
+    v->t_levels = levels;
+    for (i = 1; i < levels; i++) v->t_lv[i] = level_addrs ? level_addrs[i - 1] : 0;
+}
+
+void w3dvg_depth(struct w3dvg *v, ULONG kind, ULONG address, ULONG bpr, LONG w, LONG h, ULONG format)
+{
+    end_group(v);
+    if (kind == OGPU_KIND_DEPTH) {
+        if (address != v->z_addr) v->have_z = 0;
+        v->z_addr = address; v->z_fmt = format; v->z_bpr = bpr; v->z_w = (ULONG)w; v->z_h = (ULONG)h;
+    } else if (kind == OGPU_KIND_STENCIL) {
+        if (address != v->s_addr) v->have_z = 0;
+        v->s_addr = address; v->s_bpr = bpr; v->s_w = (ULONG)w; v->s_h = (ULONG)h;
+    }
+    v->sc_dirty = 1;
+}
+
+void w3dvg_fill(struct w3dvg *v, LONG x, LONG y, LONG w, LONG h, ULONG raw)
+{
+    end_group(v);
+    if (fill(v, x, y, w, h, raw) < 0) v->declined++;
+}
+
+void w3dvg_clear3d(struct w3dvg *v, ULONG kind, LONG x, LONG y, LONG w, LONG h, ULONG value)
+{
+    end_group(v);
+    if (clear3d(v, kind, x, y, w, h, value) < 0) v->declined++;
+}
+
+void w3dvg_triangles(struct w3dvg *v, ULONG vaddr, ULONG vcount, ULONG stride, ULONG tex, ULONG layout)
+{
+    if (triangles(v, vaddr, vcount, stride, 0, 0, 0, tex & 0xFFFF, layout) < 0) v->declined++;
+}
+
+LONG w3dvg_end(struct w3dvg *v, int present, int *presented)
+{
+    end_group(v);
+    if (present && !v->colour) colour_for(v);
+    v->presented = 0;
+    block_send(v, present);
+    if (v->grow) {
+        v->rb_off += (v->region_top + 255) & ~255UL;    /* the ring's next place is after what this batch put there */
+        v->grow = 0;
+    }
+    if (presented) *presented = present && (!v->px || !v->os.area_lock || !v->colour || v->presented);
+    v->st.refused += v->errors;
+    v->st.declined += v->declined;
+    if (v->lost && v->os.area_lock) return -1;  /* direct calls: there is no batch to draw again; the caller leaves the route */
+    return (LONG)(v->errors + v->declined);
+}
+
+/* A recorded batch, read back. */
 LONG w3dvg_run(struct w3dvg *v, const UBYTE *s, long words, ULONG vbase, ULONG vlen, int present)
 {
     long at = 0;
-    ULONG declined = 0;
-    v->errors = 0;
-    v->region = vbase;
-    v->region_len = vlen <= REGION_MAX ? vlen : 0;
-    block_begin(v);
+    batch_start(v, vbase, vlen, 0);
     while (at < words) {
         ULONG hdr = rd32(s + at * 4), op = OGPU_HDR_OP(hdr), n = OGPU_HDR_WORDS(hdr);
         const UBYTE *a = s + at * 4 + 4;
         long args = (long)n - 1;
-        LONG r = 0;
         if (!n || at + (long)n > words) break;
         if (op != OGPU_OP_TRIANGLES && op != OGPU_OP_NOP) end_group(v);
         switch (op) {
@@ -1381,64 +1569,67 @@ LONG w3dvg_run(struct w3dvg *v, const UBYTE *s, long words, ULONG vbase, ULONG v
             ULONG sl = rd32(a);
             if (sl < 4) {
                 ULONG f = v->slot[sl][4];
-                if (f != OGPU_FMT_ARGB32 && f != OGPU_FMT_RGB565) { r = -1; break; }
+                if (f != OGPU_FMT_ARGB32 && f != OGPU_FMT_RGB565) { v->declined++; break; }
                 if ((int)sl != v->target) v->sc_dirty = 1;
                 v->target = (int)sl;
                 v->vp_dirty = 1;
                 v->vc_ok = 0;
-            } else r = -1;
+            } else v->declined++;
             break;
         }
         case OGPU_OP_CLIP: {
             ULONG xy = rd32(a), wh = rd32(a + 4);
-            v->cx = (WORD)(xy >> 16); v->cy = (WORD)(xy & 0xFFFF); v->cw = (LONG)(wh >> 16); v->ch = (LONG)(wh & 0xFFFF);
+            w3dvg_clip(v, (WORD)(xy >> 16), (WORD)(xy & 0xFFFF), (LONG)(wh >> 16), (LONG)(wh & 0xFFFF));
             break;
         }
-        case OGPU_OP_FILL: r = fill(v, a); break;
+        case OGPU_OP_FILL: {
+            ULONG xy = rd32(a), wh = rd32(a + 4);
+            w3dvg_fill(v, (WORD)(xy >> 16), (WORD)(xy & 0xFFFF), (LONG)(wh >> 16), (LONG)(wh & 0xFFFF), rd32(a + 8));
+            break;
+        }
         case OGPU_OP_RENDER3D: {
             int i;
             for (i = 0; i < OGPU_R3D_ARGS && i < args; i++) v->r3d[i] = rd32(a + i * 4);
-            if (v->r3d[18] || v->r3d[20]) { /* CLUT8 targets only */ }
             break;
         }
         case OGPU_OP_TEXENV:
-            if (rd32(a) == 0) { v->env = rd32(a + 4); v->envc = rd32(a + 8); }
-            else r = -1;
+            if (rd32(a) == 0) w3dvg_texenv(v, rd32(a + 4), rd32(a + 8));
+            else v->declined++;
             break;
         case OGPU_OP_TEXTURE: {
-            ULONG i;
-            if (rd32(a)) { r = -1; break; }
-            v->t_addr = rd32(a + 4); v->t_bpr = rd32(a + 8);
-            v->t_w = rd32(a + 12) >> 16; v->t_h = rd32(a + 12) & 0xFFFF; v->t_fmt = rd32(a + 16);
-            v->t_gen = rd32(a + 24); v->t_filter = rd32(a + 28); v->t_wrap = rd32(a + 32); v->t_border = rd32(a + 36);
-            v->t_levels = rd32(a + 40);
-            if (!v->t_levels) v->t_levels = 1;
-            if (v->t_levels > OGPU_TEX_LEVELS || (long)(10 + v->t_levels) > args) { v->t_addr = 0; r = -1; break; }
-            for (i = 1; i < v->t_levels; i++) v->t_lv[i] = rd32(a + 44 + (i - 1) * 4);
+            ULONG i, lv[OGPU_TEX_LEVELS], levels = rd32(a + 40);
+            if (rd32(a)) { v->declined++; break; }
+            if (!levels) levels = 1;
+            if (levels > OGPU_TEX_LEVELS || (long)(10 + levels) > args) { v->t_addr = 0; v->declined++; break; }
+            for (i = 1; i < levels; i++) lv[i - 1] = rd32(a + 44 + (i - 1) * 4);
+            w3dvg_texture(v, rd32(a + 4), rd32(a + 8), (LONG)(rd32(a + 12) >> 16), (LONG)(rd32(a + 12) & 0xFFFF), rd32(a + 16),
+                          rd32(a + 24), rd32(a + 28) & 255, rd32(a + 28) >> 8, rd32(a + 32) & 255, rd32(a + 32) >> 8,
+                          rd32(a + 36), levels, lv);
             break;
         }
         case OGPU_OP_DEPTH: {
-            ULONG kind = rd32(a), addr = rd32(a + 4), fmt = rd32(a + 16);
             ULONG wh = rd32(a + 12);
-            if (kind == OGPU_KIND_DEPTH) { if (addr != v->z_addr) v->have_z = 0; v->z_addr = addr; v->z_fmt = fmt; v->z_bpr = rd32(a + 8); v->z_w = wh >> 16; v->z_h = wh & 0xFFFF; }
-            else if (kind == OGPU_KIND_STENCIL) { if (addr != v->s_addr) v->have_z = 0; v->s_addr = addr; v->s_bpr = rd32(a + 8); v->s_w = wh >> 16; v->s_h = wh & 0xFFFF; }
-            v->sc_dirty = 1;
+            w3dvg_depth(v, rd32(a), rd32(a + 4), rd32(a + 8), (LONG)(wh >> 16), (LONG)(wh & 0xFFFF), rd32(a + 16));
             break;
         }
-        case OGPU_OP_CLEAR3D: r = clear3d(v, a); break;
-        case OGPU_OP_TRIANGLES: r = triangles(v, a, args); break;
-        case OGPU_OP_FENCE: break;
-        default: r = -1;
+        case OGPU_OP_CLEAR3D: {
+            ULONG xy = rd32(a + 4), wh = rd32(a + 8);
+            w3dvg_clear3d(v, rd32(a), (WORD)(xy >> 16), (WORD)(xy & 0xFFFF), (LONG)(wh >> 16), (LONG)(wh & 0xFFFF), rd32(a + 12));
+            break;
         }
-        if (r < 0) declined++;
+        case OGPU_OP_TRIANGLES: {
+            if (args < 9                                /* SDL's form: not Warp3D's */
+                || triangles(v, rd32(a), rd32(a + 4), rd32(a + 8), rd32(a + 12), rd32(a + 16), rd32(a + 20),
+                             rd32(a + 24) & 0xFFFF, rd32(a + 32)) < 0)
+                v->declined++;
+            break;
+        }
+        case OGPU_OP_FENCE: break;
+        default: v->declined++;
+        }
         at += (long)n;
     }
-    end_group(v);
-    if (present && !v->colour) colour_for(v);
-    block_send(v, present);
-    v->st.refused += v->errors;
-    v->st.declined += declined;
-    return (LONG)(v->errors + declined);
+    return w3dvg_end(v, present, 0);
 }
 
 /* ---- the context ----------------------------------------------------------------------------------- */

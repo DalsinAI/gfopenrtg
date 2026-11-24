@@ -60,9 +60,11 @@ void mglw_switch(struct mglw_context *x)
     if (G2(c, MGLW_G_MAKE_CURRENT, c->wgl->c, c->wgl->b)) c->s->current = x;
 }
 
-static void current(GLcontext c)
+/* 0 when the module wouldn't make the context current: nothing is called in it then. */
+static int current(GLcontext c)
 {
     if (c->s->current != (struct mglw_context *)c) mglw_switch((struct mglw_context *)c);
+    return c->s->current == (struct mglw_context *)c;
 }
 
 /* Where the display shows a frame, as GLA's target. */
@@ -130,7 +132,7 @@ int mglw_resize(GLcontext c, int width, int height)
 {
     set_target(c);
     G3(c, MGLW_G_BUFFER_RESIZE, c->wgl->b, width, height);
-    current(c);
+    if (!current(c)) return 0;
     mglw_invoke(c->s, GL(c, glViewport), 4, 0, 0, (ULONG)width, (ULONG)height);
     return 1;
 }
@@ -139,14 +141,14 @@ int mglw_resize(GLcontext c, int width, int height)
 
 void mgl_vg_switch(GLcontext c)
 {
-    current(c);
+    if (!current(c)) return;
     G2(c, MGLW_G_SWAP, c->wgl->c, c->wgl->b);
 }
 
 void mgl_flush(GLcontext c)
 {
     if (!c->s || !c->wgl || !c->wgl->c) return;
-    current(c);
+    if (!current(c)) return;
     mglw_invoke(c->s, GL(c, glFlush), 0);
 }
 
@@ -157,7 +159,9 @@ void mgl_pipe_flush(GLcontext c) { (void)c; }
 void mgl_readback(GLcontext c, int x, int y, int w, int h, ULONG *argb, int stride)
 {
     int row, i;
-    current(c);
+    LONG keep = 4;
+    if (!current(c)) return;
+    mglw_invoke(c->s, GL(c, glGetIntegerv), 2, GL_PACK_ALIGNMENT, (ULONG)&keep);    /* the program's own */
     mglw_invoke(c->s, GL(c, glPixelStorei), 2, GL_PACK_ALIGNMENT, 1);
     for (row = 0; row < h; row++) {
         ULONG *p = argb + (ULONG)row * (ULONG)stride;
@@ -165,6 +169,7 @@ void mgl_readback(GLcontext c, int x, int y, int w, int h, ULONG *argb, int stri
                     GL_RGBA, GL_UNSIGNED_BYTE, (ULONG)p);
         for (i = 0; i < w; i++) p[i] = (p[i] >> 8) | (p[i] << 24);     /* R,G,B,A bytes to A,R,G,B */
     }
+    mglw_invoke(c->s, GL(c, glPixelStorei), 2, GL_PACK_ALIGNMENT, (ULONG)keep);
 }
 
 /* mglLockBack's pixels back (R, G, B, A bytes, row 0 at the top): drawn over the frame a row at a time, with
@@ -172,7 +177,7 @@ void mgl_readback(GLcontext c, int x, int y, int w, int h, ULONG *argb, int stri
 void mgl_vg_writeback(GLcontext c, const ULONG *rgba)
 {
     int row;
-    current(c);
+    if (!current(c)) return;
     mglw_invoke(c->s, GL(c, glPushAttrib), 1, GL_ALL_ATTRIB_BITS);
     mglw_invoke(c->s, GL(c, glDisable), 1, GL_DEPTH_TEST);
     mglw_invoke(c->s, GL(c, glDisable), 1, GL_ALPHA_TEST);
@@ -196,7 +201,7 @@ void mgl_vg_writeback(GLcontext c, const ULONG *rgba)
 void mgl_init_state(GLcontext c)
 {
     c->unpack_align = c->pack_align = 4;
-    current(c);
+    if (!current(c)) return;
     mglw_invoke(c->s, GL(c, glClearColor), 4, FL(1.0f), FL(1.0f), FL(1.0f), FL(1.0f));
     mglw_invoke(c->s, GL(c, glViewport), 4, 0, 0, (ULONG)c->width, (ULONG)c->height);
 }
@@ -213,41 +218,41 @@ void mgl_free_textures(GLcontext c) { (void)c; }
 
 /* ---- the GL calls the kept files make ------------------------------------------------------- */
 
-void GLBegin(GLcontext c, GLenum mode) { current(c); mglw_invoke(c->s, GL(c, glBegin), 1, (ULONG)mode); }
-void GLEnd(GLcontext c) { current(c); mglw_invoke(c->s, GL(c, glEnd), 0); }
+void GLBegin(GLcontext c, GLenum mode) { if (current(c)) mglw_invoke(c->s, GL(c, glBegin), 1, (ULONG)mode); }
+void GLEnd(GLcontext c) { if (current(c)) mglw_invoke(c->s, GL(c, glEnd), 0); }
 
 void GLVertex4f(GLcontext c, GLfloat x, GLfloat y, GLfloat z, GLfloat w)
 {
-    current(c);
+    if (!current(c)) return;
     mglw_invoke(c->s, GL(c, glVertex4f), 4, FL(x), FL(y), FL(z), FL(w));
 }
 
 void GLNormal3f(GLcontext c, GLfloat x, GLfloat y, GLfloat z)
 {
-    current(c);
+    if (!current(c)) return;
     mglw_invoke(c->s, GL(c, glNormal3f), 3, FL(x), FL(y), FL(z));
 }
 
 void GLTexCoord2f(GLcontext c, GLfloat s, GLfloat t)
 {
-    current(c);
+    if (!current(c)) return;
     mglw_invoke(c->s, GL(c, glTexCoord2f), 2, FL(s), FL(t));
 }
 
 void GLViewport(GLcontext c, GLint x, GLint y, GLsizei w, GLsizei h)
 {
-    current(c);
+    if (!current(c)) return;
     mglw_invoke(c->s, GL(c, glViewport), 4, (ULONG)x, (ULONG)y, (ULONG)w, (ULONG)h);
 }
 
 void GLTexEnvi(GLcontext c, GLenum target, GLenum pname, GLint param)
 {
-    current(c);
+    if (!current(c)) return;
     mglw_invoke(c->s, GL(c, glTexEnvi), 3, (ULONG)target, (ULONG)pname, (ULONG)param);
 }
 
 void GLBlendFunc(GLcontext c, GLenum sf, GLenum df)
 {
-    current(c);
+    if (!current(c)) return;
     mglw_invoke(c->s, GL(c, glBlendFunc), 2, (ULONG)sf, (ULONG)df);
 }

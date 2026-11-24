@@ -40,6 +40,9 @@ _mglw_call:
 	jsr	_mglw_switch
 	addq.l	#4,%sp
 	move.l	%d3,%d0
+	move.l	12(%a5),%d1
+	cmp.l	20(%a2),%d1		| not made current (the module refused): nothing is called
+	bne.s	8f
 1:	move.l	4(%a2),%a1
 	move.l	0(%a1,%d0.l),%a1	| the function
 	lea	16(%a5,%d2.l*4),%a0	| the end of the GL arguments
@@ -53,7 +56,7 @@ _mglw_call:
 	move.l	(%sp)+,%a4
 	rts
 
-| ULONG ogl3_invoke(struct ogl3_session *s, APTR fn, ULONG n, ...): fn with
+| ULONG mglw_invoke(struct mglw_session *s, APTR fn, ULONG n, ...): fn with
 | the n longs that follow, as a GL call would be (the GLA calls of
 | ogles3_lib.c, and opening the module).
 	.globl	_mglw_invoke

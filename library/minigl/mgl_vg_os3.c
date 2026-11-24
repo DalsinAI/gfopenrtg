@@ -153,7 +153,7 @@ ULONG vg_os_present(GLcontext c, ULONG *p, ULONG room)
     in.width = (UWORD)c->width; in.height = (UWORD)c->height;
     in.rp = rp; in.x = x; in.y = y;
     in.flags = ORTG_PRESENT_PREPARE | (c->sync && mode != MGL_TARGET_BITMAP ? ORTG_PRESENT_VSYNC : 0);
-    in.blk = p; in.room = room;
+    in.blk = (unsigned long *)p; in.room = room;    /* gfopenrtg.h counts in unsigned long: 32 bits, as ULONG */
     n = ORTG_Present(&in);
     if (n < 0 || !in.token) return old_present(c, p, room);
     present_new = 1;

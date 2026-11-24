@@ -45,6 +45,11 @@ cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanit
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
     -o "$OUT/test_present_plan" "$HERE/test_present_plan.c"
 "$OUT/test_present_plan"
+# ORTG_Present's MEDIA kind: an ACMedia frame held on the host, written by the host into the visible pieces,
+# zero-copy (library/present_media.h, 0.30, the shared pipe's plan M8 step 2.6), against a fake host.
+cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
+    -o "$OUT/test_present_media" "$HERE/test_present_media.c"
+"$OUT/test_present_media"
 # Draw and PolyDraw on 8-bit bitmaps (gfopenrtg.library 0.25, library/ortg_line.h) against
 # graphics.library's (GFOpenGfx's core): FRST_DOT, linpatcnt, JAM2, INVERSVID, through GFOpenGPU's LINE too.
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined -I"$HERE/host-include" \

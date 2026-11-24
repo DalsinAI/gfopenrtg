@@ -10,7 +10,7 @@ static int hl_host_aliased(uint32_t at, uint32_t n) { return jb_aliased(at, n); 
 static void hl_host_written(uint32_t at, uint32_t n) { jit_guest_written(at, n); }
 #include "hl.h"
 #include "hl_ids.h"
-static const char hostlib_manifest[] = "hostlib abi 2, manifest " HOSTLIB_MANIFEST ", functions: 31";
+static const char hostlib_manifest[] = "hostlib abi 2, manifest " HOSTLIB_MANIFEST ", functions: 34";
 #include "ogfx/planar_rect.c"
 #include "ogfx/chunky_rect.c"
 #include "ogfx/chunky_copy.c"
@@ -548,6 +548,9 @@ static int hls_hostlib_lzma_decode_all(const uint32_t *arg, magic_spans *out) {
     { 0x00012009, 1, HL_C_RUNTIME | HL_C_SERVICE, 0 }, \
     { 0x0001200a, 1, HL_C_RUNTIME | HL_C_SERVICE, 0 }, \
     { 0x0001200b, 1, HL_C_RUNTIME | HL_C_SERVICE, 0 }, \
+    { 0x0001200c, 1, HL_C_RUNTIME | HL_C_SERVICE, 0 }, \
+    { 0x0001200d, 1, HL_C_RUNTIME | HL_C_SERVICE, 0 }, \
+    { 0x0001200e, 1, HL_C_RUNTIME | HL_C_SERVICE, 0 }, \
     { 0x00010180, 1, HL_C_LOCKED, 32828 }, \
     { 0x00010181, 1, 0, 0 }, \
     { 0x00010182, 1, 0, 0 }, \

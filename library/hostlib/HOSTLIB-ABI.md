@@ -188,7 +188,7 @@ For example, `0x80FF4020` over `0x40102030` gives `0x9F873028` (SDL2_BLEND gives
 **Returns, declines, state:** as SDL2_BLEND.
 ### MGL_DRAW, `$00010107`, version 1: `hostlib_mgl_draw(block)`
 
-One non-indexed virgl `DRAW_VBO` appended to a MiniGL context, and the vertices it reads copied into that context's arena. The shared writers are `library/pipe/virgl_cmd.h`'s (`vgc_draw`); this call does the same bytes. A locked call: the four cursor longs are the context's state.
+One non-indexed virgl `DRAW_VBO` appended to a MiniGL context, and the vertices it reads copied into that context's arena. The shared writers are `include/gfopengpu/virgl_cmd.h`'s (`vgc_draw`); this call does the same bytes. A locked call: the four cursor longs are the context's state.
 
 **The block:** `hostlib/mgl/draw.h`. The state is four big-endian longs: the arena's byte cursor, the command stream's word cursor, how many draws have been appended, and a spare. The vertices are `count` tightly packed groups of `comps` floats (1 to 4), copied as they stand. The command is 13 little-endian words, `vgc_draw`'s non-indexed form, with the given primitive and start.
 
@@ -450,7 +450,7 @@ The ordinary outer gates still apply. `AC_HOSTLIB=0`, `AC_HOSTLIB_OFF`, an unsup
 
 Once those gates admit a call, the host body runs exactly once, including under `AC_HOSTLIB=verify`, and returns a typed service result. It never returns an `HL_DECLINE` reason. Semantic bad arguments are service errors, not requests to run the 68k body. The probe reports an admitted service in verify mode; it continues to hide ordinary compute ids there.
 
-`$00012000`–`$00012FFF` is reserved to owner `ACMedia` in `ranges.lock`. ACMedia v1 uses `$00012000`–`$0001200B`; later versions have the remainder without claiming other components' ids. Those twelve are in `hostlib.toml` (`service = true`, `owner = "ACMedia"`), their blocks and codes in `hostlib/acmedia/acmedia.h`; each 68k body (`hostlib/acmedia/acmedia.c`, real in a thin shell's build too) writes nothing and returns `ACM_E_NOTAVAIL` (-1).
+`$00012000`–`$00012FFF` is reserved to owner `ACMedia` in `ranges.lock`. ACMedia v1 uses `$00012000`–`$0001200E` (`$0001200C`–`$0001200E`, a frame held on the host and shown by it into an RTG bitmap, from 24 November 2026); later versions have the remainder without claiming other components' ids. Those fifteen are in `hostlib.toml` (`service = true`, `owner = "ACMedia"`), their blocks and codes in `hostlib/acmedia/acmedia.h`; each 68k body (`hostlib/acmedia/acmedia.c`, real in a thin shell's build too) writes nothing and returns `ACM_E_NOTAVAIL` (-1).
 
 ## 9. The verifier and runtime contract (stage C)
 

@@ -55,6 +55,10 @@ int main(void)
     c.kind = 2; c.host_present = 1;
     check(prs_route(&c) == PRS_MEMORY, "a frame in memory: the CPU");
     c.kind = 3;
+    check(prs_route(&c) == PRS_MEDIA, "an ACMedia frame held on the host: MEDIA, prepared or not");
+    c.prepare = 0; c.host_present = 0; c.rtg = 0;
+    check(prs_route(&c) == PRS_MEDIA, "MEDIA needs no virgl: MEDIA on any target");
+    c.kind = 4;
     check(prs_route(&c) == PRS_NONE, "a kind not handled yet: none");
 
     /* MiniGL's present on a screen: the frame at x, y, its whole size, XRGB32 (OGPU_FMT_XRGB32 = 6 here: any value) */

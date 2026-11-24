@@ -335,6 +335,39 @@ owner = "ACMedia"
 callers = "akikoplus.device rungs A and B (ACMedia design 2.2, 7.4): an English line for an error code, and a deny's reason"
 
 [[function]]
+name = "hostlib_acm_hold"
+id = 0x0001200c
+id_name = "ACM_HOLD"
+version = 1
+source = "acmedia/acmedia.c"
+header = "acmedia/acmedia.h"
+service = true
+owner = "ACMedia"
+callers = "a window's film (gfopenrtg ORTG_SURF_MEDIA, plan M8 step 2.6): the due frame kept on the host"
+
+[[function]]
+name = "hostlib_acm_show"
+id = 0x0001200d
+id_name = "ACM_SHOW"
+version = 1
+source = "acmedia/acmedia.c"
+header = "acmedia/acmedia.h"
+service = true
+owner = "ACMedia"
+callers = "gfopenrtg.library's ORTG_Present (ORTG_SURF_MEDIA): a held frame written by the host into an RTG bitmap's visible rectangles"
+
+[[function]]
+name = "hostlib_acm_release"
+id = 0x0001200e
+id_name = "ACM_RELEASE"
+version = 1
+source = "acmedia/acmedia.c"
+header = "acmedia/acmedia.h"
+service = true
+owner = "ACMedia"
+callers = "a held frame given back after OpenRTG's finish"
+
+[[function]]
 name = "hostlib_zlib_inflate_codes"
 id = 0x00010180
 id_name = "ZLIB_INFLATE_CODES"

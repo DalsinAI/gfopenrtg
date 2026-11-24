@@ -2,8 +2,8 @@
 #ifndef HOSTLIB_ACMEDIA_H
 #define HOSTLIB_ACMEDIA_H
 /* ACMedia v1's calls (designs/ACMEDIA-DESIGN-20261110.md 2.2; HOSTLIB-ABI.md
- * 8.7): twelve host services, $00012000-$0001200B, owner ACMedia in
- * ranges.lock. Copyright (c) 2026 AmiCradle Team. MIT.
+ * 8.7): fifteen host services, $00012000-$0001200E, owner ACMedia in
+ * ranges.lock (the last three, HOLD, SHOW and RELEASE, from 24 Nov 2026). Copyright (c) 2026 AmiCradle Team. MIT.
  *
  * Each is a service (hostlib.toml: service = true): its host side is the
  * runtime's own (the broker), run once, never compared, never declining.
@@ -49,6 +49,31 @@
  *               ACM_PENDING
  *   ACM_FAULT   $0001200B  0 code  1 out  2 len; an English line (and a
  *               deny's reason); returns bytes written
+ *
+ * A frame kept on the host (24 Nov 2026, the shared pipe's plan M8 step
+ * 2.6): a window's film without its pixels passing through the 68k. The
+ * program holds the due frame, hands it to gfopenrtg.library's ORTG_Present
+ * (ORTG_SURF_MEDIA), which shows it into the window's visible rectangles,
+ * and releases it once OpenRTG has finished with it. A held frame is never
+ * reused or freed before its release (or the session's close, or a reset).
+ *   ACM_HOLD    $0001200C  0 session  1 out  2 len  3 format (ACM_PIX_
+ *               ARGB32 for now)  4 width  5 height (the size it is shown
+ *               at, each 1 to 4096: the decoder scales); the due frame held
+ *               on the host. Returns a frame (ACM_FRAME_SLOT/HOLD/GEN),
+ *               ACM_E_AGAIN when none is due, ACM_E_LIMIT past ACM_HOLDS a
+ *               session. out (ACM_HELD_BYTES, or 0 length) gets 0 pts in ms
+ *               1 width << 16 | height  2 format
+ *   ACM_SHOW    $0001200D  0 frame  1 target  2 pitch  3 format (ACM_PIX_
+ *               RGB16 or ARGB32, big-endian, as RTG bitmaps hold them)
+ *               4 rows  5 where the frame's pixel 0, 0 goes, x << 16 | y
+ *               (signed 16-bit each)  6 rects  7 count: struct Rectangle
+ *               each (four big-endian WORDs, MinX MinY MaxX MaxY, inclusive,
+ *               in the target), at most ACM_SHOW_MAX. The host writes the
+ *               frame into the target inside the rectangles (and the
+ *               target's pitch x rows); returns the pixels written.
+ *               ACM_E_FORMAT: a target format it can't write (the caller
+ *               then shows it into an ARGB32 buffer of its own and copies)
+ *   ACM_RELEASE $0001200E  0 frame; returns 0. The frame may be reused.
  */
 #include "../hl.h"
 
@@ -86,6 +111,14 @@ enum { ACM_EVENTS_SESSION, ACM_EVENTS_OUT, ACM_EVENTS_LEN, ACM_EVENTS_LONGS };
 enum { ACM_CLOSE_SESSION, ACM_CLOSE_LONGS };
 enum { ACM_RESULT_TICKET, ACM_RESULT_OUT, ACM_RESULT_LEN, ACM_RESULT_LONGS };
 enum { ACM_FAULT_CODE, ACM_FAULT_OUT, ACM_FAULT_LEN, ACM_FAULT_LONGS };
+enum { ACM_HOLD_SESSION, ACM_HOLD_OUT, ACM_HOLD_LEN, ACM_HOLD_FORMAT, ACM_HOLD_WIDTH, ACM_HOLD_HEIGHT, ACM_HOLD_LONGS };
+enum { ACM_SHOW_FRAME, ACM_SHOW_TARGET, ACM_SHOW_PITCH, ACM_SHOW_FORMAT, ACM_SHOW_ROWS, ACM_SHOW_AT, ACM_SHOW_RECTS,
+       ACM_SHOW_COUNT, ACM_SHOW_LONGS };
+enum { ACM_RELEASE_FRAME, ACM_RELEASE_LONGS };
+#define ACM_HELD_BYTES 12u            /* ACM_HOLD's out: pts, width << 16 | height, format */
+#define ACM_HOLDS 2u                  /* frames held at once, a session */
+#define ACM_HOLD_MAX 4096u            /* ACM_HOLD's width and height at most */
+#define ACM_SHOW_MAX 512u             /* rectangles in one ACM_SHOW (8 bytes each: ACM_SMALL_MAX) */
 
 /* the source descriptor: long 0 is the kind, big-endian, then the kind's own.
  * ACM_SRC_ACFS is not a unit and not a DH number. After the kind long come
@@ -121,7 +154,8 @@ enum { ACM_CTL_PLAY = 1, ACM_CTL_PAUSE, ACM_CTL_STOP,
        ACM_CTL_SELECT,                /* a: kind (ACM_ST_*), b: stream index */
        ACM_CTL_SETRECT,               /* a: x << 16 | y, b: w << 16 | h, c: visible, d: clip id (0 none) */
        ACM_CTL_EVENTS,                /* a: the ACM_EVM_* mask */
-       ACM_CTL_TARGET };              /* a: the stream kind, b: a target's address (ACM_TARGET_BYTES) */
+       ACM_CTL_TARGET,                /* a: the stream kind, b: a target's address (ACM_TARGET_BYTES) */
+       ACM_CTL_AVDELAY };             /* a: ms the pictures wait for the sound (0-2000; the machine's until set) */
 #define ACM_SEEK_KEYFRAME 0u
 #define ACM_SEEK_EXACT 1u
 
@@ -146,6 +180,10 @@ enum { ACM_ROUTE_NONE = 0, ACM_ROUTE_PLANE, ACM_ROUTE_RTG_SURFACE, ACM_ROUTE_CHI
 
 #define ACM_SESSION_SLOT(h) ((h) & 0xffu)
 #define ACM_SESSION_GEN(h) (((h) >> 8) & 0x7fffffu)
+/* a held frame: the session's slot in bits 0-7, the hold in bits 8-9, a generation in bits 10-30 (bit 31 clear) */
+#define ACM_FRAME_SLOT(f) ((f) & 0xffu)
+#define ACM_FRAME_HOLD(f) (((f) >> 8) & 3u)
+#define ACM_FRAME_GEN(f) (((f) >> 10) & 0x1fffffu)
 
 #ifndef HL_HOST
 int32_t hostlib_acm_caps(hl_addr block);
@@ -160,6 +198,9 @@ int32_t hostlib_acm_events(hl_addr block);
 int32_t hostlib_acm_close(hl_addr block);
 int32_t hostlib_acm_result(hl_addr block);
 int32_t hostlib_acm_fault(hl_addr block);
+int32_t hostlib_acm_hold(hl_addr block);
+int32_t hostlib_acm_show(hl_addr block);
+int32_t hostlib_acm_release(hl_addr block);
 #endif
 
 #endif

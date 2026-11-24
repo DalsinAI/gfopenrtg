@@ -402,6 +402,7 @@ struct mgl_prefs {                  /* chosen before mglCreateContext */
     int vbuf, mtexbuf;              /* mglChooseVertexBufferSize, mglChooseMtexBufferSize: hints */
     ULONG tex_names;                /* mglChooseTextureBufferSize: names below it (0: any) */
     int max_tex;                    /* ENV:MiniGL/MaxTextureSize: GL_MAX_TEXTURE_SIZE (0: 1024) */
+    int present_old;                /* ENV:MiniGL/PresentOld: the virgl present MiniGL wrote itself (for one release) */
 };
 extern struct mgl_prefs mgl_prefs;
 

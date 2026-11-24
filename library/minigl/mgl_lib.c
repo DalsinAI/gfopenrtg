@@ -234,6 +234,8 @@ static BPTR lib_expunge(REG(a6, struct MGLBase *base))
  *   MaxTextureSize  what glGetIntegerv(GL_MAX_TEXTURE_SIZE) answers (default 1024)
  *   Wrap            1: the wrapper over GL.module draws (wrap/), not MiniGL's own renderer (read at the
  *                   library's first open; needs an FPU and LIBS:GFOpenGPU/GL.module)
+ *   PresentOld      1: virgl frames reach the display the way MiniGL wrote them itself, not through
+ *                   gfopenrtg.library's ORTG_Present (0.30); kept for one release
  *   Trace           n: n lines of trace to the serial port */
 static LONG env_long(const char *name, LONG dflt)
 {
@@ -255,6 +257,7 @@ void mgl_read_prefs(void)
     mgl_prefs.flip = env_long("MiniGL/Flip", 0) != 0;
     mgl_prefs.max_tex = env_long("MiniGL/MaxTextureSize", 1024);
     if (mgl_prefs.max_tex < 64 || mgl_prefs.max_tex > 2048) mgl_prefs.max_tex = 1024;
+    mgl_prefs.present_old = env_long("MiniGL/PresentOld", 0) != 0;
     mgl_trace = env_long("MiniGL/Trace", 0);
 }
 

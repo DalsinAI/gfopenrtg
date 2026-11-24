@@ -1,4 +1,4 @@
-==id $Id: gfopenrtg_lib.sfd 0.11 (8.10.2026) $
+==id $Id: gfopenrtg_lib.sfd 0.31 (24.11.2026) $
 * "gfopenrtg.library"
 ==base _OpenRTGBase
 ==basetype struct Library *

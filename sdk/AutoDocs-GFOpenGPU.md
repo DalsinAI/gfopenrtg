@@ -12,6 +12,7 @@ GFOpenGPU is one library and the modules it loads:
 | Part | File | What it is |
 | --- | --- | --- |
 | gfopengpu.library 0.6 | `LIBS:gfopengpu.library` | the command stream (`include/gfopengpu/`), its back ends (the CPU, the GPU through AC090), GFOpenGfx's drawing, and the module loader |
+| gfopenrtg.library 0.31 | `LIBS:gfopenrtg.library` | OpenRTG: screens, modes, and the one present of every frame (`ORTG_Present`, section 7) |
 | SDL2.module 4 | `LIBS:GFOpenGPU/SDL2.module` | SDL 2.32.10 with the Amiga back ends |
 | GL.module | `LIBS:GFOpenGPU/GL.module` | Mesa 26.2.4's GL and GLES, and GLA |
 | minigl.library 29 | `LIBS:minigl.library` | MiniGL (OpenGL 1.1) on GFOpenGPU's 3D |
@@ -33,6 +34,7 @@ time:
 | MiniGL | `-lminigl` (stubs) or `-lmgl` (GLUT-style helpers) | minigl.library |
 | Warp3D | the `proto/Warp3D.h` calls | Warp3D.library |
 | gfopengpu.library | the `proto/gfopengpu.h` calls | gfopengpu.library |
+| gfopenrtg.library | the `proto/gfopenrtg.h` calls | gfopenrtg.library |
 
 ## 2. Modules and stubs
 
@@ -440,6 +442,70 @@ The `glA...` forms (`glASwapBuffers()` and the rest) pass the program's
     readbacks (always 0), tiles hashed, palette uploads, GPU and software
     frames; set `stats->size` first.
   - -192 `OGPU_RetainedDestroy(rs)` (a0).
+- **The one present (gfopenrtg.library 0.30, `gfopenrtg/gfopenrtg.h`).**
+  `ORTG_Present` shows a finished frame, wherever it lives, in a RastPort:
+  a window (through its layer: its visible parts), a screen, or a bare
+  bitmap (a RastPort with no Layer). GFOpenRTG picks the route. Check `lib_Revision
+  >= ORTG_PRESENT_REVISION` (30) first, and `ORTG_RETAINED_REVISION` (31)
+  for kind RETAINED. LVOs, after `ORTG_ShownNow`:
+  - -150 `n = ORTG_Present(info)` (a0): `info` is a `struct
+    ORTG_PresentInfo`, all 0 but what the kind needs, `size` set to
+    `sizeof (struct ORTG_PresentInfo)` (the struct only grows at the
+    end). `rp` is the target, `x`, `y` where the source's pixel 0, 0
+    goes, `src` the part of the source to show (damage, an inclusive
+    `struct Rectangle`; NULL: all of it), `width` and `height` the
+    source's size. Returns the pixels written, or -1. Kinds (`kind`):
+    - `ORTG_SURF_VIRGL` (1): a frame the host's GPU rendered through
+      ACVirgl (`context`, and `handle` its colour buffer). The host
+      writes it straight into an RTG target; anything else gets it read
+      back and written by the CPU (planar targets too). `dst` stretches
+      the whole frame into a box, by the host. Flags `ORTG_PRESENT_FLIP_Y`
+      (row 0 is the bottom, as GL draws) and `ORTG_PRESENT_ALPHA` (into
+      32-bit RTG, the frame's alpha too).
+    - `ORTG_SURF_MEMORY` (2): pixels in memory (`memory` row 0, `stride`
+      bytes a row, `format` an `ORTG_PIX_` as `ORTG_WritePixels` takes),
+      written as `ORTG_WritePixels` writes them: on GFOpenGPU where it
+      draws that format, else by the CPU.
+    - `ORTG_SURF_MEDIA` (3): an ACMedia frame the program holds on the host
+      (`handle` is hostlib's `ACM_HOLD` answer, `width` and `height` its
+      size). Into an RTG target of 16 or 32 bits the host writes it
+      straight into the visible parts, so the frame never passes through
+      the Amiga's memory; anything else gets it through a buffer of
+      GFOpenRTG's, written by the CPU. Release the frame (`ACM_RELEASE`)
+      only after `ORTG_Present`, or, prepared, `ORTG_PresentDone`, has
+      returned.
+    - `ORTG_SURF_RETAINED` (4, 0.31): `handle` is a `struct OGPURetained *`
+      (`gfopengpu/retained.h`), shown at `x`, `y` in a `width` x `height`
+      rectangle (0: its own size); only the VSYNC flag. Returns
+      `OGPU_RetainedPresent`'s answer, or -1 when GFOpenRTG's screens are
+      off or the target is another RTG system's bitmap of over 8 bits
+      (present the program's own way then). `OGPU_RetainedPresent` comes
+      here itself, so programs keep calling it.
+  - `ORTG_PRESENT_VSYNC`: wait for the display's next frame first.
+  - `ORTG_PRESENT_PREPARE`: the present goes into the program's own
+    request block (`blk`, with `room` words free), so a frame costs no
+    block of its own; the answer is the words written, 0 when it can't go
+    there (a window, a target the host can't write). `token` comes back
+    set. Run the block, then always call:
+  - -156 `ORTG_PresentDone(token, blk, at)` (a0/a1/d0): `at` is where the
+    present starts in the block. It presents the frame the other way when
+    it could not go in the block. Until then nothing else may draw on the
+    target.
+  - `ORTG_DrawStats` counts the routes: `ORTG_STAT_VIRGL` (20, the host
+    wrote a frame straight in), `ORTG_STAT_PRESENT_READBACK` (22),
+    `ORTG_STAT_PRESENT_MEMORY` (23) and `ORTG_STAT_PRESENT_MEDIA` (24). Ask
+    for your own count of kinds: there are `ORTG_STAT_COUNT` (25) now, and
+    `ORTG_STAT_NAMES` names them; `C:gfopenrtg STATS` shows them.
+  - Prototypes for other compilers: `clib/gfopenrtg_protos.h` and
+    `sfd/gfopenrtg_lib.sfd`; GCC: `proto/gfopenrtg.h`.
+- **The shared pipe's numbers (`gfopengpu/pipe_vg.h`).** The formats, bind
+  flags, targets, clear buffers, primitives, blend and sampler numbers a
+  front end of the shared pipe (minigl.library, Warp3D.library) hands it,
+  the byte order of arenas and request blocks, and the request block's
+  framing (`virgl.h`). It names no virgl command: only the pipe writes
+  those, and their header is not in the kit. A program draws through GL,
+  MiniGL, Warp3D or the command stream, not through these numbers; they
+  are here for front ends built outside gfopenrtg.
 - **SFD files** (`sfd/`) for gfopengpu.library, gfopenrtg.library and
   Warp3D.library, for other compilers' stubs and pragmas.
 

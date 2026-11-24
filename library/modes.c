@@ -181,3 +181,12 @@ uint32_t ortg_best_mode(const struct ortg_mode_table *t, int width, int height, 
     if (largest) return largest->mode_id;
     return deepest ? deepest->mode_id : 0;
 }
+
+uint32_t ortg_board_width(uint32_t width) {
+    return (width + 7u) & ~7u;
+}
+
+uint32_t ortg_row_bytes(uint32_t width, int format) {
+    uint32_t bpp = format == ORTG_ARGB32 ? 4u : format == ORTG_RGB16 ? 2u : 1u;
+    return (width * bpp + 63u) & ~63u;
+}

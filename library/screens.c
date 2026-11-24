@@ -677,7 +677,7 @@ struct ortg_bitmap *ortg_alloc_card(int monitor, ULONG w, ULONG h, int clear, in
 {
     struct ortg_bitmap *o = AllocVec(sizeof *o, MEMF_ANY | MEMF_CLEAR);
     ULONG bpp = format == ORTG_ARGB32 ? 4 : format == ORTG_RGB16 ? 2 : 1;
-    ULONG stride = (w * bpp + 63) & ~63UL;
+    ULONG stride = ortg_row_bytes(w, format);
     if (!o) return NULL;
     o->magic = ORTG_BM_MAGIC;
     o->format = (UBYTE)format; o->bpp = (UBYTE)bpp;
@@ -2906,7 +2906,7 @@ static void show_front(void)
         SC->instead[n] = NULL;                      /* 0.28: the pan to another picture ends it on the board too */
         serx("ortg: showing ", (ULONG)o->vram_off);
         if (shown[n].w != o->width || shown[n].h != o->height || shown[n].fmt != o->format) {
-            reg(n, R_WIDTH, o->width); reg(n, R_HEIGHT, o->height); reg(n, R_FORMAT, board_fmt[o->format]); reg(n, R_CLOCK, 0);
+            reg(n, R_WIDTH, ortg_board_width(o->width)); reg(n, R_HEIGHT, o->height); reg(n, R_FORMAT, board_fmt[o->format]); reg(n, R_CLOCK, 0);   /* a multiple of 8 wide (modes.h, ortg_board_width) */
             reg(n, R_COMMIT, C_MODE);
             shown[n].w = o->width; shown[n].h = o->height; shown[n].fmt = o->format;
         }

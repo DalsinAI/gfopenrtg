@@ -16,6 +16,7 @@
 #include <exec/semaphores.h>
 #include <dos/dos.h>
 #include <graphics/gfx.h>
+#include <graphics/rastport.h>
 #include <utility/tagitem.h>
 #include <Warp3D/Warp3D.h>
 
@@ -58,6 +59,8 @@ struct W3DBase {
     long trace;                                 /* ENV:Warp3D/Trace n: the first n trace lines to the serial port */
     int quality;                                /* ENV:Warp3D/Perspective: 0 per 8 pixels (default) */
     int hl_arrays;                              /* hostlib_w3d_arrays runs as host code here (hostlib_probe): 1, no: 0 */
+    int present_old;                            /* ENV:Warp3D/PresentOld: the route's own present, not ORTG_Present
+                                                 * (kept for one release) */
 };
 
 /* A texture's private part (W3D_Texture.driver). Every texture is kept as
@@ -148,6 +151,10 @@ struct w3dctx {
     ULONG fence;
     W3D_Bitmap texbm;                           /* W3D_SetDrawRegionTexture's drawing area */
     W3D_Texture *known_tex;                     /* the last texture found in the context's list */
+    /* ORTG_Present (w3d_vg_os3.c): the drawing area's bitmap as a RastPort, and the present's token while its
+     * block runs */
+    struct RastPort present_rp;
+    APTR present_token;
 };
 
 /* ---- shared ---------------------------------------------------------------- */
@@ -191,6 +198,7 @@ void w3d_area_unlock(struct w3dctx *x);
 int  w3d_vg_start(struct w3dctx *x, int need_chip); /* w3d_vg_os3.c: the context's virgl route, 0 when there is none
                                                    (need_chip: nor when the host draws virgl without a graphics chip) */
 void w3d_vg_stop(struct w3dctx *x);
+void w3d_vg_expunge(void);                      /* w3d_vg_os3.c: gfopenrtg.library closed again */
 void w3d_maybe_flush(struct w3dctx *x);         /* after a primitive, when drawing is direct */
 int  w3d_room(struct w3dctx *x, long words, ULONG vbytes);
 UBYTE *w3d_data(struct w3dctx *x, ULONG bytes); /* bytes in the batch's data area (aligned) */

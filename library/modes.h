@@ -84,6 +84,23 @@ const struct ortg_mode *ortg_find_mode(const struct ortg_mode_table *t, uint32_t
  * screen whose size the host changes (0.17). 0 when the table is empty. */
 uint32_t ortg_best_mode(const struct ortg_mode_table *t, int width, int height, int depth);
 
+/* The board's side of a screen (Instance-32, 24 November 2026).
+ * ACRTG shows only pictures a multiple of 8 pixels wide (COMMIT_MODE
+ * answers SIZE to any other width), but the table offers 1366x768, the
+ * one size whose width isn't. Its screen was refused by the board: the
+ * mode stayed at the board's 640x480 8-bit, the pan to the 32-bit screen
+ * was refused too (FIT: its rows too long for 8-bit), and the Workbench
+ * came up on a black screen. A screen keeps its own width; the board is
+ * asked for the width rounded up to 8 and shows the row's padding past
+ * it (cleared when the bitmap is made), which every bitmap's rows have:
+ * ortg_row_bytes rounds a row to 64 bytes, at least that much. */
+uint32_t ortg_board_width(uint32_t width);
+
+/* The bytes a row of a bitmap width pixels wide takes in video RAM: the
+ * width at the format's bytes a pixel, rounded up to 64 (ortg_alloc's
+ * stride). Never less than ortg_board_width(width) pixels. */
+uint32_t ortg_row_bytes(uint32_t width, int format);
+
 /* The monitor's preferred mode in a format (MonitorInfo's PreferredModeID):
  * the mode at the board's display size, not a Native one, listed or not.
  * 0 when the display is not known or no mode has its size in that format. */

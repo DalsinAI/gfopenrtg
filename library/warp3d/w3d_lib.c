@@ -190,6 +190,7 @@ static BPTR lib_expunge(REG(a6, struct W3DBase *base))
     if (base->lib.lib_OpenCnt) { base->lib.lib_Flags |= LIBF_DELEXP; return 0; }
     seglist = base->seglist;
     Remove(&base->lib.lib_Node);
+    w3d_vg_expunge();
     if (OpenGPUBase) CloseLibrary(OpenGPUBase);
     if (AslBase) CloseLibrary(AslBase);
     if (CyberGfxBase) CloseLibrary(CyberGfxBase);
@@ -215,6 +216,8 @@ static BPTR lib_expunge(REG(a6, struct W3DBase *base))
  *               GFOpenGPU when its back end isn't this 68k, else the CPU)
  *   ZBuffer     16 or 32               bits of depth
  *   Fog, Perspective, Filtering, Lighting   "0" leaves that out, for speed
+ *   PresentOld  1                      virgl frames reach the display the route's own way, not through
+ *                                      gfopenrtg.library's ORTG_Present (0.30); kept for one release
  * Read again for each new context, so a change applies to the next program. */
 static int envflag(const char *name, int dflt)
 {
@@ -237,6 +240,7 @@ void w3d_read_prefs(struct W3DBase *base)
     base->no_persp = !envflag("Warp3D/Perspective", 1);
     base->no_filter = !envflag("Warp3D/Filtering", 1);
     base->no_light = !envflag("Warp3D/Lighting", 1);
+    base->present_old = envflag("Warp3D/PresentOld", 0);
     base->trace = GetVar("Warp3D/Trace", v, sizeof v, GVF_GLOBAL_ONLY) > 0 ? StrToLong((STRPTR)v, &base->trace) > 0 ? base->trace : 0 : 0;
     {
         ULONG list[2], blk[HL_PB_LONGS], rc;

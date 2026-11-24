@@ -118,6 +118,54 @@ static void native_checks(void) {
     CHECK(ortg_best_mode(&again, 1, 1, 1) == ortg_best_mode(&plain, 1, 1, 1));
 }
 
+/* The board's rules for a screen it shows (ACRTG's COMMIT_MODE and
+ * COMMIT_PAN, amicradle's acrtg.h): a width a multiple of 8 from 320, an
+ * even height, rows no longer than 4096 pixels at the format's size. Every
+ * mode the table offers, on each board ACRTG fits, must be one the board
+ * takes. Instance-32 (24 November 2026): ScreenMode 0x61061200, 1366x768
+ * 32-bit, came up black, the board having refused the width 1366. */
+#define BOARD_MIN_W   320u
+#define BOARD_MAX_ROW 4096u
+static int board_takes(uint32_t w, uint32_t h, int format) {
+    uint32_t bpp = format == ORTG_ARGB32 ? 4u : format == ORTG_RGB16 ? 2u : 1u;
+    uint32_t bw = ortg_board_width(w), row = ortg_row_bytes(w, format);
+    if (bw < w || bw - w > 7u || (bw & 7u) || bw < BOARD_MIN_W || (h & 1u)) return 0;
+    return row >= bw * bpp && row <= BOARD_MAX_ROW * bpp && (row & 63u) == 0;
+}
+
+static void board_checks(void) {
+    static struct ortg_mode_table t;
+    struct ortg_caps boards[3] = {
+        { .vram_bytes = 0xFE0000u, .max_width = 1920, .max_height = 1200, .formats = 7, .native = 1, .native_w = 1920, .native_h = 1012 },
+        { .vram_bytes = 0x04000000u - 0x20000u, .max_width = 1920, .max_height = 1200, .formats = 7, .native = 1, .native_w = 1600, .native_h = 900 },
+        { .vram_bytes = 0x10000000u - 0x20000u, .max_width = 1920, .max_height = 1200, .formats = 7 },
+    };
+    const struct ortg_mode *m;
+    for (int b = 0; b < 3; b++) {
+        CHECK(ortg_build_modes(&t, 1, &boards[b], 1) > 0);
+        for (int i = 0; i < t.full_count; i++) {
+            m = &t.full[i];
+            CHECK(board_takes(m->width, m->height, m->format));
+            if (!board_takes(m->width, m->height, m->format)) printf("  the board refuses %s\n", m->name);
+        }
+    }
+    /* Instance-32's mode: place 6, 1366x768, shown on a board 1368 wide */
+    ortg_build_modes(&t, 1, &boards[0], 0);
+    m = ortg_find_mode(&t, 0x61061200u);
+    CHECK(m && m->width == 1366 && m->height == 768 && m->format == ORTG_ARGB32);
+    CHECK(ortg_board_width(1366) == 1368 && ortg_row_bytes(1366, ORTG_ARGB32) == 5504);
+    CHECK(ortg_row_bytes(1366, ORTG_CLUT8) == 1408 && ortg_row_bytes(1366, ORTG_RGB16) == 2752);
+    /* a width already a multiple of 8 is the board's as it is */
+    CHECK(ortg_board_width(1920) == 1920 && ortg_board_width(640) == 640 && ortg_board_width(320) == 320);
+    CHECK(ortg_board_width(1) == 8 && ortg_board_width(8) == 8 && ortg_board_width(9) == 16);
+    /* every width up to 4096: the board's width fits in the row, at every format */
+    for (uint32_t w = 1; w <= 4096; w++)
+        for (int f = 0; f < ORTG_FORMATS; f++) {
+            uint32_t bpp = f == ORTG_ARGB32 ? 4u : f == ORTG_RGB16 ? 2u : 1u;
+            if (ortg_row_bytes(w, f) < ortg_board_width(w) * bpp) { CHECK(0); printf("  width %u format %d\n", w, f); }
+        }
+}
+
 int main(void) {
     static struct ortg_mode_table std16, all16, std64, mon2, small, nodeep;
     struct ortg_caps b16 = { .vram_bytes = 16u << 20, .max_width = 4096, .max_height = 4096, .formats = 7 },
@@ -194,6 +242,7 @@ int main(void) {
 
     native_checks();
     preferred_checks();
+    board_checks();
 
     printf("%d/%d checks passed\n", checks - fails, checks);
     return fails != 0;

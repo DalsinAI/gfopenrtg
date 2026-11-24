@@ -50,6 +50,11 @@ struct w3dvg_os {
      * frame stays on the host. */
     int (*area_lock)(void *user, ULONG *address, ULONG *bpr);
     void (*area_unlock)(void *user);
+    /* The present, when the platform does it (gfopenrtg.library's ORTG_Present on AmigaOS), or 0: present_prepare
+     * writes its commands at p (room words free) and answers the words, or -1 to leave it to the route (its own
+     * ACV_PRESENT into the locked area); present_done is called once the block has run. */
+    LONG (*present_prepare)(void *user, ULONG ctx, ULONG handle, ULONG *p, ULONG room);
+    void (*present_done)(void *user, const ULONG *blk, ULONG at);
 };
 
 /* What the host said at the start. */

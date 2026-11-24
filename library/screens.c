@@ -1868,6 +1868,8 @@ LONG ortg_present(struct ORTG_PresentInfo *in)
     if (in->flags & ORTG_PRESENT_VSYNC) WaitTOF();
     c.kind = in->kind; c.prepare = (in->flags & ORTG_PRESENT_PREPARE) != 0;
     c.screens = SC->on && ortg_S->gfx;      /* 0.31: RETAINED draws through GFOpenRTG's graphics.library base */
+    c.foreign_deep = in->kind == ORTG_SURF_RETAINED && c.screens && !ortg_of(in->rp->BitMap)
+                     && GetBitMapAttr(in->rp->BitMap, BMA_DEPTH) > 8;
     c.host_present = in->kind == ORTG_SURF_VIRGL && prs_host_present();
     c.rtg = prs_rtg(in->rp) != NULL;
     c.layered = in->rp->Layer != NULL;

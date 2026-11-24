@@ -241,8 +241,8 @@ struct ORTG_PresentInfo {
 #define ORTG_SURF_RETAINED      3   /* 0.31: handle is a struct OGPURetained * (gfopengpu/retained.h); width and height
                                        the rectangle it is shown in (0: its own size); x, y its corner; only the
                                        VSYNC flag. Returns OGPU_RetainedPresent's answer: the tiles uploaded, or an
-                                       OGPU_RS_ERR_; -1 when GFOpenRTG's screens are off (the caller presents its
-                                       own way). Programs keep calling OGPU_RetainedPresent, which comes here. */
+                                       OGPU_RS_ERR_; -1 when GFOpenRTG's screens are off, or into another RTG
+                                       system's bitmap of over 8 bits (the caller presents its own way). Programs keep calling OGPU_RetainedPresent, which comes here. */
 #define ORTG_PRESENT_FLIP_Y     1   /* VIRGL: row 0 is the bottom (GL) */
 #define ORTG_PRESENT_VSYNC      2   /* wait for the display's next frame first */
 #define ORTG_PRESENT_PREPARE    4   /* into the caller's block (blk, room, token) */

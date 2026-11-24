@@ -89,7 +89,7 @@
      OGPUR_PrepareTexture(data, texture);
  
      if (plain && !tinted) {
-@@ -1683,18 +1730,83 @@ static int OGPUR_RenderReadPixels(SDL_Renderer *renderer, const SDL_Rect *rect,
+@@ -1683,18 +1730,92 @@ static int OGPUR_RenderReadPixels(SDL_Renderer *renderer, const SDL_Rect *rect,
                               format, pixels, pitch);
  }
  
@@ -118,6 +118,15 @@
 +        all.y = 0;
 +        all.w = data->window->w;
 +        all.h = data->window->h;
++        /* gfopenrtg.library 0.30 (GF-66 M8): the frame's drawing is waited
++           for, then ORTG_Present shows the surface; ENV:SDL2/PresentOld 1
++           keeps the copy at the end of the batch below */
++        if (SDL_OS3_GPU_PresentsNew()) {
++            OGPUR_Sync(data);
++            if (SDL_OS3_GPU_PresentNew(window, data->window, &all, 1, vsync)) {
++                return 0;
++            }
++        }
 +        SDL_zero(p);
 +        if (vsync) {
 +            /* the drawing goes now; only the copy waits for the blank,
@@ -173,7 +182,7 @@
  static void OGPUR_DestroyRenderer(SDL_Renderer *renderer)
  {
      SDL_Window *window = renderer->window;
-@@ -1794,6 +1906,7 @@ static int OGPUR_CreateRenderer(SDL_Renderer *renderer, SDL_Window *window, Uint
+@@ -1794,6 +1915,7 @@ static int OGPUR_CreateRenderer(SDL_Renderer *renderer, SDL_Window *window, Uint
      renderer->RunCommandQueue = OGPUR_RunCommandQueue;
      renderer->RenderReadPixels = OGPUR_RenderReadPixels;
      renderer->RenderPresent = OGPUR_RenderPresent;

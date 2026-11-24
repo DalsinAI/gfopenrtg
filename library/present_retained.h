@@ -21,10 +21,10 @@
 #define PRESENT_RETAINED_H
 
 #include <exec/types.h>
+#include <graphics/rastport.h>
 #include <gfopenrtg/gfopenrtg.h>
 #include "opengpu/ogpu_rs_handle.h"
 
-struct RastPort;
 
 struct rsp_target {
     struct RastPort *rp;

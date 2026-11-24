@@ -191,9 +191,54 @@ struct OpenRTGVirglFrame {
  * count is), those waited for, the bytes of sources copied to be left
  * running; the fourth count stays 0 */
 #define ORTG_STAT_WAIT          21
-#define ORTG_STAT_COUNT         22
+/* 0.30: ORTG_Present's routes besides the host writing a frame straight in
+ * (that one counts as ORTG_STAT_VIRGL, as before) */
+#define ORTG_STAT_PRESENT_READBACK 22   /* a virgl frame read back and written by the CPU */
+#define ORTG_STAT_PRESENT_MEMORY   23   /* a frame in memory, written by the CPU (ORTG_WritePixels' way) */
+#define ORTG_STAT_COUNT         24
 #define ORTG_STAT_NAMES { "fill", "invert", "pattern", "template", "copy", "blit", "scroll", "setrast", "line", \
     "pixel", "chunky", "chunky read", "pixels", "pixels read", "pixels fill", "pixels invert", "alpha", \
-    "blit planar", "blit convert", "blit masked", "virgl", "batches" }
+    "blit planar", "blit convert", "blit masked", "virgl", "batches", "present readback", "present memory" }
+
+/* ORTG_Present (0.30): the one present. A finished frame, wherever it lives,
+ * into a RastPort: a window (its layer's visible pieces), a screen, or a bare
+ * bitmap (a RastPort whose Layer is NULL). GFOpenRTG picks the route:
+ *  - VIRGL, an RTG target the host can write: the host writes the frame
+ *    straight in (ACV_PRESENT, the visible rectangles);
+ *  - VIRGL, anything else: the frame comes back (ACV_GET) and the CPU
+ *    writes it, as ORTG_WritePixels does (planar targets too);
+ *  - MEMORY: the CPU writes it, as ORTG_WritePixels does.
+ * ORTG_PRESENT_PREPARE: the present goes in the caller's own request block,
+ * which it then runs, so a frame costs no block of its own. ORTG_Present
+ * writes it at blk (room words) and returns the words written: 0 when it
+ * can't go there (a window, a target the host can't write; nothing is lost:
+ * ORTG_PresentDone then presents it the other way). The caller runs its
+ * block, then calls ORTG_PresentDone(token, block, where the present
+ * starts in it), always, even when 0 words were written. Until then the
+ * target is the frame's: nothing else may draw on it.
+ * Returns the pixels written (PREPARE: words written), or -1. */
+struct ORTG_PresentInfo {
+    unsigned long   size;           /* sizeof (struct ORTG_PresentInfo): the struct only grows at the end */
+    unsigned long   kind;           /* ORTG_SURF_ */
+    unsigned long   context, handle;    /* VIRGL: the ACVirgl context and the resource (its colour buffer) */
+    void           *memory;         /* MEMORY: row 0 */
+    unsigned long   stride, format; /* MEMORY: bytes a row, ORTG_PIX_ */
+    unsigned short  width, height;  /* of the source */
+    struct RastPort *rp;            /* the target */
+    long            x, y;           /* where in it the source's pixel 0, 0 goes */
+    struct Rectangle *src;          /* the part of the source (damage); NULL: all of it */
+    struct Rectangle *dst;          /* VIRGL: the whole source stretched into this box (by the host); NULL: none */
+    unsigned long   flags;          /* ORTG_PRESENT_ */
+    unsigned long  *blk;            /* PREPARE: the caller's request block, at the present's place */
+    unsigned long   room;           /* PREPARE: words free there */
+    void           *token;          /* PREPARE: out, for ORTG_PresentDone */
+};
+#define ORTG_SURF_VIRGL         1
+#define ORTG_SURF_MEMORY        2
+#define ORTG_PRESENT_FLIP_Y     1   /* VIRGL: row 0 is the bottom (GL) */
+#define ORTG_PRESENT_VSYNC      2   /* wait for the display's next frame first */
+#define ORTG_PRESENT_PREPARE    4   /* into the caller's block (blk, room, token) */
+#define ORTG_PRESENT_ALPHA      8   /* VIRGL into 32-bit RTG: the frame's alpha too (else the top byte as the host
+                                       likes it best: 0 where it writes XRGB32) */
 
 #endif

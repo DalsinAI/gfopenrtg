@@ -86,6 +86,12 @@
  * 0.29 (20 Nov 2026): ORTG_VIRGL_SCALE: ORTG_PresentVirgl stretches the whole frame into a box
  * on the host (ACV_PRESENT_SCALE, acvirgl.c), so a GL program draws at a size of its own and
  * fills a window or a screen at no cost to the 68k.
+ *
+ * 0.30 (24 Nov 2026): ORTG_Present and ORTG_PresentDone, the one present (stage M8 of
+ * docs/design/OpenGPU-Shared-Pipe-Plan.md, section 2.7): a virgl frame or one in memory into a
+ * window, a screen or a bitmap, GFOpenRTG choosing the route (present_plan.h); prepared, its
+ * command goes in the caller's own request block. Two more ORTG_DrawStats kinds: present readback,
+ * present memory.
  */
 #include <exec/types.h>
 #include "ortg_state.h"
@@ -106,7 +112,7 @@
 
 #define REG(r, decl) register decl __asm(#r)   /* bebbo gcc: an argument in a register */
 #define LIB_VERSION 0
-#define LIB_REVISION 29
+#define LIB_REVISION 30
 
 /* The ACRTG board (amicradle's common/protocol/acrtg.h): Zorro III,
  * AmiCradle Team (0xDA15; 2011 before 1 October 2026), product 9 (16 MiB), product 15 (64 MiB, 0.14) or product 16
@@ -189,6 +195,8 @@ static ULONG ORTG_WrittenSpans(REG(a0, struct BitMap *bm), REG(a1, struct OpenRT
 
 static LONG ORTG_ShowInstead(REG(a0, struct BitMap *screen), REG(a1, struct BitMap *picture), REG(a6, struct OpenRTGBase *base));
 static LONG ORTG_ShownNow(REG(a0, struct BitMap *screen), REG(a1, struct BitMap *picture), REG(a6, struct OpenRTGBase *base));
+static LONG ORTG_Present(REG(a0, struct ORTG_PresentInfo *info), REG(a6, struct OpenRTGBase *base));
+static VOID ORTG_PresentDone(REG(a0, APTR token), REG(a1, const ULONG *blk), REG(d0, ULONG at), REG(a6, struct OpenRTGBase *base));
 
 static const APTR lib_vectors[] = {
     (APTR)lib_open, (APTR)lib_close, (APTR)lib_expunge, (APTR)lib_null,
@@ -196,7 +204,7 @@ static const APTR lib_vectors[] = {
     (APTR)ORTG_BestMode, (APTR)ORTG_SetModeList, (APTR)ORTG_BoardAddress, (APTR)ORTG_DisplayDatabase, (APTR)ORTG_Screens,
     (APTR)ORTG_WritePixels, (APTR)ORTG_ReadPixels, (APTR)ORTG_FillPixels, (APTR)ORTG_InvertPixels, (APTR)ORTG_BitMapInfo,
     (APTR)ORTG_DrawStats, (APTR)ORTG_WritePixelsAlpha, (APTR)ORTG_PresentVirgl, (APTR)ORTG_NativeSize, (APTR)ORTG_WrittenSpans,
-    (APTR)ORTG_ShowInstead, (APTR)ORTG_ShownNow, (APTR)-1,
+    (APTR)ORTG_ShowInstead, (APTR)ORTG_ShownNow, (APTR)ORTG_Present, (APTR)ORTG_PresentDone, (APTR)-1,
 };
 static const struct { ULONG size; const APTR *vectors; APTR data; APTR init; } lib_inittable = {
     sizeof(struct OpenRTGBase), lib_vectors, NULL, (APTR)lib_init,
@@ -549,6 +557,19 @@ static LONG ORTG_WritePixelsAlpha(REG(a1, struct RastPort *rp), REG(d0, LONG x),
 static LONG ORTG_PresentVirgl(REG(a1, struct RastPort *rp), REG(d0, LONG x), REG(d1, LONG y), REG(a0, const struct OpenRTGVirglFrame *f), REG(a6, struct OpenRTGBase *base))
 {
     return ortg_present_virgl(rp, x, y, f);
+}
+
+/* 0.30: the one present (screens.c, present_plan.h). */
+static LONG ORTG_Present(REG(a0, struct ORTG_PresentInfo *info), REG(a6, struct OpenRTGBase *base))
+{
+    (void)base;
+    return ortg_present(info);
+}
+
+static VOID ORTG_PresentDone(REG(a0, APTR token), REG(a1, const ULONG *blk), REG(d0, ULONG at), REG(a6, struct OpenRTGBase *base))
+{
+    (void)base;
+    ortg_present_done(token, blk, at);
 }
 
 /* ---- the Native size (0.17, the native screen mode's step 3) ---------------------------------------- */

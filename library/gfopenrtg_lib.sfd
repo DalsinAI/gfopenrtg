@@ -28,4 +28,6 @@ BOOL ORTG_NativeSize(ULONG monitor, struct OpenRTGNativeSize *size)(d0,a0)
 ULONG ORTG_WrittenSpans(struct BitMap *bitmap, struct OpenRTGSpan *buf, ULONG max)(a0,a1,d0)
 LONG ORTG_ShowInstead(struct BitMap *screen, struct BitMap *picture)(a0,a1)
 LONG ORTG_ShownNow(struct BitMap *screen, struct BitMap *picture)(a0,a1)
+LONG ORTG_Present(struct ORTG_PresentInfo *info)(a0)
+VOID ORTG_PresentDone(APTR token, const ULONG *blk, ULONG at)(a0,a1,d0)
 ==end

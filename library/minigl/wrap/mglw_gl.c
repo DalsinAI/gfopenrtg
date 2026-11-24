@@ -366,7 +366,7 @@ void MGLSetState(GLcontext c, GLenum cap, GLboolean state)
 void MGLSetZOffset(GLcontext c, GLfloat offset)
 {
     c->zoffset = offset;
-    zoffset(c);
+    if (c->w_caps & CAP_ZOFFSET) zoffset(c);
 }
 
 /* The module has its own rule for small triangles: kept, and not used. */

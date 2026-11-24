@@ -2,12 +2,12 @@
  * SPDX-License-Identifier: MIT
  *
  * minigl.library's virgl route (IDEA 5, docs/design/MiniGL-Compatible-Plan.md):
- * GL 1.1 drawn on the host's GPU through GFOpenGPU's OGPU_OP_VIRGL, with our
- * own encoder, on the OpenGPU shared pipe (library/pipe/): its block, its
- * resources, its arenas, its state objects and its fixed-function shaders. The state code, matrices, lists, GLU and GLUT are the
+ * GL 1.1 drawn on the host's GPU through GFOpenGPU's OGPU_OP_VIRGL, on the
+ * OpenGPU shared pipe (library/pipe/): its block, its resources, its arenas,
+ * its state objects, its fixed-function shaders and every command of the
+ * frame (pipe version 7). The state code, matrices, lists, GLU and GLUT are the
  * library's own; this route replaces the per-vertex work and the output.
  *
- *   mgl_vg_enc.c     the virgl command stream (little-endian words)
  *   mgl_vg_frame.c   frames, clears, reading back
  *   mgl_vg_pipe.c    the context on the shared pipe: resources, sending
  *   mgl_vg_state.c   GL state to the pipe's keys, constants
@@ -48,7 +48,6 @@ struct vg_tex {
     ULONG used;                         /* the stream sequence that last drew with it */
     ULONG put;                          /* ... that has a PUT of it waiting */
     ULONG boxgen;                       /* the generation the dirty boxes describe */
-    ULONG view;                         /* its sampler view (object handle), 0 none */
     int w, h, levels;
     int dx0[MGL_MAX_LEVELS], dy0[MGL_MAX_LEVELS], dx1[MGL_MAX_LEVELS], dy1[MGL_MAX_LEVELS];   /* dirty, per level */
     int whole;                          /* everything must go up */
@@ -89,8 +88,6 @@ struct vg_layout {
 #define VG_D_FB        (1UL << 0)       /* framebuffer, viewport, scissor: the frame's start */
 #define VG_D_VIEWPORT  (1UL << 1)
 #define VG_D_SCISSOR   (1UL << 2)
-#define VG_D_VBUF      (1UL << 3)
-#define VG_D_IBUF      (1UL << 4)
 #define VG_D_VSC       (1UL << 5)
 #define VG_D_FSC       (1UL << 6)
 #define VG_D_ALL       0xFFFFFFFFUL
@@ -117,15 +114,11 @@ struct mgl_vg {
     ULONG vbuf_h, ibuf_h;
     struct vg_res *colour, *depth;
 
-    ULONG surf_c, surf_z;               /* the surfaces of colour and depth */
-
     /* what is bound */
     ULONG dirty;
-    ULONG stride;                       /* the vertex buffer's, as set */
-    ULONG ib_off;                       /* the index buffer's offset, as set */
+    ULONG stride;                       /* the vertex buffer's for the next draw */
     struct vg_layout lay[VG_LAYOUTS];
     int nlay;
-    ULONG views[MGL_TEX_UNITS], samps[MGL_TEX_UNITS];   /* bound */
 
     /* glBegin/glEnd */
     struct vg_layout *im_lay;
@@ -155,25 +148,12 @@ struct mgl_vg {
 #define VG_VBUF_H(v) ((v)->vbuf_h)
 #define VG_IBUF_H(v) ((v)->ibuf_h)
 
-/* ---- the encoder (mgl_vg_enc.c) --------------------------------------------------------------- */
+/* ---- the frame's commands: the pipe writes them all (mgl_vg_pipe.c) ---------------------------- */
 
-/* Room for n words in the stream; the frame is sent first when there is none. */
-ULONG *vg_cmd(GLcontext c, ULONG n);
 ULONG vg_fbits(float f);
-void vg_bind(GLcontext c, ULONG obj, ULONG handle);
-void vg_set_viewport(GLcontext c, const float *v6);
-void vg_set_scissor(GLcontext c, int x0, int y0, int x1, int y1);
-void vg_set_framebuffer(GLcontext c);
 void vg_clear(GLcontext c, ULONG buffers, const float *rgba, float depth);
-void vg_set_vertex_buffer(GLcontext c, ULONG stride);
-void vg_set_index_buffer(GLcontext c, ULONG offset);
+/* A draw from the vertex arena at the stride vg_prepare left; indexed: start is in the index arena, bias is added */
 void vg_draw(GLcontext c, ULONG prim, ULONG start, ULONG count, int indexed, LONG bias);
-void vg_constants(GLcontext c, int shader, const float *v, int vec4s);
-void vg_shader(GLcontext c, ULONG handle, int type, const char *text, ULONG len);
-void vg_bind_shader(GLcontext c, ULONG handle, int type);
-void vg_sampler_views(GLcontext c, int n, const ULONG *h);
-void vg_sampler_states(GLcontext c, int n, const ULONG *h);
-ULONG vg_new_obj(GLcontext c);
 
 /* Block commands (the Amiga's order). */
 void vg_blk_cmd(ULONG *p, ULONG cmd, ULONG n, const ULONG *args);
@@ -206,7 +186,6 @@ void vgp_put(GLcontext c, struct vg_res *r, ULONG level, ULONG x, ULONG y, ULONG
              ULONG stride, ULONG swap);
 void vgp_send(GLcontext c, int present);
 void vgp_need(GLcontext c, ULONG va_bytes, ULONG ia_count);
-ULONG *vgp_cmd(GLcontext c, ULONG n);
 void vgp_overflow(GLcontext c, ULONG stride);
 int vgp_readback(GLcontext c, int x0, int y0, int x1, int y1, ULONG *buf);    /* 0 on success */
 void vg_sync(GLcontext c);              /* the arenas, the buffers' handles, what changed: from the pipe */
@@ -328,8 +307,8 @@ void vg_clear_quad(GLcontext c, GLbitfield mask);   /* a clear inside the scisso
 
 /* ---- textures (mgl_vg_tex.c) ---------------------------------------------------------------- */
 
-ULONG vg_tex_view(GLcontext c, struct mgl_tex *t);      /* its sampler view, the texels up to date */
-ULONG vg_tex_sampler(GLcontext c, struct mgl_tex *t);   /* a sampler state for its parameters */
+struct vg_res *vg_tex_view(GLcontext c, struct mgl_tex *t);    /* its resource, the texels up to date */
+OGPUPipeCSO *vg_tex_sampler(GLcontext c, struct mgl_tex *t);    /* a sampler state for its parameters */
 void mgl_vg_tex_changed(GLcontext c, struct mgl_tex *t, int level, int x, int y, int w, int h);
 void mgl_vg_tex_free(GLcontext c, struct mgl_tex *t);
 void mgl_vg_tex_before(GLcontext c, struct mgl_tex *t);

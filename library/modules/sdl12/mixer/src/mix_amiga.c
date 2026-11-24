@@ -29,7 +29,9 @@
  *     gfopenmodule.datatype (tracker modules). When OIA_DecodedBy says this
  *     CPU and name.wav is beside name.ogg (the installer's fallback), the
  *     WAV plays instead; a game asking for name.wav gets name.ogg when only
- *     that is there (mix_wav.c's mw_choose).
+ *     that is there (mix_wav.c's mw_choose). A name the port's C library
+ *     reads Unix-style, "PROGDIR:/data/x", is read as "PROGDIR:data/x" when
+ *     it isn't there as it is (mw_dos_name).
  *
  * The program's calls change channels under Disable() (the SoundFunc runs
  * at interrupt time); music calls go to the process and wait for it. */
@@ -517,9 +519,17 @@ struct pick {
     const char *by;
 };
 
-static int pick_file(const char *asked, struct pick *p, int dt_keep)
+static int pick_file(const char *given, struct pick *p, int dt_keep)
 {
-    int is_wav = mw_is_wav_name(asked), there = exists(asked), wav_there, dt_ok = 0, dt_68k = 0;
+    char dos[PATH_MAX_];
+    const char *asked = given;
+    int is_wav, there, wav_there, dt_ok = 0, dt_68k = 0;
+    /* "PROGDIR:/data/x", as the port's fopen reads it: "PROGDIR:data/x" */
+    if (!exists(given) && mw_dos_name(given, dos, sizeof dos)) {
+        asked = dos;
+    }
+    is_wav = mw_is_wav_name(asked);
+    there = exists(asked);
     memset(p, 0, sizeof *p);
     if (is_wav) {
         copy_str(p->wav, asked, sizeof p->wav);
@@ -544,7 +554,7 @@ static int pick_file(const char *asked, struct pick *p, int dt_keep)
         p->dto = NULL;
     }
     if (p->use == MW_NONE) {
-        SDL_SetError("Mix: can't play %s", asked);
+        SDL_SetError("Mix: can't play %s", given);
     }
     return p->use;
 }

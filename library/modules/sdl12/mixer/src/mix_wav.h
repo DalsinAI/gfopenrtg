@@ -50,6 +50,14 @@ int mw_sibling(const char *asked, const char *ext, char *out, size_t n);
 int mw_is_wav_name(const char *name);
 int mw_on_68k(const char *decoded_by);
 
+/* A name as a port's C library reads it, for AmigaDOS: "PROGDIR:/data/x"
+ * (a Unix-minded join of PROGDIR: and /data/x), which AmigaDOS would read
+ * as PROGDIR:'s parent, becomes "PROGDIR:data/x". Only the slashes right
+ * after the colon go. 1 and out when the name changed and fits in n, else 0.
+ * The mixer tries the name as given first, and this only when that isn't
+ * there. */
+int mw_dos_name(const char *asked, char *out, size_t n);
+
 /* The choice, once what is there is known:
  *   asked_there: the file asked for exists;
  *   wav_there:   name.wav beside it exists (asked itself, for a .wav);

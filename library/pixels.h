@@ -9,6 +9,9 @@
 #include "../include/gfopenrtg/gfopenrtg.h"
 
 LONG ortg_write_pixels(struct RastPort *rp, LONG x, LONG y, const struct OpenRTGPixels *px);
+/* 0.32: the same, the source still written by GFOpenGPU batches up to the fence after
+ * (ORTG_PRESENT_AFTER): waited for only where the CPU reads the source. */
+LONG ortg_write_pixels_after(struct RastPort *rp, LONG x, LONG y, const struct OpenRTGPixels *px, ULONG after);
 LONG ortg_read_pixels(struct RastPort *rp, LONG x, LONG y, struct OpenRTGPixels *px);
 LONG ortg_fill_pixels(struct RastPort *rp, LONG x, LONG y, LONG w, LONG h, ULONG argb);
 LONG ortg_invert_pixels(struct RastPort *rp, LONG x, LONG y, LONG w, LONG h);

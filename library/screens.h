@@ -107,6 +107,7 @@ int ortg_ogpu_invert(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1,
 int ortg_ogpu_pixels(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1, const void *src, ULONG src_bpr, int format, const void *table);
 int ortg_ogpu_xrgb(const struct ortg_bitmap *bm);
 int ortg_ogpu_pixels_xrgb(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1, const void *src, ULONG src_bpr, int format, const void *table);
+int ortg_ogpu_pixels_kept(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1, const void *src, ULONG src_bpr, int format, const void *table, int xrgb);
 int ortg_ogpu_read(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1, void *dst, ULONG dst_bpr);
 int ortg_ogpu_read_argb(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1, void *dst, ULONG dst_bpr);
 int ortg_ogpu_alpha(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1, const void *src, ULONG src_bpr, ULONG alpha);
@@ -118,6 +119,9 @@ ULONG ortg_draw_stats(ULONG *counts, ULONG kinds, ULONG flags);
  * compositor's step 4): before the CPU draws on or reads an GFOpenRTG
  * bitmap, or hands its address out. */
 void ortg_ogpu_settle(void);
+/* 0.32: wait for one GFOpenGPU fence (ORTG_PRESENT_AFTER's), if gfopengpu.library is there. */
+void ortg_ogpu_wait(unsigned long fence);
+#define ORTG_STAGE_MAX 4096     /* a PIXELS source up to this many bytes is copied by the CPU (screens.c) */
 struct OpenRTGVirglFrame;
 LONG ortg_present_virgl(struct RastPort *rp, LONG x, LONG y, const struct OpenRTGVirglFrame *f);
 /* 0.30: ORTG_Present and ORTG_PresentDone (gfopenrtg.h; routes in present_plan.h). */

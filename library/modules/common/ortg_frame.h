@@ -30,6 +30,13 @@ static inline int orf_wanted(unsigned version, unsigned revision, int present_ol
     return !present_old && (version > 0 || revision >= 30);
 }
 
+/* ORTG_PRESENT_AFTER is taken: gfopenrtg.library 0.32 or later. Earlier
+ * ones ignore the flag, so the caller waits for its own batches first. */
+static inline int orf_after_ok(unsigned version, unsigned revision)
+{
+    return version > 0 || revision >= 32;
+}
+
 /* The ORTG_PIX_ format of a source, or ORF_NONE where ORTG_Present would put
  * it on the CPU while the old present has GFOpenGPU for it: ARGB and 0RGB
  * take PIXELS on 16 and 32-bit; RGB565 only into a target of that very
@@ -53,7 +60,10 @@ struct orf_rect { int x, y, w, h; };
 
 /* The frame's rects (in its own pixels, already inside w x h) through
  * ORTG_Present, one call each: pixel 0, 0 of the frame at x, y of rp. vsync:
- * the first call waits for the display's next frame. 1: all were shown; 0:
+ * the first call waits for the display's next frame. after: 0, or the
+ * fence of the caller's GFOpenGPU batches that still write the frame
+ * (ORTG_PRESENT_AFTER, only for gfopenrtg.library 0.32: orf_after_ok);
+ * each call carries it, and GFOpenRTG waits for it only where the CPU reads. 1: all were shown; 0:
  * one was refused, and the caller shows the frame the old way (the rects
  * already written are written again, the same pixels). A non-empty rect
  * answered with 0 pixels counts as refused: GFOpenRTG writes nothing when
@@ -63,7 +73,7 @@ struct orf_rect { int x, y, w, h; };
  * pens through graphics.library. */
 static inline int orf_present(orf_call call, void *ctx, struct RastPort *rp, long x, long y,
                               void *pixels, unsigned long pitch, unsigned long format, int w, int h,
-                              const struct orf_rect *rects, int n, int vsync)
+                              const struct orf_rect *rects, int n, int vsync, unsigned long after)
 {
     struct ORTG_PresentInfo in;
     struct Rectangle src;
@@ -90,8 +100,12 @@ static inline int orf_present(orf_call call, void *ctx, struct RastPort *rp, lon
         src.MaxX = (WORD)(r->x + r->w - 1);
         src.MaxY = (WORD)(r->y + r->h - 1);
         in.src = &src;
+        if (after) {
+            in.flags |= ORTG_PRESENT_AFTER;
+            in.after = after;
+        }
         if (vsync) {
-            in.flags = ORTG_PRESENT_VSYNC;
+            in.flags |= ORTG_PRESENT_VSYNC;
             vsync = 0;
         }
         if (call(&in, ctx) <= 0) return 0;

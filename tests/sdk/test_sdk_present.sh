@@ -40,13 +40,15 @@ T(ORTG_STAT_PRESENT_READBACK == 22 && ORTG_STAT_PRESENT_MEMORY == 23 && ORTG_STA
 T(ORTG_STAT_VIRGL == 20);
 T(ORTG_SURF_VIRGL == 1 && ORTG_SURF_MEMORY == 2 && ORTG_SURF_MEDIA == 3 && ORTG_SURF_RETAINED == 4);
 T(ORTG_PRESENT_FLIP_Y == 1 && ORTG_PRESENT_VSYNC == 2 && ORTG_PRESENT_PREPARE == 4 && ORTG_PRESENT_ALPHA == 8);
-T(ORTG_PRESENT_REVISION == 30 && ORTG_RETAINED_REVISION == 31);
+T(ORTG_PRESENT_AFTER == 16);
+T(ORTG_PRESENT_REVISION == 30 && ORTG_RETAINED_REVISION == 31 && ORTG_AFTER_REVISION == 32);
 /* the layout gfopenrtg.library reads, 32-bit as on the Amiga */
 T(offsetof(struct ORTG_PresentInfo, size) == 0 && offsetof(struct ORTG_PresentInfo, kind) == 4);
 T(offsetof(struct ORTG_PresentInfo, handle) == 12 && offsetof(struct ORTG_PresentInfo, memory) == 16);
 T(offsetof(struct ORTG_PresentInfo, width) == 28 && offsetof(struct ORTG_PresentInfo, rp) == 32);
 T(offsetof(struct ORTG_PresentInfo, flags) == 52 && offsetof(struct ORTG_PresentInfo, token) == 64);
-T(sizeof (struct ORTG_PresentInfo) == 68);
+T(offsetof(struct ORTG_PresentInfo, after) == 68);   /* a 0.30 caller's struct ends here */
+T(sizeof (struct ORTG_PresentInfo) == 72);
 const char *sdk_present_name(int i);
 const char *sdk_present_name(int i) { return names[i]; }
 C

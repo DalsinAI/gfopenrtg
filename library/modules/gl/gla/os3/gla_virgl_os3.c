@@ -15,6 +15,7 @@
 #include <proto/timer.h>
 #include <proto/gfopengpu.h>
 #include <gfopengpu/build.h>
+#include <gfopengpu/caps.h>
 #include "gla_notice_os3.h"
 #include "../gla_virgl.h"                  /* gla_virgl_batch_wanted */
 
@@ -105,9 +106,18 @@ static int os3_run(void *user, void *block, unsigned long bytes)
  * it would have run on the 68k; "cpu" (or "softpipe") takes softpipe
  * without trying virgl; anything else, or none, is virgl when it's there
  * and softpipe when not. ENV:OGLES3/Driver CPU still makes ogles3.library
- * take softpipe (it doesn't ask for virgl), unless GLDriver says gpu. */
+ * take softpipe (it doesn't ask for virgl), unless GLDriver says gpu.
+ *
+ * With GLDriver unset, gfopengpu.library 0.32's OGPU_Driver("GL") chooses,
+ * as it does for Warp3D, MiniGL and TinyGL (the shared pipe's M9): from
+ * ENV:GFOpenGPU/Driver only, as "GL" has no ENV:<api>/Driver. Its cpu is
+ * softpipe; anything else is virgl when it's there, softpipe when not (GL
+ * has no stream route of its own, so acrtg is as auto). GLDriver still
+ * wins, being GL's own switch. */
 
 static const char why_env_cpu[] = "ENV:GFOpenGPU/GLDriver is cpu";
+static const char why_ogpu_cpu[] = "gfopengpu.library chose cpu for GL (ENV:GFOpenGPU/Driver)";
+static int cpu_by_ogpu;                 /* the last GLA_OS3_DRIVER_CPU came from OGPU_Driver, not GLDriver */
 static const char why_ogles3_cpu[] = "ENV:OGLES3/Driver is CPU";
 static const char why_asked[] = "the program asked for softpipe";
 static const char why_no_library[] = "gfopengpu.library didn't open";
@@ -133,10 +143,24 @@ int gla_os3_driver_of(const char *v)
     return GLA_OS3_DRIVER_AUTO;
 }
 
+/* OGPU_Driver's answer for GL (gfopengpu.library 0.32's driver choice) as a GLA_OS3_DRIVER_. */
+int gla_os3_driver_from_ogpu(unsigned long d)
+{
+    return d == OGPU_DRV_CPU ? GLA_OS3_DRIVER_CPU : GLA_OS3_DRIVER_AUTO;
+}
+
 int gla_os3_gl_driver(void)
 {
     char v[16];
-    return gla_os3_getenv("GFOpenGPU/GLDriver", v, sizeof v) > 0 ? gla_os3_driver_of(v) : GLA_OS3_DRIVER_AUTO;
+    cpu_by_ogpu = 0;
+    if (gla_os3_getenv("GFOpenGPU/GLDriver", v, sizeof v) > 0) return gla_os3_driver_of(v);
+    if (!OpenGPUBase) OpenGPUBase = OpenLibrary((CONST_STRPTR)OPENGPU_NAME, 0);
+    if (OpenGPUBase && (OpenGPUBase->lib_Version > 0 || OpenGPUBase->lib_Revision >= 32)) {
+        int d = gla_os3_driver_from_ogpu(OGPU_Driver((CONST_STRPTR)"GL"));
+        cpu_by_ogpu = d == GLA_OS3_DRIVER_CPU;
+        return d;
+    }
+    return GLA_OS3_DRIVER_AUTO;
 }
 
 /* Why gfopengpu.library offers no virgl; NULL when it does. */
@@ -169,7 +193,7 @@ static int softpipe_hook(const char *why)
         /* The program went to softpipe without asking for virgl, or asked
          * a GL.module that wasn't told why. */
         char v[8];
-        if (drv == GLA_OS3_DRIVER_CPU) why = why_env_cpu;
+        if (drv == GLA_OS3_DRIVER_CPU) why = cpu_by_ogpu ? why_ogpu_cpu : why_env_cpu;
         else if (gla_os3_getenv("OGLES3/Driver", v, sizeof v) > 0 && (v[0] == 'C' || v[0] == 'c')) why = why_ogles3_cpu;
         else if (!(why = library_why())) why = why_asked;
     }
@@ -207,7 +231,7 @@ int gla_os3_virgl_transport(struct gla_virgl_transport *t)
     const char *why;
     gla_os3_driver_init();
     if (gla_os3_gl_driver() == GLA_OS3_DRIVER_CPU) {
-        gla_note_why(why_env_cpu);
+        gla_note_why(cpu_by_ogpu ? why_ogpu_cpu : why_env_cpu);
         return 0;
     }
     if ((why = library_why()) != NULL) {

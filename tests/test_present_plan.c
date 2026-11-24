@@ -98,6 +98,11 @@ int main(void)
     part[0] = 330; part[1] = 0; part[2] = 340; part[3] = 5;
     check(!prs_part(part, 320, 240, &x0, &y0, &x1, &y1), "a part outside: nothing");
 
+    /* ORTG_PRESENT_AFTER (0.32): only a piece the CPU reads waits for the caller's fence */
+    check(!prs_after_wait(0, 1), "no fence: nothing to wait for");
+    check(!prs_after_wait(7, 0), "GFOpenGPU's PIXELS reads the source in place after the caller's batches: no wait");
+    check(prs_after_wait(7, 1), "the CPU's route reads the source: waits");
+
     printf("test_present_plan: %d checks, %d failed\n", checks, failures);
     return failures != 0;
 }

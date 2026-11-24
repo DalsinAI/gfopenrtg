@@ -46,6 +46,13 @@ struct w3dvg_os {
     void *user;
     int pipe_old;                       /* 1: the route sends its own blocks, as before the shared pipe's M6
                                            (ENV:Warp3D/PipeOld=1, for one release) */
+    /* The drawing area's memory, for direct calls (stage M7 part 2), or 0 and 0: w3dvg_area's address is the memory.
+     * area_lock is called just before a send that reads the area (the frame's first pixels) or writes it (the
+     * present), area_unlock once that send has run, before the call that caused it returns: the lock is never held
+     * between two calls. area_lock answers 0 when the area isn't to be had (not visible): nothing is loaded, or the
+     * frame stays on the host. */
+    int (*area_lock)(void *user, ULONG *address, ULONG *bpr);
+    void (*area_unlock)(void *user);
 };
 
 /* What the host said at the start. */
@@ -64,6 +71,28 @@ void w3dvg_close(struct w3dvg *v);
  * into the target surface afterwards (in the same block). Returns 0, or
  * the commands the host refused, or -1 when the block didn't run. */
 LONG w3dvg_run(struct w3dvg *v, const UBYTE *stream, long words, ULONG vbase, ULONG vlen, int present);
+
+/* The same batch as calls, made as Warp3D's draw calls come (stage M7 part 2): nothing is recorded and read back.
+ * w3dvg_begin starts one: vertices the draws name inside [vbase, vbase + vcap) are read by the host from there (each
+ * run of draws PUTs the part it reads; they must stay as they are until w3dvg_end), others are copied. The numbers
+ * are the stream's (stream3d.h), as the builders (build3d.h) take them. w3dvg_end sends what there is; present as
+ * w3dvg_run's. It answers the commands the host refused or the route left out, or -1 when a block didn't run at all
+ * (the host is gone: what the batch drew is lost, and the caller stops using the route); *presented (or 0) is 1 when the frame
+ * is in the drawing area afterwards, 0 when it is still the host's (no present asked for, or the area not to be
+ * had). */
+void w3dvg_begin(struct w3dvg *v, ULONG vbase, ULONG vcap);
+/* The drawing area. With w3dvg_os.area_lock the address only says which area it is, and bpr isn't read. */
+void w3dvg_area(struct w3dvg *v, ULONG address, ULONG bpr, LONG w, LONG h, ULONG format);
+void w3dvg_depth(struct w3dvg *v, ULONG kind, ULONG address, ULONG bpr, LONG w, LONG h, ULONG format);
+void w3dvg_clip(struct w3dvg *v, LONG x, LONG y, LONG w, LONG h);
+void w3dvg_render3d(struct w3dvg *v, const ULONG *args);        /* OGPU_R3D_ARGS of them */
+void w3dvg_texenv(struct w3dvg *v, ULONG mode, ULONG colour);
+void w3dvg_texture(struct w3dvg *v, ULONG address, ULONG bpr, LONG w, LONG h, ULONG format, ULONG generation,
+                   ULONG min, ULONG mag, ULONG wrap_s, ULONG wrap_t, ULONG border, ULONG levels, const ULONG *level_addrs);
+void w3dvg_triangles(struct w3dvg *v, ULONG vaddr, ULONG vcount, ULONG stride, ULONG tex, ULONG layout);
+void w3dvg_fill(struct w3dvg *v, LONG x, LONG y, LONG w, LONG h, ULONG raw);
+void w3dvg_clear3d(struct w3dvg *v, ULONG kind, LONG x, LONG y, LONG w, LONG h, ULONG value);
+LONG w3dvg_end(struct w3dvg *v, int present, int *presented);
 
 /* A texture whose first level was at addr is gone (or will change size). */
 void w3dvg_forget(struct w3dvg *v, ULONG addr);

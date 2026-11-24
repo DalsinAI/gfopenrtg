@@ -140,6 +140,8 @@ struct w3dctx {
     /* the virgl route (ROUTE_VIRGL) */
     struct w3dvg *vg;
     int vg_hold;                                /* the host's frame is newer than the drawing area's (not presented yet) */
+    int live;                                   /* this batch's draws go straight to the route (stage M7 part 2): only
+                                                 * its vertices are kept, in the data area; nothing is recorded */
     ULONG vg_errors;                            /* commands the host refused or the route left out */
     /* the 3D core, for ROUTE_CPU */
     struct ogpu_core core;
@@ -184,6 +186,9 @@ void w3d_begin(struct w3dctx *x);               /* the state the next primitives
 ULONG w3d_flush(struct w3dctx *x);              /* runs the batch; a hardware lock may keep the frame on the host */
 ULONG w3d_sync(struct w3dctx *x);               /* ... and the frame is in the drawing area after it */
 void w3d_zsync(struct w3dctx *x, int writes);   /* Z and stencil in memory for the CPU (writes: it changes them) */
+/* w3d_batch.c: the drawing area's memory, locked for one send (the lock code stays there until M8) */
+int  w3d_area_lock(struct w3dctx *x, ULONG *address, ULONG *bpr);
+void w3d_area_unlock(struct w3dctx *x);
 int  w3d_vg_start(struct w3dctx *x, int need_chip); /* w3d_vg_os3.c: the context's virgl route, 0 when there is none
                                                    (need_chip: nor when the host draws virgl without a graphics chip) */
 void w3d_vg_stop(struct w3dctx *x);

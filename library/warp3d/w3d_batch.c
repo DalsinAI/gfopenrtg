@@ -18,7 +18,14 @@
  *    it, and the next batch takes the area's pixels up again. Z and stencil
  *    stay on the host until the program reads or writes them (w3d_zsync).
  * A batch carries all the state it draws with, as GFOpenGPU's back ends keep
- * nothing between batches. */
+ * nothing between batches.
+ *
+ * Stage M7 part 2 of docs/design/OpenGPU-Shared-Pipe-Plan.md: on the virgl route the draw calls are calls to the
+ * route (w3dvg_clip, w3dvg_triangles ...), which makes the shared pipe's calls from them; no batch is recorded
+ * and read back (x->live). Only the vertices are kept, in the data area, until the batch ends. The drawing area's
+ * bitmap is locked only around a send that reads or writes it (w3d_area_lock, asked for by the route), never
+ * between two of the program's calls. With ENV:Warp3D/PipeOld=1 (one release) the route is the batch reader it
+ * was, and the batch is recorded as on the other routes. */
 #include <exec/memory.h>
 #include <graphics/rastport.h>
 #include <cybergraphx/cybergraphics.h>
@@ -238,6 +245,66 @@ static int vg_flush(struct w3dctx *x, UBYTE *stream, long words, int present)
     return -1;
 }
 
+/* The lock for the route's sends (w3dvg_os.area_lock): held from here to w3d_area_unlock, which the route calls
+ * once the block has run. */
+int w3d_area_lock(struct w3dctx *x, ULONG *address, ULONG *bpr)
+{
+    if (!lock_area(x)) return 0;
+    *address = (ULONG)x->base;
+    *bpr = x->bpr;
+    return 1;
+}
+
+void w3d_area_unlock(struct w3dctx *x) { unlock_area(x); }
+
+/* The draws of a new batch go straight to the route: the graphics card draws them, into an area it can take, and
+ * the route isn't the old batch reader. Decided when a batch starts; it holds until that batch has gone. */
+static int live_now(struct w3dctx *x)
+{
+    return x->route == ROUTE_VIRGL && x->vg && x->direct && !W3DBase->pipe_old;
+}
+
+/* What a recorded batch starts with, as calls: the drawing area (which one; its memory is asked for when a send
+ * needs it) and the depth and stencil buffers. */
+static void live_start(struct w3dctx *x, int data)
+{
+    W3D_Context *c = x->ctx;
+    w3dvg_begin(x->vg, data ? (ULONG)x->vmem : 0, data ? VERT_BYTES : 0);
+    w3dvg_area(x->vg, (ULONG)c->drawregion + (ULONG)c->yoffset, 0, c->width, c->height, (ULONG)x->fmt);
+    if (x->zbuf) w3dvg_depth(x->vg, OGPU_KIND_DEPTH, (ULONG)x->zbuf, x->zbpr, c->width, c->height, (ULONG)x->zfmt);
+    if (x->sbuf) w3dvg_depth(x->vg, OGPU_KIND_STENCIL, (ULONG)x->sbuf, (ULONG)c->width, c->width, c->height, OGPU_FMT_S8);
+}
+
+/* The end of a batch of direct calls: what the pipe holds goes to the host. Nothing is kept to draw again, so when
+ * the host fails the block the batch's draws are lost for this frame, and the 68k draws from the next one on. */
+static ULONG flush_live(struct w3dctx *x, int present)
+{
+    int shown = 0;
+    LONG e;
+    if (!x->s3.body) {
+        if (!(present && x->vg_hold)) return W3D_SUCCESS;
+        live_start(x, 0);                       /* nothing new, but the host's frame isn't in the area yet */
+    }
+    w3d_trace("flush (direct) %ld bytes", (long)x->s3.vused);
+    x->s3.body = 0;
+    x->live = 0;
+    x->sent_tex = 0;
+    e = w3dvg_end(x->vg, present, &shown);
+    x->vg_hold = !shown;
+    x->s3o->reset(&x->s3);
+    if (e > 0) {                                /* drawn, but not all of it */
+        x->vg_errors += (ULONG)e;
+        w3d_trace("virgl: %ld commands not drawn (%ld so far)", (long)e, (long)x->vg_errors);
+    } else if (e < 0) {
+        w3d_trace("virgl: the host failed a block; its draws are lost, and the CPU draws from here");
+        x->vg_errors++;
+        w3dvg_read_z(x->vg);
+        w3d_vg_stop(x);
+        x->route = ROUTE_CPU;
+    }
+    return W3D_SUCCESS;
+}
+
 static ULONG flush(struct w3dctx *x, int present)
 {
     W3D_Context *c = x->ctx;
@@ -245,6 +312,7 @@ static ULONG flush(struct w3dctx *x, int present)
     long words;
     UBYTE *stream;
     ULONG r = W3D_SUCCESS;
+    if (x->live || (!x->s3.body && live_now(x))) return flush_live(x, present);
     if (!x->s3.body) {
         if (present && x->vg_hold && x->vg && lock_area(x)) {
             /* nothing new, but the host's frame isn't in the area yet: SURFACE and TARGET alone */
@@ -383,7 +451,8 @@ static void send_render3d(struct w3dctx *x)
     a[16] = t ? t->chroma_hi : 0;
     a[17] = w3d_colour(&x->current);
     a[19] = (ULONG)x->stipple;
-    x->s3o->render3d(&x->s3, (const unsigned long *)a);
+    if (x->live) w3dvg_render3d(x->vg, a);
+    else x->s3o->render3d(&x->s3, (const unsigned long *)a);
     x->r3d_dirty = 0;
 }
 
@@ -398,14 +467,16 @@ void w3d_send_clip(struct w3dctx *x)
     if (r > c->width) r = c->width;
     if (b > c->height) b = c->height;
     if (r <= l || b <= t) { l = t = 0; r = b = 1; }          /* nothing: one pixel the program asked to lose */
-    x->s3o->clip(&x->s3, l, t, r - l, b - t);
+    if (x->live) w3dvg_clip(x->vg, l, t, r - l, b - t);
+    else x->s3o->clip(&x->s3, l, t, r - l, b - t);
     x->clip_dirty = 0;
 }
 
 static void send_texture(struct w3dctx *x, W3D_Texture *tex)
 {
     if (!tex) {
-        x->s3o->texture(&x->s3, 0, 0, 0, 1, 1, OGPU_FMT_ARGB32, 0, 0, 1, 1, 1, 1, 0, 1, 0);
+        if (x->live) w3dvg_texture(x->vg, 0, 0, 1, 1, OGPU_FMT_ARGB32, 0, 1, 1, 1, 1, 0, 1, 0);
+        else x->s3o->texture(&x->s3, 0, 0, 0, 1, 1, OGPU_FMT_ARGB32, 0, 0, 1, 1, 1, 1, 0, 1, 0);
     } else {
         struct w3dtex *t = TEX(tex);
         unsigned long lv[OGPU_TEX_LEVELS];
@@ -418,10 +489,17 @@ static void send_texture(struct w3dctx *x, W3D_Texture *tex)
             min = min == W3D_LINEAR ? W3D_NEAREST : min == W3D_LINEAR_MIP_NEAREST ? W3D_NEAREST_MIP_NEAREST
                 : min == W3D_LINEAR_MIP_LINEAR ? W3D_NEAREST_MIP_LINEAR : min;
         }
-        x->s3o->texenv(&x->s3, 0, env, envc);
-        x->s3o->texture(&x->s3, 0, (unsigned long)t->level[0], (ULONG)t->w * 4, t->w, t->h,
-                     OGPU_TEX_FORMAT(OGPU_FMT_ARGB32, t->base), 0, t->generation, min, mag,
-                     t->wrap_s, t->wrap_t, t->border, t->levels, lv);
+        if (x->live) {
+            w3dvg_texenv(x->vg, (ULONG)env, envc);
+            w3dvg_texture(x->vg, (ULONG)t->level[0], (ULONG)t->w * 4, t->w, t->h, OGPU_TEX_FORMAT(OGPU_FMT_ARGB32, t->base),
+                          t->generation, (ULONG)min, (ULONG)mag, (ULONG)t->wrap_s, (ULONG)t->wrap_t, t->border,
+                          (ULONG)t->levels, (const ULONG *)lv);
+        } else {
+            x->s3o->texenv(&x->s3, 0, env, envc);
+            x->s3o->texture(&x->s3, 0, (unsigned long)t->level[0], (ULONG)t->w * 4, t->w, t->h,
+                         OGPU_TEX_FORMAT(OGPU_FMT_ARGB32, t->base), 0, t->generation, min, mag,
+                         t->wrap_s, t->wrap_t, t->border, t->levels, lv);
+        }
         x->sent_gen = t->generation;
     }
     x->sent_tex = tex;
@@ -442,6 +520,17 @@ int w3d_room(struct w3dctx *x, long words, ULONG vbytes)
 void w3d_begin(struct w3dctx *x)
 {
     struct OGPUPipeS3DBuf z, st;
+    if (x->live || (!x->s3.body && live_now(x))) {
+        if (!x->s3.body) {                      /* a new batch of direct calls: nothing is sent yet */
+            x->live = 1;
+            x->s3.body = 1;                     /* (the batch is open; its commands are the pipe's, not the emitter's) */
+            live_start(x, 1);
+            x->sent_tex = 0;
+            x->clip_dirty = x->r3d_dirty = 1;
+        }
+        if (x->clip_dirty) w3d_send_clip(x);
+        return;
+    }
     z.address = (unsigned long)x->zbuf; z.bpr = x->zbpr; z.w = x->ctx->width; z.h = x->ctx->height; z.format = x->zfmt;
     st.address = (unsigned long)x->sbuf; st.bpr = (ULONG)x->ctx->width; st.w = x->ctx->width; st.h = x->ctx->height;
     st.format = OGPU_FMT_S8;
@@ -478,6 +567,11 @@ struct ovtx *w3d_vspace(struct w3dctx *x, ULONG n)
  * command. Call w3d_select_texture first: it sends the state. */
 void w3d_emit(struct w3dctx *x, struct ovtx *d, ULONG n, int prim)
 {
+    if (x->live) {
+        if (n) w3dvg_triangles(x->vg, (ULONG)d, n, sizeof(struct ovtx), x->sent_tex ? OGPU_TRI_UNIT0 : OGPU_TRI_NOTEX,
+                               OVTX_LAYOUT | (ULONG)prim);
+        return;
+    }
     x->s3o->emit(&x->s3, (unsigned long)d, n, sizeof(struct ovtx), prim, x->sent_tex ? OGPU_TRI_UNIT0 : OGPU_TRI_NOTEX,
                  OVTX_LAYOUT);
 }
@@ -490,8 +584,13 @@ ULONG w3d_fill(struct w3dctx *x, ULONG argb)
     if (!w3d_room(x, 16, 0)) return W3D_QUEUEFAILED;
     w3d_begin(x);
     if (x->fmt == OGPU_FMT_RGB565) raw = (((argb >> 19) & 31) << 11) | (((argb >> 10) & 63) << 5) | ((argb >> 3) & 31);
-    x->s3o->clip(&x->s3, 0, 0, 0, 0);
-    x->s3o->fill(&x->s3, 0, 0, c->width, c->height, raw);
+    if (x->live) {
+        w3dvg_clip(x->vg, 0, 0, 0, 0);
+        w3dvg_fill(x->vg, 0, 0, c->width, c->height, raw);
+    } else {
+        x->s3o->clip(&x->s3, 0, 0, 0, 0);
+        x->s3o->fill(&x->s3, 0, 0, c->width, c->height, raw);
+    }
     x->clip_dirty = 1;
     return W3D_SUCCESS;
 }
@@ -501,7 +600,12 @@ void w3d_clear_buffer(struct w3dctx *x, int kind, ULONG value)
     W3D_Context *c = x->ctx;
     if (!w3d_room(x, 16, 0)) return;
     w3d_begin(x);
-    x->s3o->clip(&x->s3, 0, 0, 0, 0);
-    x->s3o->clear3d(&x->s3, kind, 0, 0, c->width, c->height, value);
+    if (x->live) {
+        w3dvg_clip(x->vg, 0, 0, 0, 0);
+        w3dvg_clear3d(x->vg, (ULONG)kind, 0, 0, c->width, c->height, value);
+    } else {
+        x->s3o->clip(&x->s3, 0, 0, 0, 0);
+        x->s3o->clear3d(&x->s3, kind, 0, 0, c->width, c->height, value);
+    }
     x->clip_dirty = 1;
 }

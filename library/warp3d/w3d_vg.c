@@ -108,6 +108,7 @@ struct w3dvg {
     ULONG region_top;                   /* the region's end as drawn from, this batch */
     ULONG declined;                     /* commands of this batch left out */
     int area_locked;                    /* the platform's lock on the drawing area is held (a load or a present) */
+    int os_presenting;                  /* the platform's present_prepare took this frame's present */
     int presented;                      /* the last block carried the present */
     int lost;                           /* a block of this batch didn't run (the host is gone): its draws are lost */
     struct w3dvg_stats st;
@@ -275,7 +276,15 @@ static ULONG px_present_prepare(void *user, ULONG ctx, ULONG handle, ULONG *p, U
 {
     struct w3dvg *v = user;
     ULONG addr, bpr;
+    LONG n;
     (void)ctx; (void)handle;
+    v->os_presenting = 0;
+    if (v->os.present_prepare && (n = v->os.present_prepare(v->os.user, v->ctx_id, v->colour->handle, p, room)) >= 0) {
+        v->os_presenting = 1;
+        v->presented = 1;
+        v->st.presents++;
+        return (ULONG)n;
+    }
     if (room < BLK_WORDS(12)) return 0;
     if (!area_get(v, &addr, &bpr)) return 0;    /* not visible now: the frame stays on the host */
     v->presented = 1;
@@ -286,6 +295,7 @@ static ULONG px_present_prepare(void *user, ULONG ctx, ULONG handle, ULONG *p, U
 static void px_present_finish(void *user, const ULONG *blk, ULONG at)
 {
     struct w3dvg *v = user;
+    if (v->os_presenting) { v->os_presenting = 0; v->os.present_done(v->os.user, blk, at); return; }
     if (blk && result(blk, at) < 0) { v->errors++; say(v, "virgl: the present failed"); }
     area_put(v);                        /* the block ran: the drawing area is the program's again */
 }

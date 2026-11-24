@@ -5,7 +5,11 @@
  * the shared pipe's (library/pipe/pipe_xport_os3.c, stage M2 of
  * docs/design/OpenGPU-Shared-Pipe-Plan.md).
  *
- * The frame reaches the display (plan section 6):
+ * The frame reaches the display through gfopenrtg.library's ORTG_Present
+ * (0.30, stage M8 of the plan): prepared before the frame's block goes, so a
+ * screen or a bitmap gets its ACV_PRESENT in that block, and done after it
+ * ran (a window's visible pieces, or the frame read back). Without 0.30, or
+ * with ENV:MiniGL/PresentOld set (kept for one release), MiniGL's own way:
  *  - a screen of its own, or the program's bitmap: ACV_PRESENT at the end
  *    of the frame's block, the host writing the frame straight into the
  *    bitmap (locked while the block runs), in its own format;
@@ -54,7 +58,7 @@ static int ortg(void)
     return mgl_ortg_base != 0;
 }
 
-ULONG vg_os_present(GLcontext c, ULONG *p, ULONG room)
+static ULONG old_present(GLcontext c, ULONG *p, ULONG room)
 {
     struct RastPort *rp;
     struct BitMap *bm;
@@ -92,7 +96,7 @@ static void present_readback(GLcontext c, struct RastPort *rp, int x, int y)
     mgl_free(buf);
 }
 
-void vg_os_presented(GLcontext c, ULONG *blk, ULONG at)
+static void old_presented(GLcontext c, ULONG *blk, ULONG at)
 {
     struct RastPort *rp, brp;
     struct BitMap *bm;
@@ -115,4 +119,52 @@ void vg_os_presented(GLcontext c, ULONG *blk, ULONG at)
         if (ORTG_PresentVirgl(rp, x, y, &f) >= 0) return;
     }
     if (CyberGfxBase) present_readback(c, rp, x, y);
+}
+
+/* ---- ORTG_Present (gfopenrtg.library 0.30) ------------------------------------------------------- */
+
+static APTR present_token;              /* ORTG_Present's, while the frame's block runs */
+static int present_new;                 /* this frame went to ORTG_Present */
+static struct RastPort present_rp;      /* a bare bitmap's: ORTG_PresentDone still uses it */
+
+static int ortg30(void)
+{
+    return ortg() && (mgl_ortg_base->lib_Version > 0 || mgl_ortg_base->lib_Revision >= 30);
+}
+
+ULONG vg_os_present(GLcontext c, ULONG *p, ULONG room)
+{
+    struct RastPort *rp;
+    struct BitMap *bm;
+    struct ORTG_PresentInfo in;
+    int x, y, mode;
+    LONG n;
+    present_new = 0;
+    present_token = 0;
+    if (mgl_prefs.present_old || !ortg30()) return old_present(c, p, room);
+    mode = mgl_disp_target(c, &rp, &bm, &x, &y);
+    if (!rp && bm) { InitRastPort(&present_rp); present_rp.BitMap = bm; rp = &present_rp; }
+    if (!rp) return old_present(c, p, room);
+    mgl_zero(&in, sizeof in);
+    in.size = sizeof in;
+    in.kind = ORTG_SURF_VIRGL;
+    in.context = c->vg->ctx_id;
+    in.handle = c->vg->colour->handle;
+    in.width = (UWORD)c->width; in.height = (UWORD)c->height;
+    in.rp = rp; in.x = x; in.y = y;
+    in.flags = ORTG_PRESENT_PREPARE | (c->sync && mode != MGL_TARGET_BITMAP ? ORTG_PRESENT_VSYNC : 0);
+    in.blk = (unsigned long *)p; in.room = room;    /* gfopenrtg.h counts in unsigned long: 32 bits, as ULONG */
+    n = ORTG_Present(&in);
+    if (n < 0 || !in.token) return old_present(c, p, room);
+    present_new = 1;
+    present_token = in.token;
+    return (ULONG)n;
+}
+
+void vg_os_presented(GLcontext c, ULONG *blk, ULONG at)
+{
+    if (!present_new) { old_presented(c, blk, at); return; }
+    present_new = 0;
+    ORTG_PresentDone(present_token, blk, at);
+    present_token = 0;
 }

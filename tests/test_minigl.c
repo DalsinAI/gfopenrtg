@@ -22,7 +22,7 @@
 /* ---- what mgl_lib.c and mgl_display.c give on the Amiga -------------------------------------- */
 
 GLcontext mgl_current;
-struct mgl_prefs mgl_prefs = { 16, 2, 0, 16, 0, 0, 0, 0, ROUTE_CPU, 0, 0, 0, 1, 1024, 4096, 0, 0 };
+struct mgl_prefs mgl_prefs = { 16, 2, 0, 16, 0, 0, 0, 0, ROUTE_CPU, 0, 0, 0, 1, 1024, 4096, 0, 0, 0 };
 long mgl_trace;
 struct Library *MiniGLBase;
 const MGLDispatchTable *MiniGLDispatch;

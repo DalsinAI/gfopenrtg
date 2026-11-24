@@ -1773,7 +1773,8 @@ static void prm_finish_cb(void *x) { prm_send(&((struct prm_run *)x)->c); }
 /* The bounce: the frame's part into a buffer of GFOpenRTG's (ARGB32), then written by the CPU. */
 static LONG prs_media_bounce(const struct ORTG_PresentInfo *in, long x0, long y0, long x1, long y1)
 {
-    ULONG w = (ULONG)(x1 - x0 + 1), h = (ULONG)(y1 - y0 + 1), *buf, blk[PRM_SHOW_LONGS];
+    ULONG w = (ULONG)(x1 - x0 + 1), h = (ULONG)(y1 - y0 + 1), *buf;
+    unsigned long blk[PRM_SHOW_LONGS];                      /* 32 bits on the 68k, as ACM_SHOW reads them */
     short rect[4];
     struct OpenRTGPixels px;
     LONG n = -1;

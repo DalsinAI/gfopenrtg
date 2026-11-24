@@ -4,7 +4,8 @@
 # For the Cradle's stove_build (STOVE= and OUT= set, target
 # library/modules/sdl12): libSDL.a and libSDL_gl.a (build.sh), on SDL 2's
 # link library (library/modules/sdl2/build.sh's stub), and the test
-# tests/sdl12/loadwav.c built against them, as OUT/tests/sdl12/LoadWAV.
+# tests/sdl12/loadwav.c built against them, as OUT/tests/sdl12/LoadWAV, and
+# libSDL_mixer.a (mixer/) with tests/sdl12/mixtest.c as OUT/tests/sdl12/MixTest.
 # A program built here runs on the SDL2.module already installed.
 set -eu
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -42,8 +43,11 @@ mkdir -p "$OUT/tests/sdl12"
 "$PREFIX/bin/m68k-amigaos-gcc" -m68040 -m68881 -O2 -noixemul -fno-delete-null-pointer-checks -Wall \
     -I"$OUT/sdl12/include/SDL" -o "$OUT/tests/sdl12/LoadWAV" "$ROOT/tests/sdl12/loadwav.c" \
     -L"$OUT/sdl12" -lSDL -lm -lamiga >> "$LOG" 2>&1 || fail "tests/sdl12/loadwav.c"
+"$PREFIX/bin/m68k-amigaos-gcc" -m68040 -m68881 -O2 -noixemul -fno-delete-null-pointer-checks -Wall \
+    -I"$OUT/sdl12/include/SDL" -o "$OUT/tests/sdl12/MixTest" "$ROOT/tests/sdl12/mixtest.c" \
+    -L"$OUT/sdl12" -lSDL_mixer -lSDL -lm -lamiga >> "$LOG" 2>&1 || fail "tests/sdl12/mixtest.c"
 
 tail -n 5 "$LOG"
-ls -l "$OUT/sdl12/libSDL.a" "$OUT/sdl12/libSDL_gl.a" "$OUT/tests/sdl12/LoadWAV"
-sha256sum "$OUT/sdl12/libSDL.a" "$OUT/tests/sdl12/LoadWAV"
+ls -l "$OUT/sdl12/libSDL.a" "$OUT/sdl12/libSDL_gl.a" "$OUT/sdl12/libSDL_mixer.a" "$OUT/tests/sdl12/LoadWAV" "$OUT/tests/sdl12/MixTest"
+sha256sum "$OUT/sdl12/libSDL.a" "$OUT/sdl12/libSDL_mixer.a" "$OUT/tests/sdl12/LoadWAV" "$OUT/tests/sdl12/MixTest"
 "$PREFIX/bin/m68k-amigaos-gcc" --version | head -1

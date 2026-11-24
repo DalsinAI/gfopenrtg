@@ -5,10 +5,12 @@
 # libSDL.a, with the GCC 16 stove.
 #   library/modules/sdl12/build.sh [OUT_DIR]     (default build/)
 # Needs OUT_DIR's SDL 2 (library/modules/sdl2/build.sh: libSDL2.a and
-# include/SDL2) and sdl12-compat's tarball in TARBALLS, checked against
-# UPSTREAM.json's sha256. Makes OUT_DIR/sdl12/: include/SDL/ (sdl12-compat's
-# SDL 1.2 headers), libSDL.a, libSDL_gl.a (SDL 1.2's OpenGL: sdl-config --gl)
-# and LICENSE.txt, which tools/make_sdk.py puts in the developer kit.
+# include/SDL2) and sdl12-compat's tarball, from TARBALLS or downloaded from
+# UPSTREAM.json's url, checked against its sha256. Makes OUT_DIR/sdl12/: include/SDL/ (sdl12-compat's
+# SDL 1.2 headers), libSDL.a, libSDL_gl.a (SDL 1.2's OpenGL: sdl-config --gl),
+# LICENSE.txt, and libSDL_mixer.a with include/SDL/SDL_mixer.h (mixer/: SDL_mixer
+# 1.2's calls on AHI, the Team's own), which tools/make_sdk.py puts in the
+# developer kit.
 #
 # libSDL.a holds sdl12-compat (patches/: the AmigaOS 3 branch of its loader,
 # and its RWops through SDL 2's calls),
@@ -32,19 +34,26 @@ OBJCOPY=$STOVE16/bin/m68k-amigaos-objcopy
 eval "$(python3 - "$HERE/UPSTREAM.json" <<'PY'
 import json, sys
 u = json.load(open(sys.argv[1]))["sdl12-compat"]
-print(f"FILE='{u['file']}' DIR='{u['dir']}' SHA='{u['sha256']}'")
+print(f"FILE='{u['file']}' DIR='{u['dir']}' SHA='{u['sha256']}' URL='{u['url']}'")
 PY
 )"
 [ -f "$OUT/libSDL2.a" ] && [ -d "$OUT/include/SDL2" ] || { echo "sdl12: no SDL 2 in $OUT (library/modules/sdl2/build.sh first)" >&2; exit 1; }
-[ -f "$TARBALLS/$FILE" ] || { echo "sdl12: no $TARBALLS/$FILE" >&2; exit 1; }
-echo "$SHA  $TARBALLS/$FILE" | sha256sum -c --quiet - || { echo "sdl12: $FILE's sha256 is not UPSTREAM.json's" >&2; exit 1; }
+# The tarball: from TARBALLS, or downloaded once into the work folder, as library/modules/sdl2/build.sh does (a
+# machine with no TARBALLS folder, such as the nightly's, builds it too); either way checked against its sha256.
+TB=$TARBALLS/$FILE
+if [ ! -f "$TB" ]; then
+    TB=$OUT/sdl12-work/tarballs/$FILE
+    mkdir -p "$OUT/sdl12-work/tarballs"
+    [ -f "$TB" ] || curl -fsL -o "$TB" "$URL" || { rm -f "$TB"; echo "sdl12: no $TARBALLS/$FILE, and $URL could not be fetched" >&2; exit 1; }
+fi
+echo "$SHA  $TB" | sha256sum -c --quiet - || { echo "sdl12: $FILE's sha256 is not UPSTREAM.json's" >&2; exit 1; }
 
 W=$OUT/sdl12-work
 S=$W/$DIR
 mkdir -p "$W"
 if [ ! -f "$S/.patched" ]; then
     [ ! -e "$S" ] || mv "$S" "$W/$DIR.old-$(date +%Y%m%d%H%M%S)"
-    tar xzf "$TARBALLS/$FILE" -C "$W"
+    tar xzf "$TB" -C "$W"
     for p in "$HERE"/patches/*.patch; do patch -s -d "$S" -p1 < "$p"; done
     touch "$S/.patched"
 fi
@@ -105,3 +114,6 @@ mkdir -p "$OUT/sdl12/include/SDL"
 cp "$S"/include/SDL/*.h "$OUT/sdl12/include/SDL/"
 cp "$S/LICENSE.txt" "$OUT/sdl12/LICENSE.txt"
 echo "$LIB ($(wc -c < "$LIB") bytes)"
+
+# SDL_mixer 1.2's calls on AHI (mixer/: the Team's own), beside it in the kit.
+STOVE16=$STOVE16 sh "$HERE/mixer/build.sh" "$OUT"

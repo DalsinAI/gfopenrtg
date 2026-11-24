@@ -113,7 +113,7 @@ struct ogpu_pipe_ctx {
     /* the frame's bindings (pipe_frame.c, version 7) */
     ULONG caps_bits;                        /* the screen's (the views' format) */
     OGPUPipeRes *u_res[PIPE_UNITS]; ULONG u_samp[PIPE_UNITS]; ULONG nunits;   /* bound; units 0 .. nunits - 1 go */
-    ULONG s_view[PIPE_UNITS], s_samp[PIPE_UNITS]; int s_views, s_samps;      /* as last sent (0: not known) */
+    ULONG s_view[PIPE_UNITS], s_samp[PIPE_UNITS]; int s_views, s_samps;      /* as last sent, and how many (0: not known) */
     ULONG s_vb[3]; int s_vb_known;          /* handle, offset, stride */
     ULONG s_ib[2]; int s_ib_known;          /* handle, offset */
     ULONG s_sref, s_bcol[4], s_stip[32]; int s_sref_known, s_bcol_known, s_stip_known;

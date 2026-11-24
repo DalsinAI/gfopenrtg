@@ -156,7 +156,7 @@ void pipe_m_set_stipple(OGPUPipeCtx *x, const ULONG rows[32])
 static void units(OGPUPipeCtx *x)
 {
     ULONG v[PIPE_UNITS], s[PIPE_UNITS], n = x->nunits, u, *p;
-    int vch = !x->s_views, sch = !x->s_samps;
+    int vch = x->s_views != (int)n, sch = x->s_samps != (int)n;   /* a unit more is a command again */
     if (!n) return;
     for (u = 0; u < n; u++) {
         v[u] = x->u_res[u] ? view(x, x->u_res[u]) : 0;
@@ -167,12 +167,12 @@ static void units(OGPUPipeCtx *x)
     if (vch && (p = pipe_cmd(x, VGC_SAMPLERS_WORDS(n))) != 0) {
         vgc_sampler_views(p, (int)n, v);
         for (u = 0; u < n; u++) x->s_view[u] = v[u];
-        x->s_views = 1;
+        x->s_views = (int)n;
     }
     if (sch && (p = pipe_cmd(x, VGC_SAMPLERS_WORDS(n))) != 0) {
         vgc_sampler_states(p, (int)n, s);
         for (u = 0; u < n; u++) x->s_samp[u] = s[u];
-        x->s_samps = 1;
+        x->s_samps = (int)n;
     }
 }
 

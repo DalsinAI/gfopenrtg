@@ -39,6 +39,7 @@
 #include "../opengpu/ogpu_core.h"
 #include "../opengpu/ogpu_3d.h"
 #include "../../include/gfopengpu/build3d.h"
+#include "../../include/gfopengpu/pipe_s3d.h"
 #include "mgl_entries.h"           /* the functions behind the table (gen_api.py, from the spec) */
 
 #define MGL_LIB_VERSION   30
@@ -232,12 +233,9 @@ struct GLcontext_t {
 
     /* the batch */
     ULONG *cmdmem;
-    struct OGPUBatch b;
     UBYTE *vmem;
-    ULONG vused;
-    int body;
-    long list_at;                   /* the last TRIANGLES list (word), or -1 */
-    ULONG list_vend;
+    struct OGPUPipeS3D s3;          /* the pipe's stream3d emitter builds it (pipe_s3d.h) over cmdmem and vmem */
+    const struct OGPUPipeS3DOps *s3o;
     int r3d_dirty, clip_dirty;
     struct mgl_tex *sent_tex;       /* the texture TEXTURE last sent, or 0 */
     ULONG sent_gen;
@@ -455,7 +453,7 @@ ULONG mgl_argb(const float *c);     /* clamped RGBA floats to ARGB32 */
 
 void mgl_init_state(GLcontext c);
 void mgl_error(GLcontext c, GLenum e);
-#define R3D_DIRTY(c) ((c)->r3d_dirty = 1, (c)->list_at = -1)
+#define R3D_DIRTY(c) ((c)->r3d_dirty = 1, (c)->s3.list_at = -1)
 
 /* ---- matrices (mgl_matrix.c) ------------------------------------------------------------ */
 

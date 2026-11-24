@@ -19,12 +19,12 @@
  *
  * The numbers of the virgl protocol are virglrenderer's (Mesa's MIT
  * virgl_protocol.h, virgl_hw.h, Gallium's p_defines.h), as
- * include/gfopengpu/virgl_cmd.h carries them for MiniGL and Warp3D
+ * library/pipe/virgl_cmd.h carries them for MiniGL and Warp3D
  * alike; the encoder is the Team's own. */
 #include "w3d_vg.h"
 #include "../../include/gfopengpu/stream3d.h"
 
-#include "../../include/gfopengpu/virgl_cmd.h"
+#include "../pipe/virgl_cmd.h"
 #include "../../include/gfopengpu/pipe.h"
 #include "w3d_vg_ffkey.h"
 

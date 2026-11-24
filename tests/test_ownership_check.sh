@@ -49,7 +49,7 @@ put docs/design/note.md 'ACV_PRESENT FindConfigDev vg_cache'
 expect "the owners' own code, comments, queries, host/, tests and include/ pass" 0 "none new, none stale"
 
 # 2. the gate of M1: a fresh include of virgl_cmd.h in library/egl fails
-put library/egl/egl.c '#include "../../include/gfopengpu/virgl_cmd.h"'
+put library/egl/egl.c '#include "../pipe/virgl_cmd.h"'
 expect "virgl_cmd.h outside the pipe" 1 "virgl-cmd library/egl/egl.c"
 
 # 3. one of every rule, each named with its file

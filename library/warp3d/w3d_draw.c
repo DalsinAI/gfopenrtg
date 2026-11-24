@@ -220,7 +220,7 @@ static ULONG draw(struct w3dctx *x, W3D_Texture *tex, const struct vsrc *src, UL
                     if (k != i) { o[k] = o[i]; o[k + 1] = o[i + 1]; o[k + 2] = o[i + 2]; }
                     k += 3;
                 }
-            x->vused -= (n - k) * sizeof(struct ovtx);
+            x->s3.vused -= (n - k) * sizeof(struct ovtx);
             m = k;
         }
         if (m) w3d_emit(x, o, m, prim);
@@ -242,7 +242,7 @@ static ULONG draw(struct w3dctx *x, W3D_Texture *tex, const struct vsrc *src, UL
             else { a = b; b = c; }
         }
         }
-        x->vused -= (m - k) * sizeof(struct ovtx);
+        x->s3.vused -= (m - k) * sizeof(struct ovtx);
         if (k) w3d_emit(x, o, k, OGPU_LAY_LIST);
     }
     w3d_maybe_flush(x);
@@ -681,7 +681,7 @@ static ULONG arrays(struct w3dctx *x, ULONG prim, ULONG base, ULONG count, ULONG
                 o[k] = a; o[k + 1] = b; o[k + 2] = cc; k += 3;
             }
             if (k) w3d_emit(x, o, k, OGPU_LAY_LIST);
-            x->vused -= (chunk * 3 - k) * sizeof(struct ovtx);
+            x->s3.vused -= (chunk * 3 - k) * sizeof(struct ovtx);
             done += chunk;
         }
         break;

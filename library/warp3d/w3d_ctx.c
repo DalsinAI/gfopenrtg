@@ -18,7 +18,7 @@
     | W3D_BLENDING | W3D_FOGGING | W3D_DITHERING | W3D_LOGICOP | W3D_STENCILBUFFER | W3D_ALPHATEST | W3D_SPECULAR \
     | W3D_SCISSOR | W3D_CHROMATEST | W3D_CULLFACE | W3D_FOG_COORD | W3D_LINE_STIPPLE | W3D_POLYGON_STIPPLE)
 
-static void dirty(struct w3dctx *x) { x->r3d_dirty = 1; x->list_at = -1; }
+static void dirty(struct w3dctx *x) { x->r3d_dirty = 1; x->s3.list_at = -1; }
 
 static void newlist(struct MinList *l)
 {
@@ -52,6 +52,8 @@ LIBCALL W3D_Context *LIB_W3D_CreateContext(REG(a0, ULONG *error), REG(a1, struct
     }
     c->driver = x;
     x->ctx = c;
+    x->s3o = ogpu_pipe_s3d_ops(OGPU_PIPE_S3D_VERSION);     /* this library links the pipe: always there */
+    x->s3o->init(&x->s3, x->cmdmem, BATCH_WORDS, PREFIX_WORDS, x->vmem, VERT_BYTES);
     /* ENV:Warp3D/Driver: Auto (the default) takes virgl when the host draws
      * it on a graphics chip, else GFOpenGPU when its back end isn't this
      * 68k, else the CPU. Virgl asks for virgl even without a chip;
@@ -84,7 +86,7 @@ LIBCALL W3D_Context *LIB_W3D_CreateContext(REG(a0, ULONG *error), REG(a1, struct
     c->fog.fog_start = 1.0f; c->fog.fog_end = 0.0f; c->fog.fog_density = 1.0f;
     newlist(&c->restex);
     newlist(&c->tex);
-    x->list_at = -1;
+    x->s3.list_at = -1;
     x->zfunc = W3D_Z_LESS; x->afunc = W3D_A_ALWAYS; x->bsrc = W3D_ONE; x->bdst = W3D_ZERO;
     x->logicop = W3D_LO_COPY; x->fogmode = W3D_FOG_LINEAR; x->fogmode_v5 = -1;
     x->sfunc = W3D_ST_ALWAYS; x->smask = 255; x->sfail = x->szfail = x->szpass = W3D_ST_KEEP; x->swmask = 255;
@@ -202,7 +204,7 @@ LIBCALL void LIB_W3D_SetScissor(REG(a0, W3D_Context *c), REG(a1, W3D_Scissor *s)
     if (!s) return;
     c->scissor = *s;
     x->clip_dirty = 1;
-    x->list_at = -1;
+    x->s3.list_at = -1;
 }
 
 LIBCALL ULONG LIB_W3D_ClearDrawRegion(REG(a0, W3D_Context *c), REG(d0, ULONG colour), REG(a6, struct W3DBase *libbase))

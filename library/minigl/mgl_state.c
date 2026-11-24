@@ -176,7 +176,7 @@ void MGLSetState(GLcontext c, GLenum cap, GLboolean state)
     }
     if (state) c->en |= bit; else c->en &= ~bit;
     if (bit & (EN_DEPTH | EN_BLEND | EN_ALPHA | EN_FOG | EN_TEX0 | EN_TEX1 | EN_OFFSET | EN_ZOFFSET)) R3D_DIRTY(c);
-    if (bit & EN_SCISSOR) c->clip_dirty = 1, c->list_at = -1;
+    if (bit & EN_SCISSOR) c->clip_dirty = 1, c->s3.list_at = -1;
 }
 
 GLboolean GLIsEnabled(GLcontext c, GLenum cap)
@@ -369,7 +369,7 @@ void GLScissor(GLcontext c, GLint x, GLint y, GLsizei width, GLsizei height)
     if (width < 0 || height < 0) { mgl_error(c, GL_INVALID_VALUE); return; }
     c->sc_x = x; c->sc_y = y; c->sc_w = width; c->sc_h = height;
     c->clip_dirty = 1;
-    c->list_at = -1;
+    c->s3.list_at = -1;
 }
 
 void GLViewport(GLcontext c, GLint x, GLint y, GLsizei width, GLsizei height)

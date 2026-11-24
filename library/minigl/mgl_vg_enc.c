@@ -5,7 +5,7 @@
  * reads (little-endian words: each written turned round on the 68k, three
  * instructions) and the ACVirgl request block that carries it (the Amiga's
  * own order). The commands themselves are written by the shared writers in
- * include/gfopengpu/virgl_cmd.h, which Warp3D.library's virgl route builds
+ * library/pipe/virgl_cmd.h, which Warp3D.library's virgl route builds
  * from too; each layout follows virglrenderer's protocol (Mesa's MIT
  * virgl_protocol.h); the encoder is ours. */
 #include "mgl_vg.h"

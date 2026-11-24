@@ -14,7 +14,7 @@ The design note says MiniGL's and Warp3D's virgl routes "exist only as plans". *
 
 - MiniGL's route is `library/minigl/mgl_vg*.c`, about 115 KB across 8 files.
 - Warp3D's route is `library/warp3d/w3d_vg*.c`, about 82 KB across 4 files.
-- They already share `include/gfopengpu/virgl_cmd.h`: the protocol numbers and the command writers.
+- They already share `library/pipe/virgl_cmd.h`: the protocol numbers and the command writers.
 
 So the shared pipe is not new code written alongside the old. It is **extracted** from code that works today, one owner at a time, and every step is proven against the pixels and counters the old code gives. The note is corrected in the same pull request as this plan.
 
@@ -30,7 +30,7 @@ So the shared pipe is not new code written alongside the old. It is **extracted*
 | 68k 3D core | `library/opengpu/ogpu_3d.c` (82 KB) | Reads stream3d (`include/gfopengpu/stream3d.h`), the reference for what each command means |
 | Host 3D | `host/vulkan/ogpu3d*.comp`, `ogpu3d_rec.c` (41 KB), `ogpu3d_spv.h` (289 KB); the ACRTG runtime's own core lives in the amicradle repo (`native/acrtg.c`) | Two host renderers of stream3d |
 | virgl on the host | `host/virgl/acvirgl.c` (117 KB), `include/gfopengpu/virgl.h` (the ACV protocol) | `ACV_HELLO` … `ACV_PRESENT` (with FLIP_Y, SCALE) |
-| Shared virgl writers | `include/gfopengpu/virgl_cmd.h` (12 KB) | Protocol numbers, byte order, stateless writers, request-block helpers |
+| Shared virgl writers | `library/pipe/virgl_cmd.h` (12 KB) | Protocol numbers, byte order, stateless writers, request-block helpers |
 | MiniGL | `library/minigl/*` (minigl.library 29, ABI 5, 205 entries) | Two routes: its own 68k transform and lighting feeding stream3d, and `mgl_vg*` (virgl). Choice in `mgl_choose.c` |
 | Warp3D | `library/warp3d/*` (Warp3D.library 5.0) | `w3d_batch.c` builds stream3d. `w3d_vg.c` translates finished batches to virgl |
 | TinyGL | `library/tinygl/*` | Forwards to GL.module |
@@ -696,6 +696,8 @@ Added 24 November 2026. MiniGL keeps its ABI (the -30 call, dispatch ABI 5, 840 
   - stream3d words **identical** to M0 on the CPU and GFOpenGPU routes (a word-for-word stream comparison in `tests/pipe/test_s3d_same.c`);
   - all Warp3D and MiniGL captures identical on every route;
   - the ownership debt list has no stream3d entries left.
+- **Done, 24 November 2026, part 1 (the builder):** `library/pipe/pipe_emit_s3d.c` and `include/gfopengpu/pipe_s3d.h`: one builder of a stream3d batch (begin with DEPTH, clip, RENDER3D, TEXENV, TEXTURE, TRIANGLES with the joined lists, fill, CLEAR3D, SURFACE and TARGET in front at the end). It has a table of its own, `ogpu_pipe_s3d_ops`, version 1, apart from `struct OGPUPipeOps`: it needs no screen, and GL.module, which never draws this way, links neither it nor gfopengpu's builders. `w3d_batch.c` and `mgl_out.c` call it and no longer write a stream command themselves, so their two `stream3d` lines left `tests/ownership.debt`. The front ends still decide when a batch is sent and where it runs, and keep what they have sent. `virgl_cmd.h` is `library/pipe/virgl_cmd.h`, out of the SDK's headers; MiniGL's and Warp3D's virgl files still include it from there (their `virgl-cmd` debt lines stay until those files go). `tests/pipe/test_s3d_same.c` (95 checks): the front ends' old builder, kept in the test, and the emitter are given the same calls, and their streams are the same words, start and length, for a Warp3D frame, a MiniGL frame, no depth buffer, an empty batch, a full data area and an overfull batch.
+- **Left for part 2:** Warp3D's draw calls as pipe calls with the pipe picking the emitter, and the batch-reading code of `w3d_vg.c` deleted (the last `stream3d` line of Warp3D's on the debt list).
 
 ### M8: `ORTG_Present` (L)
 

@@ -13,7 +13,7 @@
  *
  * A screen is the caller's alone (one per open): it holds no lock and sends no block of its own after the open. */
 #include "pipe_int.h"
-#include "../../include/gfopengpu/virgl_cmd.h"
+#include "virgl_cmd.h"
 
 #ifndef ADDR
 #define ADDR(p) ((ULONG)(p))

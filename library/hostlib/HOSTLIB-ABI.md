@@ -188,7 +188,7 @@ For example, `0x80FF4020` over `0x40102030` gives `0x9F873028` (SDL2_BLEND gives
 **Returns, declines, state:** as SDL2_BLEND.
 ### MGL_DRAW, `$00010107`, version 1: `hostlib_mgl_draw(block)`
 
-One non-indexed virgl `DRAW_VBO` appended to a MiniGL context, and the vertices it reads copied into that context's arena. The shared writers are `include/gfopengpu/virgl_cmd.h`'s (`vgc_draw`); this call does the same bytes. A locked call: the four cursor longs are the context's state.
+One non-indexed virgl `DRAW_VBO` appended to a MiniGL context, and the vertices it reads copied into that context's arena. The shared writers are `library/pipe/virgl_cmd.h`'s (`vgc_draw`); this call does the same bytes. A locked call: the four cursor longs are the context's state.
 
 **The block:** `hostlib/mgl/draw.h`. The state is four big-endian longs: the arena's byte cursor, the command stream's word cursor, how many draws have been appended, and a spare. The vertices are `count` tightly packed groups of `comps` floats (1 to 4), copied as they stand. The command is 13 little-endian words, `vgc_draw`'s non-indexed form, with the given primitive and start.
 

@@ -35,14 +35,16 @@ static ULONG FL(float f)
     return v.u;
 }
 
-static void current(GLcontext c)
+/* 0 when the module wouldn't make the context current: nothing is called in it then. */
+static int current(GLcontext c)
 {
     if (c->s->current != (struct mglw_context *)c) mglw_switch((struct mglw_context *)c);
+    return c->s->current == (struct mglw_context *)c;
 }
 
 #define GL(c, name) MGLW_F(c, name)
-#define CALL(c, name, n, ...) (current(c), mglw_invoke((c)->s, GL(c, name), (n), __VA_ARGS__))
-#define CALL0(c, name) (current(c), mglw_invoke((c)->s, GL(c, name), 0))
+#define CALL(c, name, n, ...) (current(c) ? mglw_invoke((c)->s, GL(c, name), (n), __VA_ARGS__) : 0)
+#define CALL0(c, name) (current(c) ? mglw_invoke((c)->s, GL(c, name), 0) : 0)
 
 /* ---- booleans ------------------------------------------------------------------------------ */
 
@@ -271,8 +273,7 @@ void GLTexImage2D(GLcontext c, GLenum target, GLint level, GLint internalformat,
         if (width < 1 || height < 1) { mgl_error(c, GL_INVALID_VALUE); return; }
         if (!(rgba = unpack(c, width, height, format, type, pixels, &err))) { mgl_error(c, err); return; }
     }
-    current(c);
-    mglw_invoke(c->s, GL(c, glTexImage2D), 9, (ULONG)target, (ULONG)level, (ULONG)internalformat, (ULONG)width,
+    if (current(c)) mglw_invoke(c->s, GL(c, glTexImage2D), 9, (ULONG)target, (ULONG)level, (ULONG)internalformat, (ULONG)width,
                 (ULONG)height, (ULONG)border, GL_RGBA, GL_UNSIGNED_BYTE, (ULONG)rgba);
     mgl_free(rgba);
 }
@@ -285,8 +286,7 @@ void GLTexSubImage2D(GLcontext c, GLenum target, GLint level, GLint xoffset, GLi
     if (!pixels) return;
     if (width < 1 || height < 1) { mgl_error(c, GL_INVALID_VALUE); return; }
     if (!(rgba = unpack(c, width, height, format, type, pixels, &err))) { mgl_error(c, err); return; }
-    current(c);
-    mglw_invoke(c->s, GL(c, glTexSubImage2D), 9, (ULONG)target, (ULONG)level, (ULONG)xoffset, (ULONG)yoffset,
+    if (current(c)) mglw_invoke(c->s, GL(c, glTexSubImage2D), 9, (ULONG)target, (ULONG)level, (ULONG)xoffset, (ULONG)yoffset,
                 (ULONG)width, (ULONG)height, GL_RGBA, GL_UNSIGNED_BYTE, (ULONG)rgba);
     mgl_free(rgba);
 }

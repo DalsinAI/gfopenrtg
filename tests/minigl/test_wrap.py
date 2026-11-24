@@ -139,5 +139,16 @@ asm = read(M, "wrap", "mglw_call.s")
 check("_mglw_call:" in asm and "_mglw_call_bool:" in asm and "_mglw_invoke:" in asm and "_mglw_missing:" in asm,
       "mglw_call.s has the four routines")
 
+# A context the module refuses to make current gets no call: mglw_call looks again after mglw_switch, and the
+# hand-made calls go through current()'s answer.
+check(re.search(r"jsr\t_mglw_switch\n\taddq\.l\t#4,%sp\n\tmove\.l\t%d3,%d0\n\tmove\.l\t12\(%a5\),%d1\n\tcmp\.l\t20\(%a2\),%d1[^\n]*\n\tbne\.s\t8f\n", asm)
+      is not None, "mglw_call calls nothing when the switch didn't take")
+for f in ("mglw_seam.c", "mglw_gl.c"):
+    bare = [l for l in src[f].splitlines() if re.match(r"\s*current\(c\);\s*$", l)]
+    check(len(bare) <= (1 if f == "mglw_seam.c" else 0), "%s: every call waits on current()'s answer (%d don't)" % (f, len(bare)))
+# mglReadPixels' own pack alignment is put back after the library's readback.
+rb = src["mglw_seam.c"][src["mglw_seam.c"].index("void mgl_readback"):src["mglw_seam.c"].index("void mgl_vg_writeback")]
+check(rb.count("GL_PACK_ALIGNMENT") == 3 and "glGetIntegerv" in rb, "mgl_readback puts the program's GL_PACK_ALIGNMENT back")
+
 print("test_wrap: %d checks, %d failed" % (checks, fails))
 sys.exit(1 if fails else 0)

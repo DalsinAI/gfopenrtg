@@ -34,4 +34,7 @@ ACM_NOTAVAIL_BODY(hostlib_acm_events, HL_ID_ACM_EVENTS)
 ACM_NOTAVAIL_BODY(hostlib_acm_close, HL_ID_ACM_CLOSE)
 ACM_NOTAVAIL_BODY(hostlib_acm_result, HL_ID_ACM_RESULT)
 ACM_NOTAVAIL_BODY(hostlib_acm_fault, HL_ID_ACM_FAULT)
+ACM_NOTAVAIL_BODY(hostlib_acm_hold, HL_ID_ACM_HOLD)
+ACM_NOTAVAIL_BODY(hostlib_acm_show, HL_ID_ACM_SHOW)
+ACM_NOTAVAIL_BODY(hostlib_acm_release, HL_ID_ACM_RELEASE)
 #endif

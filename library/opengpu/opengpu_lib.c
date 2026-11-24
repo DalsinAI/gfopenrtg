@@ -78,6 +78,9 @@
  * host's order, wrong on a little-endian driver). A malformed input is the
  * new OGPU_ERR_DATA. Drivers that don't answer these keep falling through
  * to this core. Ask OGPU_Query(OGPU_OP_RFX_TILE, OGPU_FMT_ARGB32).
+ * 0.32: OGPU_Driver (210), the driver choice: which back end a 3D front end draws on, from
+ * ENV:<api>/Driver, ENV:GFOpenGPU/Driver and what the machine has (ogpu_driver_plan.h, the plan's
+ * table 2.9). The front ends ask it instead of choosing for themselves.
  * 0.31: OGPU_RetainedPresent hands the present to gfopenrtg.library 0.31 (ORTG_Present's
  * RETAINED route) when it is in memory and its screens are on (else its -1: the library's own present);
  * ENV:GFOpenGPU/RetainedPresentOld 1, read when a surface is
@@ -157,6 +160,8 @@
 #include "ogpu_retained.h"
 #include "ogpu_rs_handle.h"
 #include "ogpu_caps.h"
+#include "ogpu_driver_plan.h"
+#include "../../include/gfopengpu/virgl.h"  /* ACV_HOST_GPU, ACV_HOST_PRESENT */
 #include "../../include/gfopengpu/caps.h"
 #include "../../include/gfopengpu/retained.h"
 #include "../ogfx/ogfx.h"
@@ -164,7 +169,7 @@
 
 #define REG(r, decl) register decl __asm(#r)   /* bebbo gcc: an argument in a register */
 #define LIB_VERSION 0
-#define LIB_REVISION 31
+#define LIB_REVISION 32
 #define RESULTS 256                             /* the last batches' results, by fence (0.28; 16 before) */
 #define MAX_DRIVERS 8                           /* files looked at in LIBS:GFOpenGPU/ */
 #define ON_CPU 0                                /* dfence[] for a batch the CPU ran */
@@ -224,9 +229,9 @@ int start(void) { return -1; }
 const ULONG ogpu_ogfx_at = offsetof(struct OpenGPUBase, ogfx);
 
 static const char lib_name[] = "gfopengpu.library";
-static const char lib_id[] = "gfopengpu.library 0.31 (24.11.2026) GFOpenGPU, AmiCradle Team\r\n";
+static const char lib_id[] = "gfopengpu.library 0.32 (24.11.2026) GFOpenGPU, AmiCradle Team\r\n";
 /* For C:Version, which looks for "$VER:" in the file. */
-static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopengpu.library 0.31 (24.11.2026) GFOpenGPU, AmiCradle Team";
+static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopengpu.library 0.32 (24.11.2026) GFOpenGPU, AmiCradle Team";
 static const char cpu_name[] = "CPU";
 static const char dos_name[] = "dos.library";
 static const char drv_dir[] = "LIBS:GFOpenGPU";
@@ -257,6 +262,7 @@ static ULONG OGPU_RetainedStats(REG(a0, struct OGPURetained *rs), REG(a1, struct
 static void OGPU_RetainedDestroy(REG(a0, struct OGPURetained *rs), REG(a6, struct OpenGPUBase *base));
 static ULONG OGPU_QueryLimit(REG(d0, ULONG op), REG(a6, struct OpenGPUBase *base));
 static ULONG OGPU_QueryDriver(REG(d0, ULONG drv), REG(d1, ULONG op), REG(d2, ULONG format), REG(a6, struct OpenGPUBase *base));
+static ULONG OGPU_Driver(REG(a0, CONST_STRPTR api), REG(a6, struct OpenGPUBase *base));
 static void rs_libs_close(struct OpenGPUBase *base);
 static LONG low_memory(REG(a0, struct MemHandlerData *mhd), REG(a1, struct OpenGPUBase *base), REG(a6, struct ExecBase *sys));
 
@@ -276,6 +282,8 @@ static const APTR lib_vectors[] = {
     (APTR)OGPU_RetainedPresent, (APTR)OGPU_RetainedStats, (APTR)OGPU_RetainedDestroy,
     /* 0.30: capabilities, 198 and 204 (gfopengpu/caps.h) */
     (APTR)OGPU_QueryLimit, (APTR)OGPU_QueryDriver,
+    /* 0.32: the driver choice, 210 (gfopengpu/caps.h) */
+    (APTR)OGPU_Driver,
     (APTR)-1,
 };
 static const struct { ULONG size; const APTR *vectors; APTR data; APTR init; } lib_inittable = {
@@ -776,6 +784,59 @@ static ULONG OGPU_QueryDriver(REG(d0, ULONG drv), REG(d1, ULONG op), REG(d2, ULO
     if (base->drv) answer = base->drv->supports((int)op, (int)format, 0);
     ReleaseSemaphore(&base->drv_lock);
     return (ULONG)OGPU_ANSWER(answer) | (1UL << 8) | ((ULONG)answer & OGPU_ONGPU_BIT);
+}
+
+/* 0.32: the driver choice (the shared pipe's plan 2.9, M9; the table is ogpu_driver_plan.h). api is
+ * the front end's name, whose ENV:<api>/Driver is read first ("Warp3D", "MiniGL", "TinyGL"; "GL" has
+ * none), then ENV:GFOpenGPU/Driver. From a plain task (no ENV:) only GFOpenGPU's caps count: as
+ * auto. With ENV:GFOpenGPU/Trace set, the choice and why go in ENV:GFOpenGPU/Chose/<api>. */
+static int env_read(struct OpenGPUBase *base, const char *name, char *v, LONG size)
+{
+    DOS(base);
+    return DOSBase && GetVar((CONST_STRPTR)name, (STRPTR)v, size, GVF_GLOBAL_ONLY) > 0;
+}
+
+static ULONG OGPU_Driver(REG(a0, CONST_STRPTR api), REG(a6, struct OpenGPUBase *base))
+{
+    EXEC(base);
+    char v[16], name[40];
+    const char *why = "", *a = (const char *)api;
+    int va = OGD_UNSET, vg = OGD_UNSET, i, n;
+    struct ogd_have h;
+    ULONG d;
+    caps_look(base);
+    ObtainSemaphore(&base->drv_lock);
+    h.virgl = base->caps.virgl != 0;
+    h.chip = (base->caps.host_flags & ACV_HOST_GPU) != 0;
+    h.present = (base->caps.host_flags & ACV_HOST_PRESENT) != 0;
+    h.acrtg = base->drv && OGPU_ANSWER(base->drv->supports(OGPU_OP_TRIANGLES, OGPU_FMT_ARGB32, 0)) > OGPU_NONE;
+    ReleaseSemaphore(&base->drv_lock);
+    if (FindTask(NULL)->tc_Node.ln_Type == NT_PROCESS && dos_open(base)) {
+        for (n = 0; a && a[n] && n < 16; n++) name[n] = a[n];
+        if (n && n < 16 && !(n == 2 && a[0] == 'G' && a[1] == 'L')) {
+            for (i = 0; "/Driver"[i]; i++) name[n + i] = "/Driver"[i];
+            name[n + i] = 0;
+            if (env_read(base, name, v, sizeof v)) va = ogd_parse(v);
+        }
+        if (env_read(base, "GFOpenGPU/Driver", v, sizeof v)) vg = ogd_parse(v);
+    }
+    d = ogd_choose(va, vg, &h, &why);
+    if (FindTask(NULL)->tc_Node.ln_Type == NT_PROCESS && base->dos && env_read(base, "GFOpenGPU/Trace", v, sizeof v) && v[0] != '0'
+        && a && *a) {
+        DOS(base);
+        static const char *const dn[] = { "best", "virgl", "llvmpipe", "cpu", "acrtg" };
+        char line[120];
+        const char *p;
+        for (n = 0, p = "GFOpenGPU/Chose/"; *p; ) name[n++] = *p++;
+        for (i = 0; a[i] && n < (int)sizeof name - 1; ) name[n++] = a[i++];
+        name[n] = 0;
+        for (n = 0, p = dn[d <= 4 ? d : 0]; *p && n < 100; ) line[n++] = *p++;
+        line[n++] = ':'; line[n++] = ' ';
+        for (p = why; *p && n < (int)sizeof line - 1; ) line[n++] = *p++;
+        line[n] = 0;
+        SetVar((CONST_STRPTR)name, (CONST_STRPTR)line, n, GVF_GLOBAL_ONLY);
+    }
+    return d;
 }
 
 static STRPTR OGPU_BackEndName(REG(d0, ULONG index), REG(a6, struct OpenGPUBase *base))

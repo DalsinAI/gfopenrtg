@@ -10,6 +10,9 @@
 
 #include "w3d_internal.h"
 #include "w3d_calls.h"
+#include "../../include/gfopengpu/gfopengpu.h"
+#include "../../include/proto/gfopengpu.h"
+#include "../../include/gfopengpu/caps.h"
 
 /* The states this library can turn on: everything but antialiasing, volume
  * textures and multitexturing (as Wazp3D). */
@@ -54,12 +57,24 @@ LIBCALL W3D_Context *LIB_W3D_CreateContext(REG(a0, ULONG *error), REG(a1, struct
     x->ctx = c;
     x->s3o = ogpu_pipe_s3d_ops(OGPU_PIPE_S3D_VERSION);     /* this library links the pipe: always there */
     x->s3o->init(&x->s3, x->cmdmem, BATCH_WORDS, PREFIX_WORDS, x->vmem, VERT_BYTES);
-    /* ENV:Warp3D/Driver: Auto (the default) takes virgl when the host draws
+    /* Before gfopengpu.library 0.32, ENV:Warp3D/Driver: Auto (the default) takes virgl when the host draws
      * it on a graphics chip, else GFOpenGPU when its back end isn't this
      * 68k, else the CPU. Virgl asks for virgl even without a chip;
      * GFOpenGPU and CPU for those. Whatever isn't there falls back the same
      * way. W3D_DRIVER_3DHW gets the best that isn't the CPU. */
     if (type & W3D_DRIVER_CPU) x->route = ROUTE_CPU;
+    else if (OpenGPUBase && (OpenGPUBase->lib_Version > 0 || OpenGPUBase->lib_Revision >= 32)) {
+        /* gfopengpu.library 0.32: OGPU_Driver chooses (the shared pipe's M9; the same table
+         * for every front end, ENV:GFOpenGPU/Driver and ENV:Warp3D/Driver). Virgl that won't
+         * start falls to the stream route when that is there, else the CPU. */
+        ULONG d = OGPU_Driver((CONST_STRPTR)"Warp3D");
+        if ((d == OGPU_DRV_VIRGL || d == OGPU_DRV_LLVMPIPE) && libbase->gpu_virgl && w3d_vg_start(x, d == OGPU_DRV_VIRGL))
+            x->route = ROUTE_VIRGL;
+        else if (type & W3D_DRIVER_3DHW) {
+            if (!libbase->gpu_3d) { e = W3D_NODRIVER; goto fail; }
+            x->route = ROUTE_GPU;
+        } else x->route = libbase->gpu_3d && (d == OGPU_DRV_ACRTG || (d != OGPU_DRV_CPU && libbase->gpu_host)) ? ROUTE_GPU : ROUTE_CPU;
+    }
     else if (libbase->gpu_virgl && !libbase->prefer_cpu && !libbase->prefer_gpu
              && (libbase->prefer_virgl || libbase->virgl_chip != 0) && w3d_vg_start(x, !libbase->prefer_virgl))
         x->route = ROUTE_VIRGL;

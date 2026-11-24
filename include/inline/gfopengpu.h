@@ -81,4 +81,7 @@
     LP1(0xc6, ULONG, OGPU_QueryLimit, ULONG, op, d0, , OPENGPU_BASE_NAME)
 #define OGPU_QueryDriver(drv, op, format) \
     LP3(0xcc, ULONG, OGPU_QueryDriver, ULONG, drv, d0, ULONG, op, d1, ULONG, format, d2, , OPENGPU_BASE_NAME)
+/* 0.32: the driver choice (gfopengpu/caps.h) */
+#define OGPU_Driver(api) \
+    LP1(0xd2, ULONG, OGPU_Driver, CONST_STRPTR, api, a0, , OPENGPU_BASE_NAME)
 #endif

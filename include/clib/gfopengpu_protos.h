@@ -54,6 +54,8 @@ VOID OGPU_RetainedDestroy(struct OGPURetained *rs);
 /* -198, -204: capabilities (0.30) */
 ULONG OGPU_QueryLimit(ULONG op);
 ULONG OGPU_QueryDriver(ULONG drv, ULONG op, ULONG format);
+/* 0.32 */
+ULONG OGPU_Driver(CONST_STRPTR api);
 
 #ifdef __cplusplus
 }

@@ -33,6 +33,7 @@
 #include "mgl_internal.h"
 #include "../../include/gfopengpu/gfopengpu.h"
 #include "../../include/proto/gfopengpu.h"
+#include "../../include/gfopengpu/caps.h"
 
 struct ExecBase *SysBase;
 struct DosLibrary *DOSBase;
@@ -249,7 +250,13 @@ void mgl_read_prefs(void)
 {
     char v[16];
     mgl_prefs.route = -1;
-    if (GetVar((STRPTR)"MiniGL/Driver", (STRPTR)v, sizeof v, GVF_GLOBAL_ONLY) > 0) {
+    if (OpenGPUBase && (OpenGPUBase->lib_Version > 0 || OpenGPUBase->lib_Revision >= 32)) {
+        /* gfopengpu.library 0.32: OGPU_Driver chooses (the shared pipe's M9; the same table for
+         * every front end, ENV:GFOpenGPU/Driver and ENV:MiniGL/Driver). Virgl that won't open
+         * falls back as Auto (mgl_out_open). */
+        ULONG d = OGPU_Driver((CONST_STRPTR)"MiniGL");
+        mgl_prefs.route = d == OGPU_DRV_VIRGL || d == OGPU_DRV_LLVMPIPE ? ROUTE_VIRGL : d == OGPU_DRV_ACRTG ? ROUTE_GPU : ROUTE_CPU;
+    } else if (GetVar((STRPTR)"MiniGL/Driver", (STRPTR)v, sizeof v, GVF_GLOBAL_ONLY) > 0) {
         if (v[0] == 'C' || v[0] == 'c') mgl_prefs.route = ROUTE_CPU;
         else if (v[0] == 'V' || v[0] == 'v') mgl_prefs.route = ROUTE_VIRGL;
         else if (v[0] == 'G' || v[0] == 'g' || v[0] == 'O' || v[0] == 'o') mgl_prefs.route = ROUTE_GPU;

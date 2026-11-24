@@ -14,6 +14,7 @@ ROOT=$(cd "$HERE/../.." && pwd)
 M0=917bd97
 : "${ACVIRGL_LIB:=/usr/lib/x86_64-linux-gnu/libvirglrenderer.so.1}"
 : "${ROUNDS:=15}"
+[ "$ROUNDS" -ge 4 ] || ROUNDS=4                  # the trimmed variance (a run dropped each side) needs 4 (Holly, PR 42)
 : "${BENCH_ARGS:=300 640 480 now}"
 if [ ! -e "$ACVIRGL_LIB" ]; then echo "test_present_bench: no $ACVIRGL_LIB: cannot run here"; exit 1; fi
 export ACVIRGL_LIB

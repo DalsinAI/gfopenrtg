@@ -9,8 +9,9 @@
  * GFOpenGPU's back end has it, else Mesa's softpipe on the 68k, and its
  * frames go into the target's RastPort.
  *
- * ENV:TinyGL/Driver picks the route: CPU (softpipe), GFOpenGPU (the GPU, or
- * fail), or Auto (the default: the GPU when there is one).
+ * gfopengpu.library 0.32 and later choose the route (OGPU_Driver, from ENV:TinyGL/Driver and
+ * ENV:GFOpenGPU/Driver). Before it, ENV:TinyGL/Driver picks it: CPU (softpipe), GFOpenGPU (the
+ * GPU, or fail), or Auto (the default: the GPU when there is one).
  *
  * The Team wrote this from TinyGL's published interface (names and
  * arguments); no TinyGL code is in it. */
@@ -30,6 +31,8 @@
 #include <proto/dos.h>
 #include <proto/graphics.h>
 #include <proto/utility.h>
+#include <proto/gfopengpu.h>
+#include <gfopengpu/caps.h>
 
 #include <tgl/gl.h>
 #include <tgl/glu.h>
@@ -62,10 +65,30 @@ GLContext *GLInit(void)
     return (GLContext *)calloc(1, sizeof(GLContext));
 }
 
+/* gfopengpu.library 0.32's choice (OGPU_Driver: the shared pipe's M9, the same table for every
+ * front end, ENV:GFOpenGPU/Driver and ENV:TinyGL/Driver): 0 virgl (else softpipe), 1 the CPU
+ * (softpipe; also for the stream route, which TinyGL doesn't have); -1 an older library. */
+static int driver_ogpu(void)
+{
+    struct Library *OpenGPUBase = OpenLibrary((CONST_STRPTR) "gfopengpu.library", 0);
+    int r = -1;
+    if (OpenGPUBase) {
+        if (OpenGPUBase->lib_Version > 0 || OpenGPUBase->lib_Revision >= 32) {
+            ULONG d = OGPU_Driver((CONST_STRPTR) "TinyGL");
+            r = d == OGPU_DRV_VIRGL || d == OGPU_DRV_LLVMPIPE ? 0 : 1;
+        }
+        CloseLibrary(OpenGPUBase);
+    }
+    return r;
+}
+
 /* The route: 0 auto, 1 CPU, 2 GFOpenGPU only. */
 static int driver(void)
 {
     char v[16];
+    int r = driver_ogpu();
+    if (r >= 0)
+        return r;
     if (GetVar((CONST_STRPTR) "TinyGL/Driver", (STRPTR)v, sizeof(v), 0) <= 0)
         return 0;
     if (!strcasecmp(v, "CPU"))

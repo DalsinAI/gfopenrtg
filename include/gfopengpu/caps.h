@@ -101,4 +101,14 @@
 #define OGPU_DRV_CPU               3       /* the 68k core */
 #define OGPU_DRV_ACRTG             4       /* the driver's stream route (ACRTG.gpu); deprecated with M11 */
 
+/* OGPU_Driver (0.32, LVO 210): which back end a 3D front end draws on. api is its name ("Warp3D",
+ * "MiniGL", "TinyGL", "GL"); its ENV:<api>/Driver is read first, then ENV:GFOpenGPU/Driver:
+ *   auto      virgl on a graphics chip with the host's direct present; else the stream route while it is there; else the CPU
+ *   virgl     virgl on a graphics chip; without one, as auto without virgl
+ *   llvmpipe  virgl even with no chip (OGPU_DRV_LLVMPIPE then); without virgl, as auto without it
+ *   cpu       the 68k core
+ *   acrtg     the stream route (GFOpenGPU and OpenGPU are old names for it); without it, auto
+ * Answers an OGPU_DRV_ other than BEST. With ENV:GFOpenGPU/Trace set, the choice and why are
+ * written to ENV:GFOpenGPU/Chose/<api>. Ask lib_Revision >= 32 (version 0) first. */
+
 #endif

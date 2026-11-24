@@ -662,6 +662,20 @@ resources and their unrefs, PUTs and GETs, and the counters.
   on a lab copy of Instance-32; the 68k builds.
 - **Switch:** `ENV:GFOpenGPU/GLPipeOld=1` for one release; then `gla_virgl.c`'s own blocks and queue go.
 
+- **Done, 24 November 2026:** GL.module's virgl route is on the pipe (`gla_virgl_pipe.c`, `gla_carry_pipe.c`; the
+  pipe's table is version 6), `ENV:GFOpenGPU/GLPipeOld=1` keeps the old route for one release.
+  Gate, in the kitchen on llvmpipe as M0 was captured: `tests/pipe_m0.sh` as captured, all 32 pictures and all 50
+  counter lines (MiniGL and Warp3D ask for version 6 and use none of its new members). `test_gla`: the three scenes
+  on the pipe are the old route's pictures byte for byte, and softpipe's; 300-draw frames cost the same request
+  blocks a frame on the pipe as on the old route, a command apart and batched (immediate 4.7 and 2.0,
+  glBufferSubData 903.0 and 5.0, glTexSubImage2D 1202.3 and 6.0), with no command refused. test_res 110/0,
+  test_gla_carry 49/0 (new: the carrier against a pretend host), test_screen 33/0, test_ff 547,552 keys 0 different.
+  GL.module (11,920,140 bytes), libogpupipe.a, minigl.library and gfopengpu.library build for the 68k.
+  `tests/pipe/test_m0_gate.sh` and `tests/gl/test_gla.sh` are new: the gate and GL's PC test as the kitchen runs
+  them.
+  Not carried over: pipelining (off by default; the old route still has it). Not yet deleted: `gla_virgl.c`'s own
+  blocks and queue, one release after this.
+
 ### M7: stream3d emission into the pipe (L)
 
 - `pipe_emit_s3d.c` is taken from `w3d_batch.c`'s builder.

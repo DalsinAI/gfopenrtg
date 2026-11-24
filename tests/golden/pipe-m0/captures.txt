@@ -30,7 +30,7 @@ counter run_w3d_hlv.sh: ok   Warp3D culled fans and strips: 3000 cases, 89228 fr
 counter run_w3d_hlv.sh: ok   Warp3D culled fans and strips: 3000 cases, 89228 front triangles, in place = by index
 counter run_w3d_hlv.sh: ok   Warp3D vertices: 3000 primitives (1505 pointer lists), 198714 vertices, hostlib_w3d_vertices = Warp3D's convert() word for word
 counter run_w3d_hlv.sh: ok   Warp3D vertices: 3000 primitives (1505 pointer lists), 198714 vertices, hostlib_w3d_vertices = Warp3D's convert() word for word
-counter run_w3d_vg.sh: minigl_vg_bridge: 584 blocks, 530 submits (78796 words), 1254 puts (20105800 bytes), 8 gets, 271 presents, 52 errors
+counter run_w3d_vg.sh: minigl_vg_bridge: 584 blocks, 530 submits (79316 words), 1254 puts (20105800 bytes), 8 gets, 271 presents, 52 errors
 counter run_w3d_vg.sh: minigl_vg_bridge: virglrenderer draws with GL on LLVMPIPE (LLVM 19.1.7, 256 bits)
 counter run_w3d_vg.sh: w3d virgl: 40 checks, 0 failed
 counter run_w3d_vg.sh: w3d virgl bench cow3d            320x240 ARGB32: pixels worst 212, mean 0.43, 1.19% over 8 (0.05% with a shift); 4x4 blocks worst  22, 0.60% over 8; 2 draws for 2306 triangles

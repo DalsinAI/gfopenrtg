@@ -208,6 +208,9 @@ struct OpenRTGVirglFrame {
  *  - VIRGL, anything else: the frame comes back (ACV_GET) and the CPU
  *    writes it, as ORTG_WritePixels does (planar targets too);
  *  - MEMORY: the CPU writes it, as ORTG_WritePixels does.
+ *  - RETAINED (0.31): the surface's changed tiles into its texture and the
+ *    texture drawn into the target by GFOpenGPU, or the changed tiles by the
+ *    CPU (library/present_retained.h).
  * ORTG_PRESENT_PREPARE: the present goes in the caller's own request block,
  * which it then runs, so a frame costs no block of its own. ORTG_Present
  * writes it at blk (room words) and returns the words written: 0 when it
@@ -235,6 +238,10 @@ struct ORTG_PresentInfo {
 };
 #define ORTG_SURF_VIRGL         1
 #define ORTG_SURF_MEMORY        2
+#define ORTG_SURF_RETAINED      3   /* 0.31: handle is a struct OGPURetained * (gfopengpu/retained.h); width and height
+                                       the rectangle it is shown in (0: its own size); x, y its corner; only the
+                                       VSYNC flag. Returns OGPU_RetainedPresent's answer: the tiles uploaded, or an
+                                       OGPU_RS_ERR_. Programs keep calling OGPU_RetainedPresent, which comes here. */
 #define ORTG_PRESENT_FLIP_Y     1   /* VIRGL: row 0 is the bottom (GL) */
 #define ORTG_PRESENT_VSYNC      2   /* wait for the display's next frame first */
 #define ORTG_PRESENT_PREPARE    4   /* into the caller's block (blk, room, token) */

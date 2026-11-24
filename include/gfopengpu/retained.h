@@ -22,6 +22,12 @@
  *    WritePixelArray, or WriteChunkyPixels on a CLUT screen), 1:1: no
  *    texture is kept and the rectangle's size only crops.
  *
+ * From gfopenrtg.library 0.31 the present is GFOpenRTG's (ORTG_Present,
+ * ORTG_SURF_RETAINED): the same calls, the same answers, and a batch the GPU
+ * fails is shown the software way. ENV:GFOpenGPU/RetainedPresentOld 1, set
+ * before the surface is made, keeps this library's own present (for one
+ * release).
+ *
  * gfopengpu.library is version 0: open it with version 0 and check
  * lib_Revision >= OGPU_RETAINED_REVISION before using these.
  *

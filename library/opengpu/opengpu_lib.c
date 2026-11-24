@@ -78,6 +78,9 @@
  * host's order, wrong on a little-endian driver). A malformed input is the
  * new OGPU_ERR_DATA. Drivers that don't answer these keep falling through
  * to this core. Ask OGPU_Query(OGPU_OP_RFX_TILE, OGPU_FMT_ARGB32).
+ * 0.31: OGPU_RetainedPresent hands the present to gfopenrtg.library 0.31 (ORTG_Present's
+ * RETAINED route) when it is in memory; ENV:GFOpenGPU/RetainedPresentOld 1, read when a surface is
+ * made, keeps the library's own for one release. The surface's layout is ogpu_rs_handle.h now.
  * 0.30: capabilities (gfopengpu/caps.h, stage MQ of the shared pipe plan;
  * docs/design/OGPU-Query.md). OGPU_Query answers the ops 0x8000 to 0x80FF,
  * which no stream command may use, from one discovery per boot: the first
@@ -135,7 +138,10 @@
 #include <proto/dos.h>
 #include <proto/graphics.h>
 #include <proto/cybergraphics.h>
+#include <proto/gfopenrtg.h>
 #include "../../include/oa_protos_end.h"
+#include <dos/var.h>
+#include "../../include/gfopenrtg/gfopenrtg.h"
 
 #include <exec/memory.h>
 #include "ogpu_core.h"
@@ -148,6 +154,7 @@
 #include "../../include/gfopengpu/module.h"
 #include "ogpu_module.h"
 #include "ogpu_retained.h"
+#include "ogpu_rs_handle.h"
 #include "ogpu_caps.h"
 #include "../../include/gfopengpu/caps.h"
 #include "../../include/gfopengpu/retained.h"
@@ -156,7 +163,7 @@
 
 #define REG(r, decl) register decl __asm(#r)   /* bebbo gcc: an argument in a register */
 #define LIB_VERSION 0
-#define LIB_REVISION 30
+#define LIB_REVISION 31
 #define RESULTS 256                             /* the last batches' results, by fence (0.28; 16 before) */
 #define MAX_DRIVERS 8                           /* files looked at in LIBS:GFOpenGPU/ */
 #define ON_CPU 0                                /* dfence[] for a batch the CPU ran */
@@ -193,6 +200,10 @@ struct OpenGPUBase {
     struct Library *rs_gfx;                     /* graphics.library 39 or later */
     struct Library *rs_cgx;                     /* cybergraphics.library 41 or later, or NULL */
     UBYTE rs_tried;
+    /* 0.31: gfopenrtg.library 0.31 or later, which presents retained surfaces now (ORTG_Present's
+     * RETAINED route); looked for as cybergraphics.library is (rs_libs), kept until the expunge */
+    struct Library *rs_ortg;
+    UBYTE rs_ortg_tried;
     /* 0.30: the capabilities, looked for once (ogpu_caps.c), under drv_lock */
     struct ogpu_caps caps;
 };
@@ -212,9 +223,9 @@ int start(void) { return -1; }
 const ULONG ogpu_ogfx_at = offsetof(struct OpenGPUBase, ogfx);
 
 static const char lib_name[] = "gfopengpu.library";
-static const char lib_id[] = "gfopengpu.library 0.30 (23.11.2026) GFOpenGPU, AmiCradle Team\r\n";
+static const char lib_id[] = "gfopengpu.library 0.31 (24.11.2026) GFOpenGPU, AmiCradle Team\r\n";
 /* For C:Version, which looks for "$VER:" in the file. */
-static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopengpu.library 0.30 (23.11.2026) GFOpenGPU, AmiCradle Team";
+static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopengpu.library 0.31 (24.11.2026) GFOpenGPU, AmiCradle Team";
 static const char cpu_name[] = "CPU";
 static const char dos_name[] = "dos.library";
 static const char drv_dir[] = "LIBS:GFOpenGPU";
@@ -888,29 +899,11 @@ static void OGPU_ModuleClose(REG(a0, APTR handle), REG(a6, struct OpenGPUBase *b
 
 /* ---- retained surfaces (0.25: include/gfopengpu/retained.h, ogpu_retained.c) ------- */
 
-/* A surface: what the program sees, then the library's own. One block holds
- * it, the palette, the tiles' state and the pixels; the texture is a block
- * of its own, made at the first present on the GPU path. */
-struct rs_handle {
-    struct OGPURetained pub;
-    struct ogpu_rs core;                        /* the tiles (ogpu_retained.c) */
-    UBYTE *tex;                                 /* the texture, or NULL */
-    UBYTE tex_valid;                            /* the texture holds every tile as last uploaded */
-    UBYTE pal_changed;                          /* OGPU_RetainedPalette since the last present */
-    UBYTE path;                                 /* the last present's: RS_NONE, RS_GPU or RS_CPU */
-    struct RastPort *last_rp;                   /* the software path's last target: the tiles are there */
-    struct BitMap *last_bm;
-    LONG last_x, last_y, last_w, last_h;
-    struct OGPURetainedStats st;
-};
-#define RS_NONE 0
-#define RS_GPU 1
-#define RS_CPU 2
-#define RS_NO_GPU (-100)                        /* rs_present_gpu: not this way, try the software path */
-#define RS_MAX 16383                            /* a side, at most (a 32-bit row in WritePixelArray's UWORD) */
+/* struct rs_handle, RS_ and rs_count: ogpu_rs_handle.h (gfopenrtg.library presents it too, 0.31) */
 
 static const char gfx_name[] = "graphics.library";
 static const char cgx_name[] = "cybergraphics.library";
+static const char ortg_name[] = "gfopenrtg.library";
 
 /* graphics.library and cybergraphics.library. Only a process may load
  * cybergraphics.library from disk, and it is looked for there once; later,
@@ -920,7 +913,7 @@ static void rs_libs(struct OpenGPUBase *base)
 {
     EXEC(base);
     int process = FindTask(NULL)->tc_Node.ln_Type == NT_PROCESS, in_memory;
-    if (base->rs_gfx && base->rs_cgx) return;
+    if (base->rs_gfx && base->rs_cgx && (base->rs_ortg || base->rs_ortg_tried == 2)) return;
     ObtainSemaphore(&base->drv_lock);
     if (!base->rs_gfx) base->rs_gfx = OpenLibrary((CONST_STRPTR)gfx_name, 39);
     if (!base->rs_cgx) {
@@ -932,15 +925,44 @@ static void rs_libs(struct OpenGPUBase *base)
             if (process) base->rs_tried = 1;
         }
     }
+    if (!base->rs_ortg && base->rs_ortg_tried != 2) {
+        Forbid();
+        in_memory = FindName(&SysBase->LibList, (CONST_STRPTR)ortg_name) != NULL;
+        Permit();
+        if (in_memory || (process && !base->rs_ortg_tried)) {
+            /* version 0: 0.31 is revision 31; an older one is not asked again */
+            if ((base->rs_ortg = OpenLibrary((CONST_STRPTR)ortg_name, 0)) != NULL
+                && base->rs_ortg->lib_Version == 0 && base->rs_ortg->lib_Revision < 31) {
+                CloseLibrary(base->rs_ortg);
+                base->rs_ortg = NULL;
+                base->rs_ortg_tried = 2;
+            } else if (process && !base->rs_ortg_tried)
+                base->rs_ortg_tried = 1;
+        }
+    }
     ReleaseSemaphore(&base->drv_lock);
 }
 
 static void rs_libs_close(struct OpenGPUBase *base)
 {
     EXEC(base);
+    if (base->rs_ortg) CloseLibrary(base->rs_ortg);
+    base->rs_ortg = NULL;
     if (base->rs_cgx) CloseLibrary(base->rs_cgx);
     if (base->rs_gfx) CloseLibrary(base->rs_gfx);
     base->rs_cgx = base->rs_gfx = NULL;
+}
+
+/* ENV:GFOpenGPU/RetainedPresentOld 1: this library's own present, as before 0.31 (kept for one
+ * release); else gfopenrtg.library's, when it is 0.31 or later. Read when a surface is made. */
+static UBYTE rs_present_old(struct OpenGPUBase *base)
+{
+    EXEC(base);
+    DOS(base);
+    char v[4];
+    if (FindTask(NULL)->tc_Node.ln_Type != NT_PROCESS) return 0;  /* only a process may read ENV: */
+    return DOSBase && GetVar((CONST_STRPTR)"GFOpenGPU/RetainedPresentOld", (STRPTR)v, sizeof v, GVF_GLOBAL_ONLY) > 0
+           && v[0] == '1';
 }
 
 static struct OGPURetained *OGPU_RetainedCreate(REG(d0, ULONG width), REG(d1, ULONG height), REG(d2, ULONG format), REG(d3, ULONG flags),
@@ -979,6 +1001,7 @@ static struct OGPURetained *OGPU_RetainedCreate(REG(d0, ULONG width), REG(d1, UL
     h->pub.rs_Flags = flags;
     h->pal_changed = pal != 0;
     h->st.tiles = (ULONG)h->core.ntiles;
+    h->present_old = rs_present_old(base);
     return &h->pub;
 }
 
@@ -996,19 +1019,6 @@ static void OGPU_RetainedMark(REG(a0, struct OGPURetained *rs), REG(d0, LONG x),
                               REG(a6, struct OpenGPUBase *base))
 {
     if (rs) ogpu_rs_mark(&((struct rs_handle *)rs)->core, x, y, width, height);
-}
-
-static void rs_count(struct rs_handle *h, long n, int path)
-{
-    h->st.frames++;
-    h->st.tiles_uploaded += (ULONG)n;
-    h->st.last_tiles = (ULONG)n;
-    h->st.tiles_hashed = h->core.hashed;
-    if (path == RS_GPU) h->st.gpu_frames++;
-    else h->st.cpu_frames++;
-    if (h->pal_changed && h->pub.rs_Palette) h->st.palette_uploads++;
-    h->pal_changed = 0;
-    h->path = (UBYTE)path;
 }
 
 /* A bitmap's pixel format as a target of the batch, or 0. */
@@ -1202,6 +1212,22 @@ static LONG OGPU_RetainedPresent(REG(a0, struct OGPURetained *rs), REG(a1, struc
     if (!height) height = h->pub.rs_Height;
     if (width > RS_MAX || height > RS_MAX) return OGPU_RS_ERR_ARGS;
     rs_libs(base);
+    if (!h->present_old && base->rs_ortg) {         /* 0.31: GFOpenRTG presents it (ORTG_Present, RETAINED) */
+        struct Library *OpenRTGBase = base->rs_ortg;
+        struct ORTG_PresentInfo in;
+        UBYTE *b = (UBYTE *)&in;
+        ULONG i;
+        for (i = 0; i < sizeof in; i++) b[i] = 0;
+        in.size = sizeof in;
+        in.kind = ORTG_SURF_RETAINED;
+        in.handle = (unsigned long)h;
+        in.width = (unsigned short)width;
+        in.height = (unsigned short)height;
+        in.rp = rp;
+        in.x = x;
+        in.y = y;
+        return ORTG_Present(&in);
+    }
     r = rs_present_gpu(base, h, rp, x, y, width, height);
     if (r != RS_NO_GPU) return r;
     return rs_present_cpu(base, h, rp, x, y, width, height);

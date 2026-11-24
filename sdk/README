@@ -31,7 +31,7 @@ What is in it
   include/GL/glut.h freeglut.h
                           GLUT: freeglut's interface, in an Intuition window
                           (only in a kit built with it)
-  include/gfopengpu/ proto/ inline/ clib/ libraries/
+  include/gfopengpu/ gfopenrtg/ proto/ inline/ clib/ libraries/
                           gfopengpu.library, GFOpenRTG, Warp3D and MiniGL
   include/Warp3D/ mgl/    Warp3D and MiniGL
   include/EGL/            EGL 1.4 on GLA (libEGL.a): what GLES samples start

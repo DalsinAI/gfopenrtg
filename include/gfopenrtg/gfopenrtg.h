@@ -1,11 +1,16 @@
 /* Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
- * gfopenrtg.library's public interface (version 0.1, phase 2's first part). */
+ * gfopenrtg.library's public interface (phase 2's first part, then each
+ * revision's calls; the revision that brought one is in its comment). */
 #ifndef OPENRTG_OPENRTG_H
 #define OPENRTG_OPENRTG_H
 
 #define OPENRTG_NAME    "gfopenrtg.library"
 #define OPENRTG_VERSION 0
+/* lib_Revision to check before a call: ORTG_Present and ORTG_PresentDone with
+ * kinds VIRGL, MEMORY and MEDIA (0.30); kind RETAINED (0.31). */
+#define ORTG_PRESENT_REVISION   30
+#define ORTG_RETAINED_REVISION  31
 
 /* One mode of a monitor (ORTG_GetMode). */
 struct OpenRTGMode {

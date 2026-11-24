@@ -80,7 +80,7 @@ static LONG os_present_prepare(void *user, ULONG ctx, ULONG handle, ULONG *p, UL
     in.width = (UWORD)c->width; in.height = (UWORD)c->height;
     in.rp = &x->present_rp; in.x = 0; in.y = (long)c->yoffset;
     in.flags = ORTG_PRESENT_PREPARE | ORTG_PRESENT_ALPHA;
-    in.blk = p; in.room = room;
+    in.blk = (unsigned long *)p; in.room = room;    /* gfopenrtg.h counts in unsigned long: 32 bits, as ULONG */
     n = ORTG_Present(&in);
     if (n < 0 || !in.token) return -1;
     x->present_token = in.token;

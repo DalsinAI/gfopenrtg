@@ -41,13 +41,25 @@ build() {   # $1 acvirgl.c, $2 the bench
     cc -std=gnu11 -O2 -Wall -Wextra -I"$VIRGL_SRC" -I"$ROOT/host/virgl" -o "$2" "$ROOT/tests/acvirgl_present_bench.c" "$1" -ldl
 }
 build "$ROOT/host/virgl/acvirgl.c" "$OUT/bench_now"
-have_m0=0
+have_m0=0 same_obj=0
 if git -C "$ROOT" cat-file -e "$M0:host/virgl/acvirgl.c" 2>/dev/null; then
     mkdir -p "$OUT/m0"
     git -C "$ROOT" show "$M0:host/virgl/acvirgl.c" > "$OUT/m0/acvirgl.c"
     cp "$ROOT/host/virgl/acvirgl.h" "$OUT/m0/acvirgl.h"
     build "$OUT/m0/acvirgl.c" "$OUT/bench_m0"
     have_m0=1
+    # the code itself: both acvirgl.c compiled alone, as the bench builds them, and the objects compared
+    # (sections only: the file names in the debug notes would differ). The same object = the same present.
+    same_obj=0
+    cc -std=gnu11 -O2 -I"$VIRGL_SRC" -I"$ROOT/host/virgl" -c -o "$OUT/now.o" "$ROOT/host/virgl/acvirgl.c"
+    cc -std=gnu11 -O2 -I"$VIRGL_SRC" -I"$ROOT/host/virgl" -c -o "$OUT/m0.o" "$OUT/m0/acvirgl.c"
+    if objcopy -O binary -j .text "$OUT/now.o" "$OUT/now.text" 2>/dev/null && objcopy -O binary -j .text "$OUT/m0.o" "$OUT/m0.text" 2>/dev/null \
+        && cmp -s "$OUT/now.text" "$OUT/m0.text" \
+        && objcopy -O binary -j .rodata -j .rodata.str1.1 -j .rodata.str1.8 -j .data "$OUT/now.o" "$OUT/now.data" 2>/dev/null \
+        && objcopy -O binary -j .rodata -j .rodata.str1.1 -j .rodata.str1.8 -j .data "$OUT/m0.o" "$OUT/m0.data" 2>/dev/null \
+        && cmp -s "$OUT/now.data" "$OUT/m0.data"; then
+        same_obj=1; echo "acvirgl.o: the same code and data as M0's ($(wc -c < "$OUT/now.text") bytes of code)"
+    else echo "acvirgl.o: the code differs from M0's"; fi
     # the two acvirgl.c as the compiler sees them, comments gone
     if cmp -s "$ROOT/host/virgl/acvirgl.c" "$OUT/m0/acvirgl.c"; then echo "acvirgl.c: the same file as M0's"
     else
@@ -85,7 +97,7 @@ echo "M0 ($M0): mean $(avg "$OUT/m0.txt") us, median $(med "$OUT/m0.txt") us ove
 # the trimmed means compared (each side's fastest and slowest run dropped), against the runs' own noise:
 # twice the standard error of the difference. Slower by more than 2% and by more than the noise fails;
 # when the noise is over 2% the machine can't tell 2% apart, and the test says so (exit 2).
-awk -v A="$OUT/now.txt" -v B="$OUT/m0.txt" 'function load(f, v,   n, x) { n = 0; while ((getline x < f) > 0) v[++n] = x + 0; return n }
+awk -v A="$OUT/now.txt" -v B="$OUT/m0.txt" -v same="$same_obj" 'function load(f, v,   n, x) { n = 0; while ((getline x < f) > 0) v[++n] = x + 0; return n }
 function sortv(v, n,   i, j, t) { for (i = 2; i <= n; i++) { t = v[i]; for (j = i - 1; j > 0 && v[j] > t; j--) v[j + 1] = v[j]; v[j + 1] = t } }
 function tmean(v, n,   i, s) { s = 0; for (i = 2; i < n; i++) s += v[i]; return s / (n - 2) }
 function tvar(v, n, m,   i, s) { s = 0; for (i = 2; i < n; i++) s += (v[i] - m) ^ 2; return s / (n - 3) }
@@ -96,5 +108,6 @@ BEGIN {
     d = (ma - mb) / mb * 100
     printf "present: this tree %.0f us, M0 %.0f us (trimmed means): %+.1f%%, noise +-%.1f%%\n", ma, mb, d, se
     if (d > 2 && d > se) { print "test_present_bench: slower than M0 by more than 2%"; exit 1 }
+    if (se > 2 && same) { print "the runs are too noisy here to time 2% (+-" sprintf("%.1f", se) "%), but the present is M0'"'"'s own code: within 2%"; exit 0 }
     if (se > 2) { print "test_present_bench: the runs are too noisy here to tell 2% (a busy machine): no verdict"; exit 2 }
     print "within 2%"; exit 0 }'

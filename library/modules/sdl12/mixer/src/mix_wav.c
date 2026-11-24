@@ -174,6 +174,29 @@ int mw_is_wav_name(const char *name)
            (e[3] == 'v' || e[3] == 'V') && !e[4];
 }
 
+int mw_dos_name(const char *asked, char *out, size_t n)
+{
+    const char *c = strchr(asked, ':');
+    size_t head, skip = 0, rest;
+    if (!c) {
+        return 0;
+    }
+    head = (size_t)(c - asked) + 1;
+    while (c[1 + skip] == '/') {
+        skip++;
+    }
+    if (!skip) {
+        return 0;
+    }
+    rest = strlen(c + 1 + skip);
+    if (head + rest + 1 > n) {
+        return 0;
+    }
+    memcpy(out, asked, head);
+    memcpy(out + head, c + 1 + skip, rest + 1);
+    return 1;
+}
+
 int mw_on_68k(const char *by)
 {
     return by && !strncmp(by, "this ", 5);

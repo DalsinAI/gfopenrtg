@@ -69,6 +69,7 @@
 #include "text_strip.h"
 #include "uaegfx.h"
 #include "pixels.h"
+#include "present_retained.h"
 #include "present_plan.h"
 #include "present_media.h"
 
@@ -1828,6 +1829,80 @@ static ULONG prs_in_block(const struct ORTG_PresentInfo *in)
                    in->x + x0, in->y + y0, (ULONG)(x1 - x0 + 1), (ULONG)(y1 - y0 + 1));
 }
 
+/* 0.31: the RETAINED route's own calls (present_retained.h) */
+void *rsp_alloc(ULONG bytes) { return AllocVec(bytes, MEMF_ANY); }
+void rsp_free(void *p) { FreeVec(p); }
+LONG rsp_submit(const void *buf, ULONG words)
+{
+    ULONG fence = 0;
+    LONG r = OGPU_Submit((APTR)buf, words, &fence);
+    return r == OGPU_OK ? OGPU_Wait(fence) : r;
+}
+LONG rsp_write(struct RastPort *rp, LONG x, LONG y, const struct OpenRTGPixels *px) { return ortg_write_pixels(rp, x, y, px); }
+
+/* A retained surface (0.31). The GPU path only into GFOpenRTG's own 32 and 16-bit bitmaps with
+ * GFOpenGPU there and able to draw the formats; a window's visible pieces as its clips (a smart
+ * refresh window's hidden parts and a super bitmap are the CPU path's: layers keeps those). */
+static LONG prs_retained(const struct ORTG_PresentInfo *in)
+{
+    struct rs_handle *h = (struct rs_handle *)in->handle;
+    struct RastPort *rp = in->rp;
+    struct ortg_bitmap *o = ortg_of(rp->BitMap);
+    struct Layer *l = rp->Layer;
+    struct ClipRect *cr;
+    struct rsp_target t;
+    short *clips = NULL;
+    int fmt, n = 0, i;
+    LONG w, ht, r;
+    if (!h) return OGPU_RS_ERR_ARGS;
+    w = in->width ? in->width : h->pub.rs_Width;
+    ht = in->height ? in->height : h->pub.rs_Height;
+    t.rp = rp;
+    t.truecolour = o ? o->format != ORTG_CLUT8 : GetBitMapAttr(rp->BitMap, BMA_DEPTH) > 8;
+    t.gpu = 0; t.addr = t.bpr = 0; t.w = t.h = t.dfmt = 0; t.ox = t.oy = 0; t.clips = NULL; t.nclips = 0;
+    fmt = (int)h->pub.rs_Format;
+    if (o && o->mem && (o->format == ORTG_ARGB32 || o->format == ORTG_RGB16) && ortg_S->opengpu && !ogpu_off
+        && !(h->pub.rs_Flags & OGPU_RSF_SOFTWARE)) {
+        t.dfmt = o->format == ORTG_RGB16 ? OGPU_FMT_RGB565
+                 : OGPU_ANSWER(OGPU_Query(OGPU_OP_COMPOSITE, OGPU_FMT_XRGB32)) != OGPU_NONE ? OGPU_FMT_XRGB32 : OGPU_FMT_ARGB32;
+        t.gpu = OGPU_ANSWER(OGPU_Query(OGPU_OP_COPY, (ULONG)fmt)) != OGPU_NONE
+                && OGPU_ANSWER(OGPU_Query(OGPU_OP_COMPOSITE, (ULONG)t.dfmt)) != OGPU_NONE
+                && (fmt != OGPU_FMT_INDEX8 || OGPU_ANSWER(OGPU_Query(OGPU_OP_PALETTE, OGPU_FMT_INDEX8)) != OGPU_NONE);
+    }
+    if (t.gpu && l) {
+        ObtainSemaphore(&l->Lock);                          /* LockLayerRom */
+        if (l->SuperBitMap) t.gpu = 0;
+        for (cr = l->ClipRect; cr && t.gpu; cr = cr->Next) {
+            if (cr->obscured) { if (cr->BitMap) t.gpu = 0; continue; }
+            n++;
+        }
+        if (t.gpu && n && !(clips = AllocVec((ULONG)n * 4 * sizeof(short), MEMF_ANY))) {
+            ReleaseSemaphore(&l->Lock);
+            return OGPU_RS_ERR_MEMORY;
+        }
+        if (t.gpu) {
+            for (i = 0, cr = l->ClipRect; cr && i < n; cr = cr->Next) {
+                if (cr->obscured) continue;
+                clips[i * 4] = cr->bounds.MinX; clips[i * 4 + 1] = cr->bounds.MinY;
+                clips[i * 4 + 2] = cr->bounds.MaxX; clips[i * 4 + 3] = cr->bounds.MaxY;
+                i++;
+            }
+            t.clips = clips;
+            t.nclips = n ? n : -1;                          /* nothing shows: the tiles go up, nothing is drawn */
+            t.ox = l->bounds.MinX; t.oy = l->bounds.MinY;
+        } else
+            ReleaseSemaphore(&l->Lock);
+    }
+    if (t.gpu) {
+        ortg_ogpu_settle();                                 /* what GFOpenGPU still has running on the bitmap first */
+        t.addr = (unsigned long)o->mem; t.bpr = o->stride; t.w = o->width; t.h = o->height;
+    }
+    r = rsp_present(h, &t, in->x, in->y, w, ht);
+    if (t.gpu && l) ReleaseSemaphore(&l->Lock);
+    if (clips) FreeVec(clips);
+    return r;
+}
+
 LONG ortg_present(struct ORTG_PresentInfo *in)
 {
     struct prs_call c;
@@ -1835,17 +1910,20 @@ LONG ortg_present(struct ORTG_PresentInfo *in)
     ULONG words;
     if (!in || in->size < sizeof (struct ORTG_PresentInfo) || !in->rp) return -1;
     if (in->flags & ORTG_PRESENT_PREPARE) in->token = NULL;
-    if (in->kind == ORTG_SURF_VIRGL) {
+    if (in->kind == ORTG_SURF_VIRGL || in->kind == ORTG_SURF_RETAINED) {
         /* every VIRGL route needs gfopengpu.library: opened now if no screen opening has (a program's own
          * process asks, as ORTG_MonitorCount's does); without it -1, and the caller presents its own way.
          * Only a process may load it from disk (late_opengpu looks), so a plain task's present doesn't
          * use up the one try: the first present from a process with GFOpenRTG's screens on makes it. */
         if (!ortg_S->opengpu && !prs_tried && SC->on
             && ((struct Task *)FindTask(NULL))->tc_Node.ln_Type == NT_PROCESS) { prs_tried = 1; late_opengpu(1); }
-        if (!ortg_S->opengpu || ogpu_off) return -1;
+        if (in->kind == ORTG_SURF_VIRGL && (!ortg_S->opengpu || ogpu_off)) return -1;
     }
     if (in->flags & ORTG_PRESENT_VSYNC) WaitTOF();
     c.kind = in->kind; c.prepare = (in->flags & ORTG_PRESENT_PREPARE) != 0;
+    c.screens = SC->on && ortg_S->gfx;      /* 0.31: RETAINED draws through GFOpenRTG's graphics.library base */
+    c.foreign_deep = in->kind == ORTG_SURF_RETAINED && c.screens && !ortg_of(in->rp->BitMap)
+                     && GetBitMapAttr(in->rp->BitMap, BMA_DEPTH) > 8;
     c.host_present = in->kind == ORTG_SURF_VIRGL && prs_host_present();
     c.rtg = prs_rtg(in->rp) != NULL;
     c.layered = in->rp->Layer != NULL;
@@ -1853,7 +1931,8 @@ LONG ortg_present(struct ORTG_PresentInfo *in)
     switch (prs_route(&c)) {
     case PRS_MEMORY: return prs_memory(in);
     case PRS_MEDIA: if (!c.prepare) return prs_media(in); break;
-    case PRS_NONE: return -1;
+    case PRS_RETAINED: return prs_retained(in);    /* 0.31: GFOpenGPU when it's there, else the CPU */
+    case PRS_NONE: return -1;                       /* RETAINED without GFOpenRTG's screens too */
     default: break;
     }
     if (!c.prepare) return prs_virgl_now(in);

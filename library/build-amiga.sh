@@ -21,7 +21,7 @@ sh "$HERE/build.sh" module "$OUT"
 SOFT="-specs=$ROOT/tools/m68k-soft-m68040.specs"
 for lib in gfopenrtg cybergraphics; do
     if [ "$lib" = gfopenrtg ]; then
-        src="$HERE/openrtg_lib.c $HERE/modes.c $HERE/displaydb.c $HERE/screens.c $HERE/pixels.c $HERE/opengpu/ogpu_build.c $HERE/string.c $HERE/uaegfx.c $HERE/ortg_stub.c $HERE/acmedia_stubs.c"
+        src="$HERE/openrtg_lib.c $HERE/modes.c $HERE/displaydb.c $HERE/screens.c $HERE/pixels.c $HERE/opengpu/ogpu_build.c $HERE/opengpu/ogpu_retained.c $HERE/present_retained.c $HERE/string.c $HERE/uaegfx.c $HERE/ortg_stub.c $HERE/acmedia_stubs.c"
     else
         src="$ROOT/compat/cybergraphics_lib.c $HERE/ortg_stub.c"
     fi

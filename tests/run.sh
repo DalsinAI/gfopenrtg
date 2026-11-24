@@ -125,6 +125,13 @@ gla_present "1 23 mixed 0 0 29 0" ortg_present             # gfopenrtg 0.29: ORT
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
     -o "$OUT/test_retained" "$HERE/test_retained.c" "$OGPU/ogpu_retained.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c"
 "$OUT/test_retained"
+# ORTG_Present's RETAINED route (library/present_retained.c, gfopenrtg.library 0.31): the GPU path's batch
+# through the CPU core, the CPU path's writes, the fall back when the GPU fails the batch.
+cc -std=gnu99 -O1 -g -Wall -Wextra -Werror -Wno-unused-parameter -fsanitize=address,undefined -fno-sanitize-recover=undefined \
+    -I"$HERE/gla_present-include" -I"$HERE/../include" \
+    -o "$OUT/test_present_retained" "$HERE/test_present_retained.c" "$HERE/../library/present_retained.c" \
+    "$OGPU/ogpu_retained.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c"
+"$OUT/test_present_retained"
 if command -v m68k-linux-gnu-gcc >/dev/null && command -v qemu-m68k >/dev/null; then   # big-endian, 32-bit long
     m68k-linux-gnu-gcc -std=c99 -O2 -fno-delete-null-pointer-checks -m68040 -static -Wall -Wextra -Werror \
         -o "$OUT/test_retained-m68k" "$HERE/test_retained.c" "$OGPU/ogpu_retained.c" "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c"

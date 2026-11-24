@@ -1132,8 +1132,8 @@ int ortg_ogpu_xrgb(const struct ortg_bitmap *bm)
 
 /* ortg_ogpu_pixels into a 32-bit bitmap seen as XRGB32: each pixel's colour,
  * with the top byte 0 whatever the source's alpha (ARGB32 or INDEX8). */
-int ortg_ogpu_pixels_xrgb(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1,
-                          const void *src, ULONG src_bpr, int format, const void *table)
+static int ogpu_pixels_xrgb_from(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1,
+                                 const void *src, ULONG src_bpr, int format, const void *table, int kept)
 {
     UBYTE stream[ORTG_OGPU_WORDS * 4];
     struct OGPUBatch b;
@@ -1141,13 +1141,29 @@ int ortg_ogpu_pixels_xrgb(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LON
     const UBYTE *s;
     const void *t = table;
     if (!ortg_ogpu_xrgb(bm)) return 0;
-    s = stage_pixels(src, src_bpr, x1 - x0 + 1, y1 - y0 + 1, src_bpp(format), &bpr, &held);   /* 0.21, as ortg_ogpu_pixels */
+    s = kept ? src : stage_pixels(src, src_bpr, x1 - x0 + 1, y1 - y0 + 1, src_bpp(format), &bpr, &held);   /* 0.21, as ortg_ogpu_pixels */
     if (s && table && !(t = stage_table(table, &held))) s = NULL;
     ogpu_batch_init(&b, stream, ORTG_OGPU_WORDS);
     ogpu_surface(&b, 0, (ULONG)bm->mem, bm->stride, bm->width, bm->height, OGPU_FMT_XRGB32);
     ogpu_target(&b, 0);
     ogpu_pixels(&b, (ULONG)(s ? s : src), s ? bpr : src_bpr, format, (ULONG)(s ? t : table), x0, y0, x1 - x0 + 1, y1 - y0 + 1);
     return stage_submit(&b, s, &held);
+}
+
+int ortg_ogpu_pixels_xrgb(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1,
+                          const void *src, ULONG src_bpr, int format, const void *table)
+{
+    return ogpu_pixels_xrgb_from(bm, x0, y0, x1, y1, src, src_bpr, format, table, 0);
+}
+
+/* 0.32, ORTG_PRESENT_AFTER: the caller's memory, read where it is and left
+ * running (the caller keeps it as it is until GFOpenGPU's later batches are
+ * done), as ortg_ogpu_pixels or, xrgb, ortg_ogpu_pixels_xrgb. */
+int ortg_ogpu_pixels_kept(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1,
+                          const void *src, ULONG src_bpr, int format, const void *table, int xrgb)
+{
+    return xrgb ? ogpu_pixels_xrgb_from(bm, x0, y0, x1, y1, src, src_bpr, format, table, 1)
+                : ogpu_pixels_from(bm, x0, y0, x1, y1, src, src_bpr, format, table, 1);
 }
 
 /* A rectangle of the bitmap copied, raw, into memory (ORTG_ReadPixels' RAW

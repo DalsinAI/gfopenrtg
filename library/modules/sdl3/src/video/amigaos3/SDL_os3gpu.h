@@ -101,12 +101,15 @@ extern int SDL_OS3_GPU_PresentNew(SDL_Window *window, SDL_Surface *surface, cons
 
 /* gfopenrtg.library 0.32 (SDL_OS3_GPU_PresentsAfter): the renderer sends its
    drawing without waiting for it and passes the last batch's fence as
-   after; GFOpenRTG presents after those batches in GFOpenGPU's order and
-   waits for after only where the CPU reads the surface. On older libraries
-   after is not passed, so the caller waits first. */
+   after; GFOpenRTG presents after those batches in GFOpenGPU's order, reads
+   the surface where it is and leaves the present running, waiting for
+   after only where the CPU reads the surface. SDL_OS3_GPU_PresentSettle
+   waits for it: call it before the CPU writes the surface or frees it. On
+   older libraries after is not passed, so the caller waits first. */
 extern bool SDL_OS3_GPU_PresentsAfter(void);
 extern int SDL_OS3_GPU_PresentNewAfter(SDL_Window *window, SDL_Surface *surface, const SDL_Rect *rects, int numrects,
                                        bool vsync, Uint32 after);
+extern void SDL_OS3_GPU_PresentSettle(void);
 
 #endif /* SDL_VIDEO_RENDER_OPENGPU */
 #endif /* SDL_os3gpu_h_ */

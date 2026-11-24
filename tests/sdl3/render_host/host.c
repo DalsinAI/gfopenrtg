@@ -332,3 +332,7 @@ int SDL_OS3_GPU_PresentNewAfter(SDL_Window *window, SDL_Surface *surface, const 
     (void)window; (void)surface; (void)rects; (void)numrects; (void)vsync; (void)after;
     return 0;
 }
+
+void SDL_OS3_GPU_PresentSettle(void)
+{
+}

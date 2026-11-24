@@ -485,9 +485,12 @@ The `glA...` forms (`glASwapBuffers()` and the rest) pass the program's
   - `ORTG_PRESENT_AFTER` (MEMORY, 0.32; check `ORTG_AFTER_REVISION`): the
     program's own GFOpenGPU batches, sent and not waited for, still write
     the source, up to the fence in `after` (`OGPU_Submit`'s). GFOpenGPU
-    reads the source after them in its own order, and GFOpenRTG waits for
-    `after` only where the CPU reads the source. A renderer's drawing and
-    its present then cost one wait, not two. Earlier libraries ignore the
+    reads the source where it is, after them in its own order, and the
+    present is left running: keep the source as it is (no CPU writes, not
+    freed) until you have waited for `OGPU_FENCE_ALL`, or for a batch you
+    sent later. GFOpenRTG waits for `after` only where the CPU reads the
+    source. A renderer's drawing and its present then cost no wait of
+    their own. Earlier libraries ignore the
     flag, so wait for your batches yourself there. A struct that ends at
     `token` (68 bytes, from 0.30 and 0.31 programs) is still taken.
   - `ORTG_PRESENT_PREPARE`: the present goes into the program's own

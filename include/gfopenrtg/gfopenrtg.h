@@ -264,13 +264,14 @@ struct ORTG_PresentInfo {
 #define ORTG_PRESENT_VSYNC      2   /* wait for the display's next frame first */
 #define ORTG_PRESENT_PREPARE    4   /* into the caller's block (blk, room, token) */
 #define ORTG_PRESENT_AFTER      16  /* 0.32, MEMORY: GFOpenGPU batches the caller sent and hasn't waited for still
-                                       write the source, up to the fence in after (OGPU_Submit's). GFOpenGPU's own
-                                       PIXELS from it run after them in GFOpenGPU's order, so nothing waits for
-                                       them unless the CPU reads the source first (a part small enough to be
-                                       copied, the CPU's route): then GFOpenRTG waits for after. The caller's
-                                       drawing and the present cost one wait, not two. Earlier libraries ignore
-                                       the flag: check ORTG_AFTER_REVISION first, else wait yourself. A struct
-                                       without after (size 68) is still taken. */
+                                       write the source, up to the fence in after (OGPU_Submit's). GFOpenGPU's
+                                       PIXELS read the source where it is, after them in GFOpenGPU's order, and
+                                       are left running: the caller keeps the source as it is (CPU writes, freeing
+                                       it) until it has waited for OGPU_FENCE_ALL, or for a batch it sent later.
+                                       Only where the CPU reads the source does GFOpenRTG wait for after. A
+                                       renderer's drawing and its present then cost no wait. Earlier libraries
+                                       ignore the flag: check ORTG_AFTER_REVISION first, else wait yourself. A
+                                       struct without after (size 68) is still taken. */
 #define ORTG_PRESENT_ALPHA      8   /* VIRGL into 32-bit RTG: the frame's alpha too (else the top byte as the host
                                        likes it best: 0 where it writes XRGB32) */
 

@@ -96,8 +96,8 @@
  * 0.31 (24 Nov 2026): ORTG_Present's RETAINED surfaces (ORTG_SURF_RETAINED): gfopengpu.library's
  * retained present moved here (present_retained.c, M8 step 2.4); OGPU_RetainedPresent comes here.
  * 0.32 (24 Nov 2026): ORTG_PRESENT_AFTER (MEMORY): the caller's GFOpenGPU batches still writing the
- * source are not waited for, only where the CPU reads it, so SDL 3's renderer and its present cost one
- * wait; ORTG_PresentInfo grows by after, and a 0.30 struct is still taken.
+ * source are not waited for, only where the CPU reads it, and the present reads the source in place and is
+ * left running, so SDL 3's renderer and its present cost no wait; ORTG_PresentInfo grows by after, and a 0.30 struct is still taken.
  */
 #include <exec/types.h>
 #include "ortg_state.h"

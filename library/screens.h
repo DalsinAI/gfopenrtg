@@ -107,6 +107,7 @@ int ortg_ogpu_invert(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1,
 int ortg_ogpu_pixels(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1, const void *src, ULONG src_bpr, int format, const void *table);
 int ortg_ogpu_xrgb(const struct ortg_bitmap *bm);
 int ortg_ogpu_pixels_xrgb(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1, const void *src, ULONG src_bpr, int format, const void *table);
+int ortg_ogpu_pixels_kept(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1, const void *src, ULONG src_bpr, int format, const void *table, int xrgb);
 int ortg_ogpu_read(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1, void *dst, ULONG dst_bpr);
 int ortg_ogpu_read_argb(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1, void *dst, ULONG dst_bpr);
 int ortg_ogpu_alpha(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1, const void *src, ULONG src_bpr, ULONG alpha);

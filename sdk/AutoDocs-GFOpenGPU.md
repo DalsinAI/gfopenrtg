@@ -533,6 +533,36 @@ Set with `SetEnv` (or `SDL_SetHint` from the program):
 | `SDL_AUDIODRIVER=paula` | Paula instead of AHI (`dummy` for none) |
 | `TinyGL/Driver=CPU` | TinyGL on softpipe even where virgl is there (`GFOpenGPU`: the GPU or fail; `Auto`, the default) |
 
+### The driver choice (gfopengpu.library 0.32)
+
+From gfopengpu.library 0.32 every 3D library takes one choice, `OGPU_Driver(api)`
+(`gfopengpu/caps.h`, LVO 210). It reads the library's own variable first, then
+`ENV:GFOpenGPU/Driver`, and otherwise uses `auto`:
+
+| Variable | Read by |
+| --- | --- |
+| `Warp3D/Driver` | Warp3D.library |
+| `MiniGL/Driver` | minigl.library (its own renderer and the GL.module wrapper) |
+| `TinyGL/Driver` | TinyGL |
+| (none) | GL.module: only `GFOpenGPU/Driver`, and `GFOpenGPU/GLDriver` before it |
+| `GFOpenGPU/Driver` | all of them, when their own isn't set |
+
+| Value | What it gives |
+| --- | --- |
+| `auto` (the default) | virgl when the host draws it on a graphics chip and has its direct present; else the stream route (ACRTG.gpu) when it is there; else the 68k |
+| `virgl` | virgl on a graphics chip; without a chip, what `auto` gives after virgl |
+| `llvmpipe` | virgl even on the host's software renderer; without virgl, what `auto` gives after virgl |
+| `cpu` | the 68k (Warp3D's CPU driver, MiniGL's 3D core, softpipe for GL, TinyGL and the wrapper) |
+| `acrtg` | the stream route; without it, `auto`. The old names `GFOpenGPU` and `OpenGPU` mean this |
+
+Case doesn't matter, and an unknown word means `auto`. GL.module, TinyGL and the
+MiniGL wrapper have no stream route: for them only `cpu` changes anything (softpipe),
+and every other answer is virgl where it's there, else softpipe. With
+`ENV:GFOpenGPU/Trace` set to 1 and the directory `ENV:GFOpenGPU/Chose` made, each
+choice and its reason are written to `ENV:GFOpenGPU/Chose/<api>`, for example
+`acrtg: virgl has no graphics chip: the stream route`. With gfopengpu.library before
+0.32 each library reads only its own variable, as before.
+
 ## 9. Versions
 
 | Kit | gfopengpu.library | SDL2.module | GL.module | SDL | Mesa |

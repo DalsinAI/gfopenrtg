@@ -55,6 +55,10 @@ cp "$W/out/GL.module" "$OUT/libs/GFOpenGPU/GL.module"
 cp "$W/out/libGL.a" "$OUT/lib/libGL.a"
 cp "$W/out/tests/GLArrays" "$OUT/c/GLArrays"
 cp "$W/out/tests/GLDraws" "$OUT/c/GLDraws"
+# TinyGL and TGLSpin (the lab's TinyGL program) on this libGL.a, while Mesa's headers are here
+GL_WORK=$W/gl CC="$P/bin/m68k-amigaos-gcc" AR="$P/bin/m68k-amigaos-ar" sh "$HERE/../../tinygl/build.sh" "$OUT" \
+    || echo "TinyGL and TGLSpin: not built (the GL module is)"
+[ ! -f "$OUT/TGLSpin" ] || { mkdir -p "$OUT/c"; mv "$OUT/TGLSpin" "$OUT/c/TGLSpin"; }
 rm -rf "$W"
 echo "built in $(( $(date +%s) - START )) s"
 sha256sum "$OUT/libs/GFOpenGPU/GL.module" "$OUT/lib/libGL.a" "$OUT/c/GLArrays" "$OUT/c/GLDraws"

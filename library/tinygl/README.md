@@ -40,7 +40,11 @@ This is `-ltinygl -lGL -lm` with the kit's flags. `sdk/examples/tinygl/tglspin.c
 - **The target.** The frames go inside a window's borders, onto a whole screen, or into a bitmap.
 - **The GL calls.** `glBegin`, `glVertex3f` and the rest are Mesa's own, from `libGL.a`. They draw into the current context.
 - **Showing a frame.** `GLASwapBuffers` makes its context current again if needed, picks up a window's new inner size, and shows the frame.
-- **The route.** `ENV:TinyGL/Driver` picks it, as `ENV:MiniGL/Driver` does for MiniGL:
+- **The route.** From gfopengpu.library 0.32 the shared choice, `OGPU_Driver("TinyGL")`:
+  `ENV:TinyGL/Driver`, then `ENV:GFOpenGPU/Driver` (sdk/AutoDocs-GFOpenGPU.md, section 8).
+  TinyGL has no stream route, so only `cpu` changes anything (softpipe). Every other
+  answer, `acrtg` included, is auto: the GPU where GFOpenGPU's back end has virgl,
+  else softpipe. With an older gfopengpu.library, `ENV:TinyGL/Driver` alone:
   - `CPU`: softpipe;
   - `GFOpenGPU`: the GPU, or fail;
   - `Auto` (the default): the GPU where GFOpenGPU's back end has virgl.

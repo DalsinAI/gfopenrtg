@@ -9,7 +9,7 @@ counter run_3d.sh: ogpu3d emulated: stream v1.7's SDL form: as the core
 counter run_minigl.sh: minigl: 65 checks, 0 failed
 counter run_minigl.sh: minigl ABI: 1039 checks, 0 failed
 counter run_minigl.sh: minigl scene: ARGB32 124d81ad, RGB565 8a7e23db
-counter run_minigl.sh: minigl_vg_bridge: 182 blocks, 62 submits (17003 words), 85 puts (9248534 bytes), 43 gets, 3 presents, 0 errors
+counter run_minigl.sh: minigl_vg_bridge: 182 blocks, 43 submits (17003 words), 85 puts (9248534 bytes), 43 gets, 3 presents, 0 errors
 counter run_minigl.sh: minigl_vg_bridge: virglrenderer draws with GL on LLVMPIPE (LLVM 19.1.7, 256 bits)
 counter run_minigl.sh: minigl virgl: 81 checks, 0 failed
 counter run_minigl.sh: minigl virgl feature arrays         0 of 16384 pixels off

@@ -4,8 +4,9 @@
  * W3DCheck: every one of Warp3D.library's 92 calls, on each driver, into an
  * ARGB32 W3D_Bitmap in memory (no screen needed), with what each should
  * answer; then the same small scene from every driver, which must come out
- * the same. The virgl driver (ENV:Warp3D/Driver virgl) draws on a real GPU,
- * so its scene is held to the route's tolerance instead (8 of 255 a channel,
+ * the same. The virgl driver (ENV:Warp3D/Driver virgl; from gfopengpu.library
+ * 0.32 whatever OGPU_Driver("Warp3D") answers, virgl or llvmpipe) draws on the
+ * host's renderer, so its scene is held to the route's tolerance instead (8 of 255 a channel,
  * a pixel's shift allowed at edges, at most 2% of pixels beyond it). Run on an Amiga with GFOpenRTG's Warp3D.library:
  *   W3DCheck            prints one line a call that fails, and a summary
  * With ENV:W3DCheck/Dump set to a file prefix it also writes both scenes, raw
@@ -17,10 +18,12 @@
 #include <proto/exec.h>
 #include <proto/dos.h>
 #include <proto/Warp3D.h>
+#include <proto/gfopengpu.h>
+#include <gfopengpu/caps.h>
 #include <stdio.h>
 #include <string.h>
 
-struct Library *Warp3DBase;
+struct Library *Warp3DBase, *OpenGPUBase;
 static int fails, checks;
 
 #define CHECK(cond, what) do { checks++; if (!(cond)) { fails++; printf("FAIL %s: %s (line %d)\n", drvname, what, __LINE__); } } while (0)
@@ -277,6 +280,15 @@ int main(void)
     int virgl;
     drv[0] = 0;
     virgl = GetVar((STRPTR)"Warp3D/Driver", (STRPTR)drv, sizeof drv, 0) > 0 && (drv[0] == 'v' || drv[0] == 'V');
+    /* gfopengpu.library 0.32: Warp3D takes OGPU_Driver's choice (ENV:GFOpenGPU/Driver too), so ask it the same */
+    if ((OpenGPUBase = OpenLibrary("gfopengpu.library", 0))) {
+        if (OpenGPUBase->lib_Version > 0 || OpenGPUBase->lib_Revision >= 32) {
+            ULONG d = OGPU_Driver((CONST_STRPTR)"Warp3D");
+            virgl = d == OGPU_DRV_VIRGL || d == OGPU_DRV_LLVMPIPE;
+        }
+        CloseLibrary(OpenGPUBase);
+        OpenGPUBase = NULL;
+    }
     Warp3DBase = OpenLibrary("Warp3D.library", 4);
     if (!Warp3DBase) { printf("W3DCheck: no Warp3D.library 4\n"); return 20; }
     printf("W3DCheck: %s %d.%d\n", Warp3DBase->lib_Node.ln_Name, Warp3DBase->lib_Version, Warp3DBase->lib_Revision);

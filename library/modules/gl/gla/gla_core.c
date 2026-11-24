@@ -288,7 +288,7 @@ static int format_renders(struct pipe_screen *screen, enum pipe_format f)
  * make one (desktop GL, softpipe): the readback is then the Amiga's
  * A, R, G, B. A GLES virgl host cannot, so the next is B8G8R8X8, whose
  * bytes are the same after the transfer's 32-bit swap, then R8G8B8X8,
- * which the readback has to swizzle (gla_virgl.c). */
+ * which the readback has to swizzle (gla_virgl_pipe.c). */
 static enum pipe_format color_format(struct pipe_screen *screen, int alpha)
 {
     enum pipe_format native = alpha ? FMT_ALPHA : FMT_NOALPHA;

@@ -82,6 +82,8 @@ when a draw call returns.
 - **The batch reader** (`w3dvg_run`) is now a short loop over the same calls. It stays for `ENV:Warp3D/PipeOld=1`
   (C2: the batch is recorded only then) and for the PC test, and goes with the old routes (item 6). So Warp3D's
   last `stream3d` line stays on the ownership debt list until then.
+  Item 6 (branch `team2/old-routes-out-20261124`): the reader, the recorded batch for it and the switch are gone;
+  the PC test makes the calls, and a batch is recorded only for the 3D core and the stream3d route.
 - **One pipe context a kind** was not needed: the kind is decided when a batch starts (`live_now`), and an area the
   host can't take is drawn by the 68k from a recorded batch, as before.
 - **A1.** `w3dvg_end` answers -1 when a block didn't run; Warp3D writes the trace line, closes the route and the

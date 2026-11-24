@@ -15,7 +15,6 @@ acv-present       library/warp3d/w3d_vg.c                                       
 acv-present       library/warp3d/w3d_vg_os3.c                                       # M8
 
 # GL.module (Mesa): the listed exception keeps its own virgl driver, but not its own caps, board lookup or present
-host-caps         library/modules/gl/gla/gla_virgl.c                                # MQ
 board-open        library/modules/gl/gla/os3/gla_notice_os3.c                       # MQ (why virgl wasn't used: from OGPU_Query)
 acv-present       library/modules/gl/gla/gla_core.h                                 # M8
 acv-present       library/modules/gl/gla/os3/gla_present_os3.c                      # M8

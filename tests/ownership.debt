@@ -17,12 +17,8 @@ acv-present       library/minigl/mgl_vg_os3.c                                   
 
 # Warp3D's virgl route, and its stream3d builder
 virgl-cmd         library/warp3d/w3d_vg.c                                           # M6
-state-cache       library/warp3d/w3d_vg.c                                           # M6
-state-cache       library/warp3d/w3d_vg.h                                           # M6
-state-cache       library/warp3d/w3d_vg_shader.c                                    # M6
 acv-present       library/warp3d/w3d_vg.c                                           # M8
 acv-present       library/warp3d/w3d_vg_os3.c                                       # M8
-stream3d          library/warp3d/w3d_vg.c                                           # M7 (it reads its own batches back)
 
 # GL.module (Mesa): the listed exception keeps its own virgl driver, but not its own caps, board lookup or present
 host-caps         library/modules/gl/gla/gla_virgl.c                                # MQ

@@ -1,21 +1,21 @@
 /* Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * Warp3D.library's virgl route: the batches Warp3D already builds (OGPU
+ * Warp3D.library's virgl route: what Warp3D draws (the numbers of OGPU
  * stream v1.2, include/gfopengpu/stream3d.h) drawn on the host's graphics
- * chip through GFOpenGPU's OGPU_OP_VIRGL (include/gfopengpu/virgl.h), as
- * minigl.library's virgl route draws GL.
+ * chip through GFOpenGPU's OGPU_OP_VIRGL (include/gfopengpu/virgl.h), on
+ * the shared pipe (library/pipe), as minigl.library's virgl route draws GL.
  *
  * Warp3D keeps all its state, its vertex conversion, culling, points and
- * lines as quads, and its textures as they are; only the step that ran a
- * batch changes. Where the CPU route hands a batch to the 3D core
- * (ogpu3d_run), this route reads the same batch and writes:
- *   - its state commands (RENDER3D, TEXENV, TEXTURE, DEPTH, CLIP) as virgl
- *     objects made once and cached by key (blend, depth-stencil-alpha,
- *     rasterizer, samplers, shaders of our own as TGSI text);
+ * lines as quads, and its textures as they are. Where the CPU route records
+ * a batch for the 3D core (ogpu3d_run), on this route the draw calls call
+ * this file (w3dvg_clip, w3dvg_triangles ...), which makes:
+ *   - the state (RENDER3D, TEXENV, TEXTURE, DEPTH, CLIP) as the pipe's
+ *     objects, made once and kept by key (blend, depth-stencil-alpha,
+ *     rasterizer, samplers, the pipe's fixed-function shaders);
  *   - its TRIANGLES (lists, strips, fans) as one indexed triangle list for
  *     each run of draws with the same state, over vertices the host reads
- *     straight from the batch's vertex memory (one PUT a batch), the stream's
+ *     straight from the batch's vertex memory (a PUT a run), the stream's
  *     own fixed-point layout read by the vertex fetch, so the 68k converts
  *     nothing;
  *   - its FILL and CLEAR3D as virgl clears (or quads, inside a clip).
@@ -24,8 +24,8 @@
  * and written back into the drawing area by ACV_PRESENT when the program
  * syncs (W3D_Flush, W3D_UnLockHardware, W3D_WaitIdle ...).
  *
- * The file needs nothing of AmigaOS: the platform gives it a way to run a
- * request block (w3dvg_os). w3d_vg_os3.c is the Amiga's; the PC test
+ * The file needs nothing of AmigaOS: the platform gives it memory and the
+ * drawing area's lock (w3dvg_os). w3d_vg_os3.c is the Amiga's; the PC test
  * (tests/test_w3d_vg.c) gives its own, through virglrenderer. Words of a
  * request block are the Amiga's order (big-endian); the virgl command
  * stream is little-endian words; data in memory stays as the 68k has it.
@@ -44,11 +44,8 @@ struct w3dvg_os {
     void (*free)(void *user, void *p);
     void (*log)(void *user, const char *msg);           /* or 0 */
     void *user;
-    int pipe_old;                       /* 1: the route sends its own blocks, as before the shared pipe's M6
-                                           (ENV:Warp3D/PipeOld=1, for one release) */
-    /* The drawing area's memory, for direct calls (stage M7 part 2), or 0 and 0: w3dvg_area's address is the memory.
-     * area_lock is called just before a send that reads the area (the frame's first pixels) or writes it (the
-     * present), area_unlock once that send has run, before the call that caused it returns: the lock is never held
+    /* The drawing area's memory (both calls are needed). area_lock is called just before a send that reads the area
+     * (the frame's first pixels) or writes it (the present), area_unlock once that send has run, before the call that caused it returns: the lock is never held
      * between two calls. area_lock answers 0 when the area isn't to be had (not visible): nothing is loaded, or the
      * frame stays on the host. */
     int (*area_lock)(void *user, ULONG *address, ULONG *bpr);
@@ -65,23 +62,16 @@ struct w3dvg_info {
 struct w3dvg *w3dvg_open(const struct w3dvg_os *os, struct w3dvg_info *info);
 void w3dvg_close(struct w3dvg *v);
 
-/* One batch (`words` stream words, as built: big-endian), its SURFACE and
- * TARGET first. Vertices the batch points into [vbase, vbase + vlen) go to
- * the host in one PUT; others are copied. present: the frame is written
- * into the target surface afterwards (in the same block). Returns 0, or
- * the commands the host refused, or -1 when the block didn't run. */
-LONG w3dvg_run(struct w3dvg *v, const UBYTE *stream, long words, ULONG vbase, ULONG vlen, int present);
-
-/* The same batch as calls, made as Warp3D's draw calls come (stage M7 part 2): nothing is recorded and read back.
- * w3dvg_begin starts one: vertices the draws name inside [vbase, vbase + vcap) are read by the host from there (each
+/* A batch, as calls made as Warp3D's draw calls come: nothing is recorded. w3dvg_begin starts one: vertices the draws name inside [vbase, vbase + vcap) are read by the host from there (each
  * run of draws PUTs the part it reads; they must stay as they are until w3dvg_end), others are copied. The numbers
- * are the stream's (stream3d.h), as the builders (build3d.h) take them. w3dvg_end sends what there is; present as
- * w3dvg_run's. It answers the commands the host refused or the route left out, or -1 when a block didn't run at all
+ * are the stream's (stream3d.h), as the builders (build3d.h) take them. w3dvg_end sends what there is; with
+ * present the frame is written into the drawing area afterwards (in the same block). It answers the commands the host refused or the route left out, or -1 when a block didn't run at all
  * (the host is gone: what the batch drew is lost, and the caller stops using the route); *presented (or 0) is 1 when the frame
  * is in the drawing area afterwards, 0 when it is still the host's (no present asked for, or the area not to be
  * had). */
 void w3dvg_begin(struct w3dvg *v, ULONG vbase, ULONG vcap);
-/* The drawing area. With w3dvg_os.area_lock the address only says which area it is, and bpr isn't read. */
+/* The drawing area. The address only says which area it is (its memory comes from w3dvg_os.area_lock), and bpr
+ * isn't read. */
 void w3dvg_area(struct w3dvg *v, ULONG address, ULONG bpr, LONG w, LONG h, ULONG format);
 void w3dvg_depth(struct w3dvg *v, ULONG kind, ULONG address, ULONG bpr, LONG w, LONG h, ULONG format);
 void w3dvg_clip(struct w3dvg *v, LONG x, LONG y, LONG w, LONG h);
@@ -126,12 +116,8 @@ struct w3dvg_stats {
 };
 void w3dvg_stats(struct w3dvg *v, struct w3dvg_stats *s);
 
-/* A virgl shader's text for a key (w3d_vg_shader.c): its length with the
- * closing 0. The keys are w3d_vg.c's VK_ and FK_. */
-ULONG w3dvg_vs_text(ULONG key, char *buf, ULONG cap);
-ULONG w3dvg_fs_text(ULONG key, char *buf, ULONG cap);
-
-/* Vertex shader keys */
+/* Warp3D's shader keys, as w3d_vg.c makes them from the state; w3d_vg_ffkey.h turns them into the pipe's.
+ * Vertex shader keys */
 #define VK_Z        (1UL << 0)          /* the vertex has z (u32) */
 #define VK_W        (1UL << 1)          /* ... w (float) */
 #define VK_SPEC     (1UL << 2)          /* ... specular and fog (ARGB32) */

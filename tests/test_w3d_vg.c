@@ -217,13 +217,13 @@ static void add(int g, const struct diff *d, long seed)
 
 static struct w3dvg *V;
 
-/* ---- direct calls (stage M7 part 2) ------------------------------------------------------------------ */
+/* ---- the route's calls ------------------------------------------------------------------------------ */
 
-/* W3D_DIRECT=1: every batch reaches the route as Warp3D's draw calls now make it (w3dvg_begin, the calls,
- * w3dvg_end) instead of being read back by w3dvg_run, and the drawing area's memory is only had through the lock
- * hooks. The pictures must be the same as the reader's. The lock is counted: taken once for each load and each
- * present, given back each time, and never held when a call returns. */
-static int direct, direct_shown;
+/* Every batch (a stream, as the scenes build it for the CPU core) reaches the route as Warp3D's draw calls make it
+ * (w3dvg_begin, the calls, w3dvg_end), and the drawing area's memory is only had through the lock hooks. The lock
+ * is counted: taken once for each load and each present, given back each time, and never held when a call
+ * returns. */
+static int direct_shown;
 static struct w3dvg_stats direct_last;      /* the last batch's counters (direct calls read them themselves) */
 static int lock_held, lock_refuse;
 static long lock_calls, lock_taken, unlock_calls, lock_bad, lock_sends, lock_presents;
@@ -261,7 +261,6 @@ static LONG batch(struct w3dvg *v, const ogpu_u8 *s, long words, ULONG vbase, UL
     long at = 0;
     LONG r;
     int shown = 0;
-    if (!direct) return w3dvg_run(v, s, words, vbase, vlen, present);
     memset(slot, 0, sizeof slot);
     replay_declined = 0;
     w3dvg_begin(v, vbase, vlen);
@@ -387,10 +386,9 @@ static LONG batch(struct w3dvg *v, const ogpu_u8 *s, long words, ULONG vbase, UL
     return r + (LONG)replay_declined;
 }
 
-/* The counters since the last call; after direct batches, the ones batch() already read (added up). */
+/* The counters since the last call: the ones batch() already read (added up). */
 static void stats_of(struct w3dvg_stats *st)
 {
-    if (!direct) { w3dvg_stats(V, st); return; }
     *st = direct_sum;
     memset(&direct_sum, 0, sizeof direct_sum);
 }
@@ -859,9 +857,7 @@ int main(int argc, char **argv)
     }
     memset(&os, 0, sizeof os);
     os.alloc = os_alloc; os.free = os_free; os.log = os_log;
-    os.pipe_old = getenv("W3D_PIPE_OLD") && atoi(getenv("W3D_PIPE_OLD"));   /* M6: the route before the shared pipe */
-    direct = !os.pipe_old && getenv("W3D_DIRECT") && atoi(getenv("W3D_DIRECT"));   /* M7 part 2: the calls, not the reader */
-    if (direct) { os.area_lock = t_area_lock; os.area_unlock = t_area_unlock; }
+    os.area_lock = t_area_lock; os.area_unlock = t_area_unlock;
     V = w3dvg_open(&os, &info);
     CHECK(V != 0, "the route opens on the host");
     if (!V) return 1;
@@ -888,7 +884,7 @@ int main(int argc, char **argv)
                gname[g], p->scenes, p->worst, p->worst_seed, 100.0 * (double)p->over / (double)p->pixels, TOL,
                100.0 * (double)p->over_shift / (double)p->pixels, 100.0 * p->worst_frac, p->worst_frac_seed);
     }
-    if (direct) {
+    {
         lock_scene();
         printf("w3d virgl direct calls: the drawing area locked %ld times (%ld presents, %ld loads with Z's), given back %ld times\n",
                lock_taken, lock_presents, lock_sends - lock_presents, unlock_calls);

@@ -16,12 +16,16 @@
  *    ORTG_PresentDone, after the caller's block;
  *  - PRS_READBACK: VIRGL anything else (and when PRS_VIRGL fails): the
  *    frame back from the host, then as MEMORY;
- *  - PRS_MEMORY: the CPU writes it (ortg_write_pixels: planar targets too).
+ *  - PRS_MEMORY: the CPU writes it (ortg_write_pixels: planar targets too);
+ *  - PRS_RETAINED (0.31): a retained surface (present_retained.h), only with
+ *    GFOpenRTG's screens on: it draws through GFOpenRTG's graphics.library
+ *    base, which is there only then. Otherwise PRS_NONE (-1), and
+ *    gfopengpu.library presents it its own way.
  */
 #ifndef ORTG_PRESENT_PLAN_H
 #define ORTG_PRESENT_PLAN_H
 
-enum { PRS_NONE, PRS_IN_BLOCK, PRS_VIRGL, PRS_READBACK, PRS_MEMORY };
+enum { PRS_NONE, PRS_IN_BLOCK, PRS_VIRGL, PRS_READBACK, PRS_MEMORY, PRS_RETAINED };
 
 /* What ORTG_Present knows of a call. */
 struct prs_call {
@@ -31,11 +35,13 @@ struct prs_call {
     int rtg;                        /* the target's bitmap is a GFOpenRTG one of 32 or 16 bits */
     int layered;                    /* the target RastPort has a layer (a window) */
     int boxed;                      /* a box to stretch into (dst) */
+    int screens;                    /* 0.31: GFOpenRTG's screens are on (its graphics.library base is there) */
 };
 
 static inline int prs_route(const struct prs_call *c)
 {
     if (c->kind == 2) return PRS_MEMORY;                    /* ORTG_SURF_MEMORY */
+    if (c->kind == 3) return c->screens ? PRS_RETAINED : PRS_NONE;     /* ORTG_SURF_RETAINED */
     if (c->kind != 1) return PRS_NONE;                      /* ORTG_SURF_VIRGL: the rest are later stages */
     if (c->host_present && c->rtg) {
         if (c->prepare && !c->layered && !c->boxed) return PRS_IN_BLOCK;

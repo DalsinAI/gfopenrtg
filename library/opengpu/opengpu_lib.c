@@ -79,7 +79,8 @@
  * new OGPU_ERR_DATA. Drivers that don't answer these keep falling through
  * to this core. Ask OGPU_Query(OGPU_OP_RFX_TILE, OGPU_FMT_ARGB32).
  * 0.31: OGPU_RetainedPresent hands the present to gfopenrtg.library 0.31 (ORTG_Present's
- * RETAINED route) when it is in memory; ENV:GFOpenGPU/RetainedPresentOld 1, read when a surface is
+ * RETAINED route) when it is in memory and its screens are on (else its -1: the library's own present);
+ * ENV:GFOpenGPU/RetainedPresentOld 1, read when a surface is
  * made, keeps the library's own for one release. The surface's layout is ogpu_rs_handle.h now.
  * 0.30: capabilities (gfopengpu/caps.h, stage MQ of the shared pipe plan;
  * docs/design/OGPU-Query.md). OGPU_Query answers the ops 0x8000 to 0x80FF,
@@ -1226,7 +1227,8 @@ static LONG OGPU_RetainedPresent(REG(a0, struct OGPURetained *rs), REG(a1, struc
         in.rp = rp;
         in.x = x;
         in.y = y;
-        return ORTG_Present(&in);
+        r = ORTG_Present(&in);
+        if (r != -1) return r;                      /* -1: GFOpenRTG's screens are off; the arguments were checked */
     }
     r = rs_present_gpu(base, h, rp, x, y, width, height);
     if (r != RS_NO_GPU) return r;

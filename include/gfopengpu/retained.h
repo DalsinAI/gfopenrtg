@@ -23,7 +23,7 @@
  *    texture is kept and the rectangle's size only crops.
  *
  * From gfopenrtg.library 0.31 the present is GFOpenRTG's (ORTG_Present,
- * ORTG_SURF_RETAINED): the same calls, the same answers, and a batch the GPU
+ * ORTG_SURF_RETAINED) while GFOpenRTG's screens are on: the same calls, the same answers, and a batch the GPU
  * fails is shown the software way. ENV:GFOpenGPU/RetainedPresentOld 1, set
  * before the surface is made, keeps this library's own present (for one
  * release).

@@ -40,7 +40,7 @@ int main(void)
     short part[4];
 
     /* routes */
-    c.kind = 1; c.prepare = 1; c.host_present = 1; c.rtg = 1; c.layered = 0; c.boxed = 0;
+    c.kind = 1; c.prepare = 1; c.host_present = 1; c.rtg = 1; c.layered = 0; c.boxed = 0; c.screens = 1;
     check(prs_route(&c) == PRS_IN_BLOCK, "a screen or bitmap, prepared: in the caller's block");
     c.layered = 1;
     check(prs_route(&c) == PRS_VIRGL, "a window, prepared: GFOpenRTG's own present after the block");
@@ -55,6 +55,10 @@ int main(void)
     c.kind = 2; c.host_present = 1;
     check(prs_route(&c) == PRS_MEMORY, "a frame in memory: the CPU");
     c.kind = 3;
+    check(prs_route(&c) == PRS_RETAINED, "a retained surface, GFOpenRTG's screens on: GFOpenRTG presents it");
+    c.screens = 0;
+    check(prs_route(&c) == PRS_NONE, "a retained surface, GFOpenRTG's screens off: -1, gfopengpu.library's own present");
+    c.screens = 1; c.kind = 4;
     check(prs_route(&c) == PRS_NONE, "a kind not handled yet: none");
 
     /* MiniGL's present on a screen: the frame at x, y, its whole size, XRGB32 (OGPU_FMT_XRGB32 = 6 here: any value) */

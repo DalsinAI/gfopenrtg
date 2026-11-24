@@ -1866,15 +1866,16 @@ LONG ortg_present(struct ORTG_PresentInfo *in)
         if (in->kind == ORTG_SURF_VIRGL && (!ortg_S->opengpu || ogpu_off)) return -1;
     }
     if (in->flags & ORTG_PRESENT_VSYNC) WaitTOF();
-    if (in->kind == ORTG_SURF_RETAINED) return prs_retained(in);   /* 0.31: GFOpenGPU when it's there, else the CPU */
     c.kind = in->kind; c.prepare = (in->flags & ORTG_PRESENT_PREPARE) != 0;
+    c.screens = SC->on && ortg_S->gfx;      /* 0.31: RETAINED draws through GFOpenRTG's graphics.library base */
     c.host_present = in->kind == ORTG_SURF_VIRGL && prs_host_present();
     c.rtg = prs_rtg(in->rp) != NULL;
     c.layered = in->rp->Layer != NULL;
     c.boxed = in->dst != NULL;
     switch (prs_route(&c)) {
     case PRS_MEMORY: return prs_memory(in);
-    case PRS_NONE: return -1;
+    case PRS_RETAINED: return prs_retained(in);    /* 0.31: GFOpenGPU when it's there, else the CPU */
+    case PRS_NONE: return -1;                       /* RETAINED without GFOpenRTG's screens too */
     default: break;
     }
     if (!c.prepare) return prs_virgl_now(in);

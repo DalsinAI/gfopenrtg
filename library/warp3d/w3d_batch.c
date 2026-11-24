@@ -129,6 +129,7 @@ int w3d_open_area(struct w3dctx *x, struct BitMap *bm, W3D_Bitmap *wbm, int yoff
 {
     W3D_Context *c = x->ctx;
     ULONG fmt;
+    ULONG was = (ULONG)c->drawregion + (ULONG)c->yoffset;   /* the area as the route knows it (live_start) */
     w3d_sync(x);                            /* the frame into the old area first */
     w3d_close_area(x);
     c->yoffset = yoffset;
@@ -156,9 +157,13 @@ int w3d_open_area(struct w3dctx *x, struct BitMap *bm, W3D_Bitmap *wbm, int yoff
     x->direct = fmt == W3D_FMT_A8R8G8B8 || fmt == W3D_FMT_R5G6B5;
     x->fmt = fmt == W3D_FMT_R5G6B5 ? OGPU_FMT_RGB565 : OGPU_FMT_ARGB32;
     /* w3d_sync above put the old area's frame into it. Where that area couldn't be locked the host still holds the
-     * frame; the route can't draw into this new area, so the frame is of an area that has gone and is let go of.
-     * Nothing else leaves the route with a frame held: stopping the route (w3d_vg_stop) clears it too. */
-    if (!x->direct && x->vg_hold) { x->vg_hold = 0; w3d_trace("virgl: a held frame dropped (the drawing area changed)"); }
+     * frame, and it is that area's: an empty present would put it into this one (the route loads the new area's
+     * pixels only before a draw). So it is let go of when the area is another one, or one the route can't draw
+     * into. Nothing else leaves the route with a frame held: stopping the route (w3d_vg_stop) clears it too. */
+    if (x->vg_hold && (!x->direct || was != (ULONG)c->drawregion + (ULONG)c->yoffset)) {
+        x->vg_hold = 0;
+        w3d_trace("virgl: a held frame dropped (the drawing area changed)");
+    }
     if (!x->direct) {
         x->offbpr = (ULONG)c->width * 4;
         x->off = w3d_alloc(x->offbpr * (ULONG)c->height);

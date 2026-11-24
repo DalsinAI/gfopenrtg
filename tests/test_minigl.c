@@ -1097,7 +1097,6 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "-update")) update = 1;
         else golden = argv[i];
     }
-    mgl_prefs.pipe_old = getenv("MGL_PIPE_OLD") != 0;    /* ENV:MiniGL/PipeOld: the route before the shared pipe */
     if (getenv("MGL_VIRGL")) return virgl_main(ppm);
     MiniGLOpen();
     test_interface();

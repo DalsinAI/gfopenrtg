@@ -14,18 +14,14 @@
 #include "mgl_vg.h"
 #include "mgl_vg_ffkey.h"
 
-#define TEXT_BYTES 16384                /* a shader's text */
-
 void vg_state_reset(GLcontext c)
 {
     struct mgl_vg *v = c->vg;
     int i;
     v->dirty = VG_D_ALL;
-    v->b_blend = v->b_dsa = v->b_rs = v->b_vs = v->b_fs = v->b_ve = 0;
     v->stride = 0;
-    v->nvsc = v->nfsc = 0;
     for (i = 0; i < MGL_TEX_UNITS; i++) v->views[i] = v->samps[i] = 0xFFFFFFFFUL;
-    if (v->px) v->pipe->state_reset(v->px);
+    v->pipe->state_reset(v->px);
 }
 
 /* ---- OpenGL's numbers to Gallium's --------------------------------------------------------- */
@@ -67,112 +63,40 @@ static ULONG equation_of(GLenum e)
 
 static ULONG fill_of(GLenum m) { return m == GL_LINE ? VG_POLYGON_LINE : m == GL_POINT ? VG_POLYGON_POINT : VG_POLYGON_FILL; }
 
-/* ---- the object caches --------------------------------------------------------------------- */
-
-/* A long from memory, through a data register. Comparing two memory longs
- * makes GCC emit CMPM.L, which AC090's JIT does not translate, so the
- * compare runs in the interpreter (the GLQuake ranking, 10 Nov: 24% of
- * the emulation thread in this loop). A data register makes it CMP.L. */
-static ULONG vg_meml(const ULONG *p)
-{
-#ifdef VG_HOST
-    return *p;
-#else
-    ULONG v;
-    __asm__ __volatile__("move.l %1,%0" : "=d"(v) : "m"(*p));
-    return v;
-#endif
-}
-
-/* The handle made for key (n words) in cache, or 0 with *slot where to keep a new one. */
-static ULONG cached(struct vg_cache *k, const ULONG *key, int n, int *slot)
-{
-    ULONG h = key[0] ^ (key[0] >> 11) ^ (n > 1 ? key[1] * 7 : 0) ^ (n > 2 ? key[2] * 13 : 0);
-    int i, s, j;
-    for (i = 0; i < 4; i++) {
-        s = (int)((h + (ULONG)i) & (VG_CACHE - 1));
-        if (!k->handle[s]) { *slot = s; return 0; }
-        for (j = 0; j < n && vg_meml(&k->key[s][j]) == vg_meml(&key[j]); j++) ;
-        if (j == n) return k->handle[s];
-    }
-    *slot = -1 - (int)(h & (VG_CACHE - 1));     /* full: that one goes */
-    return 0;
-}
-
-static ULONG *make(GLcontext c, struct vg_cache *k, const ULONG *key, int n, int slot, ULONG obj, ULONG words, ULONG *handle)
-{
-    ULONG *p;
-    int i;
-    if (slot < 0) {                     /* the old object at -1 - slot is destroyed */
-        slot = -1 - slot;
-        p = vg_cmd(c, 2);
-        if (p) { VG_W(p, VG_CMD0(VG_CCMD_DESTROY_OBJECT, obj, 1)); VG_W(p, k->handle[slot]); }
-    }
-    *handle = vg_new_obj(c);
-    k->handle[slot] = (UWORD)*handle;
-    for (i = 0; i < n; i++) k->key[slot][i] = key[i];
-    p = vg_cmd(c, words + 1);
-    if (p) { VG_W(p, VG_CMD0(VG_CCMD_CREATE_OBJECT, obj, words)); VG_W(p, *handle); }
-    return p;
-}
-
 static void blend(GLcontext c)
 {
     struct mgl_vg *v = c->vg;
-    ULONG key[1], h, rt;
-    int slot, i;
+    struct OGPUBlendKey k;
+    ULONG rt;
     rt = (c->en & EN_BLEND) ? 1 : 0;
     if (rt) {
         ULONG src = factor_of(c->blend_src), dst = factor_of(c->blend_dst), eq = equation_of(c->blend_eq);
         rt |= eq << 1 | src << 4 | dst << 9 | eq << 14 | src << 17 | dst << 22;
     }
     rt |= (c->cmask & 15) << 27;
-    if (v->px) {                        /* the pipe's object for the key, bound when it changed */
-        struct OGPUBlendKey k;
-        k.rt0 = rt;
-        VGP(c, v->pipe->bind_blend(v->px, v->pipe->blend_create(v->px, &k)));
-        return;
-    }
-    key[0] = rt;
-    if (!(h = cached(&v->blend, key, 1, &slot))) {
-        ULONG *p = make(c, &v->blend, key, 1, slot, VG_OBJ_BLEND, 11, &h);
-        if (p) {
-            VG_W(p, 0); VG_W(p, 0);
-            VG_W(p, rt);
-            for (i = 1; i < 8; i++) VG_W(p, 0);
-        }
-    }
-    if (h != v->b_blend) { vg_bind(c, VG_OBJ_BLEND, h); v->b_blend = h; }
+    k.rt0 = rt;                         /* the pipe's object for the key, bound when it changed */
+    VGP(c, v->pipe->bind_blend(v->px, v->pipe->blend_create(v->px, &k)));
 }
 
 static void dsa(GLcontext c)
 {
     struct mgl_vg *v = c->vg;
-    ULONG key[2], h, s0 = 0;
-    int slot;
+    struct OGPUDsaKey k;
+    ULONG s0 = 0;
     if (c->en & EN_DEPTH) s0 = 1 | (c->depth_mask ? 2 : 0) | func_of(c->depth_func) << 2;
     if (c->en & EN_ALPHA) s0 |= 1UL << 8 | func_of(c->alpha_func) << 9;
-    key[0] = s0;
-    key[1] = (c->en & EN_ALPHA) ? vg_fbits(c->alpha_ref) : 0;
-    if (v->px) {
-        struct OGPUDsaKey k;
-        k.s0 = key[0]; k.alpha_ref = key[1];
-        VGP(c, v->pipe->bind_dsa(v->px, v->pipe->dsa_create(v->px, &k)));
-        return;
-    }
-    if (!(h = cached(&v->dsa, key, 2, &slot))) {
-        ULONG *p = make(c, &v->dsa, key, 2, slot, VG_OBJ_DSA, 5, &h);
-        if (p) { VG_W(p, s0); VG_W(p, 0); VG_W(p, 0); VG_W(p, key[1]); }
-    }
-    if (h != v->b_dsa) { vg_bind(c, VG_OBJ_DSA, h); v->b_dsa = h; }
+    k.s0 = s0;
+    k.alpha_ref = (c->en & EN_ALPHA) ? vg_fbits(c->alpha_ref) : 0;
+    VGP(c, v->pipe->bind_dsa(v->px, v->pipe->dsa_create(v->px, &k)));
 }
 
 static void rasterizer(GLcontext c, int flat_first)
 {
     struct mgl_vg *v = c->vg;
-    ULONG key[5], h, s0;
+    struct OGPURasterKey k;
+    ULONG s0;
     float units = 0.0f, scale = 0.0f;
-    int slot, offset = 0;
+    int offset = 0;
     s0 = 1UL << 1;                                      /* depth clip */
     if (c->shade_model == GL_FLAT) s0 |= 1UL;
     if (flat_first) s0 |= 1UL << 4;
@@ -186,25 +110,9 @@ static void rasterizer(GLcontext c, int flat_first)
     else if ((c->en & EN_ZOFFSET) && c->zoffset != 0.0f) { units = c->zoffset < 0.0f ? -2.0f : 2.0f; offset = 1; }   /* spec 9.2 */
     if (offset) s0 |= 1UL << 18 | 1UL << 19 | 1UL << 20;
     s0 |= 1UL << 29 | 1UL << 30;                        /* pixel centres at .5; GL's edge rule on a top-down surface */
-    key[0] = s0;
-    key[1] = vg_fbits(c->point_size);
-    key[2] = vg_fbits(c->line_width);
-    key[3] = vg_fbits(units);
-    key[4] = vg_fbits(scale);
-    if (v->px) {
-        struct OGPURasterKey k;
-        k.s0 = key[0]; k.point_size = key[1]; k.line_width = key[2]; k.offset_units = key[3]; k.offset_scale = key[4];
-        VGP(c, v->pipe->bind_raster(v->px, v->pipe->raster_create(v->px, &k)));
-        return;
-    }
-    if (!(h = cached(&v->rs, key, 5, &slot))) {
-        ULONG *p = make(c, &v->rs, key, 5, slot, VG_OBJ_RASTERIZER, 9, &h);
-        if (p) {
-            VG_W(p, s0); VG_W(p, key[1]); VG_W(p, 0); VG_W(p, 0); VG_W(p, key[2]);
-            VG_W(p, key[3]); VG_W(p, key[4]); VG_W(p, 0);
-        }
-    }
-    if (h != v->b_rs) { vg_bind(c, VG_OBJ_RASTERIZER, h); v->b_rs = h; }
+    k.s0 = s0; k.point_size = vg_fbits(c->point_size); k.line_width = vg_fbits(c->line_width);
+    k.offset_units = vg_fbits(units); k.offset_scale = vg_fbits(scale);
+    VGP(c, v->pipe->bind_raster(v->px, v->pipe->raster_create(v->px, &k)));
 }
 
 /* ---- vertex layouts ---------------------------------------------------------------------------- */
@@ -217,57 +125,21 @@ struct vg_layout *vg_layout_of(GLcontext c, const UBYTE *fmt)
 {
     struct mgl_vg *v = c->vg;
     struct vg_layout *l;
-    ULONG key = 0, *p, h;
-    int i, n = 0, off = 0;
+    struct OGPULayout pl;
+    ULONG key = 0;
+    int i, off = 0;
     for (i = 0; i < VG_ATTRS; i++) key |= (ULONG)fmt[i] << (i * 4);
     for (i = 0; i < v->nlay; i++) if (v->lay[i].key == key) return &v->lay[i];
     if (v->nlay == VG_LAYOUTS) v->nlay = 0;     /* rare: the table starts again (the objects stay) */
     l = &v->lay[v->nlay++];
     l->key = key;
-    for (i = 0; i < VG_ATTRS; i++) { l->off[i] = (UBYTE)off; off += af_bytes[fmt[i]]; if (fmt[i]) n++; }
+    for (i = 0; i < VG_ATTRS; i++) { l->off[i] = (UBYTE)off; off += af_bytes[fmt[i]]; }
     l->stride = (UBYTE)off;
-    if (v->px) {                        /* the pipe's VERTEX_ELEMENTS for the key */
-        struct OGPULayout pl;
-        pl.key = key; pl.n = 0;
-        for (i = 0; i < VG_ATTRS; i++)
-            if (fmt[i]) { pl.e[pl.n].offset = l->off[i]; pl.e[pl.n].format = af_format[fmt[i]]; pl.n++; }
-        VGP(c, l->cso = v->pipe->layout_create(v->px, &pl));
-        l->ve = 0;
-        return l;
-    }
-    h = vg_new_obj(c);
-    l->ve = (UWORD)h;
-    p = vg_cmd(c, (ULONG)n * 4 + 2);
-    if (p) {
-        VG_W(p, VG_CMD0(VG_CCMD_CREATE_OBJECT, VG_OBJ_VERTEX_ELEMENTS, n * 4 + 1));
-        VG_W(p, h);
-        for (i = 0; i < VG_ATTRS; i++) {
-            if (!fmt[i]) continue;
-            VG_W(p, l->off[i]); VG_W(p, 0); VG_W(p, 0); VG_W(p, af_format[fmt[i]]);
-        }
-    }
+    pl.key = key; pl.n = 0;             /* the pipe's VERTEX_ELEMENTS for the key */
+    for (i = 0; i < VG_ATTRS; i++)
+        if (fmt[i]) { pl.e[pl.n].offset = l->off[i]; pl.e[pl.n].format = af_format[fmt[i]]; pl.n++; }
+    VGP(c, l->cso = v->pipe->layout_create(v->px, &pl));
     return l;
-}
-
-/* ---- shaders ------------------------------------------------------------------------------------ */
-
-static ULONG shader(GLcontext c, int type, ULONG key, ULONG spots)
-{
-    struct mgl_vg *v = c->vg;
-    ULONG *keys = type == VG_SHADER_VERTEX ? v->vs_key : v->fs_key, len, h;
-    UWORD *hs = type == VG_SHADER_VERTEX ? v->vs_h : v->fs_h;
-    int *n = type == VG_SHADER_VERTEX ? &v->nvs : &v->nfs, i;
-    for (i = 0; i < *n; i++)
-        if (keys[i * 2] == key && keys[i * 2 + 1] == spots) return hs[i];
-    if (!v->text && !(v->text = mgl_alloc(TEXT_BYTES))) return 0;
-    len = type == VG_SHADER_VERTEX ? vg_vs_text(key, spots, v->text, TEXT_BYTES) : vg_fs_text(key, v->text, TEXT_BYTES);
-    if (mgl_trace > 1) mgl_log("virgl shader %lx %lx:\n%s", (unsigned long)key, (unsigned long)spots, v->text);
-    h = vg_new_obj(c);
-    vg_shader(c, h, type, v->text, len);
-    if (*n == VG_SHADERS) *n = 0;       /* the table starts again; the old variants stay on the host */
-    keys[*n * 2] = key; keys[*n * 2 + 1] = spots; hs[*n] = (UWORD)h;
-    (*n)++;
-    return h;
 }
 
 /* ---- constants ------------------------------------------------------------------------------------ */
@@ -283,22 +155,8 @@ static void copy4(float *d, const float *s) { d[0] = s[0]; d[1] = s[1]; d[2] = s
 static void send_if_changed(GLcontext c, int type, const float *k, int n)
 {
     struct mgl_vg *v = c->vg;
-    float *last;
-    if (v->px) {                        /* the pipe sends them when they changed */
-        VGP(c, v->pipe->set_constants(v->px, type == VG_SHADER_VERTEX ? OGPU_STAGE_VERTEX : OGPU_STAGE_FRAGMENT, k, (ULONG)n));
-        return;
-    }
-    last = type == VG_SHADER_VERTEX ? v->vsc : v->fsc;
-    int *nlast = type == VG_SHADER_VERTEX ? &v->nvsc : &v->nfsc, i;
-    const ULONG *a = (const ULONG *)k;
-    ULONG *b = (ULONG *)last;
-    if (*nlast == n) {
-        for (i = 0; i < n * 4; i++) if (vg_meml(a + i) != vg_meml(b + i)) break;
-        if (i == n * 4) return;
-    }
-    for (i = 0; i < n * 4; i++) b[i] = a[i];
-    *nlast = n;
-    vg_constants(c, type, k, n);
+    /* the pipe sends them when they changed */
+    VGP(c, v->pipe->set_constants(v->px, type == VG_SHADER_VERTEX ? OGPU_STAGE_VERTEX : OGPU_STAGE_FRAGMENT, k, (ULONG)n));
 }
 
 /* Vertex shader constants a key needs (vec4s); its DCL says the same. */
@@ -400,33 +258,11 @@ static void viewport_scissor(GLcontext c)
     float hw = (float)c->vp_w * 0.5f, hh = (float)c->vp_h * 0.5f, vp[6];
     float n = (float)c->depth_near, f = (float)c->depth_far;
     LONG sc[4];
-    int i, same = 1;
     vp[0] = hw; vp[1] = -hh; vp[2] = (f - n) * 0.5f;
     vp[3] = (float)c->vp_x + hw; vp[4] = (float)(c->height - c->vp_y) - hh; vp[5] = (f + n) * 0.5f;
-    if (v->px) {                        /* the pipe sends them when they changed */
-        VGP(c, v->pipe->set_viewport(v->px, vp));
-        if (c->en & EN_SCISSOR) {
-            struct OGPUBox b;
-            sc[0] = c->sc_x; sc[2] = c->sc_x + c->sc_w;
-            sc[1] = c->height - (c->sc_y + c->sc_h); sc[3] = c->height - c->sc_y;
-            if (sc[0] < 0) sc[0] = 0;
-            if (sc[1] < 0) sc[1] = 0;
-            if (sc[2] > c->width) sc[2] = c->width;
-            if (sc[3] > c->height) sc[3] = c->height;
-            if (sc[2] < sc[0]) sc[2] = sc[0];
-            if (sc[3] < sc[1]) sc[3] = sc[1];
-            b.x = sc[0]; b.y = sc[1]; b.z = 0; b.w = (ULONG)(sc[2] - sc[0]); b.h = (ULONG)(sc[3] - sc[1]); b.d = 1;
-            VGP(c, v->pipe->set_scissor(v->px, &b));
-        }
-        return;
-    }
-    for (i = 0; i < 6; i++) if (vp[i] != v->vp[i]) same = 0;
-    if (!same || (v->dirty & VG_D_VIEWPORT)) {
-        vg_set_viewport(c, vp);
-        for (i = 0; i < 6; i++) v->vp[i] = vp[i];
-        v->dirty &= ~VG_D_VIEWPORT;
-    }
+    VGP(c, v->pipe->set_viewport(v->px, vp));       /* the pipe sends them when they changed */
     if (c->en & EN_SCISSOR) {
+        struct OGPUBox b;
         sc[0] = c->sc_x; sc[2] = c->sc_x + c->sc_w;
         sc[1] = c->height - (c->sc_y + c->sc_h); sc[3] = c->height - c->sc_y;
         if (sc[0] < 0) sc[0] = 0;
@@ -435,11 +271,8 @@ static void viewport_scissor(GLcontext c)
         if (sc[3] > c->height) sc[3] = c->height;
         if (sc[2] < sc[0]) sc[2] = sc[0];
         if (sc[3] < sc[1]) sc[3] = sc[1];
-        if ((v->dirty & VG_D_SCISSOR) || sc[0] != v->sc[0] || sc[1] != v->sc[1] || sc[2] != v->sc[2] || sc[3] != v->sc[3]) {
-            vg_set_scissor(c, (int)sc[0], (int)sc[1], (int)sc[2], (int)sc[3]);
-            for (i = 0; i < 4; i++) v->sc[i] = sc[i];
-            v->dirty &= ~VG_D_SCISSOR;
-        }
+        b.x = sc[0]; b.y = sc[1]; b.z = 0; b.w = (ULONG)(sc[2] - sc[0]); b.h = (ULONG)(sc[3] - sc[1]); b.d = 1;
+        VGP(c, v->pipe->set_scissor(v->px, &b));
     }
 }
 
@@ -458,7 +291,7 @@ int vg_gen_of(GLcontext c, int u)
 void vg_prepare(GLcontext c, struct vg_layout *lay, int colswz, int flat_first)
 {
     struct mgl_vg *v = c->vg;
-    ULONG vk = 0, fk = 0, spots = 0, h;
+    ULONG vk = 0, fk = 0, spots = 0;
     int lights[8], nl = 0, i;
     if (v->dirty & VG_D_FB) {
         vg_set_framebuffer(c);
@@ -520,19 +353,13 @@ void vg_prepare(GLcontext c, struct vg_layout *lay, int colswz, int flat_first)
         if (vch) { vg_sampler_views(c, MGL_TEX_UNITS, views); for (u = 0; u < MGL_TEX_UNITS; u++) v->views[u] = views[u]; }
         if (sch) { vg_sampler_states(c, MGL_TEX_UNITS, samps); for (u = 0; u < MGL_TEX_UNITS; u++) v->samps[u] = samps[u]; }
     }
-    if (v->px) {                        /* the pipe's one generator (stage M5): made once per key, bound when it changed */
+    {                                   /* the pipe's one generator (stage M5): made once per key, bound when it changed */
         struct OGPUFFKey k;
         k.vs = vg_ff_vs(vk); k.fs = vg_ff_fs(fk); k.spots = spots;
         VGP(c, v->pipe->bind_shader(v->px, v->pipe->ff_shader(v->px, &k)));
-    } else {
-        h = shader(c, VG_SHADER_VERTEX, vk, spots);
-        if (h != v->b_vs) { vg_bind_shader(c, h, VG_SHADER_VERTEX); v->b_vs = h; }
-        h = shader(c, VG_SHADER_FRAGMENT, fk, 0);
-        if (h != v->b_fs) { vg_bind_shader(c, h, VG_SHADER_FRAGMENT); v->b_fs = h; }
     }
     /* the layout and the buffers */
-    if (v->px) VGP(c, v->pipe->bind_layout(v->px, lay->cso));
-    else if (lay->ve != v->b_ve) { vg_bind(c, VG_OBJ_VERTEX_ELEMENTS, lay->ve); v->b_ve = lay->ve; }
+    VGP(c, v->pipe->bind_layout(v->px, lay->cso));
     if (lay->stride != v->stride || (v->dirty & VG_D_VBUF)) { vg_set_vertex_buffer(c, lay->stride); v->dirty &= ~VG_D_VBUF; }
     vs_constants(c, vk, lights, nl);
     fs_constants(c);

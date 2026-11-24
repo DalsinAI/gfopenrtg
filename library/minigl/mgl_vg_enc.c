@@ -12,28 +12,14 @@
 
 /* ---- the stream ------------------------------------------------------------------------------ */
 
-ULONG *vg_cmd(GLcontext c, ULONG n)
-{
-    struct mgl_vg *v = c->vg;
-    ULONG *p;
-    if (v->px) return vgp_cmd(c, n);
-    if (v->ncmd + n > v->ccmd) {
-        /* draws reserve their room first (vg_need), so this is between draws */
-        vg_send(c, 0);
-        if (n > v->ccmd) { v->grow_cmd = n * 2; return 0; }
-    }
-    p = v->cmd + v->ncmd;
-    v->ncmd += n;
-    return p;
-}
+ULONG *vg_cmd(GLcontext c, ULONG n) { return vgp_cmd(c, n); }
 
 ULONG vg_fbits(float f) { return vgc_fbits(f); }
 
 ULONG vg_new_obj(GLcontext c)
 {
-    if (c->vg->px) { c->vg->objects++; return c->vg->pipe->obj_new(c->vg->px); }   /* the context's one namespace */
     c->vg->objects++;
-    return ++c->vg->next_obj;
+    return c->vg->pipe->obj_new(c->vg->px);     /* the context's one namespace */
 }
 
 /* The commands' layouts are the shared writers' (virgl_cmd.h); these find
@@ -73,7 +59,7 @@ void vg_set_vertex_buffer(GLcontext c, ULONG stride)
 {
     ULONG *p = vg_cmd(c, VGC_VERTEX_BUFFER_WORDS);
     if (!p) return;
-    /* this block's arena in the buffer (vg_ring) */
+    /* this block's arena in the buffer */
     vgc_vertex_buffer(p, stride, c->vg->vb_off, VG_VBUF_H(c->vg));
     c->vg->stride = stride;
 }
@@ -93,7 +79,7 @@ void vg_draw(GLcontext c, ULONG prim, ULONG start, ULONG count, int indexed, LON
 {
     ULONG *p;
     if (indexed) {
-        ULONG off = c->vg->ib_base + start * 2;     /* this block's arena in the buffer (vg_ring) */
+        ULONG off = c->vg->ib_base + start * 2;     /* this block's arena in the buffer */
         if (off != c->vg->ib_off || (c->vg->dirty & VG_D_IBUF)) { vg_set_index_buffer(c, off); c->vg->dirty &= ~VG_D_IBUF; }
         start = 0;
     }
@@ -101,7 +87,7 @@ void vg_draw(GLcontext c, ULONG prim, ULONG start, ULONG count, int indexed, LON
     if (!p) return;
     vgc_draw(p, prim, start, count, indexed, bias);
     c->vg->draws++;
-    if (mgl_trace > 2) mgl_log("draw prim %ld start %ld count %ld idx %ld bias %ld (nva %ld nia %ld ncmd %ld)", (long)prim, (long)start, (long)count, (long)indexed, (long)bias, (long)VG_NVA(c->vg), (long)VG_NIA(c->vg), (long)c->vg->ncmd);
+    if (mgl_trace > 2) mgl_log("draw prim %ld start %ld count %ld idx %ld bias %ld (nva %ld nia %ld)", (long)prim, (long)start, (long)count, (long)indexed, (long)bias, (long)VG_NVA(c->vg), (long)VG_NIA(c->vg));
 }
 
 void vg_constants(GLcontext c, int shader, const float *v, int vec4s)
@@ -142,22 +128,6 @@ void vg_sampler_states(GLcontext c, int n, const ULONG *h)
 
 /* ---- the block --------------------------------------------------------------------------------- */
 
-ULONG *vg_pre(GLcontext c, ULONG n)
-{
-    struct mgl_vg *v = c->vg;
-    ULONG *p;
-    if (v->npre + n > v->cpre) vg_send(c, 0);
-    p = v->blk + v->npre;
-    v->npre += n;
-    return p;
-}
-
 void vg_blk_cmd(ULONG *p, ULONG cmd, ULONG n, const ULONG *args) { vgc_blk_cmd(p, cmd, n, args); }
 LONG vg_result(const ULONG *blk, ULONG at) { return vgc_result(blk, at); }
 ULONG vg_word(const ULONG *blk, ULONG at) { return vgc_word(blk, at); }
-
-int vg_run(GLcontext c, ULONG *blk, ULONG words)
-{
-    c->vg->blocks++;
-    return c->vg->pipe->run(c->vg->screen, blk, words * 4) ? -1 : 0;
-}

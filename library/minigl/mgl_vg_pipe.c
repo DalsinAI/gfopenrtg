@@ -1,14 +1,10 @@
 /* Copyright (c) 2026 AmiCradle Team. OpenRTG, MIT licence (LICENSE).
  * SPDX-License-Identifier: MIT
  *
- * minigl.library's virgl route on the OpenGPU shared pipe (docs/design/OpenGPU-Shared-Pipe-Plan.md, stage M3's
- * second half): the context's block, its resources and its arenas are the pipe's (library/pipe/), reached only
- * through its table. What MiniGL still writes itself until its later stages land (M4 to M7) goes through the pipe's
- * version 2 bridge: the stream (cmd_room), the arenas' memory and use (arenas), what a block changed (changed).
- *
- * The blocks the host sees are the ones mgl_vg_frame.c's own code sent (stage M0's captures, unchanged): the same
- * creates, PUTs, stream, unrefs and present, in the same order. ENV:MiniGL/PipeOld=1 keeps that code for one
- * release; then it goes, and this is the only route. */
+ * minigl.library's virgl route on the OpenGPU shared pipe (docs/design/OpenGPU-Shared-Pipe-Plan.md): the context's
+ * block, its resources and its arenas are the pipe's (library/pipe/), reached only through its table. What MiniGL
+ * still writes itself goes through the pipe's version 2 bridge: the stream (cmd_room), the arenas' memory and use
+ * (arenas), what a block changed (changed). */
 #include "mgl_vg.h"
 
 /* The arenas, the buffers' handles and what a block changed: the pipe's, mirrored where the drawing code reads
@@ -150,7 +146,6 @@ int vgp_open(GLcontext c)
     if (!(v = c->vg = mgl_alloc(sizeof *v))) return 0;
     v->pipe = pipe;
     v->ctx_id = ADDR(v);
-    v->pnva = &v->nva_own; v->pnia = &v->nia_own;
     /* the open's blocks, the name and the caps, in memory the host reaches, while opening */
     if (!(scratch = mgl_alloc(16 * 4 + 32 + VG_CAPS_WORDS * 4))) { mgl_free(v); c->vg = 0; return 0; }
     nm = (char *)(scratch + 16);
@@ -217,7 +212,6 @@ void vgp_close(GLcontext c)
         v->px = 0;
     }
     if (v->screen) v->pipe->screen_close(v->screen);
-    mgl_free(v->text);
     mgl_free(v);
     c->vg = 0;
 }

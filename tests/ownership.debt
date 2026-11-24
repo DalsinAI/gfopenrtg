@@ -7,12 +7,6 @@
 
 # MiniGL's virgl route: its own blocks, resources, arenas, state objects, shaders, caps and present
 virgl-cmd         library/minigl/mgl_vg.h                                           # M7
-state-cache       library/minigl/mgl_vg.h                                           # M3-M5
-state-cache       library/minigl/mgl_vg_enc.c                                       # M3
-state-cache       library/minigl/mgl_vg_frame.c                                     # M3
-state-cache       library/minigl/mgl_vg_state.c                                     # M4
-state-cache       library/minigl/mgl_vg_shader.c                                    # M5
-acv-present       library/minigl/mgl_vg_frame.c                                     # M8
 acv-present       library/minigl/mgl_vg_os3.c                                       # M8
 
 # Warp3D's virgl route, and its stream3d builder

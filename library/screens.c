@@ -21,6 +21,7 @@
  * OS-friendly as displaydb.c is: SetFunction() under Forbid(); each patch
  * passes what isn't its own to the vector it replaced; patches stay.
  */
+#include <stddef.h>                 /* offsetof */
 #include <exec/types.h>
 #include "ortg_state.h"
 #include <exec/execbase.h>
@@ -223,7 +224,7 @@ typedef void (*waittof_fn)(REG(a6, struct GfxBase *));
 #define STAGE_BYTES 65536       /* 0.21: the staging block for sources a batch reads after the call returns */
 #define STAGE_PARTS 4
 #define STAGE_PART (STAGE_BYTES / STAGE_PARTS)
-#define STAGE_MAX 4096          /* a source up to this is copied; a bigger one is waited for */
+#define STAGE_MAX ORTG_STAGE_MAX    /* a source up to this is copied; a bigger one is waited for (screens.h) */
 struct ortg_shown { struct ortg_bitmap *bm; UWORD w, h; UBYTE fmt; ULONG split, under_at, under_row; };   /* 0.27: and its split (acrtg-v10) */
 /* 0.23: a board's watch: the bitmap it was asked for (on: the board took it; no: it can't, so never
  * asked again); the runs WRITTEN readied and not yet read (left), and the one being cut into rows, [at, end) */
@@ -917,6 +918,11 @@ void ortg_ogpu_settle(void)
     Permit();
 }
 
+void ortg_ogpu_wait(unsigned long fence)
+{
+    if (fence && ortg_S->opengpu) (void)OGPU_Wait(fence);
+}
+
 /* A batch not waited for; 1 when it went (its sources must outlive it:
  * GFOpenRTG bitmaps, or the staging block). */
 static int ogpu_submit_async(struct OGPUBatch *b)
@@ -1126,8 +1132,8 @@ int ortg_ogpu_xrgb(const struct ortg_bitmap *bm)
 
 /* ortg_ogpu_pixels into a 32-bit bitmap seen as XRGB32: each pixel's colour,
  * with the top byte 0 whatever the source's alpha (ARGB32 or INDEX8). */
-int ortg_ogpu_pixels_xrgb(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1,
-                          const void *src, ULONG src_bpr, int format, const void *table)
+static int ogpu_pixels_xrgb_from(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1,
+                                 const void *src, ULONG src_bpr, int format, const void *table, int kept)
 {
     UBYTE stream[ORTG_OGPU_WORDS * 4];
     struct OGPUBatch b;
@@ -1135,13 +1141,29 @@ int ortg_ogpu_pixels_xrgb(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LON
     const UBYTE *s;
     const void *t = table;
     if (!ortg_ogpu_xrgb(bm)) return 0;
-    s = stage_pixels(src, src_bpr, x1 - x0 + 1, y1 - y0 + 1, src_bpp(format), &bpr, &held);   /* 0.21, as ortg_ogpu_pixels */
+    s = kept ? src : stage_pixels(src, src_bpr, x1 - x0 + 1, y1 - y0 + 1, src_bpp(format), &bpr, &held);   /* 0.21, as ortg_ogpu_pixels */
     if (s && table && !(t = stage_table(table, &held))) s = NULL;
     ogpu_batch_init(&b, stream, ORTG_OGPU_WORDS);
     ogpu_surface(&b, 0, (ULONG)bm->mem, bm->stride, bm->width, bm->height, OGPU_FMT_XRGB32);
     ogpu_target(&b, 0);
     ogpu_pixels(&b, (ULONG)(s ? s : src), s ? bpr : src_bpr, format, (ULONG)(s ? t : table), x0, y0, x1 - x0 + 1, y1 - y0 + 1);
     return stage_submit(&b, s, &held);
+}
+
+int ortg_ogpu_pixels_xrgb(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1,
+                          const void *src, ULONG src_bpr, int format, const void *table)
+{
+    return ogpu_pixels_xrgb_from(bm, x0, y0, x1, y1, src, src_bpr, format, table, 0);
+}
+
+/* 0.32, ORTG_PRESENT_AFTER: the caller's memory, read where it is and left
+ * running (the caller keeps it as it is until GFOpenGPU's later batches are
+ * done), as ortg_ogpu_pixels or, xrgb, ortg_ogpu_pixels_xrgb. */
+int ortg_ogpu_pixels_kept(struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1,
+                          const void *src, ULONG src_bpr, int format, const void *table, int xrgb)
+{
+    return xrgb ? ogpu_pixels_xrgb_from(bm, x0, y0, x1, y1, src, src_bpr, format, table, 1)
+                : ogpu_pixels_from(bm, x0, y0, x1, y1, src, src_bpr, format, table, 1);
 }
 
 /* A rectangle of the bitmap copied, raw, into memory (ORTG_ReadPixels' RAW
@@ -1751,7 +1773,9 @@ static LONG prs_memory(const struct ORTG_PresentInfo *in)
     if (!prs_part(in->src ? &in->src->MinX : NULL, in->width, in->height, &x0, &y0, &x1, &y1)) return 0;
     px.data = in->memory; px.x = x0; px.y = y0; px.modulo = (long)in->stride; px.format = in->format; px.ctable = NULL;
     px.width = x1 - x0 + 1; px.height = y1 - y0 + 1; px.dest_width = px.dest_height = 0;
-    n = ortg_write_pixels(in->rp, in->x + x0, in->y + y0, &px);
+    /* 0.32: ORTG_PRESENT_AFTER, from a caller whose struct has after */
+    n = ortg_write_pixels_after(in->rp, in->x + x0, in->y + y0, &px,
+                                (in->flags & ORTG_PRESENT_AFTER) && in->size >= sizeof (struct ORTG_PresentInfo) ? in->after : 0);
     ortg_stat(ORTG_STAT_PRESENT_MEMORY, 0, (ULONG)px.width * (ULONG)px.height);
     return n;
 }
@@ -1908,7 +1932,8 @@ LONG ortg_present(struct ORTG_PresentInfo *in)
     struct prs_call c;
     struct prs_token *t;
     ULONG words;
-    if (!in || in->size < sizeof (struct ORTG_PresentInfo) || !in->rp) return -1;
+    /* 0.32: after grew the struct; a 0.30 or 0.31 caller's struct (up to token) is taken as before */
+    if (!in || in->size < offsetof(struct ORTG_PresentInfo, after) || !in->rp) return -1;
     if (in->flags & ORTG_PRESENT_PREPARE) in->token = NULL;
     if (in->kind == ORTG_SURF_VIRGL || in->kind == ORTG_SURF_RETAINED) {
         /* every VIRGL route needs gfopengpu.library: opened now if no screen opening has (a program's own

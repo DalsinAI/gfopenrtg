@@ -165,7 +165,7 @@ int SDL_OS3_GPU_PresentNew(SDL_Window *window, SDL_Surface *surface, const SDL_R
     /* SDL's windows draw from the inside's corner: a GimmeZeroZero
        window's RastPort, or a borderless one */
     return orf_present(OS3_ORTG_Call, NULL, rp, 0, 0, surface->pixels, (unsigned long)surface->pitch, fmt,
-                       all.w, all.h, (const struct orf_rect *)out, n, vsync);
+                       all.w, all.h, (const struct orf_rect *)out, n, vsync, 0);
 }
 
 int SDL_OS3_GPU_FormatOfPixfmt(unsigned long pixfmt)

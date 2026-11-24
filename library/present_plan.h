@@ -89,6 +89,17 @@ static inline unsigned long prs_cmd(unsigned long *p, unsigned long ctx, unsigne
     return PRS_CMD_WORDS;
 }
 
+/* MEMORY with ORTG_PRESENT_AFTER (0.32): whether a piece must wait for
+ * the caller's fence after before it is written. A piece GFOpenGPU's
+ * PIXELS writes reads the source where it is (not copied to the staging
+ * block, whatever its size), after the caller's batches in GFOpenGPU's
+ * order, and is left running: no wait. A piece the CPU writes (cpu) reads
+ * the source itself, so it waits. */
+static inline int prs_after_wait(unsigned long after, int cpu)
+{
+    return after != 0 && cpu;
+}
+
 /* The source's part (x0, y0, x1, y1 inclusive, NULL: all) clamped to the
  * source; 0 when nothing is left. */
 static inline int prs_part(const short *src4, unsigned long w, unsigned long h, long *x0, long *y0, long *x1, long *y1)

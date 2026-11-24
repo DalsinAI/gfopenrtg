@@ -413,6 +413,30 @@ bool SDL_OS3_GPU_PresentsNew(void)
                                           SDL_OS3_present_old);
 }
 
+/* gfopenrtg.library 0.32: ORTG_PRESENT_AFTER, so the opengpu renderer's
+   drawing need not be waited for before its present. */
+bool SDL_OS3_GPU_PresentsAfter(void)
+{
+    return SDL_OS3_GPU_PresentsNew() && orf_after_ok(SDL_OS3_ORTGBase->lib_Version, SDL_OS3_ORTGBase->lib_Revision) &&
+           SDL_OS3_OpenGPUBase &&
+           (SDL_OS3_OpenGPUBase->lib_Version > 0 || SDL_OS3_OpenGPUBase->lib_Revision >= OGPU_FENCE_ALL_REVISION);
+}
+
+/* A present with after given is left running and reads the surface where
+   it is: SDL_OS3_GPU_PresentSettle waits for it before the CPU writes the
+   surface or it is freed. */
+static bool SDL_OS3_present_running = false;
+
+void SDL_OS3_GPU_PresentSettle(void)
+{
+    if (SDL_OS3_present_running) {
+        if (SDL_OS3_OpenGPUBase) {
+            OGPU_Wait(OGPU_FENCE_ALL);
+        }
+        SDL_OS3_present_running = false;
+    }
+}
+
 /* The window's bitmap is a GFOpenRTG one (ORTG_BitMapInfo; not on a
    Picasso96 board, nor with GFOpenRTG's screens off): ORTG_Present's MEMORY
    route writes anything else through graphics.library as pens. Asked again
@@ -441,6 +465,12 @@ static long OS3_ORTG_Call(struct ORTG_PresentInfo *in, void *ctx)
 }
 
 int SDL_OS3_GPU_PresentNew(SDL_Window *window, SDL_Surface *surface, const SDL_Rect *rects, int numrects, bool vsync)
+{
+    return SDL_OS3_GPU_PresentNewAfter(window, surface, rects, numrects, vsync, 0);
+}
+
+int SDL_OS3_GPU_PresentNewAfter(SDL_Window *window, SDL_Surface *surface, const SDL_Rect *rects, int numrects, bool vsync,
+                                Uint32 after)
 {
     SDL_WindowData *d = window ? window->internal : NULL;
     struct Window *win;
@@ -493,8 +523,15 @@ int SDL_OS3_GPU_PresentNew(SDL_Window *window, SDL_Surface *surface, const SDL_R
         return 0;
     }
     n = OS3_GPU_Rects(rects, numrects, w, h, out);
-    return orf_present(OS3_ORTG_Call, NULL, win->RPort, ox, oy, surface->pixels, (unsigned long)surface->pitch, fmt,
-                       w, h, (const struct orf_rect *)out, n, vsync);
+    if (!SDL_OS3_GPU_PresentsAfter()) {
+        after = 0;
+    }
+    n = orf_present(OS3_ORTG_Call, NULL, win->RPort, ox, oy, surface->pixels, (unsigned long)surface->pitch, fmt, w, h,
+                    (const struct orf_rect *)out, n, vsync, after);
+    if (after) {
+        SDL_OS3_present_running = true; /* also when it failed part way: some of it may be running */
+    }
+    return n;
 }
 
 bool SDL_OS3_GPU_Present(SDL_Window *window, SDL_Surface *surface, const SDL_Rect *rects, int numrects)

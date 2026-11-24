@@ -95,6 +95,9 @@
  *
  * 0.31 (24 Nov 2026): ORTG_Present's RETAINED surfaces (ORTG_SURF_RETAINED): gfopengpu.library's
  * retained present moved here (present_retained.c, M8 step 2.4); OGPU_RetainedPresent comes here.
+ * 0.32 (24 Nov 2026): ORTG_PRESENT_AFTER (MEMORY): the caller's GFOpenGPU batches still writing the
+ * source are not waited for, only where the CPU reads it, and the present reads the source in place and is
+ * left running, so SDL 3's renderer and its present cost no wait; ORTG_PresentInfo grows by after, and a 0.30 struct is still taken.
  */
 #include <exec/types.h>
 #include "ortg_state.h"
@@ -115,7 +118,7 @@
 
 #define REG(r, decl) register decl __asm(#r)   /* bebbo gcc: an argument in a register */
 #define LIB_VERSION 0
-#define LIB_REVISION 31
+#define LIB_REVISION 32
 
 /* The ACRTG board (amicradle's common/protocol/acrtg.h): Zorro III,
  * AmiCradle Team (0xDA15; 2011 before 1 October 2026), product 9 (16 MiB), product 15 (64 MiB, 0.14) or product 16
@@ -168,9 +171,9 @@ struct OpenRTGBase {
 int start(void) { return -1; }
 
 static const char lib_name[] = "gfopenrtg.library";
-static const char lib_id[] = "gfopenrtg.library 0.31 (24.11.2026) GFOpenRTG, AmiCradle Team\r\n";
+static const char lib_id[] = "gfopenrtg.library 0.32 (24.11.2026) GFOpenRTG, AmiCradle Team\r\n";
 /* For C:Version, which looks for "$VER:" in the file. */
-static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopenrtg.library 0.31 (24.11.2026) GFOpenRTG, AmiCradle Team";
+static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopenrtg.library 0.32 (24.11.2026) GFOpenRTG, AmiCradle Team";
 
 static struct Library *lib_init(REG(d0, struct OpenRTGBase *base), REG(a0, BPTR seglist), REG(a6, struct ExecBase *sys));
 static struct Library *lib_open(REG(a6, struct OpenRTGBase *base));

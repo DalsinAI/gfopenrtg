@@ -19,7 +19,8 @@
 
 static unsigned long screen[SH][SW];
 static unsigned long frame[FH][FW + 4];         /* 4 longs of padding a row: the stride isn't the width */
-static int calls, bad_info, vsyncs, vsync_not_first, refuse_at = -1, zero_at = -1;
+static int calls, bad_info, vsyncs, vsync_not_first, refuse_at = -1, zero_at = -1, afters;
+static unsigned long after_seen;
 static struct RastPort rastport;
 static int fails;
 
@@ -40,6 +41,10 @@ static long fake_present(struct ORTG_PresentInfo *in, void *ctx)
     if (in->size != sizeof *in || in->kind != ORTG_SURF_MEMORY || in->memory != (void *)frame
         || in->stride != sizeof frame[0] || in->width != FW || in->height != FH || in->rp != &rastport
         || !in->src || in->dst || in->blk || in->context || in->handle) bad_info++;
+    if (in->flags & ORTG_PRESENT_AFTER) {
+        afters++;
+        after_seen = in->after;
+    } else if (in->after) bad_info++;
     if (in->flags & ORTG_PRESENT_VSYNC) {
         vsyncs++;
         if (calls != 1) vsync_not_first++;
@@ -58,7 +63,8 @@ static void reset(void)
     int x, y;
     for (y = 0; y < SH; y++) for (x = 0; x < SW; x++) screen[y][x] = 0xDEAD;
     for (y = 0; y < FH; y++) for (x = 0; x < FW + 4; x++) frame[y][x] = (unsigned long)(y << 8 | x);
-    calls = bad_info = vsyncs = vsync_not_first = 0;
+    calls = bad_info = vsyncs = vsync_not_first = afters = 0;
+    after_seen = 0;
     refuse_at = zero_at = -1;
 }
 
@@ -87,6 +93,11 @@ int main(void)
     check(orf_wanted(1, 0, 0), "1.0 takes ORTG_Present");
     check(!orf_wanted(0, 30, 1), "PresentOld 1 keeps the old present");
 
+    /* ORTG_PRESENT_AFTER: gfopenrtg.library 0.32 and later */
+    check(!orf_after_ok(0, 31), "0.31 ignores ORTG_PRESENT_AFTER");
+    check(orf_after_ok(0, 32), "0.32 takes ORTG_PRESENT_AFTER");
+    check(orf_after_ok(1, 0), "1.0 takes ORTG_PRESENT_AFTER");
+
     /* the formats: only those GFOpenRTG puts on GFOpenGPU */
     check(orf_format(ORF_SRC_ARGB32, 0) == ORTG_PIX_ARGB, "ARGB8888 is ORTG_PIX_ARGB");
     check(orf_format(ORF_SRC_XRGB32, 0) == ORTG_PIX_0RGB, "XRGB8888 is ORTG_PIX_0RGB");
@@ -96,7 +107,7 @@ int main(void)
 
     /* the whole frame inside a window's borders, with vsync */
     reset();
-    check(orf_present(fake_present, NULL, &rastport, 4, 11, frame, sizeof frame[0], ORTG_PIX_ARGB, FW, FH, &all, 1, 1) == 1,
+    check(orf_present(fake_present, NULL, &rastport, 4, 11, frame, sizeof frame[0], ORTG_PIX_ARGB, FW, FH, &all, 1, 1, 0) == 1,
           "a whole frame is shown");
     check(calls == 1 && !bad_info, "one call, the info as GFOpenRTG reads it");
     check(vsyncs == 1, "vsync asked once");
@@ -104,45 +115,55 @@ int main(void)
 
     /* damage: each rect a call, the empty one none, vsync on the first only */
     reset();
-    check(orf_present(fake_present, NULL, &rastport, 0, 0, frame, sizeof frame[0], ORTG_PIX_0RGB, FW, FH, two, 3, 1) == 1,
+    check(orf_present(fake_present, NULL, &rastport, 0, 0, frame, sizeof frame[0], ORTG_PIX_0RGB, FW, FH, two, 3, 1, 0) == 1,
           "rects are shown");
     check(calls == 2 && !bad_info, "a call each non-empty rect");
     check(vsyncs == 1 && !vsync_not_first, "vsync only on the first call");
     check(screen_is(two, 3, 0, 0), "only the rects are written");
 
+    /* after: each call carries the caller's fence, with vsync still on the first only */
+    reset();
+    check(orf_present(fake_present, NULL, &rastport, 0, 0, frame, sizeof frame[0], ORTG_PIX_ARGB, FW, FH, two, 3, 1, 1234) == 1,
+          "rects are shown with after");
+    check(calls == 2 && afters == 2 && after_seen == 1234 && !bad_info, "every call has ORTG_PRESENT_AFTER and the fence");
+    check(vsyncs == 1 && !vsync_not_first, "vsync still only on the first call");
+    reset();
+    orf_present(fake_present, NULL, &rastport, 0, 0, frame, sizeof frame[0], ORTG_PIX_ARGB, FW, FH, &all, 1, 0, 0);
+    check(afters == 0 && !bad_info, "no fence: no ORTG_PRESENT_AFTER");
+
     /* without vsync none asks for it */
     reset();
-    orf_present(fake_present, NULL, &rastport, 0, 0, frame, sizeof frame[0], ORTG_PIX_ARGB, FW, FH, two, 3, 0);
+    orf_present(fake_present, NULL, &rastport, 0, 0, frame, sizeof frame[0], ORTG_PIX_ARGB, FW, FH, two, 3, 0, 0);
     check(vsyncs == 0, "no vsync when not asked");
 
     /* a refusal: 0, the rest not tried, and the caller shows the frame the old way */
     reset();
     refuse_at = 0;
-    check(orf_present(fake_present, NULL, &rastport, 0, 0, frame, sizeof frame[0], ORTG_PIX_ARGB, FW, FH, two, 3, 0) == 0,
+    check(orf_present(fake_present, NULL, &rastport, 0, 0, frame, sizeof frame[0], ORTG_PIX_ARGB, FW, FH, two, 3, 0, 0) == 0,
           "a refused call is 0");
     check(calls == 1, "nothing tried after a refusal");
     reset();
     refuse_at = 1;
-    check(orf_present(fake_present, NULL, &rastport, 0, 0, frame, sizeof frame[0], ORTG_PIX_ARGB, FW, FH, two, 3, 0) == 0,
+    check(orf_present(fake_present, NULL, &rastport, 0, 0, frame, sizeof frame[0], ORTG_PIX_ARGB, FW, FH, two, 3, 0, 0) == 0,
           "a refusal after the first rect is 0");
 
     /* 0 pixels for a non-empty rect: refused too (GFOpenRTG's screens off) */
     reset();
     zero_at = 0;
-    check(orf_present(fake_present, NULL, &rastport, 0, 0, frame, sizeof frame[0], ORTG_PIX_ARGB, FW, FH, &all, 1, 0) == 0,
+    check(orf_present(fake_present, NULL, &rastport, 0, 0, frame, sizeof frame[0], ORTG_PIX_ARGB, FW, FH, &all, 1, 0, 0) == 0,
           "0 pixels written is refused");
 
     /* nothing called for what ORTG_Present can't take */
     reset();
-    check(orf_present(fake_present, NULL, &rastport, 0, 0, frame, sizeof frame[0], ORF_NONE, FW, FH, &all, 1, 0) == 0
+    check(orf_present(fake_present, NULL, &rastport, 0, 0, frame, sizeof frame[0], ORF_NONE, FW, FH, &all, 1, 0, 0) == 0
           && calls == 0, "no format: not called");
-    check(orf_present(fake_present, NULL, NULL, 0, 0, frame, sizeof frame[0], ORTG_PIX_ARGB, FW, FH, &all, 1, 0) == 0
+    check(orf_present(fake_present, NULL, NULL, 0, 0, frame, sizeof frame[0], ORTG_PIX_ARGB, FW, FH, &all, 1, 0, 0) == 0
           && calls == 0, "no RastPort: not called");
-    check(orf_present(fake_present, NULL, &rastport, 0, 0, NULL, sizeof frame[0], ORTG_PIX_ARGB, FW, FH, &all, 1, 0) == 0
+    check(orf_present(fake_present, NULL, &rastport, 0, 0, NULL, sizeof frame[0], ORTG_PIX_ARGB, FW, FH, &all, 1, 0, 0) == 0
           && calls == 0, "no pixels: not called");
-    check(orf_present(fake_present, NULL, &rastport, 0, 0, frame, sizeof frame[0], ORTG_PIX_ARGB, 0, FH, &all, 1, 0) == 0
+    check(orf_present(fake_present, NULL, &rastport, 0, 0, frame, sizeof frame[0], ORTG_PIX_ARGB, 0, FH, &all, 1, 0, 0) == 0
           && calls == 0, "no width: not called");
-    check(orf_present(fake_present, NULL, &rastport, 0, 0, frame, sizeof frame[0], ORTG_PIX_ARGB, FW, FH, &all, 0, 0) == 1
+    check(orf_present(fake_present, NULL, &rastport, 0, 0, frame, sizeof frame[0], ORTG_PIX_ARGB, FW, FH, &all, 0, 0, 0) == 1
           && calls == 0, "no rects: shown, nothing called");
 
     if (fails) return 1;

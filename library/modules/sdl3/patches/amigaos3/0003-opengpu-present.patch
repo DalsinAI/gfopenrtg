@@ -4,7 +4,7 @@ the window's visible parts, in place of WritePixelArray. AmiCradle Team, 2026.
 
 --- a/src/video/amigaos3/SDL_os3framebuffer.c
 +++ b/src/video/amigaos3/SDL_os3framebuffer.c
-@@ -1,6 +1,9 @@
+@@ -1,9 +1,16 @@
  #include "SDL_internal.h"
  #if SDL_VIDEO_DRIVER_AMIGAOS3
  #include "SDL_os3framebuffer.h"
@@ -14,7 +14,14 @@ the window's visible parts, in place of WritePixelArray. AmiCradle Team, 2026.
  bool OS3_CreateWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window, Uint32 *format, void **pixels, int *pitch)
  {
      SDL_WindowData*d=window->internal;(void)_this;if(!d||!d->syswin)return SDL_SetError("AmigaOS3: no native window");
-@@ -12,6 +15,12 @@
++#ifdef SDL_VIDEO_RENDER_OPENGPU
++    /* a present left running may still read the old pixels (gfopenrtg.library 0.32) */
++    SDL_OS3_GPU_PresentSettle();
++#endif
+     if(d->fb_pixels) SDL_free(d->fb_pixels); d->fb_format=SDL_PIXELFORMAT_ARGB8888; d->fb_pitch=window->w*4;
+     d->fb_pixels=SDL_calloc(1,(size_t)d->fb_pitch*window->h); if(!d->fb_pixels)return SDL_OutOfMemory();
+     *format=d->fb_format;*pixels=d->fb_pixels;*pitch=d->fb_pitch;return true;
+@@ -12,8 +19,19 @@
  {
      SDL_WindowData*d=window->internal;int i;(void)_this;if(!d||!d->syswin||!d->fb_pixels)return false;
      if(!CyberGfxBase)return SDL_SetError("AmigaOS3: RTG framebuffer currently requires CyberGraphX/P96");
@@ -27,3 +34,11 @@ the window's visible parts, in place of WritePixelArray. AmiCradle Team, 2026.
      for(i=0;i<numrects;i++){const SDL_Rect*r=&rects[i];WritePixelArray((UBYTE*)d->fb_pixels+r->y*d->fb_pitch+r->x*4,0,0,d->fb_pitch,d->syswin->RPort,r->x+d->syswin->BorderLeft,r->y+d->syswin->BorderTop,r->w,r->h,RECTFMT_ARGB);}
      return true;
  }
+-void OS3_DestroyWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window){SDL_WindowData*d=window?window->internal:NULL;(void)_this;if(d&&d->fb_pixels){SDL_free(d->fb_pixels);d->fb_pixels=NULL;}}
++void OS3_DestroyWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window){SDL_WindowData*d=window?window->internal:NULL;(void)_this;
++#ifdef SDL_VIDEO_RENDER_OPENGPU
++    /* a present left running may still read the pixels (gfopenrtg.library 0.32) */
++    if(d&&d->fb_pixels)SDL_OS3_GPU_PresentSettle();
++#endif
++    if(d&&d->fb_pixels){SDL_free(d->fb_pixels);d->fb_pixels=NULL;}}
+ #endif

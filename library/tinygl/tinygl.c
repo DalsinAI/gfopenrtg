@@ -66,8 +66,9 @@ GLContext *GLInit(void)
 }
 
 /* gfopengpu.library 0.32's choice (OGPU_Driver: the shared pipe's M9, the same table for every
- * front end, ENV:GFOpenGPU/Driver and ENV:TinyGL/Driver): 0 virgl (else softpipe), 1 the CPU
- * (softpipe; also for the stream route, which TinyGL doesn't have); -1 an older library. */
+ * front end, ENV:GFOpenGPU/Driver and ENV:TinyGL/Driver): 1 the CPU (softpipe) when cpu is asked,
+ * else 0 auto (virgl, else softpipe): TinyGL has no stream route, so acrtg keeps auto's virgl,
+ * as before 0.32; -1 an older library. */
 static int driver_ogpu(void)
 {
     struct Library *OpenGPUBase = OpenLibrary((CONST_STRPTR) "gfopengpu.library", 0);
@@ -75,7 +76,7 @@ static int driver_ogpu(void)
     if (OpenGPUBase) {
         if (OpenGPUBase->lib_Version > 0 || OpenGPUBase->lib_Revision >= 32) {
             ULONG d = OGPU_Driver((CONST_STRPTR) "TinyGL");
-            r = d == OGPU_DRV_VIRGL || d == OGPU_DRV_LLVMPIPE ? 0 : 1;
+            r = d == OGPU_DRV_CPU ? 1 : 0;
         }
         CloseLibrary(OpenGPUBase);
     }

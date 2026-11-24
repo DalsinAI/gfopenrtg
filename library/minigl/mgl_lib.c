@@ -60,7 +60,7 @@ struct MGLBase {
  * in the file: build.sh keeps source order (-fno-toplevel-reorder). */
 int start(void) { return -1; }
 
-#define MGL_ID "minigl.library 30.0 (9.11.2026) AmiCradle GL 1.1 for minigl.library programs, AmiCradle Team"
+#define MGL_ID "minigl.library 30.0 (23.11.2026) AmiCradle GL 1.1 for minigl.library programs, AmiCradle Team"
 static const char lib_name[] = "minigl.library";
 static const char lib_id[] = MGL_ID "\r\n";
 static const char lib_ver[] __attribute__((used)) = "\0$VER: " MGL_ID;

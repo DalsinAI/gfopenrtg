@@ -47,8 +47,8 @@ struct Library *MathIeeeSingBasBase, *MathIeeeSingTransBase, *MathIeeeDoubBasBas
 int start(void) { return -1; }
 
 static const char lib_name[] = "Warp3D.library";
-static const char lib_id[] = "Warp3D.library 5.0 (8.10.2026) GFOpenRTG Warp3D, AmiCradle Team\r\n";
-static const char lib_ver[] __attribute__((used)) = "\0$VER: Warp3D.library 5.0 (8.10.2026) GFOpenRTG Warp3D, AmiCradle Team";
+static const char lib_id[] = "Warp3D.library 5.0 (23.11.2026) GFOpenRTG Warp3D, AmiCradle Team\r\n";
+static const char lib_ver[] __attribute__((used)) = "\0$VER: Warp3D.library 5.0 (23.11.2026) GFOpenRTG Warp3D, AmiCradle Team";
 static char name_gpu[64] = "GFOpenGPU";
 static const char name_cpu[] = "CPU (GFOpenRTG's 3D core on this 68k)";
 static const char name_virgl[] = "virgl (the host's graphics chip, through GFOpenGPU)";

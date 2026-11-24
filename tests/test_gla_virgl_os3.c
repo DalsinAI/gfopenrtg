@@ -38,18 +38,20 @@ void gla_note_why(const char *why) { noted = why; }
 const char *gla_last_why(void) { return noted; }
 
 /* gla_notice_os3.c's three, faked: the environment, what was said, the board */
-static const char *env_gldriver, *env_ogles3, *env_glbatch, *env_glpipe;
+static const char *env_gldriver, *env_ogles3, *env_glbatch, *env_glpipe, *env_glpipeold;
 static char said[8][512];
 static int nsaid;
 static const char *board_says;
 int gla_virgl_batch_wanted = 7;         /* gla_virgl.c's: what the transport sets it to */
 int gla_virgl_pipeline_wanted = 7;
+int gla_virgl_pipe_old = 7;
 int (*gla_virgl_send)(void *user, void *block, unsigned long bytes, unsigned long *ticket);
 int (*gla_virgl_wait)(void *user, unsigned long ticket);
 int gla_os3_getenv(const char *name, char *buf, int size)
 {
     const char *v = !strcmp(name, "GFOpenGPU/GLDriver") ? env_gldriver : !strcmp(name, "OGLES3/Driver") ? env_ogles3
-                  : !strcmp(name, "GFOpenGPU/GLBatch") ? env_glbatch : !strcmp(name, "GFOpenGPU/GLPipeline") ? env_glpipe : NULL;
+                  : !strcmp(name, "GFOpenGPU/GLBatch") ? env_glbatch : !strcmp(name, "GFOpenGPU/GLPipeline") ? env_glpipe
+                  : !strcmp(name, "GFOpenGPU/GLPipeOld") ? env_glpipeold : NULL;
     if (!v) return -1;
     snprintf(buf, (size_t)size, "%s", v);
     return (int)strlen(buf);
@@ -175,6 +177,17 @@ int main(void)
     env_glbatch = "maybe";
     CHECK(gla_os3_virgl_transport(&t) && gla_virgl_batch_wanted == -1, "GLBatch maybe: as the runtime asks (%d)", gla_virgl_batch_wanted);
     env_glbatch = NULL;
+    /* ENV:GFOpenGPU/GLPipeOld (the shared pipe's GL stage, 24 Nov 2026): unset or 0 the shared pipe, 1/on the
+     * winsys's own request blocks, for one release */
+    env_glpipeold = NULL;
+    CHECK(gla_os3_virgl_transport(&t) && gla_virgl_pipe_old == 0, "GLPipeOld unset: on the shared pipe (%d)", gla_virgl_pipe_old);
+    env_glpipeold = "1";
+    CHECK(gla_os3_virgl_transport(&t) && gla_virgl_pipe_old == 1, "GLPipeOld 1: the old route (%d)", gla_virgl_pipe_old);
+    env_glpipeold = "On";
+    CHECK(gla_os3_virgl_transport(&t) && gla_virgl_pipe_old == 1, "GLPipeOld on: the old route (%d)", gla_virgl_pipe_old);
+    env_glpipeold = "0";
+    CHECK(gla_os3_virgl_transport(&t) && gla_virgl_pipe_old == 0, "GLPipeOld 0: on the shared pipe (%d)", gla_virgl_pipe_old);
+    env_glpipeold = NULL;
     /* ENV:GFOpenGPU/GLPipeline, and the send/wait pair the winsys pipelines with */
     env_glpipe = "1";
     CHECK(gla_os3_virgl_transport(&t) && gla_virgl_pipeline_wanted == 1 && gla_virgl_send && gla_virgl_wait,

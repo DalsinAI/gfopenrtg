@@ -165,6 +165,26 @@ CC=${CC:-cc}
 cd "$B"
 eval "$CC $FLAGS -I$SRC/src/gallium/drivers -I$SRC/src/mesa/glapi -O2 -c $TOP/gla/gla_core.c -o gla_core.o"
 eval "$CC $FLAGS -I$SRC/src/gallium/drivers -I$SRC/src/virtio -I$REPO/include -O2 -c $TOP/gla/gla_virgl.c -o gla_virgl.o"
+# virgl's route on GFOpenGPU's shared pipe (the GL stage, 24 November 2026): the winsys (gla_virgl_pipe.c, Mesa's
+# side), the carrier (gla_carry_pipe.c, the pipe's side) and the pipe itself (library/pipe), linked in as it is into
+# minigl.library and Warp3D.library. gla_virgl.c stays for one release as the old route (ENV:GFOpenGPU/GLPipeOld 1).
+# The pipe's files and the carrier take the target's flags only (FLAGS without Mesa's own -D, -I and -include: they
+# include no Mesa header). On AmigaOS an address is the pointer and the transport is the pipe's own
+# (pipe_xport_os3.c, through gfopengpu.library); elsewhere the test is the transport and gives the addresses
+# (tests/gla_pipe_host.h), with exec/types.h's names from the repository's tests/host-include.
+eval "$CC $FLAGS -I$SRC/src/gallium/drivers -I$SRC/src/virtio -I$REPO/include -O2 -c $TOP/gla/gla_virgl_pipe.c -o gla_virgl_pipe.o"
+PIPEFLAGS=$(for x in $FLAGS; do case $x in -m*|-noixemul|-fbaserel32|-fno-delete-null-pointer-checks) printf '%s ' "$x" ;; esac; done)
+case $NAME in
+    *amigaos*) PIPEFLAGS="$PIPEFLAGS -mnobitfield -fomit-frame-pointer -fno-builtin"; PIPESRC="pipe_screen pipe_block pipe_res pipe_arena pipe_state pipe_ff pipe_xport_os3" ;;
+    host)      PIPEFLAGS="$PIPEFLAGS -DVG_HOST -I$REPO/tests/host-include -include $TOP/tests/gla_pipe_host.h"; PIPESRC="pipe_screen pipe_block pipe_res pipe_arena pipe_state pipe_ff" ;;
+    *)         PIPEFLAGS="$PIPEFLAGS -I$REPO/tests/host-include -include $TOP/tests/gla_pipe_host.h"; PIPESRC="pipe_screen pipe_block pipe_res pipe_arena pipe_state pipe_ff" ;;
+esac
+PIPEOBJS="gla_virgl_pipe.o gla_carry_pipe.o"
+$CC $PIPEFLAGS -I"$REPO/include" -I"$TOP/gla" -O2 -Wall -Wextra -Wno-unused-parameter -c "$TOP/gla/gla_carry_pipe.c" -o gla_carry_pipe.o
+for f in $PIPESRC; do
+    $CC $PIPEFLAGS -I"$REPO/include" -O2 -Wall -Wextra -Wno-unused-parameter -c "$REPO/library/pipe/$f.c" -o "gla_$f.o"
+    PIPEOBJS="$PIPEOBJS gla_$f.o"
+done
 # The shader cache (gla/gla_shader_cache.c, patch 0012): its entries are
 # keyed on this build, Mesa's version and the patches' sum, as there is no
 # ELF build id to take it from.
@@ -192,7 +212,7 @@ esac
 # Mesa's c11 threads name the pthread_mutexattr calls weakly; a static link must ask for them.
 WEAK="-Wl,-u,pthread_mutexattr_init -Wl,-u,pthread_mutexattr_settype -Wl,-u,pthread_mutexattr_destroy"
 $CC $MESA_LFLAGS -std=c99 -O2 -Wall -Wextra -Werror -I"$SRC/include" -I"$REPO" ${CROSS:+-static $WEAK} -o test_gla \
-    "$TOP/tests/test_gla.c" gla_core.o gla_virgl.o gla_shader_cache.o $HOSTV $SHIM $PROGOBJS $FIXOBJS -Wl,--start-group $LIBS $OPT -Wl,--end-group \
+    "$TOP/tests/test_gla.c" gla_core.o gla_virgl.o $PIPEOBJS gla_shader_cache.o $HOSTV $SHIM $PROGOBJS $FIXOBJS -Wl,--start-group $LIBS $OPT -Wl,--end-group \
     $SYSLIBS ${CROSS:+-latomic}
 # What programs built on this (GFOpenDemos) need to link against it, as shell
 # assignments: LFLAGS for a program on libGL.a; MESA_LFLAGS, FLAGS and
@@ -200,7 +220,7 @@ $CC $MESA_LFLAGS -std=c99 -O2 -Wall -Wextra -Werror -I"$SRC/include" -I"$REPO" $
 # Mesa itself.
 q() { printf "%s='%s'\n" "$1" "$(printf %s "$2" | sed "s/'/'\\\\''/g")"; }
 { q CC "$CC"; q FLAGS "$FLAGS"; q LFLAGS "$LFLAGS"; q SRC "$SRC"; q LIBS "$LIBS"; q OPT "$OPT"
-  q SHIM "$SHIM"; q SYSLIBS "$SYSLIBS"; q WEAK "$WEAK"; q GLAOBJS "gla_core.o gla_virgl.o gla_shader_cache.o"; q FIXOBJS "$FIXOBJS"
+  q SHIM "$SHIM"; q SYSLIBS "$SYSLIBS"; q WEAK "$WEAK"; q GLAOBJS "gla_core.o gla_virgl.o $PIPEOBJS gla_shader_cache.o"; q FIXOBJS "$FIXOBJS"
   q PROGOBJS "$PROGOBJS"; q MESA_LFLAGS "$MESA_LFLAGS"; } > gla-link.env
 case $NAME in *amigaos*)
     # The unstripped test is ~20 MB of symbols; the copy for the Amiga is stripped.

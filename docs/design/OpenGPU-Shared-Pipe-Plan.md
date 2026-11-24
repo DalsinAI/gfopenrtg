@@ -636,6 +636,46 @@ This is the riskiest stage, so it runs on its own and is tested before anything 
   Not yet deleted: `w3d_vg_shader.c`, the old half of `w3d_vg.c` and MiniGL's PipeOld copies go one release after this
   (the release that ships both PipeOld switches), so a machine can still fall back.
 
+### The GL stage, part 1: GL.module's virgl route onto the pipe (M)
+
+Added 23 November 2026, after M6; it does not depend on M7. GL.module is Mesa: its own virgl driver writes the stream,
+so the pipe gives it no state objects, no shaders and no arenas. What moves is everything around the stream, which
+`gla/gla_virgl.c` had as a third copy: the open (the hello, the context, the capability set), the request blocks, the
+resources and their unrefs, PUTs and GETs, and the counters.
+
+- `gla/gla_carry_pipe.c` (the carrier, no Mesa in it, tested on the PC against a pretend host) and
+  `gla/gla_virgl_pipe.c` (Mesa's winsys calls, onto the carrier). GL.module links the pipe's files.
+- The pipe's table is version 6, four members at the end and one context flag:
+  - `OGPU_PIPE_CTX_NO_ARENAS`: a context whose front end sends finished streams and has no vertices of its own;
+  - `res_create2`: a resource with depth, layers, samples and the host's flags (3D, arrays, cube maps, multisample);
+  - `xfer`: a PUT or a GET of any box of any level, in place. A PUT is never a new version of the resource: Mesa
+    knows the handle and has already written it into streams;
+  - `stream_cut`: the stream so far becomes a SUBMIT among the block's pre-commands. Mesa's order is first in, first
+    out (a PUT made after a draw must run after it), and the pipe's block is pre-commands, then the stream; a cut
+    keeps Mesa's order inside one block, so GL's blocks are the ones the old route sent;
+  - `queued`: is anything waiting to be sent.
+- Batching (`ENV:GFOpenGPU/GLBatch`) is the carrier's, with the old route's limits, so a frame costs the same
+  blocks. Pipelining (two blocks in flight, off by default) is not carried over: the pipe's transport waits for each
+  block. It stays on the old route until it goes.
+- **Gate:** M0's captures identical (MiniGL and Warp3D must not see version 6); `test_gla` draws the same pictures
+  on the pipe as on the old route, byte for byte, with the same blocks a frame; ogles3's four demos look the same
+  on a lab copy of Instance-32; the 68k builds.
+- **Switch:** `ENV:GFOpenGPU/GLPipeOld=1` for one release; then `gla_virgl.c`'s own blocks and queue go.
+
+- **Done, 24 November 2026:** GL.module's virgl route is on the pipe (`gla_virgl_pipe.c`, `gla_carry_pipe.c`; the
+  pipe's table is version 6), `ENV:GFOpenGPU/GLPipeOld=1` keeps the old route for one release.
+  Gate, in the kitchen on llvmpipe as M0 was captured: `tests/pipe_m0.sh` as captured, all 32 pictures and all 50
+  counter lines (MiniGL and Warp3D ask for version 6 and use none of its new members). `test_gla`: the three scenes
+  on the pipe are the old route's pictures byte for byte, and softpipe's; 300-draw frames cost the same request
+  blocks a frame on the pipe as on the old route, a command apart and batched (immediate 4.7 and 2.0,
+  glBufferSubData 903.0 and 5.0, glTexSubImage2D 1202.3 and 6.0), with no command refused. test_res 110/0,
+  test_gla_carry 49/0 (new: the carrier against a pretend host), test_screen 33/0, test_ff 547,552 keys 0 different.
+  GL.module (11,920,140 bytes), libogpupipe.a, minigl.library and gfopengpu.library build for the 68k.
+  `tests/pipe/test_m0_gate.sh` and `tests/gl/test_gla.sh` are new: the gate and GL's PC test as the kitchen runs
+  them.
+  Not carried over: pipelining (off by default; the old route still has it). Not yet deleted: `gla_virgl.c`'s own
+  blocks and queue, one release after this.
+
 ### M7: stream3d emission into the pipe (L)
 
 - `pipe_emit_s3d.c` is taken from `w3d_batch.c`'s builder.

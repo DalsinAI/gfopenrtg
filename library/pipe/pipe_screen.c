@@ -109,9 +109,8 @@ static void screen_close(OGPUPipeScreen *s)
 /* M3: the screen's first context (the one its open made), with its block and arenas; one per screen until M4 */
 static OGPUPipeCtx *ctx_create(OGPUPipeScreen *s, ULONG flags)
 {
-    (void)flags;
     if (!s || s->ctx) return 0;
-    return s->ctx = pipe_ctx_create(s, s->ctx_id);
+    return s->ctx = pipe_ctx_create(s, s->ctx_id, flags);
 }
 
 static void ctx_destroy(OGPUPipeCtx *x)
@@ -179,6 +178,11 @@ static const struct OGPUPipeOps ops = {
     .sampler_create2 = pipe_m_sampler_create2,
     .room = pipe_m_room,
     .buf_put = pipe_m_buf_put,
+    /* the GL stage: a front end that brings its whole stream */
+    .res_create2 = pipe_m_res_create2,
+    .xfer = pipe_m_xfer,
+    .stream_cut = pipe_m_stream_cut,
+    .queued = pipe_m_queued,
     /* the rest arrive with their stages (pipe.h) */
 };
 

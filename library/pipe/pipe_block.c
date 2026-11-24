@@ -12,7 +12,11 @@
  *   4. versions let go of (ACV_RES_UNREF): the post-commands;
  *   5. the present, when the front end's hook gives one (end_frame).
  * When the stream, the pre-commands or the post-commands fill mid-frame, what there is goes as a block of its own
- * and the frame carries on: nothing is dropped. */
+ * and the frame carries on: nothing is dropped.
+ *
+ * Version 6 (the GL stage): a front end whose commands must run first in, first out (GL.module: Mesa's virgl driver
+ * expects a PUT made after a draw to run after it) cuts the stream (stream_cut): the words so far become an
+ * ACV_SUBMIT among the pre-commands, and step 3's SUBMIT is only what came after the last cut. */
 #include "pipe_int.h"
 
 LONG pipe_run(OGPUPipeCtx *x, ULONG *blk, ULONG words)
@@ -64,12 +68,12 @@ LONG pipe_send(OGPUPipeCtx *x, const struct OGPUPresentHook *hook)
     x->sending = 1;
     sent_va = pipe_arena_puts(x, &at);
     sent_ia = x->nia * 2;
-    if (x->ncmd) {
-        a[0] = x->ctx_id; a[1] = ADDR(x->cmd); a[2] = x->ncmd;
+    if (x->ncmd > x->cut) {                     /* what came after the last cut (all of it when there was none) */
+        a[0] = x->ctx_id; a[1] = ADDR(x->cmd + x->cut); a[2] = x->ncmd - x->cut;
         submit_at = at;
         vgc_blk_cmd(blk + at, ACV_SUBMIT, 3, a);
         at += VG_BLK_WORDS(3);
-        x->words += x->ncmd;
+        x->words += x->ncmd - x->cut;
     }
     for (i = 0; i < x->npost; i++) blk[at + i] = x->post[i];
     at += x->npost;
@@ -90,7 +94,7 @@ LONG pipe_send(OGPUPipeCtx *x, const struct OGPUPresentHook *hook)
         }
     }
     pipe_res_free_dead(x);                      /* the block that unrefs them has run */
-    x->npre = 0; x->ncmd = 0; x->nva = 0; x->nia = 0; x->npost = 0;
+    x->npre = 0; x->ncmd = 0; x->cut = 0; x->nva = 0; x->nia = 0; x->npost = 0;
     x->seq++;
     x->changed |= OGPU_PIPE_CH_IBUF | OGPU_PIPE_CH_SENT;   /* the index arena starts again at 0 */
     x->sending = 0;
@@ -113,9 +117,11 @@ static void free_ctx(OGPUPipeCtx *x)
     ogpu_pipe_xport_free(x);
 }
 
-/* M3: the screen's own context (its first, made in the open's block), with its block and arenas. flags: 0. */
-OGPUPipeCtx *pipe_ctx_create(OGPUPipeScreen *s, ULONG ctx_id)
+/* M3: the screen's own context (its first, made in the open's block), with its block and arenas. flags: 0, or
+ * (version 6) OGPU_PIPE_CTX_NO_ARENAS: the block and the stream only. */
+OGPUPipeCtx *pipe_ctx_create(OGPUPipeScreen *s, ULONG ctx_id, ULONG flags)
 {
+    int arenas = !(flags & OGPU_PIPE_CTX_NO_ARENAS);
     OGPUPipeCtx *x;
     if (!s || !(x = ogpu_pipe_xport_alloc(sizeof *x))) return 0;
     x->screen = s;
@@ -123,7 +129,7 @@ OGPUPipeCtx *pipe_ctx_create(OGPUPipeScreen *s, ULONG ctx_id)
     x->cpre = PIPE_PRE_WORDS; x->cpost = PIPE_POST_WORDS;
     x->blk = ogpu_pipe_xport_alloc((PIPE_PRE_WORDS + PIPE_BLK_SLACK) * 4);
     x->post = ogpu_pipe_xport_alloc(PIPE_POST_WORDS * 4);
-    if (!x->blk || !x->post || !pipe_arenas(x, PIPE_VA_BYTES, PIPE_IA_COUNT, PIPE_CMD_WORDS)) { free_ctx(x); return 0; }
+    if (!x->blk || !x->post || !pipe_arenas(x, arenas ? PIPE_VA_BYTES : 0, arenas ? PIPE_IA_COUNT : 0, PIPE_CMD_WORDS)) { free_ctx(x); return 0; }
     return x;
 }
 
@@ -131,7 +137,7 @@ void pipe_ctx_destroy(OGPUPipeCtx *x)
 {
     ULONG a[1];
     if (!x) return;
-    x->ncmd = 0; x->nva = 0; x->nia = 0;       /* nothing more is drawn */
+    x->ncmd = x->cut; x->nva = 0; x->nia = 0;  /* nothing more is drawn (what was cut is among the pre-commands) */
     pipe_res_release(x, x->vbuf);
     pipe_res_release(x, x->ibuf);
     x->vbuf = x->ibuf = 0;
@@ -189,3 +195,27 @@ void pipe_m_counts(OGPUPipeCtx *x, ULONG *v5)
     x->blocks = x->words = x->puts = x->va_bytes = 0;
 }
 
+
+/* ---- version 6 (the GL stage) ---------------------------------------------------------------------------------- */
+
+/* The stream so far among the pre-commands, as an ACV_SUBMIT: every pre-command made after this runs after it. With
+ * vertices in the arenas (their PUTs go between the pre-commands and the stream), or with no room for the SUBMIT,
+ * what there is goes as a block instead, which keeps the order too. */
+LONG pipe_m_stream_cut(OGPUPipeCtx *x)
+{
+    ULONG a[3];
+    if (!x) return -1;
+    if (x->ncmd == x->cut) return 0;
+    if (x->nva || x->nia || x->npre + VG_BLK_WORDS(3) > x->cpre) { pipe_send(x, 0); return -1; }
+    a[0] = x->ctx_id; a[1] = ADDR(x->cmd + x->cut); a[2] = x->ncmd - x->cut;
+    vgc_blk_cmd(x->blk + x->npre, ACV_SUBMIT, 3, a);
+    x->npre += VG_BLK_WORDS(3);
+    x->words += x->ncmd - x->cut;
+    x->cut = x->ncmd;
+    return 0;
+}
+
+ULONG pipe_m_queued(OGPUPipeCtx *x)
+{
+    return x ? x->npre | x->ncmd | x->nva | x->nia | x->npost : 0;
+}

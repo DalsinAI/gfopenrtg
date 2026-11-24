@@ -224,6 +224,10 @@ int gla_os3_virgl_transport(struct gla_virgl_transport *t)
             if (v[0] == '0' || word_is(v, "off")) gla_virgl_batch_wanted = 0;
             else if (v[0] == '1' || word_is(v, "on")) gla_virgl_batch_wanted = 1;
         }
+        /* ENV:GFOpenGPU/GLPipeOld: 1 (or on) the winsys's own request blocks, as before the shared pipe's GL
+         * stage (24 Nov 2026), for one release; unset or 0, on the shared pipe */
+        gla_virgl_pipe_old = 0;
+        if (gla_os3_getenv("GFOpenGPU/GLPipeOld", v, sizeof v) > 0 && (v[0] == '1' || word_is(v, "on"))) gla_virgl_pipe_old = 1;
         /* ENV:GFOpenGPU/GLPipeline: the same for blocks sent without waiting */
         gla_virgl_pipeline_wanted = -1;
         if (gla_os3_getenv("GFOpenGPU/GLPipeline", v, sizeof v) > 0) {

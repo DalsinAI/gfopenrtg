@@ -51,6 +51,8 @@ struct ogpu_pipe_res {
     OGPUPipeCtx *used_ctx;                  /* the context whose stream last used it ... */
     ULONG used_seq;                         /* ... and that stream's number */
     ULONG put_seq;                          /* the stream whose block has a PUT of it waiting (+1; 0 none) */
+    ULONG depth, array_size, nr_samples, vflags;   /* res_create2's (version 6); 0, 0, 0, 0: res_create's 1, 1, 0, 0 */
+    ULONG last_level;                       /* res_create2's, when depth isn't 0 */
 };
 
 /* A state object: its handle on the host (0: an empty slot). */
@@ -76,6 +78,7 @@ struct ogpu_pipe_ctx {
     ULONG *blk; ULONG npre, cpre;
     ULONG *post; ULONG npost, cpost;
     ULONG *cmd; ULONG ncmd, ccmd;           /* the stream, little-endian words */
+    ULONG cut;                              /* its words already among the pre-commands as SUBMITs (stream_cut) */
     ULONG seq;                              /* streams sent: the one being built is number seq */
     ULONG errors;                           /* commands the host refused in the last block */
     struct pipe_ver *dead;                  /* unrefs in this block's post: freed after it runs */
@@ -119,7 +122,7 @@ void  pipe_res_free_dead(OGPUPipeCtx *x);           /* after the block ran */
 void  pipe_res_drop_all(OGPUPipeCtx *x);            /* a context going: the dead list freed, sent or not */
 
 /* the context (pipe_block.c): the screen's first context, its block and arenas */
-OGPUPipeCtx *pipe_ctx_create(OGPUPipeScreen *s, ULONG ctx_id);
+OGPUPipeCtx *pipe_ctx_create(OGPUPipeScreen *s, ULONG ctx_id, ULONG flags);
 void  pipe_ctx_destroy(OGPUPipeCtx *x);
 
 /* the table's members (pipe_screen.c's table names them) */
@@ -147,6 +150,10 @@ LONG  pipe_m_need(OGPUPipeCtx *x, ULONG va_bytes, ULONG ia_count, ULONG cmd_word
 void  pipe_m_arena_state(OGPUPipeCtx *x, struct OGPUPipeArenas *a);
 LONG  pipe_m_room(OGPUPipeCtx *x, ULONG va_bytes, ULONG ia_count, ULONG cmd_words, ULONG pre_words);
 void  pipe_m_buf_put(OGPUPipeCtx *x, OGPUPipeRes *r, ULONG offset, const void *src, ULONG bytes, ULONG swap);
+OGPUPipeRes *pipe_m_res_create2(OGPUPipeCtx *x, const struct OGPUPipeResDesc2 *d);
+LONG  pipe_m_xfer(OGPUPipeCtx *x, OGPUPipeRes *r, const struct OGPUPipeXfer *t);
+LONG  pipe_m_stream_cut(OGPUPipeCtx *x);
+ULONG pipe_m_queued(OGPUPipeCtx *x);
 
 /* pipe_state.c */
 ULONG pipe_m_obj_new(OGPUPipeCtx *x);

@@ -25,3 +25,5 @@ rm -f "$OUT/libogpupipe.a"
 echo "$OUT/libogpupipe.a"
 OUT="$OUT/tests" sh "$ROOT/tests/pipe/test_screen.sh"
 OUT="$OUT/tests" sh "$ROOT/tests/pipe/test_res.sh"
+# the GL module's carrier on the pipe (the GL stage), without Mesa
+OUT="$OUT/tests" sh "$ROOT/tests/pipe/test_gla_carry.sh"

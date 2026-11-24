@@ -15,8 +15,9 @@
  * is still to run (deferred destroy, fence-safe: blocks run in order and each send waits for its block). */
 #include "pipe_int.h"
 
-static struct pipe_ver *new_ver(OGPUPipeCtx *x, const struct OGPUPipeResDesc *d)
+static struct pipe_ver *new_ver(OGPUPipeCtx *x, const OGPUPipeRes *r)
 {
+    const struct OGPUPipeResDesc *d = &r->desc;
     struct pipe_ver *v = ogpu_pipe_xport_alloc(sizeof *v);
     ULONG a[12], *p;
     if (!v) return 0;
@@ -24,6 +25,9 @@ static struct pipe_ver *new_ver(OGPUPipeCtx *x, const struct OGPUPipeResDesc *d)
     v->handle = ADDR(v);
     a[0] = v->handle; a[1] = d->target; a[2] = d->format; a[3] = d->bind;
     a[4] = d->width; a[5] = d->height; a[6] = 1; a[7] = 1; a[8] = d->levels ? d->levels - 1 : 0; a[9] = 0; a[10] = 0;
+    if (r->depth) {                             /* res_create2's shape */
+        a[6] = r->depth; a[7] = r->array_size; a[8] = r->last_level; a[9] = r->nr_samples; a[10] = r->vflags;
+    }
     a[11] = x->ctx_id;
     vgc_blk_cmd(p, ACV_RES_CREATE, 12, a);
     return v;
@@ -47,7 +51,7 @@ OGPUPipeRes *pipe_res_create(OGPUPipeCtx *x, const struct OGPUPipeResDesc *d)
     if (!x || !d) return 0;
     if (!(r = ogpu_pipe_xport_alloc(sizeof *r))) return 0;
     r->desc = *d;
-    if (!(r->ver = new_ver(x, d))) { ogpu_pipe_xport_free(r); return 0; }
+    if (!(r->ver = new_ver(x, r))) { ogpu_pipe_xport_free(r); return 0; }
     r->refs = 1;
     r->versions = 1;
     return r;
@@ -89,7 +93,7 @@ LONG pipe_m_res_write(OGPUPipeCtx *x, OGPUPipeRes *r)
 {
     struct pipe_ver *v;
     if (!x || !r || !pending_use(r)) return 0;
-    if (!(v = new_ver(x, &r->desc))) return 0;      /* no memory: in place (as MiniGL did before renaming) */
+    if (!(v = new_ver(x, r))) return 0;      /* no memory: in place (as MiniGL did before renaming) */
     unref_ver(r->used_ctx, r->ver);                 /* after the stream that reads it */
     r->ver = v;
     r->versions++;
@@ -153,3 +157,47 @@ ULONG pipe_m_res_pending(OGPUPipeCtx *x, const OGPUPipeRes *r)
 /* res_dirty: texels changed in Amiga memory: M3 has no copy of the front end's texels to send from, so a front end
  * PUTs what changed with res_update; this member stays 0 until a stage keeps the texels' address (M6, Warp3D). */
 
+
+/* ---- version 6 (the GL stage): any shape, any box ------------------------------------------------------------- */
+
+OGPUPipeRes *pipe_m_res_create2(OGPUPipeCtx *x, const struct OGPUPipeResDesc2 *d)
+{
+    OGPUPipeRes *r;
+    if (!x || !d || d->size < sizeof *d) return 0;
+    if (!(r = ogpu_pipe_xport_alloc(sizeof *r))) return 0;
+    r->desc.target = d->target; r->desc.format = d->format; r->desc.bind = d->bind;
+    r->desc.width = d->width; r->desc.height = d->height; r->desc.levels = d->last_level + 1; r->desc.flags = 0;
+    r->depth = d->depth ? d->depth : 1; r->array_size = d->array_size; r->last_level = d->last_level;
+    r->nr_samples = d->nr_samples; r->vflags = d->flags;
+    if (!(r->ver = new_ver(x, r))) { ogpu_pipe_xport_free(r); return 0; }
+    r->refs = 1;
+    r->versions = 1;
+    return r;
+}
+
+/* A box to the host (among the pre-commands: after the stream when the front end cut it) or back from it (after
+ * everything, its block sent now). In place: no new version, the front end's stream names the handle. */
+LONG pipe_m_xfer(OGPUPipeCtx *x, OGPUPipeRes *r, const struct OGPUPipeXfer *t)
+{
+    ULONG a[14], *p, at;
+    if (!x || !r || !r->ver || !t || t->size < sizeof *t || !t->mem) return -1;
+    a[0] = r->ver->handle; a[1] = x->ctx_id; a[2] = t->level; a[3] = t->stride; a[4] = t->layer_stride;
+    a[5] = (ULONG)t->box.x; a[6] = (ULONG)t->box.y; a[7] = (ULONG)t->box.z;
+    a[8] = t->box.w; a[9] = t->box.h; a[10] = t->box.d;
+    a[11] = ADDR(t->mem); a[12] = t->bytes; a[13] = t->swap;
+    if (!(t->flags & OGPU_XFER_GET)) {
+        if (!(p = pipe_pre(x, VG_BLK_WORDS(14)))) return -1;
+        vgc_blk_cmd(p, ACV_PUT, 14, a);
+        r->put_seq = x->seq + 1;
+        x->puts++;
+        return 0;
+    }
+    if (x->nva || x->nia) pipe_send(x, 0);      /* vertices waiting: their block first (and its rings moved on) */
+    (void)pipe_m_stream_cut(x);                 /* what was drawn so far, first */
+    if (x->npre + VG_BLK_WORDS(14) > x->cpre) pipe_send(x, 0);
+    at = x->npre;
+    vgc_blk_cmd(x->blk + at, ACV_GET, 14, a);
+    x->npre += VG_BLK_WORDS(14);
+    if (pipe_send(x, 0)) return -1;
+    return vgc_result(x->blk, at);              /* the block's words stay until the next one is built */
+}

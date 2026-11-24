@@ -42,7 +42,8 @@ void pipe_m_state_reset(OGPUPipeCtx *x)
     x->b_vs = x->b_fs = 0;
     x->vp_known = x->sc_known = 0;
     x->nconst[0] = x->nconst[1] = 0;
-    for (i = 0; i < PIPE_UNITS; i++) { x->u_res[i] = 0; x->u_samp[i] = 0; }   /* version 7's units and frame state */
+    for (i = 0; i < PIPE_UNITS; i++) { x->u_res[i] = 0; x->u_samp[i] = 0; }
+    x->u_held = 0;   /* version 7's units and frame state */
     pipe_m_begin_frame(x);
 }
 

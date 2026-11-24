@@ -260,13 +260,17 @@ int main(void)
     e(ops->res_handle(stage)); e(0); e(VG_FMT_B5G6R5_UNORM); e(0); e(0); e(0); e(320); e(240); e(1);
     same(x, "the BLIT, as Warp3D wrote it");
 
-    /* ---- a texture let go of: its view destroyed, its unit empty, sent at the next draw ---- */
+    /* ---- a texture let go of: its view destroyed; its unit left as the host has it until bound again ---- */
     ops->res_release(x, t);
     ops->arenas(x, &a);
     ops->draw(x, &di);
-    e0(); e_destroy(VG_OBJ_SAMPLER_VIEW, 5); hv[0] = hv[1] = 0; e_views(2, hv); hs[0] = hs[1] = 0; e_samps(2, hs);
-    e_draw(VG_PRIM_TRIANGLES, 0, 3, 0, 0);
-    same(x, "after its last release: the view destroyed, both units empty");
+    e0(); e_destroy(VG_OBJ_SAMPLER_VIEW, 5); e_draw(VG_PRIM_TRIANGLES, 0, 3, 0, 0);
+    same(x, "after its last release, unbound: the view destroyed, the units as they were (w3d_vg.c's untextured draw)");
+    ops->bind_texture(x, 0, 0, 0);
+    ops->bind_texture(x, 1, 0, 0);
+    ops->draw(x, &di);
+    e0(); hv[0] = hv[1] = 0; e_views(2, hv); hs[0] = hs[1] = 0; e_samps(2, hs); e_draw(VG_PRIM_TRIANGLES, 0, 3, 0, 0);
+    same(x, "both units bound empty (MiniGL's next draw): both sent, the old view being gone");
 
     /* ---- begin_frame: everything the frame members sent goes again ---- */
     ops->begin_frame(x);

@@ -67,16 +67,20 @@ static ULONG view(OGPUPipeCtx *x, OGPUPipeRes *r)
     return r->view;
 }
 
-/* r's last release (pipe_res.c), in x: its objects go in x's stream, and no unit of x holds it any more. Objects
- * another context made (one namespace a context) are that context's to end with it: never reached through r, which
- * may outlive it. */
+/* r's last release (pipe_res.c), in x: its objects go in x's stream, and no unit of x holds it any more. A unit that
+ * held it is left as the host has it until it is bound again (Warp3D's way: an untextured draw sends nothing); a unit
+ * bound again (MiniGL binds every unit each draw) is sent, its old view being gone. Objects another context made
+ * (one namespace a context) are that context's to end with it: never reached through r, which may outlive it. */
 void pipe_frame_res_gone(OGPUPipeCtx *x, OGPUPipeRes *r)
 {
     ULONG u;
     if (!x || !r || r->obj_ctx != x) return;
     destroy(x, VG_OBJ_SURFACE, r->surf);
     destroy(x, VG_OBJ_SAMPLER_VIEW, r->view);
-    for (u = 0; u < PIPE_UNITS; u++) if (x->u_res[u] == r) x->u_res[u] = 0;
+    for (u = 0; u < PIPE_UNITS; u++) {
+        if (x->u_res[u] == r) { x->u_res[u] = 0; x->u_held |= 1UL << u; }
+        if (r->view && x->s_view[u] == r->view) x->s_view[u] = PIPE_GONE;
+    }
     r->surf = r->view = 0;
     r->obj_ctx = 0;
 }
@@ -105,6 +109,7 @@ void pipe_m_bind_texture(OGPUPipeCtx *x, ULONG unit, OGPUPipeRes *r, OGPUPipeCSO
     if (!x || unit >= PIPE_UNITS) return;
     x->u_res[unit] = r;
     x->u_samp[unit] = r ? pipe_m_cso_handle(sampler) : 0;
+    x->u_held &= ~(1UL << unit);
     if (unit >= x->nunits) x->nunits = unit + 1;
 }
 
@@ -159,12 +164,14 @@ static void units(OGPUPipeCtx *x)
     int vch = x->s_views != (int)n, sch = x->s_samps != (int)n;   /* a unit more is a command again */
     if (!n) return;
     for (u = 0; u < n; u++) {
-        v[u] = x->u_res[u] ? view(x, x->u_res[u]) : 0;
-        s[u] = x->u_res[u] ? x->u_samp[u] : 0;
+        if (x->u_res[u]) { v[u] = view(x, x->u_res[u]); s[u] = x->u_samp[u]; }
+        else if (x->u_held & (1UL << u)) { v[u] = x->s_view[u]; s[u] = x->s_samp[u]; }    /* as the host has it */
+        else v[u] = s[u] = 0;
         if (v[u] != x->s_view[u]) vch = 1;
         if (s[u] != x->s_samp[u]) sch = 1;
     }
     if (vch && (p = pipe_cmd(x, VGC_SAMPLERS_WORDS(n))) != 0) {
+        for (u = 0; u < n; u++) if (v[u] == PIPE_GONE) v[u] = 0;
         vgc_sampler_views(p, (int)n, v);
         for (u = 0; u < n; u++) x->s_view[u] = v[u];
         x->s_views = (int)n;

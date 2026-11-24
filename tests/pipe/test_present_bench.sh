@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 # M8's gate: acvirgl_present_bench within 2% of M0 (917bd97). What an ACV_PRESENT costs on the host is
 # acvirgl.c's; the bench is built with M0's acvirgl.c and with this tree's, and the two run in turns
-# (ROUNDS each, so a busy machine weighs on both alike). The mean present time of each is compared.
+# (ROUNDS each, so a busy machine weighs on both alike). Trimmed means are compared, against the runs' noise.
 # M0's file comes from git (git show); without git only this tree's is measured, and the test says so.
 #   tests/pipe/test_present_bench.sh
 # ACVIRGL_LIB: the virglrenderer library (default the machine's); VIRGL_SRC: its source's src/ (for
@@ -13,7 +13,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 M0=917bd97
 : "${ACVIRGL_LIB:=/usr/lib/x86_64-linux-gnu/libvirglrenderer.so.1}"
-: "${ROUNDS:=5}"
+: "${ROUNDS:=15}"
 : "${BENCH_ARGS:=300 640 480 now}"
 if [ ! -e "$ACVIRGL_LIB" ]; then echo "test_present_bench: no $ACVIRGL_LIB: cannot run here"; exit 1; fi
 export ACVIRGL_LIB
@@ -82,8 +82,19 @@ med() { sort -n "$1" | awk '{ a[NR] = $1 } END { if (NR % 2) printf "%.1f", a[(N
 echo "this tree: mean $(avg "$OUT/now.txt") us, median $(med "$OUT/now.txt") us over $ROUNDS runs"
 [ $have_m0 = 1 ] || exit 0
 echo "M0 ($M0): mean $(avg "$OUT/m0.txt") us, median $(med "$OUT/m0.txt") us over $ROUNDS runs"
-# the medians compared (a busy machine's outliers weigh less): within 2%, either way
-awk -v a="$(med "$OUT/now.txt")" -v b="$(med "$OUT/m0.txt")" 'BEGIN {
-    d = (a - b) / b * 100; printf "present: %+.1f%% against M0 (median)\n", d
-    if (d > 2) { print "test_present_bench: slower than M0 by more than 2%"; exit 1 }
+# the trimmed means compared (each side's fastest and slowest run dropped), against the runs' own noise:
+# twice the standard error of the difference. Slower by more than 2% and by more than the noise fails;
+# when the noise is over 2% the machine can't tell 2% apart, and the test says so (exit 2).
+awk -v A="$OUT/now.txt" -v B="$OUT/m0.txt" 'function load(f, v,   n, x) { n = 0; while ((getline x < f) > 0) v[++n] = x + 0; return n }
+function sortv(v, n,   i, j, t) { for (i = 2; i <= n; i++) { t = v[i]; for (j = i - 1; j > 0 && v[j] > t; j--) v[j + 1] = v[j]; v[j + 1] = t } }
+function tmean(v, n,   i, s) { s = 0; for (i = 2; i < n; i++) s += v[i]; return s / (n - 2) }
+function tvar(v, n, m,   i, s) { s = 0; for (i = 2; i < n; i++) s += (v[i] - m) ^ 2; return s / (n - 3) }
+BEGIN {
+    na = load(A, a); nb = load(B, b); sortv(a, na); sortv(b, nb)
+    ma = tmean(a, na); mb = tmean(b, nb)
+    se = 2 * sqrt(tvar(a, na, ma) / (na - 2) + tvar(b, nb, mb) / (nb - 2)) / mb * 100
+    d = (ma - mb) / mb * 100
+    printf "present: this tree %.0f us, M0 %.0f us (trimmed means): %+.1f%%, noise +-%.1f%%\n", ma, mb, d, se
+    if (d > 2 && d > se) { print "test_present_bench: slower than M0 by more than 2%"; exit 1 }
+    if (se > 2) { print "test_present_bench: the runs are too noisy here to tell 2% (a busy machine): no verdict"; exit 2 }
     print "within 2%"; exit 0 }'

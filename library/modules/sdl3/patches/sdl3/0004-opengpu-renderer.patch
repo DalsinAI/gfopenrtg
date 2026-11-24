@@ -2002,7 +2002,7 @@ list before the software one, and has it take lines as lines.
  
      /* NOTE: The rect is already adjusted according to the viewport by
       * SDL_RenderReadPixels.
-@@ -1025,229 +2154,239 @@
+@@ -1025,229 +2154,248 @@
      return SDL_DuplicatePixels(rect->w, rect->h, surface->format, SDL_COLORSPACE_SRGB, pixels, surface->pitch);
  }
  
@@ -2029,6 +2029,15 @@ list before the software one, and has it take lines as lines.
 +        all.y = 0;
 +        all.w = data->window->w;
 +        all.h = data->window->h;
++        /* gfopenrtg.library 0.30 (GF-66 M8): the frame's drawing is waited
++           for, then ORTG_Present shows the surface; ENV:SDL3/PresentOld 1
++           keeps the copy at the end of the batch below */
++        if (SDL_OS3_GPU_PresentsNew()) {
++            OGPUR_Sync(data);
++            if (SDL_OS3_GPU_PresentNew(window, data->window, &all, 1, data->vsync)) {
++                return true;
++            }
++        }
 +        SDL_zero(p);
 +        if (data->vsync) {
 +            /* the drawing goes now; only the copy waits for the blank,

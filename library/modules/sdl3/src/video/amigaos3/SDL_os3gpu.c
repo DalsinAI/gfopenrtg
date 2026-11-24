@@ -22,6 +22,11 @@ struct Library *SDL_OS3_OpenGPUBase = NULL;
 static int SDL_OS3_GPU_opens = 0;
 static bool SDL_OS3_GPU_v17 = false;
 
+#ifndef SDL_OS3_GPU_NO_PRESENT
+static void OS3_ORTG_Open(void);
+static void OS3_ORTG_Close(void);
+#endif
+
 bool SDL_OS3_GPU_Open(void)
 {
     if (!SDL_GetHintBoolean("SDL_OPENGPU", true)) {
@@ -34,6 +39,9 @@ bool SDL_OS3_GPU_Open(void)
         }
         /* a library that answers PALETTE takes all of stream v1.7 */
         SDL_OS3_GPU_v17 = OGPU_ANSWER(OGPU_Query(OGPU_OP_PALETTE, OGPU_FMT_INDEX8)) != OGPU_NONE;
+#ifndef SDL_OS3_GPU_NO_PRESENT
+        OS3_ORTG_Open();
+#endif
     }
     SDL_OS3_GPU_opens++;
     return true;
@@ -45,6 +53,9 @@ void SDL_OS3_GPU_Close(void)
         CloseLibrary(SDL_OS3_OpenGPUBase);
         SDL_OS3_OpenGPUBase = NULL;
         SDL_OS3_GPU_v17 = false;
+#ifndef SDL_OS3_GPU_NO_PRESENT
+        OS3_ORTG_Close();
+#endif
     }
 }
 
@@ -96,6 +107,18 @@ int SDL_OS3_GPU_FormatOfSDL(SDL_PixelFormat format)
 #include <graphics/clip.h>
 #include <graphics/layers.h>
 #include <intuition/intuition.h>
+#include <proto/dos.h>
+#include <dos/var.h>
+
+/* gfopenrtg.library's calls through SDL's own base (a program's
+   OpenRTGBase is its own). */
+#include <gfopenrtg/gfopenrtg.h>
+#define OPENRTG_BASE_NAME SDL_OS3_ORTGBase
+#include <inline/gfopenrtg.h>
+#include "ortg_frame.h"
+
+static struct Library *SDL_OS3_ORTGBase = NULL;
+static int SDL_OS3_present_old = 0;  /* ENV:SDL3/PresentOld 1: the window copies as before 0.30 */
 
 #ifndef PIXFMT_RGBA32
 #define PIXFMT_RGBA32 13UL
@@ -365,6 +388,115 @@ void SDL_OS3_GPU_Abandon(SDL_OS3_GPUPresent *p)
     }
 }
 
+/* ---- the window presents through ORTG_Present (gfopenrtg.library 0.30, GF-66 M8) ---- */
+
+static void OS3_ORTG_Open(void)
+{
+    char v[4];
+
+    SDL_OS3_ORTGBase = OpenLibrary((CONST_STRPTR)OPENRTG_NAME, 0);
+    SDL_OS3_present_old = DOSBase && GetVar((CONST_STRPTR)"SDL3/PresentOld", (STRPTR)v, sizeof v, GVF_GLOBAL_ONLY) > 0 &&
+                          v[0] == '1';
+}
+
+static void OS3_ORTG_Close(void)
+{
+    if (SDL_OS3_ORTGBase) {
+        CloseLibrary(SDL_OS3_ORTGBase);
+        SDL_OS3_ORTGBase = NULL;
+    }
+}
+
+bool SDL_OS3_GPU_PresentsNew(void)
+{
+    return SDL_OS3_ORTGBase && orf_wanted(SDL_OS3_ORTGBase->lib_Version, SDL_OS3_ORTGBase->lib_Revision,
+                                          SDL_OS3_present_old);
+}
+
+/* The window's bitmap is a GFOpenRTG one (ORTG_BitMapInfo; not on a
+   Picasso96 board, nor with GFOpenRTG's screens off): ORTG_Present's MEMORY
+   route writes anything else through graphics.library as pens. Asked again
+   only when the bitmap changes: ORTG_BitMapInfo waits for GFOpenGPU. */
+static bool OS3_ORTG_Target(struct BitMap *bm)
+{
+    static struct BitMap *seen = NULL;
+    static bool seen_ok = false;
+    struct OpenRTGBitMapInfo bi;
+
+    if (!bm) {
+        return false;
+    }
+    if (bm != seen) {
+        SDL_zero(bi);
+        seen_ok = ORTG_BitMapInfo(bm, &bi) != 0;
+        seen = bm;
+    }
+    return seen_ok;
+}
+
+static long OS3_ORTG_Call(struct ORTG_PresentInfo *in, void *ctx)
+{
+    (void)ctx;
+    return ORTG_Present(in);
+}
+
+int SDL_OS3_GPU_PresentNew(SDL_Window *window, SDL_Surface *surface, const SDL_Rect *rects, int numrects, bool vsync)
+{
+    SDL_WindowData *d = window ? window->internal : NULL;
+    struct Window *win;
+    struct BitMap *bm;
+    SDL_Rect out[SDL_OS3_GPU_MAXRECTS];
+    unsigned long fmt;
+    long ox, oy;
+    int src, w, h, n;
+
+    if (!SDL_OS3_GPU_PresentsNew() || !d || !d->syswin || !d->syswin->RPort || !SDL_SurfaceValid(surface) ||
+        !surface->pixels || !rects) {
+        return 0;
+    }
+    win = d->syswin;
+    bm = win->RPort->BitMap;
+    if (!OS3_ORTG_Target(bm)) {
+        return 0;
+    }
+    switch (surface->format) {
+#if SDL_BYTEORDER == SDL_BIG_ENDIAN
+    case SDL_PIXELFORMAT_ARGB8888:
+        src = ORF_SRC_ARGB32;
+        break;
+    case SDL_PIXELFORMAT_XRGB8888:
+        src = ORF_SRC_XRGB32;
+        break;
+    case SDL_PIXELFORMAT_RGB565:
+        src = ORF_SRC_RGB565;
+        break;
+#endif
+    default:
+        return 0; /* the other byte orders: the old present */
+    }
+    fmt = orf_format(src, src == ORF_SRC_RGB565 && bm && CyberGfxBase && GetCyberMapAttr(bm, CYBRMATTR_ISCYBERGFX) &&
+                              GetCyberMapAttr(bm, CYBRMATTR_PIXFMT) == PIXFMT_RGB16);
+    if (fmt == ORF_NONE) {
+        return 0;
+    }
+    /* the inside, as SDL_OS3_GPU_PresentAppend has it */
+    if (win->Flags & WFLG_GIMMEZEROZERO) {
+        ox = 0;
+        oy = 0;
+    } else {
+        ox = win->BorderLeft;
+        oy = win->BorderTop;
+    }
+    w = SDL_min(surface->w, (int)win->GZZWidth);
+    h = SDL_min(surface->h, (int)win->GZZHeight);
+    if (w <= 0 || h <= 0) {
+        return 0;
+    }
+    n = OS3_GPU_Rects(rects, numrects, w, h, out);
+    return orf_present(OS3_ORTG_Call, NULL, win->RPort, ox, oy, surface->pixels, (unsigned long)surface->pitch, fmt,
+                       w, h, (const struct orf_rect *)out, n, vsync);
+}
+
 bool SDL_OS3_GPU_Present(SDL_Window *window, SDL_Surface *surface, const SDL_Rect *rects, int numrects)
 {
     OS3_GPUWindow *gw = window ? OS3_GPU_Window(window) : NULL;
@@ -374,6 +506,11 @@ bool SDL_OS3_GPU_Present(SDL_Window *window, SDL_Surface *surface, const SDL_Rec
 
     if (!gw || !gw->usable) {
         return false;
+    }
+    /* gfopenrtg.library 0.30: ORTG_Present; ENV:SDL3/PresentOld 1, or a
+       format it would write on the CPU: the copy below */
+    if (SDL_OS3_GPU_PresentNew(window, surface, rects, numrects, false)) {
+        return true;
     }
     SDL_zero(p);
     ogpu_batch_init(&b, gw->stream, OS3_GPU_WORDS);

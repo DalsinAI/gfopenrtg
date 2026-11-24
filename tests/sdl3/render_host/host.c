@@ -309,3 +309,14 @@ bool SDL_OS3_GPU_Present(SDL_Window *window, SDL_Surface *surface, const SDL_Rec
     (void)window; (void)surface; (void)rects; (void)numrects;
     return false;
 }
+
+bool SDL_OS3_GPU_PresentsNew(void)
+{
+    return false;
+}
+
+int SDL_OS3_GPU_PresentNew(SDL_Window *window, SDL_Surface *surface, const SDL_Rect *rects, int numrects, bool vsync)
+{
+    (void)window; (void)surface; (void)rects; (void)numrects; (void)vsync;
+    return 0;
+}

@@ -85,5 +85,19 @@ extern void SDL_OS3_GPU_Abandon(SDL_OS3_GPUPresent *p);
    for. false: not shown (the caller uses WritePixelArray). */
 extern bool SDL_OS3_GPU_Present(SDL_Window *window, SDL_Surface *surface, const SDL_Rect *rects, int numrects);
 
+/* GF-66 M8 step 2.5: on gfopenrtg.library 0.30 a window's surface goes to
+   ORTG_Present (kind MEMORY), which writes it through the window's layer,
+   the covered parts of a smart refresh window into its backing store.
+   ENV:SDL3/PresentOld 1 keeps the copy above for one release.
+
+   SDL_OS3_GPU_PresentsNew: that route is taken (asked once, by the first
+   SDL_OS3_GPU_Open). SDL_OS3_GPU_PresentNew: the rects of the window's
+   surface, inside its borders; vsync waits for the display's next frame
+   first. 1: shown; 0: not (a format GFOpenRTG would write on the CPU, or it
+   refused): the caller presents the old way. */
+extern bool SDL_OS3_GPU_PresentsNew(void);
+extern int SDL_OS3_GPU_PresentNew(SDL_Window *window, SDL_Surface *surface, const SDL_Rect *rects, int numrects,
+                                  bool vsync);
+
 #endif /* SDL_VIDEO_RENDER_OPENGPU */
 #endif /* SDL_os3gpu_h_ */

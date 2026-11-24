@@ -155,7 +155,7 @@
          return 0;
      }
      /* Each value asked on its own: bebbo gcc's inlines must not nest. */
-@@ -188,48 +271,132 @@ static int OS3_GPU_Present(SDL_Window *window, OS3_WindowData *data, SDL_Surface
+@@ -188,48 +271,138 @@ static int OS3_GPU_Present(SDL_Window *window, OS3_WindowData *data, SDL_Surface
      bw = GetCyberMapAttr(bm, CYBRMATTR_WIDTH);
      bh = GetCyberMapAttr(bm, CYBRMATTR_HEIGHT);
  
@@ -297,6 +297,12 @@
 +    if (!gp || !gp->usable) {
 +        return 0;
 +    }
++    /* gfopenrtg.library 0.30 (GF-66 M8): ORTG_Present, which writes the
++       covered parts too; ENV:SDL2/PresentOld 1, or a format it would write
++       on the CPU: the copy below */
++    if (SDL_OS3_GPU_PresentNew(window, surface, rects, numrects, SDL_FALSE)) {
++        return 1;
++    }
 +    ogpu_batch_init(&b, gp->stream, OS3_GPU_WORDS);
 +    if (SDL_OS3_GPU_PresentAppend(window, surface, &b, 0, 1, rects, numrects, &p) != 1) {
 +        return 0;
@@ -313,7 +319,7 @@
  }
  #endif /* SDL_VIDEO_RENDER_OPENGPU */
  
-@@ -285,11 +452,77 @@ static void OS3_InnerSize(const struct Window *iwin, int *w, int *h)
+@@ -285,11 +458,77 @@ static void OS3_InnerSize(const struct Window *iwin, int *w, int *h)
      }
  }
  
@@ -391,7 +397,7 @@
      int w, h;
  
      if (!window) {
-@@ -303,9 +536,9 @@ int OS3_CreateWindowFramebuffer(_THIS, SDL_Window *window,
+@@ -303,9 +542,9 @@ int OS3_CreateWindowFramebuffer(_THIS, SDL_Window *window,
  
      if (!CyberGfxBase) {
          /* AGA path: 8-bit paletted surface.
@@ -404,7 +410,7 @@
          if (!surface) {
              return -1;
          }
-@@ -316,13 +549,14 @@ int OS3_CreateWindowFramebuffer(_THIS, SDL_Window *window,
+@@ -316,13 +555,14 @@ int OS3_CreateWindowFramebuffer(_THIS, SDL_Window *window,
          return 0;
      }
  
@@ -423,7 +429,7 @@
      SDL_SetWindowData(window, OS3_SURFACE_KEY, surface);
  
      /* Pre-allocate scaling resources if window > surface */
-@@ -355,7 +589,7 @@ int OS3_CreateWindowFramebuffer(_THIS, SDL_Window *window,
+@@ -355,7 +595,7 @@ int OS3_CreateWindowFramebuffer(_THIS, SDL_Window *window,
          }
      }
  
@@ -432,7 +438,7 @@
      *pixels = surface->pixels;
      *pitch  = surface->pitch;
  
-@@ -430,9 +664,21 @@ int OS3_UpdateWindowFramebuffer(_THIS, SDL_Window *window,
+@@ -430,9 +670,21 @@ int OS3_UpdateWindowFramebuffer(_THIS, SDL_Window *window,
      {
          int win_w, win_h;
          int need_scale;
@@ -454,7 +460,7 @@
  #ifdef SDL_OS3_PROFILE
          /* PRE-SPLIT: increment call_count AND dump regardless of which branch
           * is taken. Earlier we put call_count++ inside the no-scale branch
-@@ -475,7 +721,7 @@ int OS3_UpdateWindowFramebuffer(_THIS, SDL_Window *window,
+@@ -475,7 +727,7 @@ int OS3_UpdateWindowFramebuffer(_THIS, SDL_Window *window,
                      0, 0,
                      (UWORD)surface->w,
                      (UWORD)surface->h,
@@ -463,7 +469,7 @@
                  );
  
                  SDL_memset(&bsa, 0, sizeof(bsa));
-@@ -503,7 +749,7 @@ int OS3_UpdateWindowFramebuffer(_THIS, SDL_Window *window,
+@@ -503,7 +755,7 @@ int OS3_UpdateWindowFramebuffer(_THIS, SDL_Window *window,
                      0, 0,
                      (UWORD)surface->w,
                      (UWORD)surface->h,
@@ -472,7 +478,7 @@
                  );
              }
          } else {
-@@ -552,7 +798,28 @@ int OS3_UpdateWindowFramebuffer(_THIS, SDL_Window *window,
+@@ -552,7 +804,28 @@ int OS3_UpdateWindowFramebuffer(_THIS, SDL_Window *window,
                  sdl2_prof.bm_bppix = bm_bppix;
  #endif
  
@@ -502,7 +508,7 @@
                      UBYTE *fb = (UBYTE *)bm_base;
                      int needs_swap = (bm_pixfmt != 11); /* 11 = PIXFMT_ARGB32 */
  #ifdef SDL_OS3_PROFILE
-@@ -642,7 +909,7 @@ int OS3_UpdateWindowFramebuffer(_THIS, SDL_Window *window,
+@@ -642,7 +915,7 @@ int OS3_UpdateWindowFramebuffer(_THIS, SDL_Window *window,
  
                      src = (UBYTE *)surface->pixels
                            + (r->y * surface->pitch)
@@ -511,7 +517,7 @@
  
                      WritePixelArray(
                          (APTR)src,
-@@ -653,7 +920,7 @@ int OS3_UpdateWindowFramebuffer(_THIS, SDL_Window *window,
+@@ -653,7 +926,7 @@ int OS3_UpdateWindowFramebuffer(_THIS, SDL_Window *window,
                          (UWORD)r->y,
                          (UWORD)r->w,
                          (UWORD)r->h,
@@ -520,7 +526,7 @@
                      );
                  }
  #ifdef SDL_OS3_PROFILE
-@@ -684,6 +951,12 @@ void OS3_DestroyWindowFramebuffer(_THIS, SDL_Window *window)
+@@ -684,6 +957,12 @@ void OS3_DestroyWindowFramebuffer(_THIS, SDL_Window *window)
      if (surface) {
          SDL_FreeSurface(surface);
      }
@@ -533,7 +539,7 @@
  
      scale_rp = (struct RastPort *)SDL_SetWindowData(window, OS3_SCALERP_KEY, NULL);
      if (scale_rp) {
-@@ -715,14 +988,18 @@ void OS3_DestroyWindowFramebuffer(_THIS, SDL_Window *window)
+@@ -715,14 +994,18 @@ void OS3_DestroyWindowFramebuffer(_THIS, SDL_Window *window)
   * and shows it from there. Any other window, or one whose bitmap GFOpenRTG
   * can only give in Fast RAM, keeps the framebuffer above, as before. These
   * go round the back end's own functions (SDL_OS3_VRAM_HookFramebuffer). */

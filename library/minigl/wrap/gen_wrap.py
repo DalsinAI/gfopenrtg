@@ -50,8 +50,15 @@ HAND_GL = {
     "glGetString": "MiniGL's own strings (GL_VERSION is 1.1, spec 9.1)",
     "glLockArrays": "glLockArraysEXT in the module",
     "glUnlockArrays": "glUnlockArraysEXT in the module",
+    "glEnable": "MiniGL's own capabilities (MGL_ tokens, GL_POLYGON_OFFSET, the shared palette) stay here",
+    "glDisable": "MiniGL's own capabilities stay here",
+    "glHint": "MiniGL's own hint targets are taken and dropped",
+    "glColorPointer": "MGL_UBYTE_BGRA is the module's GL_BGRA size",
+    "glPixelStorei": "the unpack settings are kept here: textures are unpacked here (paletted and MGL_ types)",
+    "glGetError": "an error from an mgl* call is reported first",
+    "glIsEnabled": "MiniGL's own capabilities are answered here; the answer is a long",
 }
-BOOL_GL = {"glIsEnabled", "glIsTexture", "glIsList"}
+BOOL_GL = {"glIsTexture", "glIsList"}
 # The module's name where it isn't the entry's.
 MODULE_NAME = {
     "glActiveTextureARB": "glActiveTexture",
@@ -60,10 +67,11 @@ MODULE_NAME = {
     "glMultiTexCoord2fvARB": "glMultiTexCoord2fv",
 }
 # GL.module calls the hand-written files make that no forward entry binds.
-EXTRA = ["glLockArraysEXT", "glUnlockArraysEXT", "glMultMatrixf", "glGetBooleanv", "glAreTexturesResident",
-         "glEdgeFlag", "glEdgeFlagPointer", "glColorMask", "glDepthMask", "glTexImage2D", "glTexSubImage2D",
-         "glGetString", "glGenerateMipmap", "glVertex3f", "glColor4fv", "glDisable", "glEnable",
-         "glPushAttrib", "glPopAttrib", "glWindowPos2i", "glDrawPixels", "glGetError"]
+EXTRA = ["glLockArraysEXT", "glUnlockArraysEXT", "glMultMatrixf", "glRotatef", "glGetBooleanv",
+         "glAreTexturesResident", "glEdgeFlag", "glEdgeFlagPointer", "glColorMask", "glDepthMask", "glTexImage2D",
+         "glTexSubImage2D", "glGetString", "glDisable", "glEnable", "glIsEnabled", "glHint", "glColorPointer",
+         "glPixelStorei", "glGetError", "glPolygonOffset", "glPushAttrib", "glPopAttrib", "glWindowPos2i",
+         "glDrawPixels"]
 
 
 def kind_of(e):

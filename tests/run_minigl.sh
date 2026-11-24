@@ -14,7 +14,7 @@ O="$ROOT/library/opengpu"
 mkdir -p "$OUT"
 cc -m32 -std=gnu99 -DMGL_HOST -I"$HERE/host-include" -I"$ROOT/include" -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter \
     -fsanitize=address,undefined -fno-sanitize-recover=undefined -o "$OUT/test_minigl" "$HERE/test_minigl.c" \
-    "$M/mgl_math.c" "$M/mgl_state.c" "$M/mgl_matrix.c" "$M/mgl_vertex.c" "$M/mgl_pipe.c" "$M/mgl_texture.c" \
+    "$M/mgl_math.c" "$M/mgl_state.c" "$M/mgl_matrix.c" "$M/mgl_vertex.c" "$M/mgl_pipe.c" "$M/mgl_texture.c" "$M/mgl_unpack.c" \
     "$M/mgl_out.c" "$M/mgl_list.c" "$M/mgl_glu.c" "$M/mgl_glut.c" "$M/mgl_choose.c" "$M/mgl_table.c" "$M/mgl_static.c" \
     "$M/mgl_vg_enc.c" "$M/mgl_vg_frame.c" "$M/mgl_vg_state.c" "$M/mgl_vg_shader.c" "$M/mgl_vg_draw.c" "$M/mgl_vg_tex.c" "$M/mgl_vg_pipe.c" \
     "$O/ogpu_core.c" "$O/ogpu_dwt.c" "$O/ogpu_3d.c" "$O/ogpu_build.c" "$O/ogpu_build3d.c" \

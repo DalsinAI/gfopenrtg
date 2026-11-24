@@ -214,6 +214,9 @@ struct GLcontext_t {
      * and buffer in the module are wrap/mglw_seam.c's. The renderer's fields below go unused. */
     struct mglw_session *s;
     struct mglw_gl *wgl;
+    ULONG w_caps;                   /* MiniGL's own capabilities (wrap/mglw_gl.c's bits) */
+    ULONG w_texpal[256];            /* the palette glColorTable last gave a texture (ARGB) */
+    int w_texpal_set;
 #endif
     /* where it draws */
     struct mgl_display *disp;
@@ -482,6 +485,8 @@ void mgl_array_element(GLcontext c, GLint i);
 struct mgl_tex *mgl_tex_unit(GLcontext c, int unit);   /* the texture unit draws with, or 0 */
 void mgl_free_textures(GLcontext c);
 UBYTE *mgl_unpack_rgba(GLcontext c, int w, int h, GLenum format, GLenum type, const void *pixels);
+int mgl_pixel_bytes(GLenum format, GLenum type);   /* bytes a pixel, or 0 when they don't go together (mgl_unpack.c) */
+void mgl_read_pixel(const UBYTE *p, GLenum format, GLenum type, UBYTE *rgba, UBYTE *index);
 void mgl_tex_store(GLcontext c, struct mgl_tex *t, int level, int w, int h, GLenum internal, GLenum format,
                    GLenum type, const void *pixels, int x0, int y0, int sub);
 

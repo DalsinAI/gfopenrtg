@@ -71,6 +71,7 @@ struct ogpu_pipe_cso {
 #define PIPE_LAYOUTS   16
 #define PIPE_SHADERS   64                   /* shader variants a context keeps of each stage */
 #define PIPE_UNITS     8                    /* texture units (bind_texture) */
+#define PIPE_GONE      0xFFFFFFFFUL         /* a unit's view as sent was destroyed: not known to match any */
 
 struct pipe_cache {
     ULONG key[PIPE_CACHE][5];
@@ -113,6 +114,7 @@ struct ogpu_pipe_ctx {
     /* the frame's bindings (pipe_frame.c, version 7) */
     ULONG caps_bits;                        /* the screen's (the views' format) */
     OGPUPipeRes *u_res[PIPE_UNITS]; ULONG u_samp[PIPE_UNITS]; ULONG nunits;   /* bound; units 0 .. nunits - 1 go */
+    ULONG u_held;                       /* units whose resource went while bound: left as the host has them, until bound */
     ULONG s_view[PIPE_UNITS], s_samp[PIPE_UNITS]; int s_views, s_samps;      /* as last sent, and how many (0: not known) */
     ULONG s_vb[3]; int s_vb_known;          /* handle, offset, stride */
     ULONG s_ib[2]; int s_ib_known;          /* handle, offset */

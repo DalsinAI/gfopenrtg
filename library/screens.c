@@ -298,6 +298,7 @@ struct scr_g {
     struct ortg_ogfx_provider_all ogfx_all_provider;
     int on;
     int gpu_tried;              /* 0.18: late_opengpu() has looked for gfopengpu.library */
+    int prs_tried;              /* 0.30: ORTG_Present has looked for it (a program's process) */
     /* 0.21 (the compositor's step 4): batches left running (ortg_ogpu_settle) */
     int ogpu_pend;              /* one of ours went without a wait since the last settle */
     ULONG ogpu_pend_fence;      /* ... the last one's fence (for an gfopengpu.library before 0.20) */
@@ -377,6 +378,7 @@ ULONG ortg_screens_size(void) { return sizeof(struct scr_g); }
 #define switched (SC->switched)
 #define ogfx_all_provider (SC->ogfx_all_provider)
 #define gpu_tried (SC->gpu_tried)
+#define prs_tried (SC->prs_tried)
 #define ortg_stats (SC->stats)
 #define old_waittof (SC->old_waittof)
 
@@ -1778,6 +1780,12 @@ LONG ortg_present(struct ORTG_PresentInfo *in)
     ULONG words;
     if (!in || in->size < sizeof (struct ORTG_PresentInfo) || !in->rp) return -1;
     if (in->flags & ORTG_PRESENT_PREPARE) in->token = NULL;
+    if (in->kind == ORTG_SURF_VIRGL) {
+        /* every VIRGL route needs gfopengpu.library: opened now if no screen opening has (a program's own
+         * process asks, as ORTG_MonitorCount's does); without it -1, and the caller presents its own way */
+        if (!ortg_S->opengpu && !prs_tried) { prs_tried = 1; late_opengpu(1); }
+        if (!ortg_S->opengpu || ogpu_off) return -1;
+    }
     if (in->flags & ORTG_PRESENT_VSYNC) WaitTOF();
     c.kind = in->kind; c.prepare = (in->flags & ORTG_PRESENT_PREPARE) != 0;
     c.host_present = in->kind == ORTG_SURF_VIRGL && prs_host_present();

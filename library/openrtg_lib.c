@@ -165,9 +165,9 @@ struct OpenRTGBase {
 int start(void) { return -1; }
 
 static const char lib_name[] = "gfopenrtg.library";
-static const char lib_id[] = "gfopenrtg.library 0.29 (20.11.2026) GFOpenRTG, AmiCradle Team\r\n";
+static const char lib_id[] = "gfopenrtg.library 0.30 (24.11.2026) GFOpenRTG, AmiCradle Team\r\n";
 /* For C:Version, which looks for "$VER:" in the file. */
-static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopenrtg.library 0.29 (20.11.2026) GFOpenRTG, AmiCradle Team";
+static const char lib_ver[] __attribute__((used)) = "\0$VER: gfopenrtg.library 0.30 (24.11.2026) GFOpenRTG, AmiCradle Team";
 
 static struct Library *lib_init(REG(d0, struct OpenRTGBase *base), REG(a0, BPTR seglist), REG(a6, struct ExecBase *sys));
 static struct Library *lib_open(REG(a6, struct OpenRTGBase *base));

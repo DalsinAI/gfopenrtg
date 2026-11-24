@@ -363,6 +363,17 @@ static int ahi_play(void)
 
 /* ---- Files -------------------------------------------------------------------------------- */
 
+/* A string into a buffer of n bytes, cut to fit, always ended. */
+static void copy_str(char *out, const char *s, size_t n)
+{
+    size_t l = strlen(s);
+    if (l > n - 1) {
+        l = n - 1;
+    }
+    memcpy(out, s, l);
+    out[l] = 0;
+}
+
 static int exists(const char *name)
 {
     BPTR l = Lock((CONST_STRPTR)name, SHARED_LOCK);
@@ -378,8 +389,7 @@ static void full_name(const char *name, char *out, size_t n)
 {
     BPTR l = Lock((CONST_STRPTR)name, SHARED_LOCK);
     if (!l || !NameFromLock(l, (STRPTR)out, (LONG)n)) {
-        strncpy(out, name, n - 1);
-        out[n - 1] = 0;
+        copy_str(out, name, n);
     }
     if (l) {
         UnLock(l);
@@ -512,13 +522,13 @@ static int pick_file(const char *asked, struct pick *p, int dt_keep)
     int is_wav = mw_is_wav_name(asked), there = exists(asked), wav_there, dt_ok = 0, dt_68k = 0;
     memset(p, 0, sizeof *p);
     if (is_wav) {
-        strncpy(p->wav, asked, sizeof p->wav - 1);
+        copy_str(p->wav, asked, sizeof p->wav);
         wav_there = there;
         if (!there && mw_sibling(asked, ".ogg", p->dt, sizeof p->dt) && exists(p->dt)) {
             p->dto = dt_reader(p->dt, NULL, 0, &p->ch, &p->rate, &p->frames, &p->by);
         }
     } else {
-        strncpy(p->dt, asked, sizeof p->dt - 1);
+        copy_str(p->dt, asked, sizeof p->dt);
         wav_there = mw_sibling(asked, ".wav", p->wav, sizeof p->wav) && exists(p->wav);
         if (there) {
             p->dto = dt_reader(p->dt, NULL, 0, &p->ch, &p->rate, &p->frames, &p->by);
@@ -585,7 +595,7 @@ static int music_open_source(Mix_Music *m, uint32_t pos)
             return 0;
         }
         if (by) {
-            strncpy(m->by_copy, by, sizeof m->by_copy - 1);
+            copy_str(m->by_copy, by, sizeof m->by_copy);
             m->by = m->by_copy;
         }
         while (pos > 0) {               /* no seek: read up to it */
@@ -1424,7 +1434,7 @@ Mix_Music *Mix_LoadMUS(const char *file)
         m->channels = p.ch;
         m->frames = p.frames;
         if (p.by) {
-            strncpy(m->by_copy, p.by, sizeof m->by_copy - 1);
+            copy_str(m->by_copy, p.by, sizeof m->by_copy);
         }
         m->by = m->by_copy;
         return m;

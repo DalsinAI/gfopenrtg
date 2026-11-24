@@ -541,6 +541,11 @@ def make_kit(args) -> Path:
                 die(f"no SDL/{need} in {sdl12}")
         copy(sdl12 / "libSDL.a", lib / "libSDL.a")
         copy(sdl12 / "libSDL_gl.a", lib / "libSDL_gl.a")
+        # SDL_mixer 1.2's calls on AHI (library/modules/sdl12/mixer, the Team's), when built.
+        if (sdl12 / "libSDL_mixer.a").is_file():
+            if not (inc / "SDL" / "SDL_mixer.h").is_file():
+                die(f"libSDL_mixer.a without SDL/SDL_mixer.h in {sdl12}")
+            copy(sdl12 / "libSDL_mixer.a", lib / "libSDL_mixer.a")
 
     # 3c. GLFW 3.4 (Zlib) with the Team's AmigaOS platform, when given: its
     #     headers, library, pkg-config and CMake files, as built.
@@ -656,6 +661,8 @@ def make_kit(args) -> Path:
     if sdl12:
         copy(sdl12 / "LICENSE.txt", L / "sdl12-compat.txt")
         notices.append((f"sdl12-compat {SDL12_VERSION}: SDL/ headers, libSDL.a (altered by the Team for AmigaOS 3; with dr_mp3: public domain or MIT-0). libSDL.a also holds libSDL2.a's members, renamed SDL2X_; libSDL_gl.a", "Zlib (sdl12-compat.txt)"))
+        if (sdl12 / "libSDL_mixer.a").is_file():
+            notices.append(("SDL/SDL_mixer.h and libSDL_mixer.a: SDL_mixer 1.2's calls on AHI, written by the Team", "MIT, AmiCradle Team (OpenGPU.txt)"))
     if has_glut:
         copy(glu / "LICENSE.txt", L / "SGI-FreeB-2.0.txt")
         notices.append((f"GLU {GLU_VERSION} (SGI's libGLU, Mesa's glu repository): GL/glu.h, libGLU.a (with glu_cxx.o, the Team's, MIT)", "SGI Free Software License B 2.0 (SGI-FreeB-2.0.txt)"))

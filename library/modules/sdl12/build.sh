@@ -7,8 +7,10 @@
 # Needs OUT_DIR's SDL 2 (library/modules/sdl2/build.sh: libSDL2.a and
 # include/SDL2) and sdl12-compat's tarball in TARBALLS, checked against
 # UPSTREAM.json's sha256. Makes OUT_DIR/sdl12/: include/SDL/ (sdl12-compat's
-# SDL 1.2 headers), libSDL.a, libSDL_gl.a (SDL 1.2's OpenGL: sdl-config --gl)
-# and LICENSE.txt, which tools/make_sdk.py puts in the developer kit.
+# SDL 1.2 headers), libSDL.a, libSDL_gl.a (SDL 1.2's OpenGL: sdl-config --gl),
+# LICENSE.txt, and libSDL_mixer.a with include/SDL/SDL_mixer.h (mixer/: SDL_mixer
+# 1.2's calls on AHI, the Team's own), which tools/make_sdk.py puts in the
+# developer kit.
 #
 # libSDL.a holds sdl12-compat (patches/: the AmigaOS 3 branch of its loader,
 # and its RWops through SDL 2's calls),
@@ -105,3 +107,6 @@ mkdir -p "$OUT/sdl12/include/SDL"
 cp "$S"/include/SDL/*.h "$OUT/sdl12/include/SDL/"
 cp "$S/LICENSE.txt" "$OUT/sdl12/LICENSE.txt"
 echo "$LIB ($(wc -c < "$LIB") bytes)"
+
+# SDL_mixer 1.2's calls on AHI (mixer/: the Team's own), beside it in the kit.
+STOVE16=$STOVE16 sh "$HERE/mixer/build.sh" "$OUT"

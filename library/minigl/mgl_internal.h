@@ -169,6 +169,11 @@ struct mgl_list {
 /* ---- the display (mgl_display.c) ------------------------------------------------------- */
 
 struct mgl_display;                 /* private to mgl_display.c */
+#ifdef MGLW
+struct mglw_session;
+struct mglw_gl;
+int mglw_resize(struct GLcontext_t *c, int width, int height);    /* the buffer to a screen's new size */
+#endif
 
 /* ---- the context ------------------------------------------------------------------------ */
 
@@ -204,6 +209,12 @@ struct mgl_display;                 /* private to mgl_display.c */
 #define EN_LIGHT0       24          /* bits 24..31: GL_LIGHT0..7 */
 
 struct GLcontext_t {
+#ifdef MGLW
+    /* The wrapper over GL.module (wrap/): the session comes first, where wrap/mglw_call.s reads it; the context
+     * and buffer in the module are wrap/mglw_seam.c's. The renderer's fields below go unused. */
+    struct mglw_session *s;
+    struct mglw_gl *wgl;
+#endif
     /* where it draws */
     struct mgl_display *disp;
     struct mgl_vg *vg;              /* the virgl route (mgl_vg.h), or 0 */

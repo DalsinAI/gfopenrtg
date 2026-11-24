@@ -482,7 +482,9 @@ void MGLSwitchDisplay(GLcontext c)
 GLboolean MGLResizeContext(GLcontext c, GLsizei width, GLsizei height)
 {
     struct mgl_display *d;
+#ifndef MGLW
     UBYTE *nz;
+#endif
     if (!c) return GL_FALSE;
     if (width <= 0 || height <= 0) { mgl_error(c, GL_INVALID_VALUE); return GL_FALSE; }
     d = c->disp;
@@ -491,6 +493,16 @@ GLboolean MGLResizeContext(GLcontext c, GLsizei width, GLsizei height)
     mgl_flush(c);
     lockbuf_release(c);
     close_parts(d);
+#ifdef MGLW
+    /* the wrapper: GL.module's buffer follows the new screen, and the viewport with it (spec 9.2) */
+    if (!open_screen(c, d, (ULONG)INVALID_ID, width, height) || !setup_area(c) || !mglw_resize(c, width, height)) {
+        close_parts(d);
+        return GL_FALSE;
+    }
+    c->width = width; c->height = height;
+    MGLSetPointer(c);
+    return GL_TRUE;
+#else
     nz = mgl_alloc((ULONG)width * (ULONG)height * (c->zfmt == OGPU_FMT_Z32 ? 4 : 2));
     if (!nz || !open_screen(c, d, (ULONG)INVALID_ID, width, height) || !setup_area(c)) {
         mgl_free(nz);
@@ -508,6 +520,7 @@ GLboolean MGLResizeContext(GLcontext c, GLsizei width, GLsizei height)
     c->clip_dirty = 1;
     MGLSetPointer(c);
     return GL_TRUE;
+#endif
 }
 
 void *MGLGetWindowHandle(GLcontext c) { return c ? c->disp->window : 0; }

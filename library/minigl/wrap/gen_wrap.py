@@ -14,8 +14,9 @@ gen_api.py's own reader): nothing here can move an entry. Each entry is one of:
             out and calls the module's function with A4 on the session's copy of Mesa's data.
   bool      the same, for a call that answers a GLboolean: MiniGL's is a long, the module's a byte in D0, so the
             answer is cut to 0 or 1 (mglw_call_bool).
-  hand      written by hand in mglw_gl.c, mglw_glu.c, mglw_glut.c or mglw_ctx.c: MiniGL's own calls (mgl*), GLU and
-            GLUT, and the GL calls whose arguments differ from OpenGL's (MiniGL's 4-byte GLboolean in arrays and
+  hand      a C function under the library's own name for it (GLColorMask, MGLCreateContext, GLUSphere): MiniGL's
+            own calls (mgl*), GLU and GLUT, in the library's kept files (../mgl_display.c, ../mgl_choose.c,
+            ../mgl_glu.c, ../mgl_glut.c), and in mglw_gl.c the GL calls whose arguments differ from OpenGL's (MiniGL's 4-byte GLboolean in arrays and
             arguments, its paletted textures, its two glRotatefEXT calls, glGetString).
 
 Writes into OUT_DIR:
@@ -61,7 +62,8 @@ MODULE_NAME = {
 # GL.module calls the hand-written files make that no forward entry binds.
 EXTRA = ["glLockArraysEXT", "glUnlockArraysEXT", "glMultMatrixf", "glGetBooleanv", "glAreTexturesResident",
          "glEdgeFlag", "glEdgeFlagPointer", "glColorMask", "glDepthMask", "glTexImage2D", "glTexSubImage2D",
-         "glGetString", "glGenerateMipmap", "glVertex3f", "glColor4fv", "glDisable", "glEnable"]
+         "glGetString", "glGenerateMipmap", "glVertex3f", "glColor4fv", "glDisable", "glEnable",
+         "glPushAttrib", "glPopAttrib", "glWindowPos2i", "glDrawPixels", "glGetError"]
 
 
 def kind_of(e):
@@ -131,11 +133,24 @@ def main():
         for e, k, slot, m in rows:
             if k != "hand":
                 c.write("extern void mglw_e%d(void);\n" % e["n"])
+        c.write("\n/* The hand-written entries that take a context do nothing for a NULL one (spec 4.3). */\n")
+        for e, k, slot, m in rows:
+            if k != "hand" or not gen_api.takes_context(e):
+                continue
+            an = ["a%d" % i for i in range(len(e["args"]))]
+            call = "%s(%s)" % (gen_api.internal_name(e["name"]), ", ".join(an))
+            body = ("if (a0) %s;" % call) if gen_api.is_void(e["ret"]) else ("return a0 ? %s : 0;" % call)
+            c.write("static %s T_%s(%s) { %s }\n" % (e["ret"], e["name"], gen_api.params(e["args"], an), body))
         c.write("\nconst MGLDispatchTable mglw_table = {\n"
                 "    MGL_DISPATCH_ABI,\n    MGL_DISPATCH_SIZE,\n    MGL_BACKEND_AMICRADLE,\n    0,\n    &mgl_current,\n")
         for e, k, slot, m in rows:
-            fn = ("mglw_" + e["name"]) if k == "hand" else ("mglw_e%d" % e["n"])
-            c.write("    (void *)%s, /* %d %s */\n" % (fn, e["n"], e["name"]))
+            if k != "hand":
+                fn = "(void *)mglw_e%d" % e["n"]
+            elif gen_api.takes_context(e):
+                fn = "(void *)T_" + e["name"]
+            else:
+                fn = "(void *)" + gen_api.internal_name(e["name"])
+            c.write("    %s, /* %d %s */\n" % (fn, e["n"], e["name"]))
         c.write("};\n\n/* The GL.module export each slot is bound to. */\nconst char *const mglw_gl_names[MGLW_SLOTS] = {\n")
         for m in names:
             c.write("    \"%s\",\n" % m)

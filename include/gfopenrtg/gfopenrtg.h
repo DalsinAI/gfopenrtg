@@ -195,10 +195,11 @@ struct OpenRTGVirglFrame {
  * (that one counts as ORTG_STAT_VIRGL, as before) */
 #define ORTG_STAT_PRESENT_READBACK 22   /* a virgl frame read back and written by the CPU */
 #define ORTG_STAT_PRESENT_MEMORY   23   /* a frame in memory, written by the CPU (ORTG_WritePixels' way) */
-#define ORTG_STAT_COUNT         24
+#define ORTG_STAT_PRESENT_MEDIA    24   /* an ACMedia frame written by the host into the visible pieces (MEDIA, 0.30) */
+#define ORTG_STAT_COUNT         25
 #define ORTG_STAT_NAMES { "fill", "invert", "pattern", "template", "copy", "blit", "scroll", "setrast", "line", \
     "pixel", "chunky", "chunky read", "pixels", "pixels read", "pixels fill", "pixels invert", "alpha", \
-    "blit planar", "blit convert", "blit masked", "virgl", "batches", "present readback", "present memory" }
+    "blit planar", "blit convert", "blit masked", "virgl", "batches", "present readback", "present memory", "present media" }
 
 /* ORTG_Present (0.30): the one present. A finished frame, wherever it lives,
  * into a RastPort: a window (its layer's visible pieces), a screen, or a bare
@@ -207,7 +208,15 @@ struct OpenRTGVirglFrame {
  *    straight in (ACV_PRESENT, the visible rectangles);
  *  - VIRGL, anything else: the frame comes back (ACV_GET) and the CPU
  *    writes it, as ORTG_WritePixels does (planar targets too);
- *  - MEMORY: the CPU writes it, as ORTG_WritePixels does.
+ *  - MEMORY: the CPU writes it, as ORTG_WritePixels does;
+ *  - MEDIA: an ACMedia frame the caller holds on the host (hostlib's
+ *    ACM_HOLD; handle is its answer, width and height its size): an RTG
+ *    target of 16 or 32 bits, the host writes it straight into the visible
+ *    pieces (ACM_SHOW), so the frame never passes through 68k memory;
+ *    anything else, the host writes it into a buffer of GFOpenRTG's and the
+ *    CPU writes that (planar targets too). The caller releases the frame
+ *    (ACM_RELEASE) once ORTG_Present (or, prepared, ORTG_PresentDone) has
+ *    returned, never before: until then it is the present's;
  *  - RETAINED (0.31): the surface's changed tiles into its texture and the
  *    texture drawn into the target by GFOpenGPU, or the changed tiles by the
  *    CPU (library/present_retained.h).
@@ -223,7 +232,7 @@ struct OpenRTGVirglFrame {
 struct ORTG_PresentInfo {
     unsigned long   size;           /* sizeof (struct ORTG_PresentInfo): the struct only grows at the end */
     unsigned long   kind;           /* ORTG_SURF_ */
-    unsigned long   context, handle;    /* VIRGL: the ACVirgl context and the resource (its colour buffer) */
+    unsigned long   context, handle;    /* VIRGL: the ACVirgl context and the resource (its colour buffer); MEDIA: handle the frame */
     void           *memory;         /* MEMORY: row 0 */
     unsigned long   stride, format; /* MEMORY: bytes a row, ORTG_PIX_ */
     unsigned short  width, height;  /* of the source */
@@ -238,7 +247,8 @@ struct ORTG_PresentInfo {
 };
 #define ORTG_SURF_VIRGL         1
 #define ORTG_SURF_MEMORY        2
-#define ORTG_SURF_RETAINED      3   /* 0.31: handle is a struct OGPURetained * (gfopengpu/retained.h); width and height
+#define ORTG_SURF_MEDIA         3   /* 0.30: an ACMedia frame held on the host (ACM_HOLD) */
+#define ORTG_SURF_RETAINED      4   /* 0.31: handle is a struct OGPURetained * (gfopengpu/retained.h); width and height
                                        the rectangle it is shown in (0: its own size); x, y its corner; only the
                                        VSYNC flag. Returns OGPU_RetainedPresent's answer: the tiles uploaded, or an
                                        OGPU_RS_ERR_; -1 when GFOpenRTG's screens are off, or into another RTG

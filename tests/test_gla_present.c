@@ -29,6 +29,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <exec/types.h>
+#include <graphics/gfx.h>
 #include <cybergraphx/cybergraphics.h>
 #include <proto/cybergraphics.h>
 #include <gfopengpu/gfopengpu.h>
@@ -43,7 +44,7 @@
 #define MAXJOBS 64
 
 struct Library *CyberGfxBase, *OpenGPUBase, *DOSBase;
-static struct Library cgx_lib = { 41, 0 }, ogpu_lib = { 0, 23 }, ortg_lib = { 0, 30 };
+static struct Library cgx_lib = { 41, 0 }, ogpu_lib = { 0, 23 }, ortg_lib = { 0, 30 }, dos_lib = { 47, 0 };
 struct gla_stats gla_counts;
 
 static struct BitMap bitmap;
@@ -51,7 +52,7 @@ static struct RastPort rastport;
 static uint32_t screen_px[W * H];
 
 static int in_present, lock_held, locks, waits, waits_locked, waits_own_in_present, waits_own, wpa_calls;
-static int max_lock_held_at_return, direct_frames;
+static int max_lock_held_at_return, direct_frames, ortg_presents, ortg_bad, present_old_env;
 static unsigned long frame_first_fence;
 static int displayed[FRAMES * 2], ndisplayed;
 static int gpu_ms, draw_ms;
@@ -80,6 +81,13 @@ struct Library *OpenLibrary(CONST_STRPTR name, ULONG version) { (void)version; r
 void CloseLibrary(struct Library *lib) { (void)lib; }
 void InitRastPort(struct RastPort *rp) { memset(rp, 0, sizeof *rp); }
 LONG SetVar(CONST_STRPTR name, CONST_STRPTR buffer, LONG size, ULONG flags) { (void)name; (void)buffer; (void)size; (void)flags; return 1; }
+LONG GetVar(CONST_STRPTR name, STRPTR buffer, LONG size, ULONG flags)
+{
+    (void)flags;
+    if (strcmp(name, "GFOpenGPU/GLPresentOld") || !present_old_env || size < 2) return -1;
+    buffer[0] = '1'; buffer[1] = 0;
+    return 1;
+}
 
 APTR LockBitMapTags(struct BitMap *bm, ...)
 {
@@ -118,6 +126,21 @@ LONG ORTG_PresentVirgl(struct RastPort *rp, LONG x, LONG y, const struct OpenRTG
         for (int i = 0; i < W; i++)
             screen_px[j * W + i] = pattern((int)f->handle, i, j);
     direct_frames++;
+    record_screen();
+    return W * H;
+}
+
+/* gfopenrtg.library 0.30's ORTG_Present: the same frame, described as ORTG_PresentInfo */
+LONG ORTG_Present(struct ORTG_PresentInfo *in)
+{
+    if (in->size != sizeof *in || in->kind != ORTG_SURF_VIRGL || in->width != W || in->height != H || in->rp != &rastport
+        || !in->src || in->src->MinX != 0 || in->src->MinY != 0 || in->src->MaxX != W - 1 || in->src->MaxY != H - 1
+        || in->dst || in->blk || in->flags)
+        ortg_bad++;
+    for (int j = 0; j < H; j++)
+        for (int i = 0; i < W; i++)
+            screen_px[j * W + i] = pattern((int)in->handle, i, j);
+    ortg_presents++;
     record_screen();
     return W * H;
 }
@@ -219,6 +242,9 @@ int main(int argc, char **argv)
 
     gpu_ms = argc > 4 ? atoi(argv[4]) : 0;
     draw_ms = argc > 5 ? atoi(argv[5]) : 0;
+    ortg_lib.lib_Revision = (UWORD)(argc > 6 ? atoi(argv[6]) : 30);
+    present_old_env = argc > 7 ? atoi(argv[7]) : 0;
+    if (argc > 7) DOSBase = &dos_lib;                   /* ENV: read and written */
     CyberGfxBase = &cgx_lib;
     OpenGPUBase = &ogpu_lib;
     ogpu_lib.lib_Revision = (UWORD)rev;
@@ -267,9 +293,9 @@ int main(int argc, char **argv)
     for (int i = 0; i < ndisplayed && identical; i++) if (displayed[i] != i) identical = 0;
 
     printf("doublebuf=%d opengpu=0.%d %s: presents=%d locks=%d waits=%d waits_locked=%d waits_own_in_present=%d "
-           "waits_own=%d lock_held_after_present=%d flips=%d wpa=%d direct=%d shown=",
+           "waits_own=%d lock_held_after_present=%d flips=%d wpa=%d direct=%d ortg_present=%d ortg_bad=%d shown=",
            doublebuf, rev, target_kind, FRAMES, locks, waits, waits_locked, waits_own_in_present,
-           waits_own, max_lock_held_at_return, flips, wpa_calls, direct_frames);
+           waits_own, max_lock_held_at_return, flips, wpa_calls, direct_frames, ortg_presents, ortg_bad);
     for (int i = 0; i < ndisplayed; i++) printf("%s%d", i ? "," : "", displayed[i]);
     printf(" identical=%s", identical ? "yes" : "NO");
     if (gpu_ms) printf(" time_ms=%.0f (gpu %d ms, draw %d ms a frame)", ms, gpu_ms, draw_ms);

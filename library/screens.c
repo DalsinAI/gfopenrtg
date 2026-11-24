@@ -70,8 +70,8 @@
 #include "uaegfx.h"
 #include "pixels.h"
 #include "present_retained.h"
-#include "pixels.h"
 #include "present_plan.h"
+#include "present_media.h"
 
 #define REG(r, decl) register decl __asm(#r)
 
@@ -684,7 +684,7 @@ struct ortg_bitmap *ortg_alloc_card(int monitor, ULONG w, ULONG h, int clear, in
 {
     struct ortg_bitmap *o = AllocVec(sizeof *o, MEMF_ANY | MEMF_CLEAR);
     ULONG bpp = format == ORTG_ARGB32 ? 4 : format == ORTG_RGB16 ? 2 : 1;
-    ULONG stride = (w * bpp + 63) & ~63UL;
+    ULONG stride = ortg_row_bytes(w, format);
     if (!o) return NULL;
     o->magic = ORTG_BM_MAGIC;
     o->format = (UBYTE)format; o->bpp = (UBYTE)bpp;
@@ -1756,6 +1756,60 @@ static LONG prs_memory(const struct ORTG_PresentInfo *in)
     return n;
 }
 
+/* MEDIA (library/present_media.h): an ACMedia frame held on the host. hostlib's ACM_SHOW
+ * (hostlib/acmedia/acmedia.c, built into the library): the runtime's broker writes the frame
+ * straight into the bitmap; with no broker its 68k body answers ACM_E_NOTAVAIL. */
+extern LONG hostlib_acm_show(ULONG block);
+static long prm_host_show(unsigned long *blk) { return hostlib_acm_show((ULONG)blk); }
+
+struct prm_run { struct prm_ctx c; LONG fx, fy; };
+static void prm_piece_cb(void *x, struct ortg_bitmap *bm, LONG x0, LONG y0, LONG x1, LONG y1, LONG dx, LONG dy)
+{
+    struct prm_run *r = x;
+    int bpp = bm->format == ORTG_ARGB32 ? 4 : bm->format == ORTG_RGB16 ? 2 : 0;
+    prm_piece(&r->c, (ULONG)bm->mem, bm->stride, bm->height, bpp, x0, y0, x1, y1, r->fx + dx, r->fy + dy);
+}
+static void prm_finish_cb(void *x) { prm_send(&((struct prm_run *)x)->c); }
+
+/* The bounce: the frame's part into a buffer of GFOpenRTG's (ARGB32), then written by the CPU. */
+static LONG prs_media_bounce(const struct ORTG_PresentInfo *in, long x0, long y0, long x1, long y1)
+{
+    ULONG w = (ULONG)(x1 - x0 + 1), h = (ULONG)(y1 - y0 + 1), *buf;
+    unsigned long blk[PRM_SHOW_LONGS];                      /* 32 bits on the 68k, as ACM_SHOW reads them */
+    short rect[4];
+    struct OpenRTGPixels px;
+    LONG n = -1;
+    if (!(buf = AllocVec(w * h * 4, MEMF_ANY))) return -1;
+    prm_bounce_block(blk, rect, in->handle, (ULONG)buf, x0, y0, x1, y1);
+    if (hostlib_acm_show((ULONG)blk) >= 0) {
+        px.data = buf; px.x = 0; px.y = 0; px.modulo = (long)w * 4; px.format = ORTG_PIX_ARGB; px.ctable = NULL;
+        px.width = (long)w; px.height = (long)h; px.dest_width = px.dest_height = 0;
+        n = ortg_write_pixels(in->rp, in->x + x0, in->y + y0, &px);
+        ortg_stat(ORTG_STAT_PRESENT_MEMORY, 0, w * h);
+    }
+    FreeVec(buf);
+    return n;
+}
+
+static LONG prs_media(const struct ORTG_PresentInfo *in)
+{
+    struct prm_run r;
+    long x0, y0, x1, y1;
+    if (!in->handle || !in->width || !in->height) return -1;
+    if (!prs_part(in->src ? &in->src->MinX : NULL, in->width, in->height, &x0, &y0, &x1, &y1)) return 0;
+    if (in->x < -32768 || in->x > 32767 || in->y < -32768 || in->y > 32767) return -1;
+    if (prs_rtg(in->rp)) {
+        prm_init(&r.c, in->handle, prm_host_show);
+        r.fx = in->x; r.fy = in->y;
+        ortg_ogpu_settle();                                 /* the host writes the bitmap: what is running first */
+        if (!pieces_then(in->rp, in->x + x0, in->y + y0, in->x + x1, in->y + y1, prm_piece_cb, prm_finish_cb, &r))
+            r.c.pixels = PRM_BOUNCE;
+        if (r.c.pixels >= 0) { ortg_stat(ORTG_STAT_PRESENT_MEDIA, 1, (ULONG)r.c.pixels); return r.c.pixels; }
+        if (r.c.pixels != PRM_BOUNCE) return -1;            /* a stale frame (ACM_E_NOSUCH) and the like */
+    }
+    return prs_media_bounce(in, x0, y0, x1, y1);
+}
+
 /* The prepared present's one command into the caller's block: the frame at x, y of the bitmap,
  * the source's part as its one rectangle. 0 words when it can't go there. */
 static ULONG prs_in_block(const struct ORTG_PresentInfo *in)
@@ -1876,6 +1930,7 @@ LONG ortg_present(struct ORTG_PresentInfo *in)
     c.boxed = in->dst != NULL;
     switch (prs_route(&c)) {
     case PRS_MEMORY: return prs_memory(in);
+    case PRS_MEDIA: if (!c.prepare) return prs_media(in); break;
     case PRS_RETAINED: return prs_retained(in);    /* 0.31: GFOpenGPU when it's there, else the CPU */
     case PRS_NONE: return -1;                       /* RETAINED without GFOpenRTG's screens too */
     default: break;
@@ -1904,7 +1959,9 @@ void ortg_present_done(APTR token, const ULONG *blk, ULONG at)
         LONG r = blk ? (LONG)blk[at + 1] : -1;
         if (r >= 0) ortg_stat(ORTG_STAT_VIRGL, 1, (ULONG)t->in.width * t->in.height);
         else prs_readback(&t->in);                          /* the host said no: the frame comes back */
-    } else
+    } else if (t->in.kind == ORTG_SURF_MEDIA)
+        prs_media(&t->in);
+    else
         prs_virgl_now(&t->in);
     FreeVec(t);
 }
@@ -3170,7 +3227,7 @@ static void show_front(void)
         SC->instead[n] = NULL;                      /* 0.28: the pan to another picture ends it on the board too */
         serx("ortg: showing ", (ULONG)o->vram_off);
         if (shown[n].w != o->width || shown[n].h != o->height || shown[n].fmt != o->format) {
-            reg(n, R_WIDTH, o->width); reg(n, R_HEIGHT, o->height); reg(n, R_FORMAT, board_fmt[o->format]); reg(n, R_CLOCK, 0);
+            reg(n, R_WIDTH, ortg_board_width(o->width)); reg(n, R_HEIGHT, o->height); reg(n, R_FORMAT, board_fmt[o->format]); reg(n, R_CLOCK, 0);   /* a multiple of 8 wide (modes.h, ortg_board_width) */
             reg(n, R_COMMIT, C_MODE);
             shown[n].w = o->width; shown[n].h = o->height; shown[n].fmt = o->format;
         }

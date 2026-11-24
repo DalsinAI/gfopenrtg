@@ -160,8 +160,8 @@
  * ABI the runtime implements. The 68k body writes zeros and returns 0.
  * Its answer is about the host: AC_HOSTLIB=verify does not compare it. */
 #define AC_MAGIC_HOSTLIB_PROBE 0x00011000
-/* ACMedia v1 (hostlib/acmedia/acmedia.h has each block): twelve host
- * services (HOSTLIB-ABI.md 8.7), $00012000-$0001200B in ACMedia's range
+/* ACMedia v1 (hostlib/acmedia/acmedia.h has each block): fifteen host
+ * services (HOSTLIB-ABI.md 8.7), $00012000-$0001200E in ACMedia's range
  * (hostlib/ranges.lock). The runtime's broker answers them; each 68k body
  * writes nothing and returns ACM_E_NOTAVAIL (-1). Never compared under
  * AC_HOSTLIB=verify. */
@@ -177,6 +177,9 @@
 #define AC_MAGIC_ACM_CLOSE    0x00012009
 #define AC_MAGIC_ACM_RESULT   0x0001200A
 #define AC_MAGIC_ACM_FAULT    0x0001200B
+#define AC_MAGIC_ACM_HOLD     0x0001200C
+#define AC_MAGIC_ACM_SHOW     0x0001200D
+#define AC_MAGIC_ACM_RELEASE  0x0001200E
 /* uint32_t hostlib_w3d_vertices(block): Warp3D.library's per-vertex
  * conversion for a whole primitive, fog off (hostlib/w3d/vertices.h has the
  * block and the contract). Pure; the first id of Warp3D's range,

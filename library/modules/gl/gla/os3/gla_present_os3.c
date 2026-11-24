@@ -18,7 +18,10 @@
  *    a resize and the buffer's end wait for it (settle). With
  *    gfopengpu.library before 0.20 it is waited for at once, as before.
  *  - A frame virgl drew on the host's graphics chip (gla_virgl_pipe.c): with
- *    gfopenrtg.library 0.15, ORTG_PresentVirgl, which hands the host the
+ *    gfopenrtg.library 0.30, ORTG_Present (stage M8 of the shared pipe's plan:
+ *    OpenRTG owns the present; it reads the frame back itself when the host
+ *    can't write it in). With 0.15 to 0.29, or ENV:GFOpenGPU/GLPresentOld set
+ *    (kept for one release), ORTG_PresentVirgl, which hands the host the
  *    visible rectangles and lets it write the frame straight in (ACV_PRESENT),
  *    a window's or a screen's alike. Otherwise it is read back and comes
  *    through one of the two above.
@@ -51,6 +54,7 @@ extern struct Library *CyberGfxBase;
 extern struct Library *OpenGPUBase;
 static struct Library *gla_openrtg_base;
 static int openrtg_tried;
+static int present_old;                 /* ENV:GFOpenGPU/GLPresentOld: ORTG_PresentVirgl as before 0.30 */
 
 /* SURFACE 6 + TARGET 2 + PIXELS 7 + FENCE 2 words, with room to spare. */
 #define BATCH_WORDS 24
@@ -230,7 +234,26 @@ static long present_virgl(void *user, const struct gla_virgl_frame *f)
         of.box_h = (UWORD)t->box_h;
     }
     settle(t);                          /* an earlier frame's batch reaches the screen first */
-    n = ORTG_PresentVirgl(r, t->left, t->top, &of);
+    if (!present_old && (gla_openrtg_base->lib_Version > 0 || gla_openrtg_base->lib_Revision >= 30)) {
+        struct ORTG_PresentInfo in;
+        struct Rectangle src, dst;
+        int i;
+        for (i = 0; i < (int)sizeof in; i++) ((UBYTE *)&in)[i] = 0;
+        in.size = sizeof in;
+        in.kind = ORTG_SURF_VIRGL;
+        in.context = f->context; in.handle = f->handle;
+        in.width = (unsigned short)f->w; in.height = (unsigned short)f->h;
+        in.rp = r; in.x = t->left; in.y = t->top;
+        src.MinX = (WORD)f->x0; src.MinY = (WORD)f->y0; src.MaxX = (WORD)(f->x1 - 1); src.MaxY = (WORD)(f->y1 - 1);
+        in.src = &src;
+        if (of.flags & ORTG_VIRGL_SCALE) {
+            dst.MinX = (WORD)t->left; dst.MinY = (WORD)t->top;
+            dst.MaxX = (WORD)(t->left + t->box_w - 1); dst.MaxY = (WORD)(t->top + t->box_h - 1);
+            in.dst = &dst;
+        }
+        n = ORTG_Present(&in);
+    } else
+        n = ORTG_PresentVirgl(r, t->left, t->top, &of);
     if (n >= 0) {
         gla_counts.direct_state = GLA_DIRECT_ON;
         publish_state();
@@ -240,7 +263,9 @@ static long present_virgl(void *user, const struct gla_virgl_frame *f)
 
 void gla_os3_present_init(struct gla_present *p, struct gla_os3_target *t)
 {
+    char v[8];
     settle(t);                          /* nothing left running from an earlier use of this target */
+    present_old = DOSBase && GetVar((CONST_STRPTR)"GFOpenGPU/GLPresentOld", (STRPTR)v, sizeof v, GVF_GLOBAL_ONLY) > 0 && v[0] == '1';
     p->present = present;
     p->user = t;
     gla_present_set_virgl(present, present_virgl);

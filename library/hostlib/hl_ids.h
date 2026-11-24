@@ -4,7 +4,7 @@
 #define HOSTLIB_HL_IDS_H
 
 #define HOSTLIB_ABI 2
-#define HOSTLIB_MANIFEST "7acdc59343b69d23"   /* sha256 of hostlib.toml, the first 16 hex digits */
+#define HOSTLIB_MANIFEST "3ff129873a26105e"   /* sha256 of hostlib.toml, the first 16 hex digits */
 
 #define HL_ID_OGFX_PLANAR_RECT 0x00010100   /* hostlib_ogfx_planar_rect, version 1 */
 #define HL_ID_OGFX_CHUNKY_RECT 0x00010101   /* hostlib_ogfx_chunky_rect, version 1 */
@@ -34,6 +34,9 @@
 #define HL_ID_ACM_CLOSE 0x00012009   /* hostlib_acm_close, version 1 */
 #define HL_ID_ACM_RESULT 0x0001200a   /* hostlib_acm_result, version 1 */
 #define HL_ID_ACM_FAULT 0x0001200b   /* hostlib_acm_fault, version 1 */
+#define HL_ID_ACM_HOLD 0x0001200c   /* hostlib_acm_hold, version 1 */
+#define HL_ID_ACM_SHOW 0x0001200d   /* hostlib_acm_show, version 1 */
+#define HL_ID_ACM_RELEASE 0x0001200e   /* hostlib_acm_release, version 1 */
 #define HL_ID_ZLIB_INFLATE_CODES 0x00010180   /* hostlib_zlib_inflate_codes, version 1 */
 #define HL_ID_ZLIB_DEFLATE_ALL 0x00010181   /* hostlib_zlib_deflate_all, version 1 */
 #define HL_ID_LZMA_DECODE_ALL 0x00010182   /* hostlib_lzma_decode_all, version 1 */

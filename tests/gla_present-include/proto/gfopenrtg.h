@@ -4,3 +4,4 @@
 #include <exec/types.h>
 #include <gfopenrtg/gfopenrtg.h>
 LONG ORTG_PresentVirgl(struct RastPort *rp, LONG x, LONG y, const struct OpenRTGVirglFrame *frame);
+LONG ORTG_Present(struct ORTG_PresentInfo *in);

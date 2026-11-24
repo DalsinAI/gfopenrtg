@@ -45,6 +45,11 @@ cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanit
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
     -o "$OUT/test_present_plan" "$HERE/test_present_plan.c"
 "$OUT/test_present_plan"
+# ORTG_Present's MEDIA kind: an ACMedia frame held on the host, written by the host into the visible pieces,
+# zero-copy (library/present_media.h, 0.30, the shared pipe's plan M8 step 2.6), against a fake host.
+cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
+    -o "$OUT/test_present_media" "$HERE/test_present_media.c"
+"$OUT/test_present_media"
 # Draw and PolyDraw on 8-bit bitmaps (gfopenrtg.library 0.25, library/ortg_line.h) against
 # graphics.library's (GFOpenGfx's core): FRST_DOT, linpatcnt, JAM2, INVERSVID, through GFOpenGPU's LINE too.
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined -I"$HERE/host-include" \
@@ -112,6 +117,9 @@ gla_present "0 23 screen" waits_locked waits_own_in_present  # one buffer: waits
 gla_present "1 23 window"                                   # WritePixelArray
 gla_present "1 19 screen"                                   # gfopengpu.library 0.19: as before
 gla_present "1 23 mixed" waits_locked waits_own             # virgl's frames between: kept in order
+gla_present "1 23 mixed 0 0 30 0" direct ortg_bad          # gfopenrtg 0.30: virgl's frames through ORTG_Present
+gla_present "1 23 mixed 0 0 30 1" ortg_present             # ENV:GFOpenGPU/GLPresentOld 1: ORTG_PresentVirgl as before
+gla_present "1 23 mixed 0 0 29 0" ortg_present             # gfopenrtg 0.29: ORTG_PresentVirgl
 # The retained surface (gfopengpu.library 0.25, library/opengpu/ogpu_retained.c): the 32x32
 # tiles' hashes and dirty map, marked rectangles, and the present's batch through the CPU core.
 cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \

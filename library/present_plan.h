@@ -17,6 +17,10 @@
  *  - PRS_READBACK: VIRGL anything else (and when PRS_VIRGL fails): the
  *    frame back from the host, then as MEMORY;
  *  - PRS_MEMORY: the CPU writes it (ortg_write_pixels: planar targets too);
+ *  - PRS_MEDIA: MEDIA, an ACMedia frame held on the host: the host writes it
+ *    into the visible pieces, else into a buffer the CPU then writes
+ *    (library/present_media.h). A prepared one is presented in
+ *    ORTG_PresentDone, after the caller's block.
  *  - PRS_RETAINED (0.31): a retained surface (present_retained.h), only with
  *    GFOpenRTG's screens on (it draws through GFOpenRTG's graphics.library
  *    base, which is there only then) and into GFOpenRTG's own bitmaps or
@@ -27,7 +31,7 @@
 #ifndef ORTG_PRESENT_PLAN_H
 #define ORTG_PRESENT_PLAN_H
 
-enum { PRS_NONE, PRS_IN_BLOCK, PRS_VIRGL, PRS_READBACK, PRS_MEMORY, PRS_RETAINED };
+enum { PRS_NONE, PRS_IN_BLOCK, PRS_VIRGL, PRS_READBACK, PRS_MEMORY, PRS_MEDIA, PRS_RETAINED };
 
 /* What ORTG_Present knows of a call. */
 struct prs_call {
@@ -44,7 +48,8 @@ struct prs_call {
 static inline int prs_route(const struct prs_call *c)
 {
     if (c->kind == 2) return PRS_MEMORY;                    /* ORTG_SURF_MEMORY */
-    if (c->kind == 3) return c->screens && !c->foreign_deep ? PRS_RETAINED : PRS_NONE;    /* ORTG_SURF_RETAINED */
+    if (c->kind == 3) return PRS_MEDIA;                     /* ORTG_SURF_MEDIA */
+    if (c->kind == 4) return c->screens && !c->foreign_deep ? PRS_RETAINED : PRS_NONE;    /* ORTG_SURF_RETAINED */
     if (c->kind != 1) return PRS_NONE;                      /* ORTG_SURF_VIRGL: the rest are later stages */
     if (c->host_present && c->rtg) {
         if (c->prepare && !c->layered && !c->boxed) return PRS_IN_BLOCK;

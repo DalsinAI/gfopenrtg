@@ -8,9 +8,12 @@
  * mgl_current, the one current-context variable, which programs write and
  * every entry reads.
  *
- * The front end is built twice (build.sh): for the FPU and soft. The first
- * open picks the table of the half this machine can run (an FPU in
- * AttnFlags, and ENV:MINIGL_FORCE_SOFT not set) and keeps it.
+ * The table it answers is MiniGL's own renderer's. That front end is built twice (build.sh): for the FPU and
+ * soft; the half this machine can run is taken (an FPU in AttnFlags, and ENV:MINIGL_FORCE_SOFT not set). When
+ * ENV:MiniGL/Wrap is 1, the machine has an FPU and LIBS:GFOpenGPU/GL.module is there, the table is the wrapper's
+ * (wrap/) instead: MiniGL's calls as GL.module's, which draws them (through the host's GPU, or on the 68k). The
+ * wrapper draws the same picture and is the slower of the two today (MGLTest, 24 November 2026), so it is asked
+ * for, not the default. The first open chooses, and the choice is kept.
  *
  * Also here: the libraries the rest uses, ENV:MiniGL/ preferences, the
  * mglChoose* and mglProhibit* requests' defaults (spec 9.2), memory, the
@@ -46,7 +49,8 @@ GLcontext mgl_current;                  /* the current context (table offset 16)
 struct mgl_prefs mgl_prefs;
 long mgl_trace;
 
-extern const MGLDispatchTable mgl_table_fpu, mgl_table_soft;
+extern const MGLDispatchTable mgl_table_fpu, mgl_table_soft, mgl_table_wrap;
+void mglW_mglw_sessions_init(void);     /* wrap/mglw_session.c, under its half's name (build.sh) */
 const MGLDispatchTable *mgl_handed;     /* the table -30 answers */
 
 struct MGLBase {
@@ -102,6 +106,7 @@ static struct Library *lib_init(REG(d0, struct MGLBase *base), REG(a0, BPTR segl
     base->seglist = seglist;
     base->lib.lib_Revision = MGL_LIB_REVISION;
     mgl_prefs_defaults();
+    mglW_mglw_sessions_init();
     return &base->lib;
 }
 
@@ -109,6 +114,24 @@ static int env_set(const char *name)
 {
     char v[8];
     return GetVar((STRPTR)name, (STRPTR)v, sizeof v, GVF_GLOBAL_ONLY) > 0;
+}
+
+static LONG env_long(const char *name, LONG dflt);
+
+/* The wrapper can run here: gfopengpu.library is open and its GL module is on disk. (No requester for a LIBS:
+ * that isn't there.) */
+static int have_gl_module(void)
+{
+    struct Process *me = (struct Process *)FindTask(NULL);
+    APTR keep;
+    BPTR l;
+    if (!OpenGPUBase || me->pr_Task.tc_Node.ln_Type != NT_PROCESS) return 0;
+    keep = me->pr_WindowPtr;
+    me->pr_WindowPtr = (APTR)-1;
+    l = Lock((STRPTR)"LIBS:GFOpenGPU/GL.module", ACCESS_READ);
+    me->pr_WindowPtr = keep;
+    if (l) UnLock(l);
+    return l != 0;
 }
 
 /* The libraries, the clock and the table: on the first open, in the
@@ -144,7 +167,10 @@ static int open_libs(struct MGLBase *base)
     }
     if (!mgl_handed) {
         int fpu = (SysBase->AttnFlags & (AFF_68881 | AFF_68882 | AFF_FPU40)) != 0;
-        mgl_handed = fpu && !env_set("MINIGL_FORCE_SOFT") ? &mgl_table_fpu : &mgl_table_soft;
+        if (fpu && !env_set("MINIGL_FORCE_SOFT") && env_long("MiniGL/Wrap", 0) != 0 && have_gl_module())
+            mgl_handed = &mgl_table_wrap;
+        else
+            mgl_handed = fpu && !env_set("MINIGL_FORCE_SOFT") ? &mgl_table_fpu : &mgl_table_soft;
     }
     return 1;
 }
@@ -207,6 +233,8 @@ static BPTR lib_expunge(REG(a6, struct MGLBase *base))
  *   Flip            1: a screen changes buffers instead of blitting the frame
  *   MaxTextureSize  what glGetIntegerv(GL_MAX_TEXTURE_SIZE) answers (default 1024)
  *   PipeOld         1: the virgl route sends its own blocks, as before the shared pipe's M3 (for one release)
+ *   Wrap            1: the wrapper over GL.module draws (wrap/), not MiniGL's own renderer (read at the
+ *                   library's first open; needs an FPU and LIBS:GFOpenGPU/GL.module)
  *   Trace           n: n lines of trace to the serial port */
 static LONG env_long(const char *name, LONG dflt)
 {

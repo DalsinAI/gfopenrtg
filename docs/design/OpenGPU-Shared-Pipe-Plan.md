@@ -676,6 +676,15 @@ resources and their unrefs, PUTs and GETs, and the counters.
   Not carried over: pipelining (off by default; the old route still has it). Not yet deleted: `gla_virgl.c`'s own
   blocks and queue, one release after this.
 
+### The GL stage, part 2: minigl.library as a face of GL.module (M)
+
+Added 24 November 2026. MiniGL keeps its ABI (the -30 call, dispatch ABI 5, 840 bytes, 205 entries, the context as each call's first argument) and its own files that are not a renderer: displays and input, the `mglChoose*` family, GLU and GLUT. Its GL calls become GL.module's: 105 are forwarded by a generated thunk each, 2 more with their answer cut to MiniGL's four-byte GLboolean, and 98 are functions (MiniGL's own calls, GLU, GLUT, and the GL calls whose arguments differ: booleans, paletted textures and MiniGL's texel types, `glRotatefEXT`, `glGetString`). `library/minigl/wrap/` holds it; `build.sh` builds it as the library's third half (`-DMGLW`, FPU).
+
+- **Done, 24 November 2026, as an opt-in:** `ENV:MiniGL/Wrap=1` (read at the library's first open; an FPU and `LIBS:GFOpenGPU/GL.module` needed) hands out the wrapper's table. MiniGL's own renderer stays the default and stays in the library. `tests/minigl/test_wrap.sh` (1629 checks: the generated table, thunks and slots against the spec and the wrapper's files).
+- **Lab, 24 November 2026** (`minigl.library` at d838e2d with GL.module of part 1, MGLTest 320x240, FRAMES 300, a lab copy on a slow disk): the same picture (96 of 76,800 pixels differ, each by one level); the wrapper 165 to 227 frames a second, MiniGL's own renderer 345 to 600 in the same runs. GL.module's own programs run at 230 to 330 there, so the cost looks to be the module's frame, not the forwarding: that is why the wrapper is not the default yet.
+- **Not carried over:** a palette changed after its textures were loaded does not reach them; `MGL_UBYTE_ARGB` colour arrays are refused; `mglPrintMatrixStack` prints only the top matrix; `mglTexMemStat` answers 0.
+- **Left:** GL.module's frame cost; then the wrapper becomes the default and MiniGL's renderer (`mgl_state.c`, `mgl_vertex.c`, `mgl_pipe.c`, `mgl_out.c`, `mgl_vg*.c`) goes, a release later.
+
 ### M7: stream3d emission into the pipe (L)
 
 - `pipe_emit_s3d.c` is taken from `w3d_batch.c`'s builder.

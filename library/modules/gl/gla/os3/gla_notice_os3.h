@@ -12,8 +12,9 @@
 enum { GLA_OS3_DRIVER_AUTO = 0, GLA_OS3_DRIVER_GPU = 1, GLA_OS3_DRIVER_CPU = 2 };
 /* "gpu"/"virgl", "cpu"/"softpipe" (any case), else auto. */
 int gla_os3_driver_of(const char *value);
-/* The variable's, now. */
+/* The variable's, now; unset, gfopengpu.library 0.32's OGPU_Driver("GL"). */
 int gla_os3_gl_driver(void);
+int gla_os3_driver_from_ogpu(unsigned long d);   /* OGPU_Driver("GL")'s answer (gfopengpu 0.32) */
 /* Registers the softpipe hook (gla_core.h); gla_os3_virgl_transport does
  * too. GL.module's start calls it, for programs that go straight to
  * softpipe. */

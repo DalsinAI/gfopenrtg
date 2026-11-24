@@ -30,6 +30,14 @@
  * pre-commands, stream, post-commands, so a PUT made after a draw would run before it. A cut puts the stream so far
  * among the pre-commands as an ACV_SUBMIT of its own: what is made after the cut runs after it, in the same block.
  *
+ * Version 7 (stage M7, 24 November 2026): the pipe writes every command; Warp3D and MiniGL's own renderer write none.
+ * Six of version 1's frame members become real: bind_framebuffer (the surfaces are the pipe's, made for a resource
+ * when it is first bound and let go of with it), bind_texture (the sampler views likewise; views and sampler states
+ * go at the next draw, each only when it changed), set_blend_colour, set_stencil_ref, begin_frame, draw and clear;
+ * and, at the end, draw_buf (a draw from any vertex and index buffer, with its stride), set_stipple and copy (a blit
+ * from one resource to another). Depth read-back is res_read's. The words are the ones the front ends wrote by hand
+ * (tests/pipe/test_draw.sh checks them one for one).
+ *
  * Stage M2 (23 November 2026) fixes this table: version 1. From here on a change is a new member at the end and a
  * version bump, never a changed member. In M2 only the screen and the transport are real; the other members are 0
  * until their stage lands (M3 resources and arenas, M4 the context and state objects, M5 the fixed-function
@@ -43,7 +51,7 @@
 
 #include <exec/types.h>
 
-#define OGPU_PIPE_VERSION 6
+#define OGPU_PIPE_VERSION 7
 
 typedef struct ogpu_pipe_screen OGPUPipeScreen;   /* one per open (M2: per API context, as before) */
 typedef struct ogpu_pipe_ctx    OGPUPipeCtx;      /* one per API context: every call names it */
@@ -277,6 +285,31 @@ struct OGPUDrawInfo {
     LONG  bias;
 };
 
+/* Version 7: a draw from any buffers (draw_buf). draw is this with the arenas and the stride of the last draw_buf. */
+struct OGPUDrawBuf {
+    ULONG size;                   /* sizeof (struct OGPUDrawBuf): the struct only grows at the end */
+    ULONG prim, first, count;     /* Gallium's prim; first: the first vertex, or for an indexed draw the first index */
+    ULONG indexed;                /* 0, or 16 for 16-bit indices */
+    LONG  bias;                   /* indexed: added to each index */
+    ULONG stride;                 /* the vertex's bytes */
+    OGPUPipeRes *vbuf;            /* 0: the vertex arena, vb_offset from this block's place in it */
+    ULONG vb_offset;              /* bytes */
+    OGPUPipeRes *ibuf;            /* 0: the index arena, ib_offset from this block's base in it */
+    ULONG ib_offset;              /* bytes: the draw's indices start at ib_offset + first * 2 */
+};
+
+/* Version 7: a box of one resource into another (copy: virgl's BLIT). Both boxes are the same size unless filter
+ * scales. */
+struct OGPUCopy {
+    ULONG size;                   /* sizeof (struct OGPUCopy) */
+    OGPUPipeRes *dst, *src;
+    ULONG dst_level, src_level;
+    struct OGPUBox dst_box, src_box;
+    ULONG mask;                   /* OGPU_COPY_RGBA, or Gallium's PIPE_MASK_ bits */
+    ULONG filter;                 /* 0 nearest, 1 linear */
+};
+#define OGPU_COPY_RGBA 0xFUL
+
 /* How the frame's present rides in the frame's own block (section 2.7): OpenRTG's, never the pipe's. */
 struct OGPUPresentHook {
     ULONG (*prepare)(void *user, ULONG ctx, ULONG handle, ULONG *p, ULONG room);   /* words written, 0: none */
@@ -325,12 +358,15 @@ struct OGPUPipeOps {
     void  (*bind_layout)(OGPUPipeCtx *, OGPUPipeCSO *);
     void  (*bind_shader)(OGPUPipeCtx *, OGPUPipeShader *);
     void  (*bind_framebuffer)(OGPUPipeCtx *, OGPUPipeRes *colour, OGPUPipeRes *depth);
+          /* (M7) depth 0: none. Sent at every call (a front end calls it when its target changed) */
     void  (*bind_texture)(OGPUPipeCtx *, ULONG unit, OGPUPipeRes *, OGPUPipeCSO *sampler);
+          /* (M7) 0: the unit has none. The next draw sends views and sampler states for units 0 up to the highest
+           * unit ever named here, each command only when it changed */
     void  (*set_constants)(OGPUPipeCtx *, ULONG stage, const float *v, ULONG vec4s);
     void  (*set_viewport)(OGPUPipeCtx *, const float v6[6]);
     void  (*set_scissor)(OGPUPipeCtx *, const struct OGPUBox *);   /* 0: off */
-    void  (*set_blend_colour)(OGPUPipeCtx *, const float rgba[4]);
-    void  (*set_stencil_ref)(OGPUPipeCtx *, ULONG front, ULONG back);
+    void  (*set_blend_colour)(OGPUPipeCtx *, const float rgba[4]);   /* (M7) sent only when it changed */
+    void  (*set_stencil_ref)(OGPUPipeCtx *, ULONG front, ULONG back);  /* (M7) likewise */
 
     /* geometry: the arenas (M3) */
     void *(*vtx_room)(OGPUPipeCtx *, ULONG bytes, ULONG *first);
@@ -339,8 +375,11 @@ struct OGPUPipeOps {
 
     /* frame (M7) */
     void  (*begin_frame)(OGPUPipeCtx *);
+          /* (M7) nothing of what the frame members sent is known: the next draw sends its buffers, views and samplers,
+           * and the next blend colour, stencil reference and stipple go (for a host that started again) */
     void  (*draw)(OGPUPipeCtx *, const struct OGPUDrawInfo *);
     void  (*clear)(OGPUPipeCtx *, ULONG buffers, const float rgba[4], double depth, ULONG stencil);
+          /* (M7) virgl's CLEAR: the whole of the bound framebuffer, buffers virgl_cmd.h's VG_CLEAR_ */
     LONG  (*end_frame)(OGPUPipeCtx *, const struct OGPUPresentHook *hook, ULONG *fence);
           /* sends the frame; the hook (OpenRTG's) puts the present in the same block; fence for OGPU_Wait */
     LONG  (*flush)(OGPUPipeCtx *, ULONG *fence);   /* send what there is, no present (glFlush, a full batch) */
@@ -387,6 +426,14 @@ struct OGPUPipeOps {
           /* the stream so far runs before any pre-command made from now on (an ACV_SUBMIT among them); 0, or -1
            * when what there was had to be sent as a block instead (no room, or the arenas hold vertices) */
     ULONG (*queued)(OGPUPipeCtx *);       /* nonzero when the block being built holds anything */
+
+    /* ---- version 7 (stage M7): the pipe writes every command. bind_framebuffer, bind_texture, set_blend_colour,
+     * set_stencil_ref, begin_frame, draw and clear above are real ---- */
+    void  (*draw_buf)(OGPUPipeCtx *, const struct OGPUDrawBuf *);
+          /* the views and samplers that changed, the vertex buffer and the index buffer when they changed, the draw */
+    void  (*set_stipple)(OGPUPipeCtx *, const ULONG rows[32]);
+          /* the polygon stipple, rows top first, bit 31 leftmost; sent only when it changed */
+    void  (*copy)(OGPUPipeCtx *, const struct OGPUCopy *);
 
     /* new calls only ever added here, at the end */
 };

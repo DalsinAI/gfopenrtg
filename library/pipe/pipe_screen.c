@@ -110,7 +110,8 @@ static void screen_close(OGPUPipeScreen *s)
 static OGPUPipeCtx *ctx_create(OGPUPipeScreen *s, ULONG flags)
 {
     if (!s || s->ctx) return 0;
-    return s->ctx = pipe_ctx_create(s, s->ctx_id, flags);
+    if ((s->ctx = pipe_ctx_create(s, s->ctx_id, flags)) != 0) s->ctx->caps_bits = s->caps_bits;   /* the views' format */
+    return s->ctx;
 }
 
 static void ctx_destroy(OGPUPipeCtx *x)
@@ -183,7 +184,18 @@ static const struct OGPUPipeOps ops = {
     .xfer = pipe_m_xfer,
     .stream_cut = pipe_m_stream_cut,
     .queued = pipe_m_queued,
-    /* the rest arrive with their stages (pipe.h) */
+    /* M7: the pipe writes every command */
+    .bind_framebuffer = pipe_m_bind_framebuffer,
+    .bind_texture = pipe_m_bind_texture,
+    .set_blend_colour = pipe_m_set_blend_colour,
+    .set_stencil_ref = pipe_m_set_stencil_ref,
+    .begin_frame = pipe_m_begin_frame,
+    .draw = pipe_m_draw,
+    .clear = pipe_m_clear,
+    .draw_buf = pipe_m_draw_buf,
+    .set_stipple = pipe_m_set_stipple,
+    .copy = pipe_m_copy,
+    /* res_dirty and stats stay 0 (pipe.h) */
 };
 
 const struct OGPUPipeOps *ogpu_pipe_ops(ULONG version)

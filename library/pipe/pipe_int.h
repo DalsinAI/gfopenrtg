@@ -14,6 +14,8 @@
  *   pipe_ff.c      (M5, from mgl_vg_shader.c and w3d_vg_shader.c) the one fixed-function generator, by key
  *   pipe_state.c   (M4, from mgl_vg_state.c) state objects by key, binding only what changed, the viewport, the
  *                  scissor and the constants sent only when they change; the context's object handles
+ *   pipe_frame.c   (M7, from mgl_vg_enc.c, mgl_vg_tex.c and w3d_vg.c) surfaces and sampler views, the framebuffer,
+ *                  the texture units, the buffers and the draws, clears and copies
  * Plain C with no Amiga calls: memory and the transport are the pipe's transport's (pipe_xport_*), so the same files
  * build for the PC tests and, later, a native module (GF-91). */
 #ifndef OGPU_PIPE_INT_H
@@ -53,6 +55,10 @@ struct ogpu_pipe_res {
     ULONG put_seq;                          /* the stream whose block has a PUT of it waiting (+1; 0 none) */
     ULONG depth, array_size, nr_samples, vflags;   /* res_create2's (version 6); 0, 0, 0, 0: res_create's 1, 1, 0, 0 */
     ULONG last_level;                       /* res_create2's, when depth isn't 0 */
+    /* version 7: the context's own objects for it (pipe_frame.c), made at first use, let go of with it */
+    OGPUPipeCtx *obj_ctx;                   /* the context whose objects they are (one namespace a context) */
+    ULONG surf, surf_of;                    /* its surface, and the version's handle it was made for (0: none) */
+    ULONG view, view_of;                    /* its sampler view, likewise */
 };
 
 /* A state object: its handle on the host (0: an empty slot). */
@@ -64,6 +70,7 @@ struct ogpu_pipe_cso {
 #define PIPE_SAMPLERS  32
 #define PIPE_LAYOUTS   16
 #define PIPE_SHADERS   64                   /* shader variants a context keeps of each stage */
+#define PIPE_UNITS     8                    /* texture units (bind_texture) */
 
 struct pipe_cache {
     ULONG key[PIPE_CACHE][5];
@@ -103,6 +110,14 @@ struct ogpu_pipe_ctx {
     int nvs, nfs;
     struct ogpu_pipe_shader cur;            /* ff_shader's answer */
     ULONG b_vs, b_fs;
+    /* the frame's bindings (pipe_frame.c, version 7) */
+    ULONG caps_bits;                        /* the screen's (the views' format) */
+    OGPUPipeRes *u_res[PIPE_UNITS]; ULONG u_samp[PIPE_UNITS]; ULONG nunits;   /* bound; units 0 .. nunits - 1 go */
+    ULONG s_view[PIPE_UNITS], s_samp[PIPE_UNITS]; int s_views, s_samps;      /* as last sent, and how many (0: not known) */
+    ULONG s_vb[3]; int s_vb_known;          /* handle, offset, stride */
+    ULONG s_ib[2]; int s_ib_known;          /* handle, offset */
+    ULONG s_sref, s_bcol[4], s_stip[32]; int s_sref_known, s_bcol_known, s_stip_known;
+    ULONG d_stride;                         /* the last draw_buf's: draw's */
     /* counts */
     ULONG blocks, words, puts, renames, va_bytes;
     int sending;                            /* in pipe_send: a send asked for from inside it waits */
@@ -175,6 +190,19 @@ void  pipe_m_bind_layout(OGPUPipeCtx *x, OGPUPipeCSO *o);
 void  pipe_m_set_viewport(OGPUPipeCtx *x, const float v6[6]);
 void  pipe_m_set_scissor(OGPUPipeCtx *x, const struct OGPUBox *b);
 void  pipe_m_set_constants(OGPUPipeCtx *x, ULONG stage, const float *v, ULONG vec4s);
+
+/* pipe_frame.c (version 7) */
+void  pipe_frame_res_gone(OGPUPipeCtx *x, OGPUPipeRes *r);   /* r's objects destroyed, its units let go of */
+void  pipe_m_begin_frame(OGPUPipeCtx *x);
+void  pipe_m_bind_framebuffer(OGPUPipeCtx *x, OGPUPipeRes *colour, OGPUPipeRes *depth);
+void  pipe_m_bind_texture(OGPUPipeCtx *x, ULONG unit, OGPUPipeRes *r, OGPUPipeCSO *sampler);
+void  pipe_m_set_blend_colour(OGPUPipeCtx *x, const float rgba[4]);
+void  pipe_m_set_stencil_ref(OGPUPipeCtx *x, ULONG front, ULONG back);
+void  pipe_m_set_stipple(OGPUPipeCtx *x, const ULONG rows[32]);
+void  pipe_m_draw(OGPUPipeCtx *x, const struct OGPUDrawInfo *d);
+void  pipe_m_draw_buf(OGPUPipeCtx *x, const struct OGPUDrawBuf *d);
+void  pipe_m_clear(OGPUPipeCtx *x, ULONG buffers, const float rgba[4], double depth, ULONG stencil);
+void  pipe_m_copy(OGPUPipeCtx *x, const struct OGPUCopy *c);
 
 /* pipe_ff.c */
 OGPUPipeShader *pipe_m_ff_shader(OGPUPipeCtx *x, const struct OGPUFFKey *k);

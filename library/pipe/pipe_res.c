@@ -67,6 +67,7 @@ void pipe_res_release(OGPUPipeCtx *x, OGPUPipeRes *r)
     OGPUPipeCtx *at;
     if (!r || !r->refs) return;
     if (--r->refs) return;
+    pipe_frame_res_gone(x, r);                  /* its surface and view go first, in their context's stream */
     /* the last release: after the stream that last used it */
     at = pending_use(r) && r->used_ctx != x ? r->used_ctx : x;
     unref_ver(at, r->ver);

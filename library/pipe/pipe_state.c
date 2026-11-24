@@ -36,11 +36,14 @@ ULONG pipe_m_cso_handle(const OGPUPipeCSO *o) { return o ? o->handle : 0; }
 
 void pipe_m_state_reset(OGPUPipeCtx *x)
 {
+    int i;
     if (!x) return;
     x->b_blend = x->b_dsa = x->b_rs = x->b_ve = 0;
     x->b_vs = x->b_fs = 0;
     x->vp_known = x->sc_known = 0;
     x->nconst[0] = x->nconst[1] = 0;
+    for (i = 0; i < PIPE_UNITS; i++) { x->u_res[i] = 0; x->u_samp[i] = 0; }   /* version 7's units and frame state */
+    pipe_m_begin_frame(x);
 }
 
 /* ---- the caches of blend, DSA and rasterizer objects ----------------------------------------------------------- */

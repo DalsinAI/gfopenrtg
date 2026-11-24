@@ -221,7 +221,7 @@ static int vg_flush(struct w3dctx *x, UBYTE *stream, long words, int present)
 {
     LONG e;
     if (!x->vg || !x->direct) return -1;
-    e = w3dvg_run(x->vg, stream, words, (ULONG)x->vmem, x->vused, present);
+    e = w3dvg_run(x->vg, stream, words, (ULONG)x->vmem, x->s3.vused, present);
     x->vg_hold = !present;
     if (!e) return 0;
     if (e > 0) {                            /* drawn, but not all of it */
@@ -241,36 +241,28 @@ static int vg_flush(struct w3dctx *x, UBYTE *stream, long words, int present)
 static ULONG flush(struct w3dctx *x, int present)
 {
     W3D_Context *c = x->ctx;
-    struct OGPUBatch pre;
-    ULONG prefix[PREFIX_WORDS];
+    struct OGPUPipeS3DBuf area;
     long words;
     UBYTE *stream;
     ULONG r = W3D_SUCCESS;
-    if (!x->body) {
+    if (!x->s3.body) {
         if (present && x->vg_hold && x->vg && lock_area(x)) {
-            /* nothing new, but the host's frame isn't in the area yet */
-            ogpu_batch_init(&pre, prefix, PREFIX_WORDS);
-            ogpu_surface(&pre, 0, (unsigned long)x->base, x->bpr, c->width, c->height, x->fmt);
-            ogpu_target(&pre, 0);
-            w3dvg_run(x->vg, (UBYTE *)prefix, pre.words, 0, 0, 1);
+            /* nothing new, but the host's frame isn't in the area yet: SURFACE and TARGET alone */
+            area.address = (unsigned long)x->base; area.bpr = x->bpr; area.w = c->width; area.h = c->height; area.format = x->fmt;
+            words = x->s3o->finish(&x->s3, &area, &stream);
+            w3dvg_run(x->vg, stream, words, 0, 0, 1);
             x->vg_hold = 0;
             unlock_area(x);
         }
         return W3D_SUCCESS;
     }
-    w3d_trace("flush %ld words %ld bytes", (long)x->b.words, (long)x->vused);
-    x->body = 0;
-    x->list_at = -1;
+    w3d_trace("flush %ld words %ld bytes", (long)x->s3.b.words, (long)x->s3.vused);
     x->sent_tex = 0;
-    if (x->b.overflow) r = W3D_QUEUEFAILED;
-    if (!lock_area(x)) { x->b.words = 0; x->vused = 0; return W3D_NOTVISIBLE; }
+    if (x->s3.b.overflow) r = W3D_QUEUEFAILED;
+    if (!lock_area(x)) { x->s3.body = 0; x->s3.list_at = -1; x->s3o->reset(&x->s3); return W3D_NOTVISIBLE; }
     /* SURFACE and TARGET in front of the commands */
-    ogpu_batch_init(&pre, prefix, PREFIX_WORDS);
-    ogpu_surface(&pre, 0, (unsigned long)x->base, x->bpr, c->width, c->height, x->fmt);
-    ogpu_target(&pre, 0);
-    stream = (UBYTE *)(x->cmdmem + PREFIX_WORDS - pre.words);
-    w3d_copy(stream, prefix, (ULONG)pre.words * 4);
-    words = pre.words + x->b.words;
+    area.address = (unsigned long)x->base; area.bpr = x->bpr; area.w = c->width; area.h = c->height; area.format = x->fmt;
+    words = x->s3o->finish(&x->s3, &area, &stream);
     if (x->route == ROUTE_VIRGL && !vg_flush(x, stream, words, present)) {
         /* drawn on the host */
     } else if (x->route == ROUTE_GPU && OpenGPUBase) {
@@ -290,8 +282,7 @@ static ULONG flush(struct w3dctx *x, int present)
         if (x->vg) w3dvg_stale(x->vg);      /* the area and Z changed behind the host */
     }
     unlock_area(x);
-    x->b.words = 0;
-    x->vused = 0;
+    x->s3o->reset(&x->s3);
     return r;
 }
 
@@ -323,12 +314,7 @@ void w3d_zsync(struct w3dctx *x, int writes)
 
 UBYTE *w3d_data(struct w3dctx *x, ULONG bytes)
 {
-    UBYTE *p;
-    bytes = (bytes + 3) & ~3UL;
-    if (x->vused + bytes > VERT_BYTES) return 0;
-    p = x->vmem + x->vused;
-    x->vused += bytes;
-    return p;
+    return x->s3o->data(&x->s3, bytes);
 }
 
 static ULONG fogmode_stream(struct w3dctx *x)
@@ -397,7 +383,7 @@ static void send_render3d(struct w3dctx *x)
     a[16] = t ? t->chroma_hi : 0;
     a[17] = w3d_colour(&x->current);
     a[19] = (ULONG)x->stipple;
-    ogpu_render3d(&x->b, (const unsigned long *)a);
+    x->s3o->render3d(&x->s3, (const unsigned long *)a);
     x->r3d_dirty = 0;
 }
 
@@ -412,15 +398,14 @@ void w3d_send_clip(struct w3dctx *x)
     if (r > c->width) r = c->width;
     if (b > c->height) b = c->height;
     if (r <= l || b <= t) { l = t = 0; r = b = 1; }          /* nothing: one pixel the program asked to lose */
-    ogpu_clip(&x->b, l, t, r - l, b - t);
+    x->s3o->clip(&x->s3, l, t, r - l, b - t);
     x->clip_dirty = 0;
-    x->list_at = -1;
 }
 
 static void send_texture(struct w3dctx *x, W3D_Texture *tex)
 {
     if (!tex) {
-        ogpu_texture(&x->b, 0, 0, 0, 1, 1, OGPU_FMT_ARGB32, 0, 0, 1, 1, 1, 1, 0, 1, 0);
+        x->s3o->texture(&x->s3, 0, 0, 0, 1, 1, OGPU_FMT_ARGB32, 0, 0, 1, 1, 1, 1, 0, 1, 0);
     } else {
         struct w3dtex *t = TEX(tex);
         unsigned long lv[OGPU_TEX_LEVELS];
@@ -433,38 +418,36 @@ static void send_texture(struct w3dctx *x, W3D_Texture *tex)
             min = min == W3D_LINEAR ? W3D_NEAREST : min == W3D_LINEAR_MIP_NEAREST ? W3D_NEAREST_MIP_NEAREST
                 : min == W3D_LINEAR_MIP_LINEAR ? W3D_NEAREST_MIP_LINEAR : min;
         }
-        ogpu_texenv(&x->b, 0, env, envc);
-        ogpu_texture(&x->b, 0, (unsigned long)t->level[0], (ULONG)t->w * 4, t->w, t->h,
+        x->s3o->texenv(&x->s3, 0, env, envc);
+        x->s3o->texture(&x->s3, 0, (unsigned long)t->level[0], (ULONG)t->w * 4, t->w, t->h,
                      OGPU_TEX_FORMAT(OGPU_FMT_ARGB32, t->base), 0, t->generation, min, mag,
                      t->wrap_s, t->wrap_t, t->border, t->levels, lv);
         x->sent_gen = t->generation;
     }
     x->sent_tex = tex;
     x->tex_dirty = 0;
-    x->list_at = -1;
+    x->s3.list_at = -1;
 }
 
 /* Room for `words` more commands and `vbytes` more data; flushes when not. */
 int w3d_room(struct w3dctx *x, long words, ULONG vbytes)
 {
-    long have = x->body ? x->b.words : 0, cap = BATCH_WORDS - PREFIX_WORDS;
-    if (have + words + 96 > cap || x->vused + vbytes > VERT_BYTES) {
+    if (!x->s3o->room(&x->s3, words + 96, vbytes)) {
         w3d_flush(x);
-        if (words + 96 > cap || vbytes > VERT_BYTES) return 0;
+        if (words + 96 > BATCH_WORDS - PREFIX_WORDS || vbytes > VERT_BYTES) return 0;
     }
     return 1;
 }
 
 void w3d_begin(struct w3dctx *x)
 {
-    if (!x->body) {
-        ogpu_batch_init(&x->b, x->cmdmem + PREFIX_WORDS, BATCH_WORDS - PREFIX_WORDS);
-        x->body = 1;                            /* (the data area empties at the flush) */
-        x->list_at = -1;
+    struct OGPUPipeS3DBuf z, st;
+    z.address = (unsigned long)x->zbuf; z.bpr = x->zbpr; z.w = x->ctx->width; z.h = x->ctx->height; z.format = x->zfmt;
+    st.address = (unsigned long)x->sbuf; st.bpr = (ULONG)x->ctx->width; st.w = x->ctx->width; st.h = x->ctx->height;
+    st.format = OGPU_FMT_S8;
+    if (x->s3o->begin(&x->s3, x->zbuf ? &z : 0, x->sbuf ? &st : 0)) {    /* a new batch: nothing is sent yet */
         x->sent_tex = 0;
         x->clip_dirty = x->r3d_dirty = 1;
-        if (x->zbuf) ogpu_depth(&x->b, OGPU_KIND_DEPTH, (unsigned long)x->zbuf, x->zbpr, x->ctx->width, x->ctx->height, x->zfmt);
-        if (x->sbuf) ogpu_depth(&x->b, OGPU_KIND_STENCIL, (unsigned long)x->sbuf, (ULONG)x->ctx->width, x->ctx->width, x->ctx->height, OGPU_FMT_S8);
     }
     if (x->clip_dirty) w3d_send_clip(x);
 }
@@ -478,7 +461,7 @@ void w3d_select_texture(struct w3dctx *x, W3D_Texture *t)
         send_texture(x, t);
         if (chroma_changed) x->r3d_dirty = 1;
     }
-    if (x->r3d_dirty) { send_render3d(x); x->list_at = -1; }
+    if (x->r3d_dirty) { send_render3d(x); x->s3.list_at = -1; }
 }
 
 /* Room in the batch's data area for n vertices (0 when there is none even
@@ -495,19 +478,8 @@ struct ovtx *w3d_vspace(struct w3dctx *x, ULONG n)
  * command. Call w3d_select_texture first: it sends the state. */
 void w3d_emit(struct w3dctx *x, struct ovtx *d, ULONG n, int prim)
 {
-    ULONG bytes = n * sizeof(struct ovtx);
-    int tex = x->sent_tex ? OGPU_TRI_UNIT0 : OGPU_TRI_NOTEX;
-    if (!n) return;
-    if (prim == OGPU_LAY_LIST && x->list_at >= 0 && (ULONG)d == x->list_vend) {
-        /* extend the last list: its vertex count is its second word after the header */
-        ULONG *cnt = x->cmdmem + PREFIX_WORDS + x->list_at + 2;
-        *cnt += n;
-        x->list_vend = (ULONG)d + bytes;
-        return;
-    }
-    if (prim == OGPU_LAY_LIST) { x->list_at = x->b.words; x->list_vend = (ULONG)d + bytes; }
-    else x->list_at = -1;
-    ogpu_triangles3d(&x->b, (unsigned long)d, n, sizeof(struct ovtx), 0, 0, 0, tex, 0, OVTX_LAYOUT | (ULONG)prim);
+    x->s3o->emit(&x->s3, (unsigned long)d, n, sizeof(struct ovtx), prim, x->sent_tex ? OGPU_TRI_UNIT0 : OGPU_TRI_NOTEX,
+                 OVTX_LAYOUT);
 }
 
 /* The whole drawing area in one colour (ARGB), past the scissor. */
@@ -518,10 +490,9 @@ ULONG w3d_fill(struct w3dctx *x, ULONG argb)
     if (!w3d_room(x, 16, 0)) return W3D_QUEUEFAILED;
     w3d_begin(x);
     if (x->fmt == OGPU_FMT_RGB565) raw = (((argb >> 19) & 31) << 11) | (((argb >> 10) & 63) << 5) | ((argb >> 3) & 31);
-    ogpu_clip(&x->b, 0, 0, 0, 0);
-    ogpu_fill(&x->b, 0, 0, c->width, c->height, raw);
+    x->s3o->clip(&x->s3, 0, 0, 0, 0);
+    x->s3o->fill(&x->s3, 0, 0, c->width, c->height, raw);
     x->clip_dirty = 1;
-    x->list_at = -1;
     return W3D_SUCCESS;
 }
 
@@ -530,8 +501,7 @@ void w3d_clear_buffer(struct w3dctx *x, int kind, ULONG value)
     W3D_Context *c = x->ctx;
     if (!w3d_room(x, 16, 0)) return;
     w3d_begin(x);
-    ogpu_clip(&x->b, 0, 0, 0, 0);
-    ogpu_clear3d(&x->b, kind, 0, 0, c->width, c->height, value);
+    x->s3o->clip(&x->s3, 0, 0, 0, 0);
+    x->s3o->clear3d(&x->s3, kind, 0, 0, c->width, c->height, value);
     x->clip_dirty = 1;
-    x->list_at = -1;
 }

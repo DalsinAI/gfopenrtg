@@ -20,7 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../../include/gfopengpu/pipe.h"
-#include "../../include/gfopengpu/virgl_cmd.h"
+#include "../../library/pipe/virgl_cmd.h"
 
 static int failures, checks;
 #define PIPE_TEST_SLOTS 64        /* the pipe's blend table (pipe_int.h's PIPE_CACHE) */

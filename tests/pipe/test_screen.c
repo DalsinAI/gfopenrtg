@@ -12,7 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../../include/gfopengpu/pipe.h"
-#include "../../include/gfopengpu/virgl_cmd.h"
+#include "../../library/pipe/virgl_cmd.h"
 
 static int failures, checks;
 #define CHECK(cond, ...) do { checks++; if (!(cond)) { failures++; printf("FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)

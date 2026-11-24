@@ -20,7 +20,7 @@
 #define OGPU_PIPE_INT_H
 
 #include "../../include/gfopengpu/pipe.h"
-#include "../../include/gfopengpu/virgl_cmd.h"
+#include "virgl_cmd.h"
 
 #ifndef ADDR
 #define ADDR(p) ((ULONG)(p))

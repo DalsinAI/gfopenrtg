@@ -22,6 +22,7 @@
 #include "../opengpu/ogpu_core.h"
 #include "../opengpu/ogpu_3d.h"
 #include "../../include/gfopengpu/build3d.h"
+#include "../../include/gfopengpu/pipe_s3d.h"
 #include "w3d_vg.h"
 #include "w3d_conv.h"
 
@@ -112,13 +113,10 @@ struct w3dctx {
     UBYTE *sbuf;
     /* the batch: commands, then the vertices and data they point to */
     ULONG *cmdmem;
-    struct OGPUBatch b;                         /* builds from cmdmem + PREFIX_WORDS */
     UBYTE *vmem;
-    ULONG vused;
-    int body;                                   /* the batch has commands */
-    long list_at;                               /* word of the last TRIANGLES list, or -1, to extend it */
+    struct OGPUPipeS3D s3;                      /* the pipe's stream3d emitter builds it (pipe_s3d.h) over the two */
+    const struct OGPUPipeS3DOps *s3o;
     W3D_Texture *list_tex;
-    ULONG list_vend;                            /* where its vertices end */
     /* state the stream has */
     W3D_Texture *sent_tex;
     ULONG sent_gen;

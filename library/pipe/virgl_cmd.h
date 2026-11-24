@@ -19,7 +19,7 @@
 #define OPENGPU_VIRGL_CMD_H
 
 #include <exec/types.h>
-#include "virgl.h"
+#include "../../include/gfopengpu/virgl.h"
 
 #if defined(MGL_HOST) || defined(W3D_HOST)
 #ifndef VG_HOST

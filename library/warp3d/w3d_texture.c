@@ -196,7 +196,7 @@ void w3d_free_texture(struct w3dctx *x, W3D_Texture *tex)
 {
     struct w3dtex *t = TEX(tex);
     int lv;
-    if (x->body) w3d_flush(x);                  /* the batch may point at it */
+    if (x->s3.body) w3d_flush(x);                  /* the batch may point at it */
     if (x->sent_tex == tex) x->sent_tex = 0;
     if (x->known_tex == tex) x->known_tex = 0;
     Remove(&tex->link);
@@ -239,7 +239,7 @@ LIBCALL ULONG LIB_W3D_PinTexture(REG(a0, W3D_Context *c), REG(a1, W3D_Texture *t
 
 static void changed(struct w3dctx *x, W3D_Texture *tex)
 {
-    if (x->sent_tex == tex) { x->tex_dirty = 1; x->list_at = -1; }
+    if (x->sent_tex == tex) { x->tex_dirty = 1; x->s3.list_at = -1; }
 }
 
 LIBCALL ULONG LIB_W3D_SetFilter(REG(a0, W3D_Context *c), REG(a1, W3D_Texture *tex), REG(d0, ULONG min), REG(d1, ULONG mag),
@@ -269,7 +269,7 @@ LIBCALL ULONG LIB_W3D_SetTexEnv(REG(a0, W3D_Context *c), REG(a1, W3D_Texture *te
             c->globaltexenvcolor[0] = colour->r; c->globaltexenvcolor[1] = colour->g;
             c->globaltexenvcolor[2] = colour->b; c->globaltexenvcolor[3] = colour->a;
         }
-        x->tex_dirty = 1; x->list_at = -1;
+        x->tex_dirty = 1; x->s3.list_at = -1;
         return W3D_SUCCESS;
     }
     TEX(tex)->env = (int)env;
@@ -302,7 +302,7 @@ LIBCALL ULONG LIB_W3D_UpdateTexSubImage(REG(a0, W3D_Context *c), REG(a1, W3D_Tex
     if (!tex) return W3D_NOTEXTURE;
     t = TEX(tex);
     if ((int)level >= t->levels) return level ? W3D_NOMIPMAPS : W3D_ILLEGALINPUT;
-    if (x->body) w3d_flush(x);                  /* the pending batch reads the old texels */
+    if (x->s3.body) w3d_flush(x);                  /* the pending batch reads the old texels */
     if (palette && t->srcpal) { w3d_copy(t->srcpal, palette, 1024); tex->palette = palette; }
     lw = t->w >> level; lh = t->h >> level;
     if (lw < 1) lw = 1;
@@ -368,7 +368,7 @@ LIBCALL ULONG LIB_W3D_SetTextureBlend(REG(a0, W3D_Context *c), REG(a1, struct Ta
         default: r = W3D_UNSUPPORTED;
         }
     }
-    x->tex_dirty = 1; x->list_at = -1;
+    x->tex_dirty = 1; x->s3.list_at = -1;
     return r;
 }
 

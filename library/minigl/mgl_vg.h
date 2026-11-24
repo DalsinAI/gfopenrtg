@@ -29,7 +29,7 @@
 
 /* The protocol's numbers, byte order and command writers are shared with
  * Warp3D.library's virgl route. */
-#include "../../include/gfopengpu/virgl_cmd.h"
+#include "../pipe/virgl_cmd.h"
 #include "../../include/gfopengpu/pipe.h"
 
 /* ---- resources -------------------------------------------------------------------------------- */

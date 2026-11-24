@@ -19,7 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../../include/gfopengpu/pipe.h"
-#include "../../include/gfopengpu/virgl_cmd.h"
+#include "../../library/pipe/virgl_cmd.h"
 #include "gla_carry.h"
 
 static int failures, checks;

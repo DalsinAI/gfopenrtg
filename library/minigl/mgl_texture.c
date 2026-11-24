@@ -38,7 +38,7 @@ static struct mgl_tex *make(GLcontext c, GLuint name)
 /* Before texels the waiting batch reads change. */
 static void before_change(GLcontext c, struct mgl_tex *t)
 {
-    if (c->body && t->used_in == c->batch_no) { mgl_pipe_flush(c); mgl_flush(c); }
+    if (c->s3.body && t->used_in == c->batch_no) { mgl_pipe_flush(c); mgl_flush(c); }
     if (c->sent_tex == t) c->sent_tex = 0;
     if (c->vg) mgl_vg_tex_before(c, t);
 }
@@ -483,7 +483,7 @@ void GLColorTable(GLcontext c, GLenum target, GLenum internalformat, GLint width
     } else if (target == GL_SHARED_TEXTURE_PALETTE_EXT || target == GL_COLOR_TABLE) pal = c->palette;
     else { mgl_error(c, GL_INVALID_ENUM); return; }
     mgl_pipe_flush(c);
-    if (c->body) mgl_flush(c);                  /* paletted textures change */
+    if (c->s3.body) mgl_flush(c);                  /* paletted textures change */
     for (i = 0; i < width; i++, p += pb) {
         UBYTE rgba[4];
         mgl_read_pixel(p, format, type, rgba, 0);

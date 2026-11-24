@@ -126,8 +126,9 @@ int mgl_out_open(GLcontext c)
     c->zfmt = mgl_prefs.zbits == 32 ? OGPU_FMT_Z32 : OGPU_FMT_Z16;
     c->zbpr = (ULONG)c->width * (c->zfmt == OGPU_FMT_Z32 ? 4 : 2);
     c->zbuf = mgl_alloc(c->zbpr * (ULONG)c->height);
-    if (!c->cmdmem || !c->vmem || !c->zbuf) { mgl_out_close(c); return 0; }
-    c->list_at = -1;
+    c->s3o = ogpu_pipe_s3d_ops(OGPU_PIPE_S3D_VERSION);
+    if (!c->cmdmem || !c->vmem || !c->zbuf || !c->s3o) { mgl_out_close(c); return 0; }
+    c->s3o->init(&c->s3, c->cmdmem, BATCH_WORDS, PREFIX_WORDS, c->vmem, VERT_BYTES);
     c->sent_pass = -1;
     /* Virgl, and Auto too: the host's GPU through virgl where gfopengpu.library
      * carries it (faster than the 3D ops on every machine measured: plan M5),
@@ -160,29 +161,22 @@ static ogpu_u8 *cpu_map(void *user, ogpu_u32 address, ogpu_u32 length)
 
 void mgl_flush(GLcontext c)
 {
-    struct OGPUBatch pre;
-    ULONG prefix[PREFIX_WORDS];
+    struct OGPUPipeS3DBuf area;
     long words;
     UBYTE *stream;
-    if (!c->body) return;
-    c->body = 0;
-    c->list_at = -1;
+    if (!c->s3.body) return;
     c->sent_tex = 0;
     c->sent_pass = -1;
     c->batch_no++;
-    if (!mgl_disp_lock(c)) { c->b.words = 0; c->vused = 0; return; }
-    ogpu_batch_init(&pre, prefix, PREFIX_WORDS);
-    ogpu_surface(&pre, 0, ADDR(c->base), c->bpr, c->width, c->height, c->fmt);
-    ogpu_target(&pre, 0);
-    stream = (UBYTE *)(c->cmdmem + PREFIX_WORDS - pre.words);
-    mgl_copy(stream, prefix, (ULONG)pre.words * 4);
-    words = pre.words + c->b.words;
+    if (!mgl_disp_lock(c)) { c->s3.body = 0; c->s3.list_at = -1; c->s3o->reset(&c->s3); return; }
+    area.address = ADDR(c->base); area.bpr = c->bpr; area.w = c->width; area.h = c->height; area.format = c->fmt;
+    words = c->s3o->finish(&c->s3, &area, &stream);     /* SURFACE and TARGET in front of the commands */
 #ifndef MGL_HOST
     if (c->route == ROUTE_GPU && OpenGPUBase) {
         ULONG fence = 0, t0 = mgl_trace > 0 ? mgl_millis() : 0;
         LONG e = OGPU_Submit(stream, (ULONG)words, &fence);
         if (e == OGPU_OK) e = OGPU_Wait(fence);
-        if (mgl_trace > 0) mgl_log("flush %ld words %ld bytes: %ld ms (%ld)", (long)words, (long)c->vused, (long)(mgl_millis() - t0), (long)e);
+        if (mgl_trace > 0) mgl_log("flush %ld words %ld bytes: %ld ms (%ld)", (long)words, (long)c->s3.vused, (long)(mgl_millis() - t0), (long)e);
     } else
 #endif
     {
@@ -193,25 +187,22 @@ void mgl_flush(GLcontext c)
         c->core.user = 0;
         ogpu3d_init(&c->d3, &c->core);
         ogpu3d_run(&c->d3, stream, words);
-        if (mgl_trace > 0) mgl_log("flush %ld words %ld bytes on the 68k", (long)words, (long)c->vused);
+        if (mgl_trace > 0) mgl_log("flush %ld words %ld bytes on the 68k", (long)words, (long)c->s3.vused);
     }
     mgl_disp_unlock(c);
-    c->b.words = 0;
-    c->vused = 0;
+    c->s3o->reset(&c->s3);
 }
 
 /* ---- the state the stream carries ------------------------------------------------------------- */
 
 static void begin(GLcontext c)
 {
-    if (!c->body) {
-        ogpu_batch_init(&c->b, c->cmdmem + PREFIX_WORDS, BATCH_WORDS - PREFIX_WORDS);
-        c->body = 1;
-        c->list_at = -1;
+    struct OGPUPipeS3DBuf z;
+    z.address = ADDR(c->zbuf); z.bpr = c->zbpr; z.w = c->width; z.h = c->height; z.format = c->zfmt;
+    if (c->s3o->begin(&c->s3, &z, 0)) {     /* a new batch: nothing is sent yet */
         c->sent_tex = 0;
         c->sent_pass = -1;
         c->clip_dirty = c->r3d_dirty = 1;
-        ogpu_depth(&c->b, OGPU_KIND_DEPTH, ADDR(c->zbuf), c->zbpr, c->width, c->height, c->zfmt);
     }
 }
 
@@ -227,9 +218,8 @@ static void send_clip(GLcontext c)
         if (b > c->height) b = c->height;
         if (r <= l || b <= t) { l = t = 0; r = b = 1; c->scissor_empty = 1; } else c->scissor_empty = 0;
     } else c->scissor_empty = 0;
-    ogpu_clip(&c->b, l, t, r - l, b - t);
+    c->s3o->clip(&c->s3, l, t, r - l, b - t);
     c->clip_dirty = 0;
-    c->list_at = -1;
 }
 
 static void send_render3d(GLcontext c, int pass)
@@ -276,7 +266,7 @@ static void send_render3d(GLcontext c, int pass)
     a[13] = W3D_ST_KEEP | (W3D_ST_KEEP << 8) | (W3D_ST_KEEP << 16) | (255UL << 24);
     a[14] = W3D_CHROMATEST_NONE;
     a[17] = mgl_argb(c->color);
-    ogpu_render3d(&c->b, (const unsigned long *)a);
+    c->s3o->render3d(&c->s3, (const unsigned long *)a);
     c->r3d_dirty = 0;
     c->sent_pass = pass;
 }
@@ -297,15 +287,15 @@ static int levels_of(const struct mgl_tex *t)
 static void send_texture(GLcontext c, struct mgl_tex *t, int pass)
 {
     if (!t) {
-        ogpu_texture(&c->b, 0, 0, 0, 1, 1, OGPU_FMT_ARGB32, 0, 0, 1, 1, 1, 1, 0, 1, 0);
+        c->s3o->texture(&c->s3, 0, 0, 0, 1, 1, OGPU_FMT_ARGB32, 0, 0, 1, 1, 1, 1, 0, 1, 0);
         c->sent_env = 0;
     } else {
         unsigned long lv[MGL_MAX_LEVELS];
         int i, n = levels_of(t), env = pass ? OGPU_ENV_REPLACE : env_of(c->env_mode[0]);
         ULONG envc = mgl_argb(c->env_color[pass]);
         for (i = 1; i < n; i++) lv[i - 1] = ADDR(t->level[i]);
-        ogpu_texenv(&c->b, 0, env, envc);
-        ogpu_texture(&c->b, 0, ADDR(t->level[0]), (ULONG)t->w * 4, t->w, t->h,
+        c->s3o->texenv(&c->s3, 0, env, envc);
+        c->s3o->texture(&c->s3, 0, ADDR(t->level[0]), (ULONG)t->w * 4, t->w, t->h,
                      OGPU_TEX_FORMAT(OGPU_FMT_ARGB32, t->base), 0, t->generation,
                      filter_of(t->min, c->no_mip || mgl_prefs.no_mip || n == 1), filter_of(t->mag, 1),
                      t->wrap_s == GL_REPEAT ? OGPU_WRAP_REPEAT : OGPU_WRAP_CLAMP,
@@ -316,7 +306,6 @@ static void send_texture(GLcontext c, struct mgl_tex *t, int pass)
         t->used_in = c->batch_no;
     }
     c->sent_tex = t;
-    c->list_at = -1;
 }
 
 /* The state the next triangles are drawn with, sent when it changed. */
@@ -332,64 +321,48 @@ static void select_state(GLcontext c)
         send_texture(c, t, pass);
         c->r3d_dirty = 1;
     }
-    if (c->r3d_dirty || c->sent_pass != pass) { send_render3d(c, pass); c->list_at = -1; }
+    if (c->r3d_dirty || c->sent_pass != pass) send_render3d(c, pass);
 }
 
 /* Room for n vertices in the batch's data area, the state sent; 0 when there is none. */
 struct ovtx *mgl_vspace(GLcontext c, ULONG n)
 {
     ULONG bytes = n * sizeof(struct ovtx);
-    long have = c->body ? c->b.words : 0, cap = BATCH_WORDS - PREFIX_WORDS;
-    UBYTE *p;
-    if (have + 160 > cap || c->vused + bytes > VERT_BYTES) {
+    if (!c->s3o->room(&c->s3, 160, bytes)) {
         mgl_flush(c);
         if (bytes > VERT_BYTES) return 0;
     }
     select_state(c);
     if (c->scissor_empty) return 0;
-    p = c->vmem + c->vused;
-    c->vused += (bytes + 3) & ~3UL;
-    return (struct ovtx *)p;
+    return (struct ovtx *)c->s3o->data(&c->s3, bytes);
 }
 
 /* n vertices from mgl_vspace as a list, strip or fan (OGPU_LAY_). A list
  * right after the last one, with the same state, makes it longer. */
 void mgl_emit(GLcontext c, struct ovtx *d, ULONG n, int prim)
 {
-    ULONG bytes = n * sizeof(struct ovtx);
-    int tex = c->sent_tex ? OGPU_TRI_UNIT0 : OGPU_TRI_NOTEX;
-    if (!n) return;
-    if (prim == OGPU_LAY_LIST && c->list_at >= 0 && ADDR(d) == c->list_vend) {
-        UBYTE *cnt = (UBYTE *)(c->cmdmem + PREFIX_WORDS) + (c->list_at + 2) * 4;
-        PUTW(cnt, GETW(cnt) + n);
-        c->list_vend = ADDR(d) + bytes;
-        return;
-    }
-    if (prim == OGPU_LAY_LIST) { c->list_at = c->b.words; c->list_vend = ADDR(d) + bytes; }
-    else c->list_at = -1;
-    ogpu_triangles3d(&c->b, ADDR(d), n, sizeof(struct ovtx), 0, 0, 0, tex, 0, OVTX_LAYOUT | (ULONG)prim);
+    c->s3o->emit(&c->s3, ADDR(d), n, sizeof(struct ovtx), prim, c->sent_tex ? OGPU_TRI_UNIT0 : OGPU_TRI_NOTEX, OVTX_LAYOUT);
 }
 
 /* ---- glClear ------------------------------------------------------------------------------------- */
 
 void mgl_clear(GLcontext c, GLbitfield mask)
 {
-    long have = c->body ? c->b.words : 0;
-    if (have + 64 > BATCH_WORDS - PREFIX_WORDS) mgl_flush(c);
+    if (!c->s3o->room(&c->s3, 64, 0)) mgl_flush(c);
     begin(c);
     if (c->clip_dirty) send_clip(c);
     if (c->scissor_empty) return;
     if (mask & GL_COLOR_BUFFER_BIT) {
         ULONG argb = mgl_argb(c->clear_color), raw = argb;
         if (c->fmt == OGPU_FMT_RGB565) raw = (((argb >> 19) & 31) << 11) | (((argb >> 10) & 63) << 5) | ((argb >> 3) & 31);
-        ogpu_fill(&c->b, 0, 0, c->width, c->height, raw);
+        c->s3o->fill(&c->s3, 0, 0, c->width, c->height, raw);
     }
     if ((mask & GL_DEPTH_BUFFER_BIT) && c->depth_mask) {
         ULONG v = c->clear_depth >= 1.0 ? 0xFFFFFFFFUL : c->clear_depth <= 0.0 ? 0
                 : (ULONG)mgl_f2l((float)(c->clear_depth * 1073741823.0)) << 2;
-        ogpu_clear3d(&c->b, OGPU_KIND_DEPTH, 0, 0, c->width, c->height, v);
+        c->s3o->clear3d(&c->s3, OGPU_KIND_DEPTH, 0, 0, c->width, c->height, v);
     }
-    c->list_at = -1;
+    c->s3.list_at = -1;
 }
 
 void GLClear(GLcontext c, GLbitfield mask)
@@ -412,7 +385,7 @@ void mgl_readback(GLcontext c, int x, int y, int w, int h, ULONG *argb, int stri
     if (c->vg) { mgl_vg_readback(c, x, y, w, h, argb, stride); return; }
     if (c->route == ROUTE_GPU) {
         begin(c);
-        ogpu_clear3d(&c->b, OGPU_KIND_COLOUR | OGPU_KIND_READBACK, 0, 0, c->width, c->height, 0);
+        c->s3o->clear3d(&c->s3, OGPU_KIND_COLOUR | OGPU_KIND_READBACK, 0, 0, c->width, c->height, 0);
     }
     mgl_flush(c);
     if (!mgl_disp_lock(c)) return;

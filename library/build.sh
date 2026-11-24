@@ -148,10 +148,15 @@ echo "$OUT/GFOpenRTG-Monitor ($(wc -c < "$OUT/GFOpenRTG-Monitor") bytes)"
 "$HERE/minigl/build.sh" "$OUT"        # minigl.library, libminigl.a, libmgl.a and MGLTest
 "$HERE/tinygl/build.sh" "$OUT"        # tinygl.library (the stand-in) and libtinygl.a
 "$HERE/egl/build.sh" "$OUT"           # libEGL.a: EGL 1.4 on GLA
-[ ! -x "${SDL2_STOVE:-$HOME/AmiCradle/stoves/os32-gcc16/prefix}/bin/m68k-amigaos-gcc" ] || STOVE="${SDL2_STOVE:-$HOME/AmiCradle/stoves/os32-gcc16/prefix}" "$HERE/modules/sdl2/build.sh" "$OUT"   # SDL 2 (library/modules/sdl2), with the GCC 16 stove
-[ ! -x "${SDL2_STOVE:-$HOME/AmiCradle/stoves/os32-gcc16/prefix}/bin/m68k-amigaos-gcc" ] || STOVE="${SDL2_STOVE:-$HOME/AmiCradle/stoves/os32-gcc16/prefix}" "$HERE/modules/openal/build.sh" "$OUT"   # OpenAL (library/modules/openal), with the GCC 16 stove
+# The GCC 16 stove SDL 2, OpenAL and SDL 1.2 are built with: SDL2_STOVE (a prefix), else the one gfopengpu.library's
+# compiler is in (OPENGPU_CC, above), so a machine that keeps its stoves somewhere other than $HOME/AmiCradle/stoves
+# and says so for gfopengpu.library builds these too. Without one they are left out, and this says so.
+SDL2_STOVE=${SDL2_STOVE:-$(dirname "$(dirname "$OPENGPU_CC")")}
+[ -x "$SDL2_STOVE/bin/m68k-amigaos-gcc" ] || echo "library/build.sh: no GCC 16 stove at $SDL2_STOVE: SDL2.module, OpenAL.module and SDL 1.2 are not built" >&2
+[ ! -x "$SDL2_STOVE/bin/m68k-amigaos-gcc" ] || STOVE="$SDL2_STOVE" "$HERE/modules/sdl2/build.sh" "$OUT"   # SDL 2 (library/modules/sdl2), with the GCC 16 stove
+[ ! -x "$SDL2_STOVE/bin/m68k-amigaos-gcc" ] || STOVE="$SDL2_STOVE" "$HERE/modules/openal/build.sh" "$OUT"   # OpenAL (library/modules/openal), with the GCC 16 stove
 # SDL 1.2 (library/modules/sdl12: sdl12-compat on that SDL 2), when SDL 2 was built.
-[ ! -f "$OUT/libSDL2.a" ] || STOVE16="${SDL2_STOVE:-$HOME/AmiCradle/stoves/os32-gcc16/prefix}" "$HERE/modules/sdl12/build.sh" "$OUT"
+[ ! -f "$OUT/libSDL2.a" ] || STOVE16="$SDL2_STOVE" "$HERE/modules/sdl12/build.sh" "$OUT"
 # No float-to-int store through the FPCR register (tools/fpcr_check.py: GCC 16
 # at -m68040 can make one; the check runs on every build, whichever stove).
 python3 "$ROOT/tools/fpcr_check.py" "${CC%gcc}objdump" "$OUT/gfopenrtg.library" "$OUT/cybergraphics.library" "$OUT/gfopengpu.library" $([ "${OGPU_ROM:-0}" = 1 ] || echo "$OUT/rom/gfopengpu.library") "$OUT/GFOpenRTG" "$OUT/GFOpenRTG-Monitor" "$OUT/minigl.library" "$OUT/tinygl.library" "$OUT/libtinygl.a" "$OUT/libEGL.a"

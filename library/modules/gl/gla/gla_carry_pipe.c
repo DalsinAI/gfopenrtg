@@ -102,6 +102,7 @@ struct gla_carry *gla_carry_open(const struct gla_carry_mem *mem, unsigned long 
     *status = GLA_CARRY_NO_MEMORY;
     if (!mem || !caps) return 0;
     if (!(c = mem->alloc(mem->user, sizeof *c))) return 0;
+    for (i = 0; i < sizeof *c; i++) ((char *)c)[i] = 0;     /* the memory comes as it is */
     c->mem = *mem;
     if (!(c->ops = ogpu_pipe_ops(6))) { *status = GLA_CARRY_NO_PIPE; goto fail; }
     /* the open's block and the context's name, where the host reaches them */

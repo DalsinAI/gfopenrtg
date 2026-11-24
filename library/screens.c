@@ -58,6 +58,7 @@
 #include <dos/dosextens.h>
 #include <gfopengpu/build.h>
 #include <gfopengpu/virgl.h>
+#include <gfopengpu/caps.h>
 #include <gfopenrtg/gfopenrtg.h>
 
 #include "modes.h"
@@ -67,6 +68,8 @@
 #include "opengfx_bridge.h"
 #include "text_strip.h"
 #include "uaegfx.h"
+#include "pixels.h"
+#include "present_plan.h"
 
 #define REG(r, decl) register decl __asm(#r)
 
@@ -1643,6 +1646,176 @@ LONG ortg_present_virgl(struct RastPort *rp, LONG x, LONG y, const struct OpenRT
     if (!pieces_then(rp, x + dx, y + dy, x + dx + dw - 1, y + dy + dh - 1, vp_piece, vp_finish, &v)) v.pixels = -1;
     FreeVec(v.blk);
     return v.pixels;
+}
+
+/* ---- ORTG_Present (0.30): the one present --------------------------------------------------------
+ * Routes in library/present_plan.h; docs/design/OpenGPU-Shared-Pipe-Plan.md 2.7 and M8. A prepared
+ * present (ORTG_PRESENT_PREPARE) keeps what it needs in a token until ORTG_PresentDone, which
+ * finishes it: the in-block one counts or, if the host refused it, reads the frame back; the others
+ * are presented then, after the caller's block. */
+
+struct prs_token {
+    ULONG magic;
+    ULONG in_block;                 /* its command is in the caller's block */
+    struct ORTG_PresentInfo in;     /* the call, as it came */
+    struct Rectangle src, dst;      /* ... with its rectangles kept */
+};
+#define PRS_MAGIC 0x50525354UL      /* 'PRST' */
+
+static int prs_host_present(void)
+{
+    if (!ortg_S->opengpu || ogpu_off) return 0;
+    return OGPU_ANSWER(OGPU_Query(OGPU_OP_VIRGL, 0)) == OGPU_FULL
+        && OGPU_ANSWER(OGPU_Query(OGPU_OP_VIRGL_PRESENT, 0)) != OGPU_NONE;
+}
+
+static struct ortg_bitmap *prs_rtg(struct RastPort *rp)
+{
+    struct ortg_bitmap *o = rp ? ortg_of(rp->BitMap) : NULL;
+    return o && (o->format == ORTG_ARGB32 || o->format == ORTG_RGB16) && o->mem ? o : NULL;
+}
+
+/* The frame back from the host (ACV_GET, ARGB words in the Amiga's order) and written by the CPU. */
+static LONG prs_readback(const struct ORTG_PresentInfo *in)
+{
+    ULONG w = in->width, h = in->height, *buf, *blk, a[14], i;
+    UBYTE stream[16 * 4];
+    struct OGPUBatch b;
+    struct OpenRTGPixels px;
+    long x0, y0, x1, y1;
+    LONG done = -1;
+    if (!w || !h || !ortg_S->opengpu || ogpu_off) return -1;
+    if (!prs_part(in->src ? &in->src->MinX : NULL, w, h, &x0, &y0, &x1, &y1)) return 0;
+    if (!(buf = AllocVec(w * h * 4 + 16 * 4, MEMF_ANY))) return -1;
+    blk = buf + w * h;
+    a[0] = in->handle; a[1] = in->context; a[2] = 0; a[3] = w * 4; a[4] = 0;
+    a[5] = 0; a[6] = 0; a[7] = 0; a[8] = w; a[9] = h; a[10] = 1;
+    a[11] = (ULONG)buf; a[12] = w * h * 4; a[13] = ACV_SWAP_32;
+    blk[0] = ACV_HDR(ACV_GET, 16); blk[1] = 0;
+    for (i = 0; i < 14; i++) blk[2 + i] = a[i];
+    ogpu_batch_init(&b, stream, 16);
+    ogpu_virgl(&b, (ULONG)blk, 16 * 4);
+    ogpu_fence(&b, 1);
+    if (ogpu_submit_batch(&b) && (LONG)blk[1] >= 0) {
+        if (in->flags & ORTG_PRESENT_FLIP_Y)                /* row 0 is the bottom: turned over in place */
+            for (i = 0; i < h / 2; i++) {
+                ULONG *r0 = buf + i * w, *r1 = buf + (h - 1 - i) * w, k;
+                for (k = 0; k < w; k++) { ULONG t = r0[k]; r0[k] = r1[k]; r1[k] = t; }
+            }
+        px.data = buf; px.x = x0; px.y = y0; px.modulo = (long)w * 4; px.format = ORTG_PIX_ARGB; px.ctable = NULL;
+        px.width = x1 - x0 + 1; px.height = y1 - y0 + 1; px.dest_width = px.dest_height = 0;
+        done = ortg_write_pixels(in->rp, in->x + x0, in->y + y0, &px);
+        ortg_stat(ORTG_STAT_PRESENT_READBACK, 0, (ULONG)px.width * (ULONG)px.height);
+    }
+    FreeVec(buf);
+    return done;
+}
+
+/* ORTG_PresentVirgl's way: the layer's visible pieces in a block of GFOpenRTG's own; else read back. */
+static LONG prs_virgl_now(const struct ORTG_PresentInfo *in)
+{
+    struct OpenRTGVirglFrame f;
+    LONG n = -1;
+    if (prs_host_present() && prs_rtg(in->rp)) {
+        f.context = in->context; f.handle = in->handle;
+        f.width = in->width; f.height = in->height;
+        f.damage_x = f.damage_y = 0; f.damage_w = f.damage_h = 0;
+        if (in->src) {
+            f.damage_x = in->src->MinX; f.damage_y = in->src->MinY;
+            f.damage_w = (UWORD)(in->src->MaxX - in->src->MinX + 1); f.damage_h = (UWORD)(in->src->MaxY - in->src->MinY + 1);
+        }
+        f.flags = in->flags & ORTG_PRESENT_FLIP_Y ? ORTG_VIRGL_FLIP_Y : 0;
+        f.box_w = f.box_h = 0;
+        if (in->dst) {                                      /* the whole frame into the box, at its corner */
+            f.flags |= ORTG_VIRGL_SCALE;
+            f.box_w = (UWORD)(in->dst->MaxX - in->dst->MinX + 1); f.box_h = (UWORD)(in->dst->MaxY - in->dst->MinY + 1);
+            n = ortg_present_virgl(in->rp, in->dst->MinX, in->dst->MinY, &f);
+        } else
+            n = ortg_present_virgl(in->rp, in->x, in->y, &f);
+    }
+    if (n >= 0) return n;
+    if (in->dst) return -1;                                 /* no stretching on the CPU */
+    return prs_readback(in);
+}
+
+static LONG prs_memory(const struct ORTG_PresentInfo *in)
+{
+    struct OpenRTGPixels px;
+    long x0, y0, x1, y1;
+    LONG n;
+    if (!in->memory || !in->width || !in->height) return -1;
+    if (!prs_part(in->src ? &in->src->MinX : NULL, in->width, in->height, &x0, &y0, &x1, &y1)) return 0;
+    px.data = in->memory; px.x = x0; px.y = y0; px.modulo = (long)in->stride; px.format = in->format; px.ctable = NULL;
+    px.width = x1 - x0 + 1; px.height = y1 - y0 + 1; px.dest_width = px.dest_height = 0;
+    n = ortg_write_pixels(in->rp, in->x + x0, in->y + y0, &px);
+    ortg_stat(ORTG_STAT_PRESENT_MEMORY, 0, (ULONG)px.width * (ULONG)px.height);
+    return n;
+}
+
+/* The prepared present's one command into the caller's block: the frame at x, y of the bitmap,
+ * the source's part as its one rectangle. 0 words when it can't go there. */
+static ULONG prs_in_block(const struct ORTG_PresentInfo *in)
+{
+    struct ortg_bitmap *o = prs_rtg(in->rp);
+    ULONG fmt;
+    long x0, y0, x1, y1;
+    if (!o || !in->blk || in->room < PRS_CMD_WORDS) return 0;
+    if (!prs_part(in->src ? &in->src->MinX : NULL, in->width, in->height, &x0, &y0, &x1, &y1)) return 0;
+    if (in->x < -32768 || in->x > 32767 || in->y < -32768 || in->y > 32767) return 0;
+    if (o->format == ORTG_RGB16) fmt = OGPU_FMT_RGB565;
+    else if (in->flags & ORTG_PRESENT_ALPHA) fmt = OGPU_FMT_ARGB32;
+    else fmt = OGPU_ANSWER(OGPU_Query(OGPU_OP_PIXELS, OGPU_FMT_XRGB32)) != OGPU_NONE ? OGPU_FMT_XRGB32 : OGPU_FMT_ARGB32;
+    ortg_ogpu_settle();                                     /* the host writes the bitmap while the block runs */
+    return prs_cmd(in->blk, in->context, in->handle, in->x, in->y, (ULONG)o->mem, o->stride, fmt, o->width, o->height,
+                   in->flags & ORTG_PRESENT_FLIP_Y ? PRS_FLIP_Y : 0,
+                   in->x + x0, in->y + y0, (ULONG)(x1 - x0 + 1), (ULONG)(y1 - y0 + 1));
+}
+
+LONG ortg_present(struct ORTG_PresentInfo *in)
+{
+    struct prs_call c;
+    struct prs_token *t;
+    ULONG words;
+    if (!in || in->size < sizeof (struct ORTG_PresentInfo) || !in->rp) return -1;
+    if (in->flags & ORTG_PRESENT_PREPARE) in->token = NULL;
+    if (in->flags & ORTG_PRESENT_VSYNC) WaitTOF();
+    c.kind = in->kind; c.prepare = (in->flags & ORTG_PRESENT_PREPARE) != 0;
+    c.host_present = in->kind == ORTG_SURF_VIRGL && prs_host_present();
+    c.rtg = prs_rtg(in->rp) != NULL;
+    c.layered = in->rp->Layer != NULL;
+    c.boxed = in->dst != NULL;
+    switch (prs_route(&c)) {
+    case PRS_MEMORY: return prs_memory(in);
+    case PRS_NONE: return -1;
+    default: break;
+    }
+    if (!c.prepare) return prs_virgl_now(in);
+    /* prepared: the token keeps the call until ORTG_PresentDone */
+    if (!(t = AllocVec(sizeof *t, MEMF_ANY))) return -1;
+    t->magic = PRS_MAGIC;
+    t->in = *in;
+    if (in->src) { t->src = *in->src; t->in.src = &t->src; }
+    if (in->dst) { t->dst = *in->dst; t->in.dst = &t->dst; }
+    t->in.blk = NULL; t->in.room = 0; t->in.token = NULL;
+    t->in.flags &= ~(ULONG)(ORTG_PRESENT_PREPARE | ORTG_PRESENT_VSYNC);
+    words = prs_route(&c) == PRS_IN_BLOCK ? prs_in_block(in) : 0;
+    t->in_block = words != 0;
+    in->token = t;
+    return (LONG)words;
+}
+
+void ortg_present_done(APTR token, const ULONG *blk, ULONG at)
+{
+    struct prs_token *t = token;
+    if (!t || t->magic != PRS_MAGIC) return;
+    t->magic = 0;
+    if (t->in_block) {
+        LONG r = blk ? (LONG)blk[at + 1] : -1;
+        if (r >= 0) ortg_stat(ORTG_STAT_VIRGL, 1, (ULONG)t->in.width * t->in.height);
+        else prs_readback(&t->in);                          /* the host said no: the frame comes back */
+    } else
+        prs_virgl_now(&t->in);
+    FreeVec(t);
 }
 
 /* The palette a RastPort draws with: its layer's screen's, else the screen

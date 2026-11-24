@@ -53,4 +53,8 @@
     LP2(0x8a, LONG, ORTG_ShowInstead, struct BitMap *, screen, a0, struct BitMap *, picture, a1, , OPENRTG_BASE_NAME)
 #define ORTG_ShownNow(screen, picture) \
     LP2(0x90, LONG, ORTG_ShownNow, struct BitMap *, screen, a0, struct BitMap *, picture, a1, , OPENRTG_BASE_NAME)
+#define ORTG_Present(info) \
+    LP1(0x96, LONG, ORTG_Present, struct ORTG_PresentInfo *, info, a0, , OPENRTG_BASE_NAME)
+#define ORTG_PresentDone(token, blk, at) \
+    LP3NR(0x9c, ORTG_PresentDone, APTR, token, a0, const ULONG *, blk, a1, ULONG, at, d0, , OPENRTG_BASE_NAME)
 #endif

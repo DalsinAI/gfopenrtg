@@ -17,7 +17,7 @@
  * found by key in the context's caches and bound only when they change; the viewport, the scissor and the shader
  * constants, sent only when they change; and, at the end, the object handles every front end's own objects take
  * (one namespace a context), a state object's handle, and the context's "nothing bound" reset. The keys carry
- * Gallium's own numbers (virgl_cmd.h): a front end turns its API's state into them; the pipe never sees GL or Warp3D.
+ * Gallium's own numbers (include/gfopengpu/pipe_vg.h): a front end turns its API's state into them; the pipe never sees GL or Warp3D.
  *
  * Version 4 (stage M5, 23 November 2026): the one fixed-function generator (ff_shader, bind_shader), keyed by
  * struct OGPUFFKey (section 2.4): MiniGL's object-space transform, lighting and two units, and Warp3D's screen-space
@@ -231,7 +231,7 @@ struct OGPUPipeInfo {
 struct OGPUBox { LONG x, y, z; ULONG w, h, d; };
 
 struct OGPUPipeResDesc {
-    ULONG target, format, bind;   /* virgl's numbers (virgl_cmd.h) */
+    ULONG target, format, bind;   /* virgl's numbers (pipe_vg.h) */
     ULONG width, height, levels;
     ULONG flags;                  /* OGPU_RES_STREAM: rewritten every frame (rings, not renames) */
 };
@@ -379,7 +379,7 @@ struct OGPUPipeOps {
            * and the next blend colour, stencil reference and stipple go (for a host that started again) */
     void  (*draw)(OGPUPipeCtx *, const struct OGPUDrawInfo *);
     void  (*clear)(OGPUPipeCtx *, ULONG buffers, const float rgba[4], double depth, ULONG stencil);
-          /* (M7) virgl's CLEAR: the whole of the bound framebuffer, buffers virgl_cmd.h's VG_CLEAR_ */
+          /* (M7) virgl's CLEAR: the whole of the bound framebuffer, buffers pipe_vg.h's VG_CLEAR_ */
     LONG  (*end_frame)(OGPUPipeCtx *, const struct OGPUPresentHook *hook, ULONG *fence);
           /* sends the frame; the hook (OpenRTG's) puts the present in the same block; fence for OGPU_Wait */
     LONG  (*flush)(OGPUPipeCtx *, ULONG *fence);   /* send what there is, no present (glFlush, a full batch) */

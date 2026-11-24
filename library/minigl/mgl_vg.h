@@ -25,9 +25,9 @@
 #include "mgl_internal.h"
 #include "../../include/gfopengpu/virgl.h"
 
-/* The protocol's numbers, byte order and command writers are shared with
- * Warp3D.library's virgl route. */
-#include "../pipe/virgl_cmd.h"
+/* The pipe's numbers and byte order, shared with Warp3D.library; the pipe
+ * writes every command. */
+#include "../../include/gfopengpu/pipe_vg.h"
 #include "../../include/gfopengpu/pipe.h"
 
 /* ---- resources -------------------------------------------------------------------------------- */
@@ -157,7 +157,6 @@ void vg_draw(GLcontext c, ULONG prim, ULONG start, ULONG count, int indexed, LON
 
 /* Block commands (the Amiga's order). */
 void vg_blk_cmd(ULONG *p, ULONG cmd, ULONG n, const ULONG *args);
-#define VG_BLK_WORDS(n) ((n) + 2)
 LONG vg_result(const ULONG *blk, ULONG at);             /* the result word of the command at blk[at] */
 ULONG vg_word(const ULONG *blk, ULONG at);
 

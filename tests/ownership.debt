@@ -6,11 +6,9 @@
 # rule            file                                                              # the stage that clears it
 
 # MiniGL's virgl route: its own blocks, resources, arenas, state objects, shaders, caps and present
-virgl-cmd         library/minigl/mgl_vg.h                                           # M7
 acv-present       library/minigl/mgl_vg_os3.c                                       # M8
 
 # Warp3D's virgl route, and its stream3d builder
-virgl-cmd         library/warp3d/w3d_vg.c                                           # M6
 acv-present       library/warp3d/w3d_vg.c                                           # M8
 acv-present       library/warp3d/w3d_vg_os3.c                                       # M8
 

@@ -9,14 +9,14 @@
  * (each block's data after the last block's, never over it: virglrenderer
  * writes buffers unsynchronized).
  *
- * The numbers of the virgl protocol are virglrenderer's (Mesa's MIT
- * virgl_protocol.h, virgl_hw.h, Gallium's p_defines.h), as
- * library/pipe/virgl_cmd.h carries them for MiniGL and Warp3D
- * alike; the encoder is the Team's own. */
+ * The numbers it hands the pipe are virglrenderer's (Mesa's MIT
+ * virgl_protocol.h, virgl_hw.h, Gallium's p_defines.h), as the pipe's
+ * include/gfopengpu/pipe_vg.h carries them for MiniGL and Warp3D alike;
+ * the pipe writes every command. */
 #include "w3d_vg.h"
 #include "../../include/gfopengpu/stream3d.h"
 
-#include "../pipe/virgl_cmd.h"
+#include "../../include/gfopengpu/pipe_vg.h"
 #include "../../include/gfopengpu/pipe.h"
 #include "w3d_vg_ffkey.h"
 

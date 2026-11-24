@@ -19,7 +19,7 @@
 
 static unsigned long screen[SH][SW];
 static unsigned long frame[FH][FW + 4];         /* 4 longs of padding a row: the stride isn't the width */
-static int calls, bad_info, vsyncs, vsync_not_first, refuse_at = -1;
+static int calls, bad_info, vsyncs, vsync_not_first, refuse_at = -1, zero_at = -1;
 static struct RastPort rastport;
 static int fails;
 
@@ -35,6 +35,7 @@ static long fake_present(struct ORTG_PresentInfo *in, void *ctx)
 {
     long x, y, n = 0;
     (void)ctx;
+    if (calls == zero_at) { calls++; return 0; }  /* GFOpenRTG's screens off: nothing written */
     if (calls++ == refuse_at) return -1;
     if (in->size != sizeof *in || in->kind != ORTG_SURF_MEMORY || in->memory != (void *)frame
         || in->stride != sizeof frame[0] || in->width != FW || in->height != FH || in->rp != &rastport
@@ -58,7 +59,7 @@ static void reset(void)
     for (y = 0; y < SH; y++) for (x = 0; x < SW; x++) screen[y][x] = 0xDEAD;
     for (y = 0; y < FH; y++) for (x = 0; x < FW + 4; x++) frame[y][x] = (unsigned long)(y << 8 | x);
     calls = bad_info = vsyncs = vsync_not_first = 0;
-    refuse_at = -1;
+    refuse_at = zero_at = -1;
 }
 
 /* The screen holds the frame's rects at ox, oy and nothing else. */
@@ -124,6 +125,12 @@ int main(void)
     refuse_at = 1;
     check(orf_present(fake_present, NULL, &rastport, 0, 0, frame, sizeof frame[0], ORTG_PIX_ARGB, FW, FH, two, 3, 0) == 0,
           "a refusal after the first rect is 0");
+
+    /* 0 pixels for a non-empty rect: refused too (GFOpenRTG's screens off) */
+    reset();
+    zero_at = 0;
+    check(orf_present(fake_present, NULL, &rastport, 0, 0, frame, sizeof frame[0], ORTG_PIX_ARGB, FW, FH, &all, 1, 0) == 0,
+          "0 pixels written is refused");
 
     /* nothing called for what ORTG_Present can't take */
     reset();

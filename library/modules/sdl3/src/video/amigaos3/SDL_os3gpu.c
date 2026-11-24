@@ -413,6 +413,27 @@ bool SDL_OS3_GPU_PresentsNew(void)
                                           SDL_OS3_present_old);
 }
 
+/* The window's bitmap is a GFOpenRTG one (ORTG_BitMapInfo; not on a
+   Picasso96 board, nor with GFOpenRTG's screens off): ORTG_Present's MEMORY
+   route writes anything else through graphics.library as pens. Asked again
+   only when the bitmap changes: ORTG_BitMapInfo waits for GFOpenGPU. */
+static bool OS3_ORTG_Target(struct BitMap *bm)
+{
+    static struct BitMap *seen = NULL;
+    static bool seen_ok = false;
+    struct OpenRTGBitMapInfo bi;
+
+    if (!bm) {
+        return false;
+    }
+    if (bm != seen) {
+        SDL_zero(bi);
+        seen_ok = ORTG_BitMapInfo(bm, &bi) != 0;
+        seen = bm;
+    }
+    return seen_ok;
+}
+
 static long OS3_ORTG_Call(struct ORTG_PresentInfo *in, void *ctx)
 {
     (void)ctx;
@@ -435,6 +456,9 @@ int SDL_OS3_GPU_PresentNew(SDL_Window *window, SDL_Surface *surface, const SDL_R
     }
     win = d->syswin;
     bm = win->RPort->BitMap;
+    if (!OS3_ORTG_Target(bm)) {
+        return 0;
+    }
     switch (surface->format) {
 #if SDL_BYTEORDER == SDL_BIG_ENDIAN
     case SDL_PIXELFORMAT_ARGB8888:

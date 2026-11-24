@@ -54,8 +54,13 @@ struct orf_rect { int x, y, w, h; };
 /* The frame's rects (in its own pixels, already inside w x h) through
  * ORTG_Present, one call each: pixel 0, 0 of the frame at x, y of rp. vsync:
  * the first call waits for the display's next frame. 1: all were shown; 0:
- * one was refused (-1), and the caller shows the frame the old way (the
- * rects already written are written again, the same pixels). */
+ * one was refused, and the caller shows the frame the old way (the rects
+ * already written are written again, the same pixels). A non-empty rect
+ * answered with 0 pixels counts as refused: GFOpenRTG writes nothing when
+ * its screens are off (ortg_write_pixels without graphics). The caller
+ * only calls this for a target that is a GFOpenRTG bitmap
+ * (ORTG_BitMapInfo): on any other, ORTG_Present's MEMORY route would write
+ * pens through graphics.library. */
 static inline int orf_present(orf_call call, void *ctx, struct RastPort *rp, long x, long y,
                               void *pixels, unsigned long pitch, unsigned long format, int w, int h,
                               const struct orf_rect *rects, int n, int vsync)
@@ -89,7 +94,7 @@ static inline int orf_present(orf_call call, void *ctx, struct RastPort *rp, lon
             in.flags = ORTG_PRESENT_VSYNC;
             vsync = 0;
         }
-        if (call(&in, ctx) < 0) return 0;
+        if (call(&in, ctx) <= 0) return 0;
     }
     return 1;
 }

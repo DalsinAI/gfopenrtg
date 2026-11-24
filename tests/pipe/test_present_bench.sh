@@ -7,7 +7,7 @@
 # M0's file comes from git (git show); without git only this tree's is measured, and the test says so.
 #   tests/pipe/test_present_bench.sh
 # ACVIRGL_LIB: the virglrenderer library (default the machine's); VIRGL_SRC: its source's src/ (for
-# virgl_protocol.h; looked for when unset); BENCH_ARGS: the bench's arguments (default 300 640 480 now).
+# virgl_protocol.h; looked for, else virglrenderer's release fetched for the run); BENCH_ARGS: the bench's arguments (default 300 640 480 now).
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
@@ -17,18 +17,25 @@ M0=917bd97
 : "${BENCH_ARGS:=300 640 480 now}"
 if [ ! -e "$ACVIRGL_LIB" ]; then echo "test_present_bench: no $ACVIRGL_LIB: cannot run here"; exit 1; fi
 export ACVIRGL_LIB
+OUT=$(mktemp -d)
+trap 'rm -rf "$OUT"' EXIT
 if [ -z "${VIRGL_SRC:-}" ]; then
-    for d in /usr/src /usr/local/src /opt /srv /home; do
-        f=$(find "$d" -maxdepth 6 -name virgl_protocol.h -path '*/src/*' 2>/dev/null | head -n 1)
+    for d in /usr/src /usr/local/src /opt; do
+        f=$(find "$d" -maxdepth 4 -name virgl_protocol.h -path '*/src/*' 2>/dev/null | head -n 1)
         if [ -n "$f" ]; then VIRGL_SRC=$(dirname "$f"); break; fi
     done
 fi
 if [ ! -f "${VIRGL_SRC:-/nonexistent}/virgl_protocol.h" ]; then
-    echo "test_present_bench: no virgl_protocol.h (set VIRGL_SRC to virglrenderer's src/)"; exit 1
+    # only the protocol's numbers, from virglrenderer's release (MIT), for this run: nothing kept
+    mkdir -p "$OUT/virgl"
+    if curl -sSfL --max-time 30 -o "$OUT/virgl/virgl_protocol.h" \
+        "https://gitlab.freedesktop.org/virgl/virglrenderer/-/raw/${VIRGL_TAG:-1.3.0}/src/virgl_protocol.h"; then
+        VIRGL_SRC="$OUT/virgl"
+    else
+        echo "test_present_bench: no virgl_protocol.h (set VIRGL_SRC to virglrenderer's src/)"; exit 1
+    fi
 fi
 echo "virgl_protocol.h from $VIRGL_SRC"
-OUT=$(mktemp -d)
-trap 'rm -rf "$OUT"' EXIT
 
 build() {   # $1 acvirgl.c, $2 the bench
     cc -std=gnu11 -O2 -Wall -Wextra -I"$VIRGL_SRC" -I"$ROOT/host/virgl" -o "$2" "$ROOT/tests/acvirgl_present_bench.c" "$1" -ldl

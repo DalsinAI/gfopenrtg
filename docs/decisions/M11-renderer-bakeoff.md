@@ -100,9 +100,37 @@ llvmpipe matches the stream route for many small draws.**
   The GPU wins on pixels and loses on small draws (a submit costs about
   0.15 ms with its wait), the same shape as daletop's lab: a 68k game's many
   small draws are the "tiny" row, over and over.
-- MGLTest's frame-0 checksum on the stream route was 26ca6bed in most boots
-  and 124d81ad (the 24 November value) in one, under the same driver. To look
-  into: a picture that differs by run.
+- MGLTest's frame-0 checksum is 26ca6bed for the first program after
+  minigl.library is loaded (after a boot or `Avail FLUSH`) and 124d81ad for
+  every later one, on every route including the 68k and whatever the frame
+  count: about 17,000 pixels in the scene's lower half differ by 1. Not the
+  renderer and not gfopengpu.library (GLArrays first doesn't change it); some
+  state in minigl.library outlives its first client. Still to find.
+
+## GLQuake (25 November)
+
+OpenUpQuake (id's GLQuake through minigl.library, the copy on Instance-32's
+DH2:Ported/Quake, read only) in the same lab, `timedemo demo1` (969 frames) at
+640x480, one run each. The lab was moved first from the DevDrive (NFS from
+bigguy) to daletop's own disk: on the DevDrive the game's loading stalled the
+emulator in the kernel for minutes.
+
+| Route | seconds | fps |
+| --- | --- | --- |
+| virgl on the RX 460 | 6.5 | 149.2 |
+| virgl on llvmpipe | 27.3 | 35.5 |
+| stream route, `AC_VK_3D=gpu` | 27.5 | 35.3 |
+| stream route, `auto` | 27.4 | 35.4 |
+| stream route, `AC_VK_3D=core` | 40.6 | 23.9 |
+
+- A real MiniGL game agrees with the small benches on the chip: virgl on the
+  graphics chip is about 4 times anything else.
+- Here the Vulkan 3D shader beats the host core by about 1.5 times (big
+  textured triangles at 640x480: pixels, which the GPU is good at), and
+  `auto` takes it.
+- virgl on llvmpipe is level with the stream route's best, and 1.5 times the
+  host core alone.
+- The 68k wasn't timed (it would take minutes for 969 frames).
 
 ## What it says so far
 
@@ -132,8 +160,7 @@ llvmpipe matches the stream route for many small draws.**
 ## Still to measure before a decision
 
 - The x86 appliance's Amiga programs (only its host-side test is in).
-- BlitzQuake and Quake through MiniGL (neither is in the lab or the Media
-  Library), and `scenes3d`.
+- BlitzQuake (not found on any drive yet), Quake on the 68k, and `scenes3d`.
 - Why the Vulkan 3D shader loses on small draws, and whether it can win (Dale, 25 November: later).
 - GLArrays timed (it only checks pictures today).
 

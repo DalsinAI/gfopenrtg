@@ -195,6 +195,12 @@ struct ogpu_vk_stats {
      * wait gave up and the C core took over */
     unsigned long stuck;
     double probe_us;        /* setup's first piece of work, submitted and waited for */
+    /* TRIANGLES on the graphics pipeline (OGPU_VK_3D=gfx, ogpu3d_gfx.h): gfx 1
+     * when it was set up; commands it drew, declined (drawn on the core),
+     * groups sent, textures sent, pipelines made */
+    int gfx;
+    unsigned long tri_gfx, tri_gfx_declined, gfx_groups, gfx_tex_uploads, gfx_pipelines;
+    double gfx_before_ms, gfx_in_ms, gfx_wait_ms, gfx_out_ms;   /* where its groups' time went (ogpu3d_gfx_stats) */
 };
 void ogpu_vk_stats(const struct ogpu_vk *vk, struct ogpu_vk_stats *s);
 

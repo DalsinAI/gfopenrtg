@@ -64,6 +64,7 @@
 #ifdef OGPU_WITH_3D
 #include "../../library/opengpu/ogpu_3d.h"
 #include "ogpu3d_rec.c"     /* one unit: the runtime builds the back end from this file */
+#include "ogpu3d_gfx.c"     /* TRIANGLES on the graphics pipeline (OGPU_VK_3D=gfx), likewise */
 #include "ogpu3d_spv.h"     /* ogpu3d_comp_spv[]: ogpu3d.comp compiled (build_spv.sh) */
 #endif
 #include "ogpu_vk_spv.h"    /* ogpu_comp_spv[]: ogpu.comp compiled (host/vulkan/build_spv.sh) */
@@ -99,6 +100,8 @@ struct ogpu_vk {
     struct ogpu3d d3;           /* the core's 3D state */
     /* TRIANGLES on the GPU (ogpu3d_rec.c, ogpu3d.comp): 0 when it couldn't be set up */
     struct ogpu3d_rec *rec;
+    /* TRIANGLES on the GPU's own graphics pipeline (ogpu3d_gfx.c, OGPU_VK_3D=gfx), or 0 */
+    struct ogpu3d_gfx *gfx;
     VkBuffer stage_buf, tex_buf, data_buf;
     VkDeviceMemory stage_mem, tex_mem, data_mem;
     ogpu_u8 *stage, *texc, *data3;
@@ -116,6 +119,10 @@ struct ogpu_vk {
     long dispatches;            /* recorded since it opened */
     ogpu_u32 arena_used;
     int failed;                 /* a submit failed: the GPU path is off */
+    /* 2D on the core: ogpu.comp isn't built (OGPU_VK_2D=core, or a V3D, whose
+     * v3dv compiler spins on the big compute shaders: amicradle #949). The
+     * device is then only TRIANGLES' graphics pipeline's (OGPU_VK_3D=gfx). */
+    int no2d;
     /* Waits are bounded (7 Nov 2026): a new runtime hung two minutes in
      * setup's first round trip (the kernel's drm_syncobj_array_wait_timeout)
      * while another program kept daletop's RX 460 at 100%. While setting up,
@@ -365,9 +372,11 @@ static void begin(struct ogpu_vk *vk) {
     VkCommandBufferBeginInfo bi = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(vk->cmd, &bi);
-    vkCmdBindPipeline(vk->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, vk->pipe);
-    vkCmdBindDescriptorSets(vk->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, vk->layout, 0, 1, &vk->dset, 0, 0);
-    vk->bound = 1;
+    if (vk->pipe) {
+        vkCmdBindPipeline(vk->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, vk->pipe);
+        vkCmdBindDescriptorSets(vk->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, vk->layout, 0, 1, &vk->dset, 0, 0);
+    }
+    vk->bound = vk->pipe ? 1 : 0;
     vk->recording = 1;
     vk->dispatches = 0;
 }
@@ -416,6 +425,31 @@ static void dispatch3d(void *user, const unsigned int *pc, unsigned gx, unsigned
     vk->dispatches++;
 }
 static void flush3d(void *user) { flush((struct ogpu_vk *)user); }
+
+/* ogpu3d_gfx's hook: what the back end has recorded goes first */
+static void gfx_before(void *user) {
+    struct ogpu_vk *vk = user;
+    if (vk->list_n) list_send(vk);
+    flush(vk);
+}
+
+/* The graphics pipeline's open group sent and its rows back in memory; the
+ * compute shader's texture checks then look again (the GPU wrote memory). */
+static void gfx_close(struct ogpu_vk *vk) {
+    if (!vk->gfx || !ogpu3d_gfx_open(vk->gfx)) return;
+    if (!ogpu3d_gfx_close(vk->gfx)) { vk->lost_now = 1; vk->failed = 1; }
+    ogpu3d_rec_cpu_wrote(vk->rec);
+}
+
+/* Commands that leave the graphics pipeline's group open: the 3D state, a
+ * CLEAR3D that only asks for a readback, and TRIANGLES (which closes it
+ * itself when it can't draw into it). */
+static int gfx_keeps(int op, const ogpu_u8 *cmd, int len) {
+    if (op == OGPU_OP_TRIANGLES || op == OGPU_OP_RENDER3D || op == OGPU_OP_TEXENV || op == OGPU_OP_TEXTURE
+        || op == OGPU_OP_DEPTH || op == OGPU_OP_NOP)
+        return 1;
+    return op == OGPU_OP_CLEAR3D && len >= 2 && (rd32(cmd + 4) & OGPU_KIND_READBACK);
+}
 static int pending3d(void *user) { return ((struct ogpu_vk *)user)->recording; }
 #endif
 
@@ -1530,6 +1564,7 @@ long ogpu_vk_run(struct ogpu_vk *vk, const ogpu_u8 *stream, long words) {
     vk->core_drew = 0;                  /* a run starts by its own costs (gpu_mix_scale) */
 #ifdef OGPU_WITH_3D
     ogpu3d_rec_cpu_wrote(vk->rec);      /* the 68k ran since the last run */
+    ogpu3d_gfx_new_run(vk->gfx);
 #endif
     while (at < words) {
         ogpu_u32 hdr = rd32(stream + at * 4);
@@ -1541,6 +1576,7 @@ long ogpu_vk_run(struct ogpu_vk *vk, const ogpu_u8 *stream, long words) {
             break;
         }
 #ifdef OGPU_WITH_3D
+        if (vk->gfx && ogpu3d_gfx_open(vk->gfx) && !gfx_keeps(op, stream + at * 4, len)) gfx_close(vk);
         if (op >= OGPU_OP_3D_FIRST && op <= OGPU_OP_3D_LAST) {
             /* TRIANGLES on the GPU when it is quicker and exact; the state
              * commands, and a CLEAR3D that only asks for a readback (memory is
@@ -1548,7 +1584,12 @@ long ogpu_vk_run(struct ogpu_vk *vk, const ogpu_u8 *stream, long words) {
             int r3 = OGPU_OK, handled = 0;
             if (op == OGPU_OP_TRIANGLES) {
                 if (vk->list_n) list_send(vk);   /* the 2D list before it came first */
-                if (!vk->failed && vk->rec) handled = ogpu3d_rec_triangles(vk->rec, &vk->d3, stream + at * 4, len, &r3);
+                /* the graphics pipeline, then the compute shader, then the core */
+                if (!vk->failed && vk->gfx) {
+                    handled = ogpu3d_gfx_triangles(vk->gfx, &vk->d3, stream + at * 4, len, &r3);
+                    if (!handled) ogpu3d_rec_cpu_wrote(vk->rec);
+                }
+                if (!handled && !vk->failed && vk->rec) handled = ogpu3d_rec_triangles(vk->rec, &vk->d3, stream + at * 4, len, &r3);
             } else if (op != OGPU_OP_CLEAR3D || (len >= 2 && (rd32(stream + at * 4 + 4) & OGPU_KIND_READBACK))) {
                 r3 = ogpu3d_op(&vk->d3, op, stream + at * 4, len);
                 handled = 1;
@@ -1563,7 +1604,7 @@ long ogpu_vk_run(struct ogpu_vk *vk, const ogpu_u8 *stream, long words) {
         /* a drawing command after 3D work in staged memory, which it might read: that first */
         if (op >= OGPU_OP_FILL && vk->rec && ogpu3d_rec_staged(vk->rec)) flush(vk);
 #endif
-        int drawable = !vk->failed && gpu_op(op) && vk->core.target >= 0 && vk->core.slot[vk->core.target].pixels;
+        int drawable = !vk->failed && !vk->no2d && gpu_op(op) && vk->core.target >= 0 && vk->core.slot[vk->core.target].pixels;
         int routed = 0;             /* 1: by cost to the core, 2: by cost to the GPU (timed for weigh) */
         int kind = K_FILL;
         /* why it would run on the core (ogpu_vk_stats' why[]); -1: the GPU command's own checks */
@@ -1617,6 +1658,9 @@ long ogpu_vk_run(struct ogpu_vk *vk, const ogpu_u8 *stream, long words) {
         }
         at += len;
     }
+#ifdef OGPU_WITH_3D
+    gfx_close(vk);
+#endif
     stretch_end(vk);
     flush(vk);
     /* The core's reckoning against its time, kind by kind, once there is
@@ -1656,6 +1700,9 @@ static void core_afresh(struct ogpu_vk *vk) {
 }
 
 void ogpu_vk_reset(struct ogpu_vk *vk) {
+#ifdef OGPU_WITH_3D
+    gfx_close(vk);
+#endif
     flush(vk);
     core_afresh(vk);
 }
@@ -1693,6 +1740,14 @@ void ogpu_vk_stats(const struct ogpu_vk *vk, struct ogpu_vk_stats *s) {
         s->core_px_ns = r.core_px_ns; s->gpu_px_ns = r.gpu_px_ns;
         s->record_ms = r.record_ns / 1e6;
         s->shader3d = 1;
+    }
+    if (vk->gfx) {
+        struct ogpu3d_gfx_stats gs;
+        ogpu3d_gfx_stats(vk->gfx, &gs);
+        s->gfx = 1;
+        s->tri_gfx = gs.draws; s->tri_gfx_declined = gs.declined; s->gfx_groups = gs.groups;
+        s->gfx_tex_uploads = gs.tex_uploads; s->gfx_pipelines = gs.pipelines;
+        s->gfx_before_ms = gs.before_ms; s->gfx_in_ms = gs.in_ms; s->gfx_wait_ms = gs.wait_ms; s->gfx_out_ms = gs.out_ms;
     }
     s->round_trip_us = vk->round_trip_ns / 1000.0;
 #endif
@@ -2071,6 +2126,8 @@ static int pick_device(struct ogpu_vk *vk, char *err, int errlen) {
 /* Everything setup_3d made, gone (after the device is idle): the back end
  * then keeps the 3D range on its core, with no memory left behind. */
 static void teardown_3d(struct ogpu_vk *vk) {
+    ogpu3d_gfx_destroy(vk->gfx);
+    vk->gfx = 0;
     ogpu3d_rec_destroy(vk->rec);
     vk->rec = 0;
     if (vk->pipe3) vkDestroyPipeline(vk->dev, vk->pipe3, 0);
@@ -2111,6 +2168,19 @@ static int setup_3d_parts(struct ogpu_vk *vk) {
     uint32_t q;
     int i;
     if (m && !strcmp(m, "core")) return 0;
+    if (m && !strcmp(m, "gfx")) {
+        /* the graphics pipeline, else the core: not the compute shader, which
+         * some drivers can't compile (v3dv, amicradle #949) */
+        struct ogpu3d_gfx_cfg gc;
+        char why[160];
+        memset(&gc, 0, sizeof gc);
+        gc.phys = vk->phys; gc.dev = vk->dev; gc.queue = vk->queue; gc.qfam = vk->qfam;
+        gc.before = gfx_before; gc.user = vk;
+        gc.wait_ns = vk->wait_ns_max;
+        vk->gfx = ogpu3d_gfx_create(&gc, why, sizeof why);
+        if (!vk->gfx) fprintf(stderr, "GFOpenGPU: no graphics pipeline for TRIANGLES (%s): the C core draws them\n", why);
+        return 1;
+    }
     vkGetPhysicalDeviceProperties(vk->phys, &pr);
     if (pr.limits.maxStorageBufferRange < stage) stage = tex = pr.limits.maxStorageBufferRange & ~15UL;
     if (pr.limits.maxStorageBufferRange < data) data = pr.limits.maxStorageBufferRange & ~15UL;
@@ -2462,7 +2532,14 @@ struct ogpu_vk *ogpu_vk_create(const struct ogpu_vk_config *cfg, char *err, int 
     cpi.stage.module = vk->shader;
     cpi.stage.pName = "main";
     cpi.layout = vk->layout;
-    if ((r = vkCreateComputePipelines(vk->dev, VK_NULL_HANDLE, 1, &cpi, 0, &vk->pipe)) != VK_SUCCESS) { fail(err, errlen, "vkCreateComputePipelines", r); goto bad; }
+    {
+        const char *two = getenv("OGPU_VK_2D");
+        vk->no2d = (two && !strcmp(two, "core")) || (!strncmp(vk->name, "V3D", 3) && !(two && !strcmp(two, "gpu")));
+    }
+    if (!vk->no2d && (r = vkCreateComputePipelines(vk->dev, VK_NULL_HANDLE, 1, &cpi, 0, &vk->pipe)) != VK_SUCCESS) {
+        fail(err, errlen, "vkCreateComputePipelines", r);
+        goto bad;
+    }
 
     ps.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     ps.descriptorCount = 2;
@@ -2497,7 +2574,7 @@ struct ogpu_vk *ogpu_vk_create(const struct ogpu_vk_config *cfg, char *err, int 
     if ((r = vkCreateFence(vk->dev, &fi, 0, &vk->done)) != VK_SUCCESS) { fail(err, errlen, "vkCreateFence", r); goto bad; }
 
     vk->list = malloc(LIST_MAX * sizeof *vk->list);    /* none: every command is its own dispatch */
-    vk->route = vk->cfg.route;
+    vk->route = vk->no2d ? OGPU_VK_ROUTE_CORE : vk->cfg.route;
     vk->gpu_scale = vk->gpu_mix_scale = 1;
     for (q = 0; q < K_COUNT; q++) vk->core_scale[q] = 1;
     if (vk->route == OGPU_VK_ROUTE_COST && getenv("OGPU_VK_ROUTE")) {

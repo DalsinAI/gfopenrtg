@@ -52,6 +52,9 @@ struct ogpu3d_gfx_cfg {
 
 struct ogpu3d_gfx_stats {
     unsigned long draws, declined, groups, tex_uploads, pipelines;
+    /* milliseconds, all told: the back end's own work sent first (before),
+     * rows into staging, the submit and its wait, rows back into memory */
+    double before_ms, in_ms, wait_ms, out_ms;
 };
 
 /* 0 when the device lacks what it needs (why in why[]). */

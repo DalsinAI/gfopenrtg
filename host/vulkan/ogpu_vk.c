@@ -1747,6 +1747,7 @@ void ogpu_vk_stats(const struct ogpu_vk *vk, struct ogpu_vk_stats *s) {
         s->gfx = 1;
         s->tri_gfx = gs.draws; s->tri_gfx_declined = gs.declined; s->gfx_groups = gs.groups;
         s->gfx_tex_uploads = gs.tex_uploads; s->gfx_pipelines = gs.pipelines;
+        s->gfx_before_ms = gs.before_ms; s->gfx_in_ms = gs.in_ms; s->gfx_wait_ms = gs.wait_ms; s->gfx_out_ms = gs.out_ms;
     }
     s->round_trip_us = vk->round_trip_ns / 1000.0;
 #endif

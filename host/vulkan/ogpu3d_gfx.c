@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "ogpu3d_gfx.h"
 #include "ogpu3d_gfx_spv.h"     /* ogpu3d_gfx_vert_spv[], ogpu3d_gfx_frag_spv[] (build_spv.sh gfx) */
 
@@ -79,6 +80,7 @@ struct ogpu3d_gfx {
     VkDeviceMemory vmem, smem, tsmem;
     ogpu_u8 *vmap, *smap, *tsmap;
     size_t vused, ssize, sused, tssize;
+    int scoherent;                  /* staging is coherent: else flushed and invalidated */
     struct gf_img col, dep;
     VkFramebuffer fb;
     VkImageView fb_c, fb_d;
@@ -110,6 +112,12 @@ static uint32_t gf_rd32(const ogpu_u8 *p) {
     return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | (uint32_t)p[3];
 }
 
+static double gf_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1e3 + ts.tv_nsec / 1e6;
+}
+
 static float gf_float(uint32_t bits) { float f; memcpy(&f, &bits, 4); return f; }
 
 /* log2 of x > 0 to about 1e-6, without libm */
@@ -132,7 +140,7 @@ static int gf_memtype(const struct ogpu3d_gfx *g, uint32_t bits, VkMemoryPropert
 }
 
 static int gf_buffer(struct ogpu3d_gfx *g, VkDeviceSize size, VkBufferUsageFlags usage, VkBuffer *buf, VkDeviceMemory *mem,
-                     ogpu_u8 **map) {
+                     ogpu_u8 **map, int *coherent) {
     VkBufferCreateInfo bi = { .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
     VkMemoryAllocateInfo ai = { .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
     VkMemoryRequirements req;
@@ -144,9 +152,13 @@ static int gf_buffer(struct ogpu3d_gfx *g, VkDeviceSize size, VkBufferUsageFlags
     bi.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     if (vkCreateBuffer(g->cfg.dev, &bi, 0, buf) != VK_SUCCESS) { *buf = 0; return 0; }
     vkGetBufferMemoryRequirements(g->cfg.dev, *buf, &req);
-    /* the CPU reads the rows back from staging: cached memory where there is some */
-    type = gf_memtype(g, req.memoryTypeBits, hv | VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
+    /* The CPU reads the rows back from staging: cached memory where there is
+     * some, coherent or not (V3D's coherent memory is uncached, and reading a
+     * frame back from it took 30 ms on a Pi 5) */
+    type = coherent ? gf_memtype(g, req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT) : -1;
+    if (type < 0) type = gf_memtype(g, req.memoryTypeBits, hv | VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
     if (type < 0) type = gf_memtype(g, req.memoryTypeBits, hv);
+    if (coherent) *coherent = type >= 0 && (g->mp.memoryTypes[type].propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0;
     if (type < 0) return 0;
     ai.allocationSize = req.size;
     ai.memoryTypeIndex = (uint32_t)type;
@@ -380,7 +392,7 @@ struct ogpu3d_gfx *ogpu3d_gfx_create(const struct ogpu3d_gfx_cfg *cfg, char *why
     g->cb = cbs[0]; g->tcb = cbs[1];
     if (vkCreateFence(cfg->dev, &fi, 0, &g->fence) != VK_SUCCESS || vkCreateFence(cfg->dev, &fi, 0, &g->tfence) != VK_SUCCESS)
         goto vkbad;
-    if (!gf_buffer(g, GF_VBUF, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &g->vbuf, &g->vmem, &g->vmap)) goto vkbad;
+    if (!gf_buffer(g, GF_VBUF, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &g->vbuf, &g->vmem, &g->vmap, 0)) goto vkbad;
     /* the texture for untextured triangles (the shader's set is always bound) */
     if (!gf_img(g, &g->dummy.im, 1, 1, 1, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
                 VK_IMAGE_ASPECT_COLOR_BIT))
@@ -663,7 +675,7 @@ static int gf_tex_upload(struct ogpu3d_gfx *g, struct gf_tex *e, const struct og
         size_t n = need < (1UL << 20) ? (1UL << 20) : need;
         gf_buffer_free(g, &g->tsbuf, &g->tsmem, &g->tsmap);
         g->tssize = 0;
-        if (!gf_buffer(g, n, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &g->tsbuf, &g->tsmem, &g->tsmap)) {
+        if (!gf_buffer(g, n, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &g->tsbuf, &g->tsmem, &g->tsmap, 0)) {
             gf_buffer_free(g, &g->tsbuf, &g->tsmem, &g->tsmap);
             return 0;
         }
@@ -777,6 +789,7 @@ static void gf_rows_in(struct ogpu3d_gfx *g, int y0, int y1, int first) {
     VkBufferImageCopy rg;
     int bpp = gf_cbpp(g->ci), x, y, w = g->dw;
     ogpu_u8 *o = g->smap + g->sused;
+    double t0 = gf_ms();
     memset(&rg, 0, sizeof rg);
     for (y = y0; y < y1; y++) {
         const ogpu_u8 *p = g->dst + g->dbpr * y;
@@ -844,6 +857,7 @@ static void gf_rows_in(struct ogpu3d_gfx *g, int y0, int y1, int first) {
                    VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
                    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT);
     }
+    g->st.in_ms += gf_ms() - t0;
 }
 
 static void gf_pass_begin(struct ogpu3d_gfx *g) {
@@ -870,7 +884,9 @@ static int gf_group_open(struct ogpu3d_gfx *g, const struct ogpu_surface *dst, i
     VkCommandBufferBeginInfo bi = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
     int di = z ? (z->format == OGPU_FMT_Z32 ? 2 : 1) : 0, w = dst->w, h = dst->h;
     size_t need;
+    double t0 = gf_ms();
     if (g->cfg.before) g->cfg.before(g->cfg.user);
+    g->st.before_ms += gf_ms() - t0;
     /* the images (and framebuffer) for this size and these formats; a new
      * image's view may have an old one's handle, so the framebuffer goes too */
     if ((g->col.img && (g->col.w != w || g->col.h != h || g->col.fmt != gf_cfmt[ci]))
@@ -910,7 +926,7 @@ static int gf_group_open(struct ogpu3d_gfx *g, const struct ogpu_surface *dst, i
     if (need > g->ssize) {
         gf_buffer_free(g, &g->sbuf, &g->smem, &g->smap);
         g->ssize = 0;
-        if (!gf_buffer(g, need, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, &g->sbuf, &g->smem, &g->smap)) {
+        if (!gf_buffer(g, need, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, &g->sbuf, &g->smem, &g->smap, &g->scoherent)) {
             gf_buffer_free(g, &g->sbuf, &g->smem, &g->smap);
             return 0;
         }
@@ -951,6 +967,7 @@ int ogpu3d_gfx_close(struct ogpu3d_gfx *g) {
     VkMemoryBarrier mb = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER };
     size_t cat, zat = 0;
     int bpp, x, y, w, zy1 = 0, zw = 0, z32 = 0;
+    double t0, t1;
     if (!g || !g->open) return 1;
     g->open = 0;
     if (g->in_pass) vkCmdEndRenderPass(g->cb);
@@ -992,8 +1009,21 @@ int ogpu3d_gfx_close(struct ogpu3d_gfx *g) {
     if (vkEndCommandBuffer(g->cb) != VK_SUCCESS) { g->failed = 1; return 0; }
     si.commandBufferCount = 1;
     si.pCommandBuffers = &g->cb;
+    if (!g->scoherent) {
+        VkMappedMemoryRange mr = { .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE };
+        mr.memory = g->smem; mr.size = VK_WHOLE_SIZE;
+        vkFlushMappedMemoryRanges(g->cfg.dev, 1, &mr);
+    }
+    t0 = gf_ms();
     if (vkQueueSubmit(g->cfg.queue, 1, &si, g->fence) != VK_SUCCESS) { g->failed = 1; return 0; }
     if (!gf_wait(g, &g->fence)) return 0;
+    t1 = gf_ms();
+    g->st.wait_ms += t1 - t0;
+    if (!g->scoherent) {
+        VkMappedMemoryRange mr = { .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE };
+        mr.memory = g->smem; mr.size = VK_WHOLE_SIZE;
+        vkInvalidateMappedMemoryRanges(g->cfg.dev, 1, &mr);
+    }
     vkResetCommandBuffer(g->cb, 0);
     /* the rows back into memory, in the target's byte order */
     {
@@ -1036,6 +1066,7 @@ int ogpu3d_gfx_close(struct ogpu3d_gfx *g) {
                 for (x = 0; x < zw; x++, p += 2, o += 2) { p[0] = o[1]; p[1] = o[0]; }
         }
     }
+    g->st.out_ms += gf_ms() - t1;
     return 1;
 }
 

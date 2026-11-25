@@ -217,14 +217,19 @@ static double now_s(void) {
 
 static void time_bench(const char *name, int n) {
     double t0, tc, tg;
+    struct ogpu_vk_stats a, b;
     int i;
     t0 = now_s();
     for (i = 0; i < n; i++) ogpu_core_run(&C, sbuf, words);
     tc = now_s() - t0;
+    ogpu_vk_stats(V, &a);
     t0 = now_s();
     for (i = 0; i < n; i++) ogpu_vk_run(V, sbuf, words);
     tg = now_s() - t0;
-    printf("opengpu gfx: %-28s the core %.1f fps, the graphics pipeline %.1f fps\n", name, n / tc, n / tg);
+    ogpu_vk_stats(V, &b);
+    printf("opengpu gfx: %-28s the core %.1f fps, the graphics pipeline %.1f fps (a frame: before %.2f ms, rows in %.2f, "
+           "submit and wait %.2f, rows out %.2f)\n", name, n / tc, n / tg, (b.gfx_before_ms - a.gfx_before_ms) / n,
+           (b.gfx_in_ms - a.gfx_in_ms) / n, (b.gfx_wait_ms - a.gfx_wait_ms) / n, (b.gfx_out_ms - a.gfx_out_ms) / n);
 }
 
 static void test_benches(void) {

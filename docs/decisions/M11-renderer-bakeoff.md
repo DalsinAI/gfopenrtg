@@ -1,8 +1,11 @@
-# M11: the renderer bake-off (decision record)
+# Stream3D M11: the renderer bake-off (decision record)
 
 GF-66, the shared pipe's M11 (docs/design/OpenGPU-Shared-Pipe-Plan.md, M11 and
 phase 11). Status: **first numbers, no decision yet.** Nothing is deleted until
 Dale says yes and a deletion date is written here.
+
+Stream3D is the name of the whole 3D stack (Dale, 25 November): Warp3D, MiniGL
+and GL through gfopengpu.library, by virgl, the stream route or the 68k.
 
 ## What was measured
 

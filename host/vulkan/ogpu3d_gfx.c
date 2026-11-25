@@ -871,7 +871,13 @@ static int gf_group_open(struct ogpu3d_gfx *g, const struct ogpu_surface *dst, i
     int di = z ? (z->format == OGPU_FMT_Z32 ? 2 : 1) : 0, w = dst->w, h = dst->h;
     size_t need;
     if (g->cfg.before) g->cfg.before(g->cfg.user);
-    /* the images (and framebuffer) for this size and these formats */
+    /* the images (and framebuffer) for this size and these formats; a new
+     * image's view may have an old one's handle, so the framebuffer goes too */
+    if ((g->col.img && (g->col.w != w || g->col.h != h || g->col.fmt != gf_cfmt[ci]))
+        || (di && g->dep.img && (g->dep.w != w || g->dep.h != h || g->dep.fmt != gf_dfmt[di]))) {
+        if (g->fb) vkDestroyFramebuffer(g->cfg.dev, g->fb, 0);
+        g->fb = 0;
+    }
     if (g->col.img && (g->col.w != w || g->col.h != h || g->col.fmt != gf_cfmt[ci])) gf_img_free(g, &g->col);
     if (!g->col.img && !gf_img(g, &g->col, w, h, 1, gf_cfmt[ci],
                                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,

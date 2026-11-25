@@ -302,7 +302,9 @@ LIBCALL ULONG LIB_W3D_UpdateTexSubImage(REG(a0, W3D_Context *c), REG(a1, W3D_Tex
     if (!tex) return W3D_NOTEXTURE;
     t = TEX(tex);
     if ((int)level >= t->levels) return level ? W3D_NOMIPMAPS : W3D_ILLEGALINPUT;
-    if (x->s3.body) w3d_flush(x);                  /* the pending batch reads the old texels */
+    /* the pending batch reads the old texels; on the virgl route only a PUT not yet run does (a texture a pending draw
+     * samples is written into the stream, its texels copied there), so the batch goes on there without a send */
+    if (x->s3.body && (!x->live || !x->vg || w3dvg_tex_reads(x->vg, (ULONG)t->level[0]))) w3d_flush(x);
     if (palette && t->srcpal) { w3d_copy(t->srcpal, palette, 1024); tex->palette = palette; }
     lw = t->w >> level; lh = t->h >> level;
     if (lw < 1) lw = 1;

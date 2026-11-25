@@ -1171,6 +1171,14 @@ void w3dvg_texture(struct w3dvg *v, ULONG address, ULONG bpr, LONG w, LONG h, UL
     for (i = 1; i < levels; i++) v->t_lv[i] = level_addrs ? level_addrs[i - 1] : 0;
 }
 
+/* 1 when the block being built still reads the texture at address from Amiga memory (a PUT not yet run): its texels
+ * must not change before the block goes. Levels written into the stream (put_inline) were copied there already. */
+int w3dvg_tex_reads(struct w3dvg *v, ULONG address)
+{
+    struct tex *t = tex_find(v, address);
+    return t && (v->pipe->res_pending(v->px, t->res->pr) & OGPU_PIPE_RES_PUT) != 0;
+}
+
 void w3dvg_depth(struct w3dvg *v, ULONG kind, ULONG address, ULONG bpr, LONG w, LONG h, ULONG format)
 {
     end_group(v);

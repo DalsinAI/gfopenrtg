@@ -184,6 +184,32 @@ static void put(struct w3dvg *v, struct res *r, ULONG level, ULONG x, ULONG y, U
     if (v->pipe->sent(v->px) != v->seq) px_sync(v);
 }
 
+/* A small texture level's texels written in the stream itself (virgl's RESOURCE_INLINE_WRITE), copied now: the
+ * draws before it in the stream still sample the old texels, so the pipe doesn't rename it (a new host texture and
+ * view), and the block never reads the texture's memory later, so Warp3D needn't send the batch before the
+ * program changes the texels again (W3D_UpdateTexImage, w3dvg_tex_reads). 0 when it doesn't fit: put() then. */
+#define VG_CCMD_INLINE_WRITE 9
+#define INLINE_MAX 4096                 /* words of texels, at most */
+static int put_inline(struct w3dvg *v, struct res *r, ULONG level, ULONG w, ULONG h, ULONG src, ULONG stride)
+{
+    const ULONG *row;
+    ULONG *p, words = w * h, x, y;
+    if (!words || words > INLINE_MAX || (src & 3) || (stride & 3)) return 0;
+    if (!(p = v->pipe->cmd_room(v->px, 12 + words))) return 0;
+    *p++ = VG_LE((ULONG)VG_CCMD_INLINE_WRITE | ((11 + words) << 16));
+    *p++ = VG_LE(v->pipe->res_handle(r->pr));
+    *p++ = VG_LE(level); *p++ = 0; *p++ = VG_LE(w * 4); *p++ = 0;      /* level, usage, stride, layer stride */
+    *p++ = 0; *p++ = 0; *p++ = 0; *p++ = VG_LE(w); *p++ = VG_LE(h); *p++ = VG_LE(1UL);
+    for (y = 0; y < h; y++) {
+        row = (const ULONG *)(src + y * stride);
+        for (x = 0; x < w; x++) *p++ = VG_LE(row[x]);    /* ARGB in a word: B8G8R8A8 in the host's order */
+    }
+    v->st.inline_puts++;
+    v->st.put_bytes += words * 4;
+    if (v->pipe->sent(v->px) != v->seq) px_sync(v);
+    return 1;
+}
+
 /* ---- the block (the pipe's) ------------------------------------------------------------------------ */
 
 /* The pipe's arenas, as they are now: where this file writes copied vertices and indices, and the buffers' handles
@@ -547,7 +573,8 @@ static struct res *tex_view(struct w3dvg *v)
             if (!lw) lw = 1;
             if (!lh) lh = 1;
             if (!bpr) bpr = lw * 4;
-            put(v, t->res, l, 0, 0, lw, lh, l ? v->t_lv[l] : v->t_addr, bpr, bpr * (lh - 1) + lw * 4, ACV_SWAP_32);
+            if (!put_inline(v, t->res, l, lw, lh, l ? v->t_lv[l] : v->t_addr, bpr))
+                put(v, t->res, l, 0, 0, lw, lh, l ? v->t_lv[l] : v->t_addr, bpr, bpr * (lh - 1) + lw * 4, ACV_SWAP_32);
         }
         t->gen = v->t_gen;
     }
@@ -1144,6 +1171,14 @@ void w3dvg_texture(struct w3dvg *v, ULONG address, ULONG bpr, LONG w, LONG h, UL
     for (i = 1; i < levels; i++) v->t_lv[i] = level_addrs ? level_addrs[i - 1] : 0;
 }
 
+/* 1 when the block being built still reads the texture at address from Amiga memory (a PUT not yet run): its texels
+ * must not change before the block goes. Levels written into the stream (put_inline) were copied there already. */
+int w3dvg_tex_reads(struct w3dvg *v, ULONG address)
+{
+    struct tex *t = tex_find(v, address);
+    return t && (v->pipe->res_pending(v->px, t->res->pr) & OGPU_PIPE_RES_PUT) != 0;
+}
+
 void w3dvg_depth(struct w3dvg *v, ULONG kind, ULONG address, ULONG bpr, LONG w, LONG h, ULONG format)
 {
     end_group(v);
@@ -1356,5 +1391,5 @@ void w3dvg_stats(struct w3dvg *v, struct w3dvg_stats *s)
 {
     *s = v->st;
     v->st.blocks = v->st.draws = v->st.merged = v->st.triangles = v->st.objects = v->st.shaders = 0;
-    v->st.puts = v->st.put_bytes = v->st.loads = v->st.presents = v->st.refused = v->st.declined = 0;
+    v->st.puts = v->st.put_bytes = v->st.loads = v->st.presents = v->st.refused = v->st.declined = v->st.inline_puts = 0;
 }

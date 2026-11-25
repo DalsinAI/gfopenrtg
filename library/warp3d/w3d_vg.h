@@ -84,6 +84,7 @@ void w3dvg_render3d(struct w3dvg *v, const ULONG *args);        /* OGPU_R3D_ARGS
 void w3dvg_texenv(struct w3dvg *v, ULONG mode, ULONG colour);
 void w3dvg_texture(struct w3dvg *v, ULONG address, ULONG bpr, LONG w, LONG h, ULONG format, ULONG generation,
                    ULONG min, ULONG mag, ULONG wrap_s, ULONG wrap_t, ULONG border, ULONG levels, const ULONG *level_addrs);
+int w3dvg_tex_reads(struct w3dvg *v, ULONG address);   /* the block being built reads its texels from memory */
 void w3dvg_triangles(struct w3dvg *v, ULONG vaddr, ULONG vcount, ULONG stride, ULONG tex, ULONG layout);
 void w3dvg_fill(struct w3dvg *v, LONG x, LONG y, LONG w, LONG h, ULONG raw);
 void w3dvg_clear3d(struct w3dvg *v, ULONG kind, LONG x, LONG y, LONG w, LONG h, ULONG value);
@@ -118,6 +119,7 @@ void w3dvg_forget_z(struct w3dvg *v);
 struct w3dvg_stats {
     ULONG blocks, draws, merged, triangles, objects, shaders, puts, put_bytes, loads, presents, refused;
     ULONG declined;                     /* commands the route leaves to the CPU core */
+    ULONG inline_puts;                  /* texture levels written in the stream (a pending draw still read them) */
 };
 void w3dvg_stats(struct w3dvg *v, struct w3dvg_stats *s);
 

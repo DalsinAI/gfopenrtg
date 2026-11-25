@@ -31,6 +31,8 @@ the program's fixed frame count, at 320x240 in 16 bits.
 | MGLTest (MiniGL, FRAMES 300; cpu 100) | 577-600 fps | 455-484 fps | 234 fps | 67 fps |
 | W3DArrBench (9216 triangles a frame, 10 s) | 2.87 M tri/s | 1.65 M tri/s | 1.92-1.98 M tri/s | 0.53 M tri/s |
 | W3DArrBench SMALL (576 one-quad draws and 9 texture updates a frame, 5 s) | 188-205 fps | 221-235 fps | 584-585 fps | 147 fps |
+| ... after the texture fix (3cf5fb0, 25 November) | 435-441 fps | not run | 499 fps (same boot) | |
+| W3DArrBench SMALL NOUPDATE (no texture updates) | 551-602 fps | | 748 fps | |
 
 Ranges are runs on 24 and 25 November; bigguy and daletop were busy with other
 work, so take the spread as noise. W3DArrBench's `cpu` column is its own `CPU`
@@ -53,10 +55,18 @@ stream route and the 68k. GLArrays is 14/14 on both virgl renderers.
   times virgl on the RX 460 and 2.5 times virgl on llvmpipe. virgl is little
   quicker on the chip than on llvmpipe here, so the cost is virgl's per-draw
   and per-upload work, not the renderer.
+- **Most of that was one cost, now fixed.** Each W3D_UpdateTexImage sent the
+  pending batch to the host and waited (Warp3D flushed so the batch couldn't
+  read the new texels), and the pipe then renamed the texture (a new host
+  texture and view). Small texture levels now go into the stream itself,
+  copied when written, so neither happens: virgl doubles to about 440 fps,
+  close to the stream route's 500 in the same boot. The draws alone are
+  still a little behind the stream route (about 80%).
 - So the plan's rule ("if llvmpipe is within the stated margin, delete the host
   core's 3D path and the Vulkan compute path") looks met on this host for these
-  programs, but not for many small draws, which is what most 68k Warp3D games
-  send. The stream route's `auto` timing still mixes the host core and
+  programs. For many small draws, which is what most 68k Warp3D games send,
+  virgl is now within about 15% of the stream route on the graphics chip;
+  llvmpipe after the fix is still to time. The stream route's `auto` timing still mixes the host core and
   Vulkan, and only one host is measured, so there is no decision yet.
 
 ## Still to measure before a decision
@@ -66,8 +76,7 @@ stream route and the 68k. GLArrays is 14/14 on both virgl renderers.
 - The x86 appliance and a Pi 5 card.
 - BlitzQuake and Quake through MiniGL (neither is in the lab or the Media
   Library), and `scenes3d`.
-- W3DArrBench SMALL with the draws and the texture updates apart, to see which
-  of the two costs virgl most.
+- W3DArrBench SMALL on llvmpipe after the texture fix.
 - GLArrays timed (it only checks pictures today).
 
 ## The question for Dale, once those are in

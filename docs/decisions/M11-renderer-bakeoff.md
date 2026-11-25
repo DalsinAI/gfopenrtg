@@ -62,8 +62,11 @@ Three boots each, daletop's load about 10 on 12 cores.
 | W3DArrBench (9216 triangles a frame) | 2.50-2.55 M tri/s (one run 1.24) | 1.03-2.00 M tri/s | 1.84-1.90 M tri/s |
 | W3DArrBench SMALL | 633-785 fps (one boot 160-166) | 337-363 fps | 522-548 fps |
 
-In the last `auto` boot, virgl on the RX 460 gave SMALL 505 fps (with the
-texture fix) and W3DArrBench 1.81 M tri/s.
+That runtime first had no virglrenderer beside it, so `virgl` in it fell to the
+stream route; with virglrenderer linked in, the same boot started with
+`AC_VIRGL_DRIVER=llvmpipe` gave W3DArrBench SMALL 553 fps on virgl (744 with
+NOUPDATE) against 539 on the stream route: **after the texture fix, virgl on
+llvmpipe matches the stream route for many small draws.**
 
 - The Vulkan 3D shader is quicker only for the small scenes, by about 20%
   (W3DTest, MGLTest). The host core is quicker for big arrays (about 1.25
@@ -128,7 +131,7 @@ texture fix) and W3DArrBench 1.81 M tri/s.
 - The x86 appliance's Amiga programs (only its host-side test is in).
 - BlitzQuake and Quake through MiniGL (neither is in the lab or the Media
   Library), and `scenes3d`.
-- W3DArrBench SMALL on llvmpipe after the texture fix.
+- Why the Vulkan 3D shader loses on small draws, and whether it can win (Dale, 25 November: later).
 - GLArrays timed (it only checks pictures today).
 
 ## The question for Dale, once those are in

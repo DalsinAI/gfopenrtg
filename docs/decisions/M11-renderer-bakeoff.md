@@ -106,7 +106,9 @@ llvmpipe matches the stream route for many small draws.**
   count: about 17,000 pixels in the scene's lower half differ by 1. Not the
   renderer and not gfopengpu.library (GLArrays first doesn't change it); some
   state in minigl.library outlives its first client. Not the emulator's JIT
-  either: the same with `JIT_NOFPCRSPEC=1` and with `JIT_NOX87=1`. Still to find.
+  either: the same with `JIT_NOFPCRSPEC=1` and with `JIT_NOX87=1`. The host
+  test's golden scene (tests/golden/minigl-scene.txt) is 124d81ad, so the first
+  run is the wrong one. Still to find.
 
 ## GLQuake (25 November)
 

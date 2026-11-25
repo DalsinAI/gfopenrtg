@@ -118,6 +118,7 @@ void w3dvg_forget_z(struct w3dvg *v);
 struct w3dvg_stats {
     ULONG blocks, draws, merged, triangles, objects, shaders, puts, put_bytes, loads, presents, refused;
     ULONG declined;                     /* commands the route leaves to the CPU core */
+    ULONG inline_puts;                  /* texture levels written in the stream (a pending draw still read them) */
 };
 void w3dvg_stats(struct w3dvg *v, struct w3dvg_stats *s);
 

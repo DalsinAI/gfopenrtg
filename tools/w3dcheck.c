@@ -245,6 +245,56 @@ static ULONG run(ULONG type, int out)
     return h;
 }
 
+/* A texture changed between two draws of one frame: the first draw keeps the old texels, the second has the new
+ * (the virgl route writes such a change into its stream, after the draws that still read the old texels). */
+static void texupdate(ULONG type)
+{
+    static ULONG tex[4 * 4];
+    W3D_Bitmap bm;
+    W3D_Context *c;
+    W3D_Texture *t;
+    W3D_Triangles fan;
+    W3D_Vertex q[4];
+    W3D_Scissor sc = { 0, 0, BW, BH };
+    ULONG err = 0;
+    int i, k;
+    for (i = 0; i < 16; i++) tex[i] = 0xFFFF0000UL;
+    memset(pix, 0, sizeof pix);
+    bm.bprow = BW * 4; bm.width = BW; bm.height = BH; bm.format = W3D_FMT_A8R8G8B8; bm.dest = pix;
+    c = W3D_CreateContextTags(&err, W3D_CC_BITMAP, (ULONG)&bm, W3D_CC_W3DBM, TRUE, W3D_CC_DRIVERTYPE, type, TAG_DONE);
+    CHECK(c && err == W3D_SUCCESS, "texture update: W3D_CreateContext");
+    if (!c) return;
+    t = W3D_AllocTexObjTags(c, &err, W3D_ATO_IMAGE, (ULONG)tex, W3D_ATO_FORMAT, W3D_A8R8G8B8, W3D_ATO_WIDTH, 4, W3D_ATO_HEIGHT, 4, TAG_DONE);
+    CHECK(t && err == W3D_SUCCESS, "texture update: W3D_AllocTexObj");
+    if (!t) { W3D_DestroyContext(c); return; }
+    W3D_SetTexEnv(c, t, W3D_REPLACE, 0);
+    W3D_SetDrawRegionWBM(c, &bm, &sc);
+    W3D_SetState(c, W3D_TEXMAPPING, W3D_ENABLE);
+    W3D_LockHardware(c);
+    for (k = 0; k < 3; k++) {           /* red, then green, then blue: three quads side by side */
+        float x0 = 2.0f + k * 20.0f;
+        if (k) {
+            for (i = 0; i < 16; i++) tex[i] = k == 1 ? 0xFF00FF00UL : 0xFF0000FFUL;
+            CHECK(W3D_UpdateTexImage(c, t, tex, 0, 0) == W3D_SUCCESS, "texture update: W3D_UpdateTexImage");
+        }
+        vtx(&q[0], x0, 4, 0.5f, 0, 0, 1, 1, 1, 1); vtx(&q[1], x0 + 16, 4, 0.5f, 4, 0, 1, 1, 1, 1);
+        vtx(&q[2], x0 + 16, 20, 0.5f, 4, 4, 1, 1, 1, 1); vtx(&q[3], x0, 20, 0.5f, 0, 4, 1, 1, 1, 1);
+        fan.vertexcount = 4; fan.v = q; fan.tex = t; fan.st_pattern = 0;
+        CHECK(W3D_DrawTriFan(c, &fan) == W3D_SUCCESS, "texture update: W3D_DrawTriFan");
+    }
+    W3D_UnLockHardware(c);
+    W3D_FlushFrame(c);
+    W3D_WaitIdle(c);
+    CHECK((pix[BW * 12 + 10] & 0xFFFFFFUL) == 0xFF0000UL, "texture update: the first quad keeps the first texels (red)");
+    CHECK((pix[BW * 12 + 30] & 0xFFFFFFUL) == 0x00FF00UL, "texture update: the second quad has the second (green)");
+    CHECK((pix[BW * 12 + 50] & 0xFFFFFFUL) == 0x0000FFUL, "texture update: the third quad has the third (blue)");
+    if ((pix[BW * 12 + 10] & 0xFFFFFFUL) != 0xFF0000UL || (pix[BW * 12 + 50] & 0xFFFFFFUL) != 0x0000FFUL)
+        printf("texture update on %s: %08lx %08lx %08lx\n", drvname, (unsigned long)pix[BW * 12 + 10],
+               (unsigned long)pix[BW * 12 + 30], (unsigned long)pix[BW * 12 + 50]);
+    W3D_FreeTexObj(c, t);
+    W3D_DestroyContext(c);
+}
+
 /* How far scene[1] is from scene[0]: the worst channel, and the pixels
  * beyond the tolerance even with a neighbour's pixel allowed (edges). */
 static int chan(ULONG p, int sh) { return (int)((p >> sh) & 255); }
@@ -294,8 +344,10 @@ int main(void)
     printf("W3DCheck: %s %d.%d\n", Warp3DBase->lib_Node.ln_Name, Warp3DBase->lib_Version, Warp3DBase->lib_Revision);
     drvname = "CPU";
     a = run(W3D_DRIVER_CPU, 0);
+    texupdate(W3D_DRIVER_CPU);
     drvname = virgl ? "virgl" : "GFOpenGPU";
     b = (W3D_CheckDriver() & W3D_DRIVER_3DHW) ? run(W3D_DRIVER_3DHW, 1) : a;
+    if (W3D_CheckDriver() & W3D_DRIVER_3DHW) texupdate(W3D_DRIVER_3DHW);
     printf("scene: CPU %08lx, %s %08lx%s\n", (unsigned long)a, drvname, (unsigned long)b,
            (W3D_CheckDriver() & W3D_DRIVER_3DHW) ? "" : " (no 3D hardware driver: the CPU's again)");
     checks++;

@@ -184,6 +184,32 @@ static void put(struct w3dvg *v, struct res *r, ULONG level, ULONG x, ULONG y, U
     if (v->pipe->sent(v->px) != v->seq) px_sync(v);
 }
 
+/* A texture level a stream not yet sent still samples: its texels written in the stream itself (virgl's
+ * RESOURCE_INLINE_WRITE), after those draws, so the pipe doesn't rename it (a new host texture and view for every
+ * update, which is what a 68k game's frame of small texture changes costs most). 0 when it doesn't fit: put() then. */
+#define VG_CCMD_INLINE_WRITE 9
+#define INLINE_MAX 4096                 /* words of texels, at most */
+static int put_inline(struct w3dvg *v, struct res *r, ULONG level, ULONG w, ULONG h, ULONG src, ULONG stride)
+{
+    const ULONG *row;
+    ULONG *p, words = w * h, x, y;
+    if (!(v->pipe->res_pending(v->px, r->pr) & OGPU_PIPE_RES_DRAWN) || !words || words > INLINE_MAX || (src & 3) || (stride & 3))
+        return 0;
+    if (!(p = v->pipe->cmd_room(v->px, 12 + words))) return 0;
+    *p++ = VG_LE((ULONG)VG_CCMD_INLINE_WRITE | ((11 + words) << 16));
+    *p++ = VG_LE(v->pipe->res_handle(r->pr));
+    *p++ = VG_LE(level); *p++ = 0; *p++ = VG_LE(w * 4); *p++ = 0;      /* level, usage, stride, layer stride */
+    *p++ = 0; *p++ = 0; *p++ = 0; *p++ = VG_LE(w); *p++ = VG_LE(h); *p++ = VG_LE(1UL);
+    for (y = 0; y < h; y++) {
+        row = (const ULONG *)(src + y * stride);
+        for (x = 0; x < w; x++) *p++ = VG_LE(row[x]);    /* ARGB in a word: B8G8R8A8 in the host's order */
+    }
+    v->st.inline_puts++;
+    v->st.put_bytes += words * 4;
+    if (v->pipe->sent(v->px) != v->seq) px_sync(v);
+    return 1;
+}
+
 /* ---- the block (the pipe's) ------------------------------------------------------------------------ */
 
 /* The pipe's arenas, as they are now: where this file writes copied vertices and indices, and the buffers' handles
@@ -547,7 +573,8 @@ static struct res *tex_view(struct w3dvg *v)
             if (!lw) lw = 1;
             if (!lh) lh = 1;
             if (!bpr) bpr = lw * 4;
-            put(v, t->res, l, 0, 0, lw, lh, l ? v->t_lv[l] : v->t_addr, bpr, bpr * (lh - 1) + lw * 4, ACV_SWAP_32);
+            if (!put_inline(v, t->res, l, lw, lh, l ? v->t_lv[l] : v->t_addr, bpr))
+                put(v, t->res, l, 0, 0, lw, lh, l ? v->t_lv[l] : v->t_addr, bpr, bpr * (lh - 1) + lw * 4, ACV_SWAP_32);
         }
         t->gen = v->t_gen;
     }
@@ -1356,5 +1383,5 @@ void w3dvg_stats(struct w3dvg *v, struct w3dvg_stats *s)
 {
     *s = v->st;
     v->st.blocks = v->st.draws = v->st.merged = v->st.triangles = v->st.objects = v->st.shaders = 0;
-    v->st.puts = v->st.put_bytes = v->st.loads = v->st.presents = v->st.refused = v->st.declined = 0;
+    v->st.puts = v->st.put_bytes = v->st.loads = v->st.presents = v->st.refused = v->st.declined = v->st.inline_puts = 0;
 }

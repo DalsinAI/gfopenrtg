@@ -1745,7 +1745,7 @@ void ogpu_vk_stats(const struct ogpu_vk *vk, struct ogpu_vk_stats *s) {
         struct ogpu3d_gfx_stats gs;
         ogpu3d_gfx_stats(vk->gfx, &gs);
         s->gfx = 1;
-        s->tri_gfx = gs.draws; s->tri_gfx_declined = gs.declined; s->gfx_groups = gs.groups;
+        s->tri_gfx = gs.draws; s->tri_gfx_declined = gs.declined; s->gfx_groups = gs.groups; s->tri_gfx_routed = gs.routed;
         s->gfx_tex_uploads = gs.tex_uploads; s->gfx_pipelines = gs.pipelines;
         s->gfx_before_ms = gs.before_ms; s->gfx_in_ms = gs.in_ms; s->gfx_wait_ms = gs.wait_ms; s->gfx_out_ms = gs.out_ms;
     }
@@ -2177,6 +2177,9 @@ static int setup_3d_parts(struct ogpu_vk *vk) {
         gc.phys = vk->phys; gc.dev = vk->dev; gc.queue = vk->queue; gc.qfam = vk->qfam;
         gc.before = gfx_before; gc.user = vk;
         gc.wait_ns = vk->wait_ns_max;
+        /* by cost unless the back end is told the GPU (OGPU_VK_ROUTE=gpu) */
+        gc.force_gpu = vk->cfg.route == OGPU_VK_ROUTE_GPU
+                       || (vk->cfg.route == OGPU_VK_ROUTE_COST && getenv("OGPU_VK_ROUTE") && !strcmp(getenv("OGPU_VK_ROUTE"), "gpu"));
         vk->gfx = ogpu3d_gfx_create(&gc, why, sizeof why);
         if (!vk->gfx) fprintf(stderr, "GFOpenGPU: no graphics pipeline for TRIANGLES (%s): the C core draws them\n", why);
         return 1;

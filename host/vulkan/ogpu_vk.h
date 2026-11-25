@@ -199,7 +199,7 @@ struct ogpu_vk_stats {
      * when it was set up; commands it drew, declined (drawn on the core),
      * groups sent, textures sent, pipelines made */
     int gfx;
-    unsigned long tri_gfx, tri_gfx_declined, gfx_groups, gfx_tex_uploads, gfx_pipelines;
+    unsigned long tri_gfx, tri_gfx_declined, tri_gfx_routed, gfx_groups, gfx_tex_uploads, gfx_pipelines;
     double gfx_before_ms, gfx_in_ms, gfx_wait_ms, gfx_out_ms;   /* where its groups' time went (ogpu3d_gfx_stats) */
 };
 void ogpu_vk_stats(const struct ogpu_vk *vk, struct ogpu_vk_stats *s);

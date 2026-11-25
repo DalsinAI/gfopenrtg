@@ -106,7 +106,26 @@ struct ogpu3d_gfx {
     struct o3_pipe pp;
     struct ogpu3d_tex tx;
     struct ogpu3d_gfx_stats st;
+    /* routing by cost (cfg.force_gpu or OGPU_GFX_ROUTE=gpu: every command it can draw) */
+    int route_gpu;
+    double fix_ns;                  /* a group's submit, wait and the work sent before it */
+    double row_ns_b;                /* a row byte, in and out */
+    double core_k;                  /* the core's time over its estimate */
+    double g_ms0;                   /* before + wait at the group's open, and its row bytes */
+    double g_rows0;
+    double g_bytes;
 };
+
+/* Starting costs (ns), learned as groups close and as the core draws what
+ * was left to it: from the PiMiga's V3D (tests/test_ogpu3d_gfx.c's
+ * OGPU_GFX_TIME), the slowest device this path is for. */
+#define GF_FIX_NS      600000.0
+#define GF_ROW_NS_B    1.7
+#define GF_GPU_PX_NS   0.5
+#define GF_CORE_CMD_NS 4000.0
+#define GF_CORE_TRI_NS 400.0
+#define GF_CORE_PX_NS  8.0          /* untextured; textured is GF_CORE_TEX_NS */
+#define GF_CORE_TEX_NS 40.0
 
 /* ---- small helpers ------------------------------------------------------------------- */
 
@@ -339,6 +358,13 @@ struct ogpu3d_gfx *ogpu3d_gfx_create(const struct ogpu3d_gfx_cfg *cfg, char *why
     int i;
     if (!g) { gf_why(why, whylen, "no memory"); return 0; }
     g->cfg = *cfg;
+    {
+        const char *r = getenv("OGPU_GFX_ROUTE");
+        g->route_gpu = r && *r ? !strcmp(r, "gpu") : cfg->force_gpu;
+    }
+    g->fix_ns = GF_FIX_NS;
+    g->row_ns_b = GF_ROW_NS_B;
+    g->core_k = 1.0;
     vkGetPhysicalDeviceMemoryProperties(cfg->phys, &g->mp);
     vkGetPhysicalDeviceProperties(cfg->phys, &pr);
     g->max_dim = pr.limits.maxImageDimension2D;
@@ -950,6 +976,8 @@ static int gf_group_open(struct ogpu3d_gfx *g, const struct ogpu_surface *dst, i
     int di = z ? (z->format == OGPU_FMT_Z32 ? 2 : 1) : 0, w = dst->w, h = dst->h;
     size_t need;
     double t0 = gf_ms();
+    g->g_ms0 = g->st.before_ms + g->st.wait_ms;
+    g->g_rows0 = g->st.in_ms + g->st.out_ms;
     if (g->cfg.before) g->cfg.before(g->cfg.user);
     g->st.before_ms += gf_ms() - t0;
     /* the images (and framebuffer) for this size and these formats; a new
@@ -1101,8 +1129,16 @@ int ogpu3d_gfx_close(struct ogpu3d_gfx *g) {
         for (y = g->uy0; y < zy1; y++, o += (size_t)zw * (z32 ? 4 : 2)) gf_row_out(g->bounce, g->zmem + g->zbpr * y, o, zw, g->zfmt);
     }
     g->st.out_ms += gf_ms() - t1;
+    /* what this group cost, for routing the next */
+    {
+        double fix = (g->st.before_ms + g->st.wait_ms - g->g_ms0) * 1e6;
+        double bytes = (double)(g->uy1 - g->uy0) * ((double)w * bpp + (g->di ? (double)zw * (z32 ? 4 : 2) : 0));
+        g->fix_ns += (fix - g->fix_ns) * 0.25;
+        if (bytes > 4096) g->row_ns_b += ((g->st.in_ms + g->st.out_ms - g->g_rows0) * 1e6 / bytes - g->row_ns_b) * 0.25;
+    }
     return 1;
 }
+
 
 /* ---- TRIANGLES ------------------------------------------------------------------------- */
 
@@ -1259,6 +1295,53 @@ static int gf_triangle(struct ogpu3d_gfx *g, const struct gf_draw *dr, const str
     return 1;
 }
 
+/* The pixels (each triangle's area, at most its box within the draw area)
+ * and triangles a command draws, from the positions alone: for routing. */
+static void gf_estimate(const ogpu_u8 *verts, const ogpu_u8 *idx, uint32_t isize, uint32_t vcount, uint32_t stride,
+                        uint32_t layout, uint32_t n, int ax0, int ay0, int ax1, int ay1, double *px, double *tris) {
+    int prim = (int)(layout & OGPU_LAY_PRIM_MASK), have = 0;
+    double x[3], y[3];
+    uint32_t i;
+    for (i = 0; i < n; i++) {
+        uint32_t vi = i;
+        const ogpu_u8 *p;
+        if (idx) {
+            if (isize == 1) vi = idx[i];
+            else if (isize == 2) vi = ((uint32_t)idx[i * 2] << 8) | idx[i * 2 + 1];
+            else vi = gf_rd32(idx + i * 4);
+            if (vi >= vcount) break;
+        }
+        if (prim != OGPU_LAY_LIST && have == 3) {
+            if (prim == OGPU_LAY_STRIP) { x[0] = x[1]; y[0] = y[1]; }
+            x[1] = x[2]; y[1] = y[2];
+            have = 2;
+        }
+        p = verts + vi * stride;
+        x[have] = (double)(int32_t)gf_rd32(p) / 65536.0;
+        y[have] = (double)(int32_t)gf_rd32(p + 4) / 65536.0;
+        if (++have == 3) {
+            double a = (x[1] - x[0]) * (y[2] - y[0]) - (x[2] - x[0]) * (y[1] - y[0]);
+            double bx0 = x[0], bx1 = x[0], by0 = y[0], by1 = y[0], box;
+            int k;
+            for (k = 1; k < 3; k++) {
+                if (x[k] < bx0) bx0 = x[k];
+                if (x[k] > bx1) bx1 = x[k];
+                if (y[k] < by0) by0 = y[k];
+                if (y[k] > by1) by1 = y[k];
+            }
+            if (bx0 < ax0) bx0 = ax0;
+            if (by0 < ay0) by0 = ay0;
+            if (bx1 > ax1) bx1 = ax1;
+            if (by1 > ay1) by1 = ay1;
+            box = bx1 > bx0 && by1 > by0 ? (bx1 - bx0) * (by1 - by0) : 0;
+            a = (a < 0 ? -a : a) * 0.5;
+            *px += a < box ? a : box;
+            *tris += 1;
+            if (prim == OGPU_LAY_LIST) have = 0;
+        }
+    }
+}
+
 int ogpu3d_gfx_triangles(struct ogpu3d_gfx *g, struct ogpu3d *t, const ogpu_u8 *cmd, long words, int *result) {
     const struct ogpu3d_sink *keep_sink;
     void *keep_user;
@@ -1274,7 +1357,7 @@ int ogpu3d_gfx_triangles(struct ogpu3d_gfx *g, struct ogpu3d *t, const ogpu_u8 *
     VkPipeline pipe;
     VkRect2D sc;
     uint32_t vaddr, vcount, stride, iaddr, icount, isize, layout = 0, vsize, n, i, key, en, chan;
-    int r, ci, three_d = words - 1 >= 9, prim, fog, blend, have = 0, first, bad = 0;
+    int r, ci, three_d = words - 1 >= 9, prim, fog, blend, have = 0, first, bad = 0, joins;
     const struct ogpu3d_buf *z = 0;
     struct gf_in vb[3];
     if (g->failed) return 0;
@@ -1339,10 +1422,37 @@ int ogpu3d_gfx_triangles(struct ogpu3d_gfx *g, struct ogpu3d *t, const ogpu_u8 *
     if ((size_t)n * sizeof(struct gf_vtx) > GF_VBUF) goto decline;
 
     /* the group: this target and Z buffer, these rows */
-    if (g->open && (g->dst != dst->pixels || g->dbpr != dst->bpr || g->dw != dst->w || g->dh != dst->h || g->dfmt != dst->format
-                    || (dr.ztest && (g->zmem != z->mem || g->zbpr != z->bpr || g->zw != z->w || g->zh != z->h
-                                     || g->zfmt != z->format))
-                    || g->vused + (size_t)n * sizeof(struct gf_vtx) > GF_VBUF))
+    joins = g->open && !(g->dst != dst->pixels || g->dbpr != dst->bpr || g->dw != dst->w || g->dh != dst->h
+                         || g->dfmt != dst->format
+                         || (dr.ztest && (g->zmem != z->mem || g->zbpr != z->bpr || g->zw != z->w || g->zh != z->h
+                                          || g->zfmt != z->format))
+                         || g->vused + (size_t)n * sizeof(struct gf_vtx) > GF_VBUF);
+    /* by cost: a command that would open a group goes to the core when the
+     * core draws it sooner than the group's copies and submit; one joining
+     * an open group costs the GPU only its pixels, so it stays */
+    if (!joins && !g->route_gpu) {
+        double px = 0, tris = 0, core, gpu, bytes;
+        gf_estimate(verts, idx, isize, vcount, stride, layout, n, g->ax0, g->ay0, g->ax1, g->ay1, &px, &tris);
+        core = (GF_CORE_CMD_NS + tris * GF_CORE_TRI_NS + px * (pp->tx ? GF_CORE_TEX_NS : GF_CORE_PX_NS)) * g->core_k;
+        bytes = (double)(g->ay1 - g->ay0) * ((double)dst->w * gf_cbpp(ci) + (dr.ztest ? (double)z->w * (dr.d16 ? 2 : 4) : 0));
+        gpu = g->fix_ns + bytes * g->row_ns_b + px * GF_GPU_PX_NS;
+        if (core < gpu) {
+            /* the core draws it here, timed, so its estimate is learned */
+            double t0, k;
+            if (g->open && !ogpu3d_gfx_close(g)) return 0;
+            if (g->cfg.before) g->cfg.before(g->cfg.user);
+            t0 = gf_ms();
+            r = ogpu3d_op(t, OGPU_OP_TRIANGLES, cmd, words);
+            k = (gf_ms() - t0) * 1e6 / core * g->core_k;
+            if (k < 0.05) k = 0.05;
+            if (k > 20) k = 20;
+            g->core_k += (k - g->core_k) * 0.25;
+            g->st.routed++;
+            *result = r;
+            return 1;
+        }
+    }
+    if (g->open && !joins)
         if (!ogpu3d_gfx_close(g)) goto decline;
     if (!g->open) {
         if (!gf_group_open(g, dst, ci, dr.ztest ? z : 0, g->ay0, g->ay1)) goto decline;

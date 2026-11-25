@@ -48,10 +48,12 @@ struct ogpu3d_gfx_cfg {
     void (*before)(void *user);
     void *user;
     unsigned long long wait_ns;     /* a submit's wait gives up after this (0: 20 s) */
+    int force_gpu;                  /* every command it can draw on the GPU, not by cost */
 };
 
 struct ogpu3d_gfx_stats {
     unsigned long draws, declined, groups, tex_uploads, pipelines;
+    unsigned long routed;           /* drawn by the core here, as it was the quicker */
     /* milliseconds, all told: the back end's own work sent first (before),
      * rows into staging, the submit and its wait, rows back into memory */
     double before_ms, in_ms, wait_ms, out_ms;
@@ -65,9 +67,17 @@ void ogpu3d_gfx_destroy(struct ogpu3d_gfx *g);
 void ogpu3d_gfx_new_run(struct ogpu3d_gfx *g);
 
 /* A TRIANGLES command (header first, `words` long) of the 3D state t: 1
- * when done (recorded into the open group, or an error or nothing to draw,
- * as the core would say), its result in *result; 0 to leave it to the
- * caller (the group is closed first, so memory is right for it). */
+ * when done (recorded into the open group, drawn by the core here because
+ * that was quicker than opening a group, or an error or nothing to draw, as
+ * the core would say), its result in *result; 0 to leave it to the caller
+ * (the group is closed first, so memory is right for it).
+ *
+ * By cost: a command that would open a group is drawn by the core when its
+ * estimate (a command, its triangles and its pixels; the core's time over
+ * the estimate is learned) is under the group's (its submit and wait and
+ * its rows in and out, learned as groups close). One joining an open group
+ * stays on the GPU. cfg.force_gpu, or OGPU_GFX_ROUTE=gpu, sends every
+ * command it can draw to the GPU (OGPU_GFX_ROUTE=cost: by cost). */
 int ogpu3d_gfx_triangles(struct ogpu3d_gfx *g, struct ogpu3d *t, const ogpu_u8 *cmd, long words, int *result);
 
 /* 1 while a group is open. */

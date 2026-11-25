@@ -135,6 +135,35 @@ emulator in the kernel for minutes.
   host core alone.
 - The 68k wasn't timed (it would take minutes for 969 frames).
 
+## Raspberry Pi 5 (25 November)
+
+The PiMiga card (Raspberry Pi 5, V3D 7.1, Mesa 26.2.6, the card's own
+/opt/amicradle runtime), with this branch's warp3d, minigl, gfopengpu,
+gfopenrtg and tinygl libraries and the same test programs put in its DH0:,
+then put back afterwards. The stream route on a Pi has only the host core
+(the Vulkan 3D shader is gated off on V3D: its probe hangs). llvmpipe was
+forced with `LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe` in the card's
+native.env and `Driver=llvmpipe` (the card runtime doesn't translate
+`AC_VIRGL_DRIVER`). Each GPU renderer draws MGLTest with its own checksum
+(V3D afc31265, llvmpipe 69ea5427, RX 460 9d42b7e6); 124d81ad is the stream
+route's and the 68k's.
+
+| Program | virgl on V3D | stream route (host core) | virgl on llvmpipe | 68k |
+| --- | --- | --- | --- | --- |
+| W3DTest fps | 937.5 | 288 | 161 | 52 |
+| MGLTest fps | 349-357 | 48.7 | 176 | |
+| W3DArrBench M tri/s | 1.12 | 2.75 | 0.75 | |
+| W3DArrBench SMALL fps | 268 | 712-719 | 260 | |
+| GLQuake timedemo demo1 640x480 fps | 63.8 | 10.9 | 22.5 | |
+
+- On the Pi the gap is much wider than on daletop: the Pi's CPU is several
+  times slower, and the host core and llvmpipe both draw on it, while V3D
+  does the pixels. A real game (GLQuake) is about 6 times faster on virgl
+  over V3D than on the host core.
+- The host core still wins big arrays (2.5 times) and many small draws
+  (2.7 times), as on daletop: virgl's per-draw cost is CPU work too.
+- The CM4 (V3D 4.2, a slower CPU) is next.
+
 ## What it says so far
 
 - virgl on the graphics chip is about 2 to 2.5 times the stream route for
@@ -162,7 +191,7 @@ emulator in the kernel for minutes.
 
 ## Still to measure before a decision
 
-- The x86 appliance's Amiga programs (only its host-side test is in).
+- The CM4 (V3D 4.2), and the x86 appliance's Amiga programs (only its host-side test is in).
 - BlitzQuake (not found on any drive yet), Quake on the 68k, and `scenes3d`.
 - Why the Vulkan 3D shader loses on small draws, and whether it can win (Dale, 25 November: later).
 - GLArrays timed (it only checks pictures today).

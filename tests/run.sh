@@ -219,6 +219,8 @@ fi
 cc -std=gnu11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=undefined \
     -o "$OUT/test_acvirgl_scan" "$HERE/test_acvirgl_scan.c" "$HERE/../host/virgl/acvirgl.c" -ldl
 "$OUT/test_acvirgl_scan" >/dev/null
+# acvirgl says once when Mesa quietly gives llvmpipe instead of the GPU (AC-285), against a stub virglrenderer.
+sh "$HERE/../host/virgl/test_quiet_software.sh"
 # ACVirgl's host side against virglrenderer, when ACVIRGL_LIB names a libvirglrenderer.so.1
 # and VIRGL_SRC its source's src/ (for virgl_protocol.h): the release amicradle's
 # scripts/build_virglrenderer.sh builds (1.3.0).

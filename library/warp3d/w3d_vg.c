@@ -184,17 +184,17 @@ static void put(struct w3dvg *v, struct res *r, ULONG level, ULONG x, ULONG y, U
     if (v->pipe->sent(v->px) != v->seq) px_sync(v);
 }
 
-/* A texture level a stream not yet sent still samples: its texels written in the stream itself (virgl's
- * RESOURCE_INLINE_WRITE), after those draws, so the pipe doesn't rename it (a new host texture and view for every
- * update, which is what a 68k game's frame of small texture changes costs most). 0 when it doesn't fit: put() then. */
+/* A small texture level's texels written in the stream itself (virgl's RESOURCE_INLINE_WRITE), copied now: the
+ * draws before it in the stream still sample the old texels, so the pipe doesn't rename it (a new host texture and
+ * view), and the block never reads the texture's memory later, so Warp3D needn't send the batch before the
+ * program changes the texels again (W3D_UpdateTexImage, w3dvg_tex_reads). 0 when it doesn't fit: put() then. */
 #define VG_CCMD_INLINE_WRITE 9
 #define INLINE_MAX 4096                 /* words of texels, at most */
 static int put_inline(struct w3dvg *v, struct res *r, ULONG level, ULONG w, ULONG h, ULONG src, ULONG stride)
 {
     const ULONG *row;
     ULONG *p, words = w * h, x, y;
-    if (!(v->pipe->res_pending(v->px, r->pr) & OGPU_PIPE_RES_DRAWN) || !words || words > INLINE_MAX || (src & 3) || (stride & 3))
-        return 0;
+    if (!words || words > INLINE_MAX || (src & 3) || (stride & 3)) return 0;
     if (!(p = v->pipe->cmd_room(v->px, 12 + words))) return 0;
     *p++ = VG_LE((ULONG)VG_CCMD_INLINE_WRITE | ((11 + words) << 16));
     *p++ = VG_LE(v->pipe->res_handle(r->pr));

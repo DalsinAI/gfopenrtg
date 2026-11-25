@@ -329,6 +329,47 @@ static void test_random(int rounds) {
     CHECK(s1.tri_gfx > s0.tri_gfx, "random scenes: the graphics pipeline drew nothing");
 }
 
+/* Routing by cost (the back end as a host starts it): a few tiny triangles
+ * are drawn by the core, as it is quicker than a group's copies and submit,
+ * so the picture is the core's byte for byte; a 640x480 quad is drawn by the
+ * graphics pipeline. */
+static void test_route(int b, int on_gpu) {
+    struct ogpu_scene3d_env er, ev;
+    const unsigned char *s;
+    const char *name;
+    int region, w, h, fmt;
+    long off;
+    struct ogpu_vk_stats s0, s1;
+    envs(&er, &ev);
+    ogpu_scene3d_bench(&er, b, &words, &name);
+    s = ogpu_scene3d_bench(&ev, b, &words, &name);
+    memcpy(sbuf, s, (size_t)words * 4);
+    ogpu_vk_reset(V);
+    ref_afresh();
+    ogpu_vk_stats(V, &s0);
+    if (!run_both(name)) return;
+    ogpu_vk_stats(V, &s1);
+    ogpu_scene3d_bench_target(b, &region, &off, &w, &h, &fmt);
+    printf("opengpu gfx: by cost, %-19s %lu TRIANGLES on the pipeline, %lu by the core as quicker\n", name,
+           s1.tri_gfx - s0.tri_gfx, s1.tri_gfx_routed - s0.tri_gfx_routed);
+    if (on_gpu) {
+        CHECK(s1.tri_gfx > s0.tri_gfx && s1.tri_gfx_routed == s0.tri_gfx_routed, "%s by cost: not on the pipeline", name);
+    } else {
+        CHECK(s1.tri_gfx == s0.tri_gfx && s1.tri_gfx_routed > s0.tri_gfx_routed, "%s by cost: not left to the core", name);
+        CHECK(!memcmp(er.mem[region] + off, ev.mem[region] + off, (size_t)w * h * bpp(fmt)),
+              "%s by cost: the core's picture isn't the core's", name);
+    }
+    if (getenv("OGPU_GFX_TIME") && atoi(getenv("OGPU_GFX_TIME")) > 0) time_bench(name, atoi(getenv("OGPU_GFX_TIME")));
+}
+
+static struct ogpu_vk *start(struct ogpu_vk_config *cfg, int route, char *err, int errlen) {
+    struct ogpu_vk *v;
+    cfg->route = route;
+    v = ogpu_vk_create(cfg, err, errlen);
+    if (v) vram_vk = ogpu_vk_vram(v);
+    return v;
+}
+
 int main(int argc, char **argv) {
     struct ogpu_vk_config cfg;
     struct ogpu_vk_stats st;
@@ -341,21 +382,28 @@ int main(int argc, char **argv) {
     cfg.arena_size = 1u << 20;
     cfg.map = map_vk;
     cfg.fence = no_fence;
-    cfg.route = OGPU_VK_ROUTE_GPU;
-    V = ogpu_vk_create(&cfg, err, sizeof err);
+    unsetenv("OGPU_GFX_ROUTE");
+    unsetenv("OGPU_VK_ROUTE");
+    V = start(&cfg, OGPU_VK_ROUTE_GPU, err, sizeof err);
     if (!V) {
         int none = !strcmp(err, "vkCreateInstance (VkResult -9)") || !strcmp(err, "no Vulkan device (VkResult 0)")
                    || !strncmp(err, "no device with compute", 22);
         printf("opengpu gfx: %s (%s)\n", none ? "no device; skipped" : "FAILED to start", err);
         return none ? 0 : 1;
     }
-    vram_vk = ogpu_vk_vram(V);
     ogpu_vk_stats(V, &st);
     printf("opengpu gfx: on %s\n", ogpu_vk_device(V));
     CHECK(st.gfx, "the graphics pipeline was set up");
     if (st.gfx) {
         test_benches();
         test_random(rounds);
+        ogpu_vk_destroy(V);
+        V = start(&cfg, OGPU_VK_ROUTE_COST, err, sizeof err);
+        CHECK(V != 0, "the back end by cost started (%s)", V ? "" : err);
+        if (!V) return 1;
+        test_route(3, 0);       /* tiny */
+        test_route(4, 1);       /* fill640 */
+        test_route(7, 0);       /* fill640-gouraud: no texture, so the core is quicker on the starting costs */
     }
     printf("opengpu gfx: %s\n", failures ? "FAILED" : "all tests passed");
     ogpu_vk_destroy(V);

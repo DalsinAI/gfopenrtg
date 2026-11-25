@@ -83,6 +83,14 @@ frame in video RAM needs no copy at all.
 - **Textures:** converted to RGBA8 once and cached by a hash of their texels,
   as ogpu3d_rec.c's cache does; filter and wrap become a sampler. Mip
   levels as given.
+- **Routing by cost.** Opening a group costs a submit and wait and the rows
+  copied in and out (about 1.4 ms a 320x240 frame on V3D), so a command that
+  would open one is drawn by the core when the core's estimate is lower: a
+  command, its triangles and its pixels (textured or not), against the
+  group's submit and rows. Both are learned as it runs (the core's time over
+  its estimate; each group's submit and row costs). A command joining an open
+  group stays on the GPU. OGPU_VK_ROUTE=gpu (or OGPU_GFX_ROUTE=gpu) sends
+  everything it can draw to the GPU.
 - Declined in the first cut, so drawn by the core as today: logic ops,
   stencil, chroma test, stipple, CLUT8 and INDEX8 targets, PIXELART.
 

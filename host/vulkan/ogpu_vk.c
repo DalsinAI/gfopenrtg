@@ -119,6 +119,10 @@ struct ogpu_vk {
     long dispatches;            /* recorded since it opened */
     ogpu_u32 arena_used;
     int failed;                 /* a submit failed: the GPU path is off */
+    /* 2D on the core: ogpu.comp isn't built (OGPU_VK_2D=core, or a V3D, whose
+     * v3dv compiler spins on the big compute shaders: amicradle #949). The
+     * device is then only TRIANGLES' graphics pipeline's (OGPU_VK_3D=gfx). */
+    int no2d;
     /* Waits are bounded (7 Nov 2026): a new runtime hung two minutes in
      * setup's first round trip (the kernel's drm_syncobj_array_wait_timeout)
      * while another program kept daletop's RX 460 at 100%. While setting up,
@@ -368,9 +372,11 @@ static void begin(struct ogpu_vk *vk) {
     VkCommandBufferBeginInfo bi = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(vk->cmd, &bi);
-    vkCmdBindPipeline(vk->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, vk->pipe);
-    vkCmdBindDescriptorSets(vk->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, vk->layout, 0, 1, &vk->dset, 0, 0);
-    vk->bound = 1;
+    if (vk->pipe) {
+        vkCmdBindPipeline(vk->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, vk->pipe);
+        vkCmdBindDescriptorSets(vk->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, vk->layout, 0, 1, &vk->dset, 0, 0);
+    }
+    vk->bound = vk->pipe ? 1 : 0;
     vk->recording = 1;
     vk->dispatches = 0;
 }
@@ -1598,7 +1604,7 @@ long ogpu_vk_run(struct ogpu_vk *vk, const ogpu_u8 *stream, long words) {
         /* a drawing command after 3D work in staged memory, which it might read: that first */
         if (op >= OGPU_OP_FILL && vk->rec && ogpu3d_rec_staged(vk->rec)) flush(vk);
 #endif
-        int drawable = !vk->failed && gpu_op(op) && vk->core.target >= 0 && vk->core.slot[vk->core.target].pixels;
+        int drawable = !vk->failed && !vk->no2d && gpu_op(op) && vk->core.target >= 0 && vk->core.slot[vk->core.target].pixels;
         int routed = 0;             /* 1: by cost to the core, 2: by cost to the GPU (timed for weigh) */
         int kind = K_FILL;
         /* why it would run on the core (ogpu_vk_stats' why[]); -1: the GPU command's own checks */
@@ -2525,7 +2531,14 @@ struct ogpu_vk *ogpu_vk_create(const struct ogpu_vk_config *cfg, char *err, int 
     cpi.stage.module = vk->shader;
     cpi.stage.pName = "main";
     cpi.layout = vk->layout;
-    if ((r = vkCreateComputePipelines(vk->dev, VK_NULL_HANDLE, 1, &cpi, 0, &vk->pipe)) != VK_SUCCESS) { fail(err, errlen, "vkCreateComputePipelines", r); goto bad; }
+    {
+        const char *two = getenv("OGPU_VK_2D");
+        vk->no2d = (two && !strcmp(two, "core")) || (!strncmp(vk->name, "V3D", 3) && !(two && !strcmp(two, "gpu")));
+    }
+    if (!vk->no2d && (r = vkCreateComputePipelines(vk->dev, VK_NULL_HANDLE, 1, &cpi, 0, &vk->pipe)) != VK_SUCCESS) {
+        fail(err, errlen, "vkCreateComputePipelines", r);
+        goto bad;
+    }
 
     ps.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     ps.descriptorCount = 2;
@@ -2560,7 +2573,7 @@ struct ogpu_vk *ogpu_vk_create(const struct ogpu_vk_config *cfg, char *err, int 
     if ((r = vkCreateFence(vk->dev, &fi, 0, &vk->done)) != VK_SUCCESS) { fail(err, errlen, "vkCreateFence", r); goto bad; }
 
     vk->list = malloc(LIST_MAX * sizeof *vk->list);    /* none: every command is its own dispatch */
-    vk->route = vk->cfg.route;
+    vk->route = vk->no2d ? OGPU_VK_ROUTE_CORE : vk->cfg.route;
     vk->gpu_scale = vk->gpu_mix_scale = 1;
     for (q = 0; q < K_COUNT; q++) vk->core_scale[q] = 1;
     if (vk->route == OGPU_VK_ROUTE_COST && getenv("OGPU_VK_ROUTE")) {

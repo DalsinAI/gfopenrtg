@@ -209,6 +209,8 @@ if [ -e /usr/include/vulkan/vulkan.h ] && { ldconfig -p 2>/dev/null | grep -q li
         -o "$OUT/test_ogpu3d_gfx" "$HERE/test_ogpu3d_gfx.c" "$HERE/scenes3d.c" "$HERE/../host/vulkan/ogpu_vk.c" \
         "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c" "$OGPU/ogpu_3d.c" "$OGPU/ogpu_build.c" "$OGPU/ogpu_build3d.c" -lvulkan -lm
     ASAN_OPTIONS=detect_leaks=0 "$OUT/test_ogpu3d_gfx" 300
+    # And with the 2D commands on the core (OGPU_VK_2D=core, as on a V3D): the device is the pipeline's alone.
+    OGPU_VK_2D=core ASAN_OPTIONS=detect_leaks=0 "$OUT/test_ogpu3d_gfx" 50
     cc -std=c99 -O1 -g -Wall -Wextra -Werror -o "$OUT/test_opengpu_vk-no3d" "$HERE/test_opengpu_vk.c" "$HERE/../host/vulkan/ogpu_vk.c" \
         "$OGPU/ogpu_core.c" "$OGPU/ogpu_dwt.c" "$OGPU/ogpu_build.c" -lvulkan
     "$OUT/test_opengpu_vk-no3d" "$HERE/golden/opengpu-g1.txt" 200 "$HERE/golden/opengpu-v11.txt"

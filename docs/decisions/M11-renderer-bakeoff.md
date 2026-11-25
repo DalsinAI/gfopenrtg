@@ -134,6 +134,34 @@ emulator in the kernel for minutes.
 - virgl on llvmpipe is level with the stream route's best, and 1.5 times the
   host core alone.
 - The 68k wasn't timed (it would take minutes for 969 frames).
+- At 320x240 the stream route (`auto`) gives 45.5 fps against 35.4 at
+  640x480: a quarter of the pixels buys 29%. The stream route's ceiling here
+  is not its pixels. On the stream route minigl.library transforms, lights
+  and clips every vertex in 68k code (mgl_pipe.c) and hands over screen
+  triangles, and the host sets each triangle up on its CPU, also in front of
+  the Vulkan shader. On virgl the GPU does all of that (mgl_vg_draw.c).
+
+## What the stream route's 3D is
+
+Both halves of the stream route's 3D are software renderers. The host core
+is a fixed-point C rasteriser on the host's CPU. The Vulkan 3D path is the
+same rasteriser as a compute shader (Team 4, 17 October, c80554c6, "pixel for
+pixel as the 3D core"): it does not use the GPU's triangle hardware, it does
+the core's exact integer divides (no fast integer divide on a GPU: a float
+estimate and a correction each), triangle setup stays on the CPU, and any
+triangle it declines goes to the C core. Bit-exact pictures against the 68k
+are what it was built for, and on this evidence it is a CPU-class renderer
+wherever it runs: GLQuake is 149 fps on virgl with the RX 460's own pipeline
+and about 35 on the stream route.
+
+A Stream3D path that competes with virgl on the chip would need a Vulkan
+graphics pipeline (the GPU's own rasteriser, floats) fed vertices before
+transform, as virgl's route already sends them, and pictures judged within
+a tolerance rather than exactly. The virgl route already works that way: each
+chip draws MGLTest with its own checksum, and W3DCheck takes each driver's
+tolerance from OGPU_Driver. Allowing that for a GPU path changes the M0
+gate's exact captures, which is Dale's call. On Linux, Vulkan on these chips
+is still a Mesa driver (v3dv, radv), a smaller part of Mesa than GL.
 
 ## Raspberry Pi 5 (25 November)
 
@@ -162,7 +190,35 @@ route's and the 68k's.
   over V3D than on the host core.
 - The host core still wins big arrays (2.5 times) and many small draws
   (2.7 times), as on daletop: virgl's per-draw cost is CPU work too.
-- The CM4 (V3D 4.2, a slower CPU) is next.
+- Where the time goes (per-thread CPU over 10 s while each bench ran; the
+  cards have no perf): on the stream route the host core runs on the
+  emulator's own thread (acrtg.c's ring_put keeps the C core there when there
+  is no Vulkan), one core at 100% and the 68k waiting while it draws. virgl
+  with SMALL: the emulator's thread 85% and the GPU thread 55%, so most of
+  virgl's cost per draw is Warp3D's virgl route making about ten pipe calls on
+  the 68k for each change of state (w3d_vg.c's prepare), not Mesa. virgl with
+  big arrays: the GPU thread 76% (virglrenderer and Mesa) and the emulator 41%.
+
+## CM4 (25 November)
+
+amicradle-8gb (Compute Module 4, V3D 4.2, Cortex-A72), the same libraries and
+programs, put back afterwards. **The card runs an old stack** (/opt/amicradle
+0.70.0, runtime of 21 November, start.sh without acd), so its Python host
+(amicradle_host.py) was taking 130-180% of a core with the Amiga idle,
+walking every drive; the emulator has core 3 to itself, which leaves the GPU
+thread and Mesa about one core. These numbers are the old card's, to be timed
+again on main's Python-free runtime (acd alone, AC-60) once that can run on a
+card.
+
+| Program | virgl on V3D 4.2 | stream route (host core) |
+| --- | --- | --- |
+| W3DTest fps | 88.2 | 45.3 |
+| MGLTest fps | 37.7-39.3 (afc31265) | 6.25 (124d81ad) |
+| W3DArrBench M tri/s | 0.094 | 0.28 |
+| W3DArrBench SMALL fps | 11 | 45 |
+| GLQuake timedemo demo1 640x480 fps | 6.0 | (not run: about 1 fps) |
+
+llvmpipe was not timed on the CM4.
 
 ## What it says so far
 
@@ -191,7 +247,7 @@ route's and the 68k's.
 
 ## Still to measure before a decision
 
-- The CM4 (V3D 4.2), and the x86 appliance's Amiga programs (only its host-side test is in).
+- The Pi cards again on main's Python-free runtime (the CM4 and PiMiga run the old Python host), llvmpipe on the CM4, and the x86 appliance's Amiga programs (only its host-side test is in).
 - BlitzQuake (not found on any drive yet), Quake on the 68k, and `scenes3d`.
 - Why the Vulkan 3D shader loses on small draws, and whether it can win (Dale, 25 November: later).
 - GLArrays timed (it only checks pictures today).

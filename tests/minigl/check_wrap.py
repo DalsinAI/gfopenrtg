@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 """The checks of tests/minigl/test_wrap.sh.
 
-  test_wrap.py ROOT OUT     OUT holds gen_wrap.py's files and its --list
+  check_wrap.py ROOT OUT    OUT holds gen_wrap.py's files and its --list
 
   - the table has the spec's 205 entries in the spec's order (the spec read here, not through gen_api.py);
   - each forwarded entry's thunk gives its own slot and the size of its GL arguments (a double is two longs,

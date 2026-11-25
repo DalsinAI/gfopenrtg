@@ -1,0 +1,2 @@
+# Tests pull request CI does not run, one per line: the path, then why. Keep it short; every line is a gap.
+tests/openal/run_vamos.sh needs amitools vamos with machine68k 0.3.0 and an OUT_DIR (run by hand)

@@ -11,4 +11,4 @@ OUT=${OUT:-$ROOT/build/tests}/mglwrap
 mkdir -p "$OUT"
 python3 "$ROOT/library/minigl/wrap/gen_wrap.py" "$OUT"
 python3 "$ROOT/library/minigl/wrap/gen_wrap.py" --list > "$OUT/list.txt"
-python3 "$HERE/test_wrap.py" "$ROOT" "$OUT"
+python3 "$HERE/check_wrap.py" "$ROOT" "$OUT"

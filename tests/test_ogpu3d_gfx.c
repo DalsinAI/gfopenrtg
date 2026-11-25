@@ -26,12 +26,15 @@
  *    declines what it can't draw, and the core draws that exactly): the
  *    same results and command counts as the core, with no crash; the bytes
  *    they leave are counted, not judged (Z buffers' low bits differ).
- * OGPU_GFX_PPM=dir writes each bench's two pictures there.
+ * OGPU_GFX_PPM=dir writes each bench's two pictures there; OGPU_GFX_TIME=n
+ * times each bench n times on the core and on the pipeline (frames a second,
+ * the frame and its buffers in memory before and after each, as in a game).
  *   test_ogpu3d_gfx [random-rounds] */
 #define _POSIX_C_SOURCE 200112L
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "../host/vulkan/ogpu_vk.h"
 #include "../include/gfopengpu/stream3d.h"
 #include "../library/opengpu/ogpu_3d.h"
@@ -206,6 +209,24 @@ static long near_misses(const ogpu_u8 *r, const ogpu_u8 *v, int w, int h, int fm
     return bad;
 }
 
+static double now_s(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+static void time_bench(const char *name, int n) {
+    double t0, tc, tg;
+    int i;
+    t0 = now_s();
+    for (i = 0; i < n; i++) ogpu_core_run(&C, sbuf, words);
+    tc = now_s() - t0;
+    t0 = now_s();
+    for (i = 0; i < n; i++) ogpu_vk_run(V, sbuf, words);
+    tg = now_s() - t0;
+    printf("opengpu gfx: %-28s the core %.1f fps, the graphics pipeline %.1f fps\n", name, n / tc, n / tg);
+}
+
 static void test_benches(void) {
     struct ogpu_scene3d_env er, ev;
     const unsigned char *s;
@@ -261,6 +282,7 @@ static void test_benches(void) {
                    100.0 * nm / total);
             CHECK(nm * 20 <= total, "%s: %ld pixels unlike the core's round them", name, nm);
         }
+        if (getenv("OGPU_GFX_TIME") && atoi(getenv("OGPU_GFX_TIME")) > 0) time_bench(name, atoi(getenv("OGPU_GFX_TIME")));
         if (getenv("OGPU_GFX_PPM")) {
             ppm(getenv("OGPU_GFX_PPM"), name, "core", tr, w, h, fmt);
             ppm(getenv("OGPU_GFX_PPM"), name, "gfx", tv, w, h, fmt);

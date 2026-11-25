@@ -18,16 +18,19 @@ the program's fixed frame count, at 320x240 in 16 bits.
 - **llvmpipe** is the same lab started with `AC_VIRGL_DRIVER=llvmpipe`, so the
   host's virgl draws on the CPU (GLArrays: "LLVMPIPE (LLVM 21.1.8, 256 bits)").
   virgl gives that name in capitals, which the chip check first missed, so
-  `auto` took virgl there as if on a chip. The check now ignores case.
+  `auto` took virgl there as if on a chip. The check now ignores case, and on
+  llvmpipe `auto` takes the stream route for Warp3D and MiniGL, as the table says.
 - **The stream route** is ACRTG.gpu's host 3D, in its own choice between the
   host core and the Vulkan compute path (`OGPU_VK_3D` unset, so `auto`). A lab
-  can't set `OGPU_VK_3D`, so the two are not yet timed apart.
+  start can't pass `OGPU_VK_3D`; the host also reads `AC_VK_3D`, which it can,
+  once the Cradle carries that host build.
 
 | Program | virgl on the RX 460 | virgl on llvmpipe | `acrtg` (stream route) | `cpu` (68k core) |
 | --- | --- | --- | --- | --- |
 | W3DTest (Warp3D, FRAMES 300; cpu 100) | 882-1071 fps | 441-750 fps | 429 fps | 54 fps |
 | MGLTest (MiniGL, FRAMES 300; cpu 100) | 577-600 fps | 455-484 fps | 234 fps | 67 fps |
 | W3DArrBench (9216 triangles a frame, 10 s) | 2.87 M tri/s | 1.65 M tri/s | 1.92-1.98 M tri/s | 0.53 M tri/s |
+| W3DArrBench SMALL (576 one-quad draws and 9 texture updates a frame, 5 s) | 188-205 fps | 221-235 fps | 584-585 fps | 147 fps |
 
 Ranges are runs on 24 and 25 November; bigguy and daletop were busy with other
 work, so take the spread as noise. W3DArrBench's `cpu` column is its own `CPU`
@@ -45,18 +48,26 @@ stream route and the 68k. GLArrays is 14/14 on both virgl renderers.
   Warp3D and MiniGL, and 1.5 times for big arrays.
 - llvmpipe beats the stream route for Warp3D's small scene (1 to 1.7 times) and
   MiniGL (about 2 times), and is about 85% of it for big arrays (W3DArrBench).
+- **Many small draws turn it round.** With 576 one-quad draws and 9 texture
+  updates a frame (a 68k game's kind of frame), the stream route is about 3
+  times virgl on the RX 460 and 2.5 times virgl on llvmpipe. virgl is little
+  quicker on the chip than on llvmpipe here, so the cost is virgl's per-draw
+  and per-upload work, not the renderer.
 - So the plan's rule ("if llvmpipe is within the stated margin, delete the host
   core's 3D path and the Vulkan compute path") looks met on this host for these
-  programs. The stream route's `auto` timing still mixes the host core and
+  programs, but not for many small draws, which is what most 68k Warp3D games
+  send. The stream route's `auto` timing still mixes the host core and
   Vulkan, and only one host is measured, so there is no decision yet.
 
 ## Still to measure before a decision
 
-- The host core and the Vulkan compute path timed apart (`OGPU_VK_3D=core` and
-  `gpu`). That needs a lab start that can pass that variable.
+- The host core and the Vulkan compute path timed apart (`AC_VK_3D=core` and
+  `gpu` at lab start), after the Cradle's next gfopenrtg pin.
 - The x86 appliance and a Pi 5 card.
-- BlitzQuake, Quake through MiniGL, `scenes3d`, and a 68k-style
-  workload of many small draws and texture updates a frame.
+- BlitzQuake and Quake through MiniGL (neither is in the lab or the Media
+  Library), and `scenes3d`.
+- W3DArrBench SMALL with the draws and the texture updates apart, to see which
+  of the two costs virgl most.
 - GLArrays timed (it only checks pictures today).
 
 ## The question for Dale, once those are in

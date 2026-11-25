@@ -907,7 +907,8 @@ int ogpu3d_rec_triangles(struct ogpu3d_rec *r, struct ogpu3d *t, const ogpu_u8 *
 
 struct ogpu3d_rec *ogpu3d_rec_create(const struct ogpu3d_rec_cfg *cfg) {
     struct ogpu3d_rec *r = calloc(1, sizeof *r);
-    const char *m = getenv("OGPU_VK_3D");
+    /* OGPU_VK_3D, else AC_VK_3D: the name a Cradle lab start can pass */
+    const char *m = getenv("OGPU_VK_3D") ? getenv("OGPU_VK_3D") : getenv("AC_VK_3D");
     if (!r) return 0;
     r->cfg = *cfg;
     r->mode = m && !strcmp(m, "gpu") ? O3R_MODE_GPU : m && !strcmp(m, "core") ? O3R_MODE_CORE : O3R_MODE_AUTO;

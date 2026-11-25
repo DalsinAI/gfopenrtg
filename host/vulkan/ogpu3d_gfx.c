@@ -81,6 +81,8 @@ struct ogpu3d_gfx {
     ogpu_u8 *vmap, *smap, *tsmap;
     size_t vused, ssize, sused, tssize;
     int scoherent;                  /* staging is coherent: else flushed and invalidated */
+    ogpu_u8 *bounce;                /* two rows of cached memory: rows pass through it (gf_row_in, gf_row_out) */
+    size_t bounce_size;
     struct gf_img col, dep;
     VkFramebuffer fb;
     VkImageView fb_c, fb_d;
@@ -297,6 +299,7 @@ void ogpu3d_gfx_destroy(struct ogpu3d_gfx *g) {
     gf_buffer_free(g, &g->vbuf, &g->vmem, &g->vmap);
     gf_buffer_free(g, &g->sbuf, &g->smem, &g->smap);
     gf_buffer_free(g, &g->tsbuf, &g->tsmem, &g->tsmap);
+    free(g->bounce);
     if (g->fence) vkDestroyFence(d, g->fence, 0);
     if (g->tfence) vkDestroyFence(d, g->tfence, 0);
     if (g->pool) vkDestroyCommandPool(d, g->pool, 0);
@@ -783,31 +786,102 @@ static struct gf_tex *gf_texture(struct ogpu3d_gfx *g, const struct ogpu3d_tex *
 
 static int gf_cbpp(int ci) { return ci == 2 ? 2 : 4; }
 
+/* Rows move between memory and staging through cached memory, a whole row
+ * at a time: staging, and video RAM on some devices, is uncached (V3D has
+ * only that), where a load a byte costs the earth and memcpy's wide loads
+ * do not. 0 when out of memory. */
+static ogpu_u8 *gf_bounce(struct ogpu3d_gfx *g, size_t row) {
+    if (2 * row > g->bounce_size) {
+        ogpu_u8 *b = realloc(g->bounce, 2 * row);
+        if (!b) return 0;
+        g->bounce = b;
+        g->bounce_size = 2 * row;
+    }
+    return g->bounce;
+}
+
+static uint32_t gf_ld32(const ogpu_u8 *p) { uint32_t v; memcpy(&v, p, 4); return v; }
+static void gf_st32(ogpu_u8 *p, uint32_t v) { memcpy(p, &v, 4); }
+static uint32_t gf_swap32(uint32_t v) { return (v >> 24) | ((v >> 8) & 0xFF00u) | ((v << 8) & 0xFF0000u) | (v << 24); }
+
+/* One row of n pixels of format fmt from memory (p) into staging (o), as the image's. */
+static void gf_row_in(ogpu_u8 *b, const ogpu_u8 *p, ogpu_u8 *o, int n, int fmt) {
+    ogpu_u8 *c = b + (size_t)n * 4;
+    int x;
+    switch (fmt) {
+    case OGPU_FMT_RGB565: case OGPU_FMT_Z16:
+        memcpy(b, p, (size_t)n * 2);
+        for (x = 0; x < n; x++) { c[2 * x] = b[2 * x + 1]; c[2 * x + 1] = b[2 * x]; }
+        memcpy(o, c, (size_t)n * 2);
+        return;
+    case OGPU_FMT_ARGB32: case OGPU_FMT_ABGR32: case OGPU_FMT_XRGB32:
+        memcpy(b, p, (size_t)n * 4);
+        for (x = 0; x < n; x++) gf_st32(c + 4 * x, gf_swap32(gf_ld32(b + 4 * x)) | (fmt == OGPU_FMT_XRGB32 ? 0xFF000000u : 0));
+        memcpy(o, c, (size_t)n * 4);
+        return;
+    case OGPU_FMT_Z32:
+        memcpy(b, p, (size_t)n * 4);
+        for (x = 0; x < n; x++) {
+            float f = (float)((double)gf_swap32(gf_ld32(b + 4 * x)) / 4294967296.0);
+            memcpy(c + 4 * x, &f, 4);
+        }
+        memcpy(o, c, (size_t)n * 4);
+        return;
+    }
+    memcpy(o, p, (size_t)n * 4);        /* BGRA32, RGBA32: as they are */
+}
+
+/* One row back: staging (o) into memory (p). */
+static void gf_row_out(ogpu_u8 *b, ogpu_u8 *p, const ogpu_u8 *o, int n, int fmt) {
+    ogpu_u8 *c = b + (size_t)n * 4;
+    int x;
+    switch (fmt) {
+    case OGPU_FMT_RGB565: case OGPU_FMT_Z16:
+        memcpy(b, o, (size_t)n * 2);
+        for (x = 0; x < n; x++) { c[2 * x] = b[2 * x + 1]; c[2 * x + 1] = b[2 * x]; }
+        memcpy(p, c, (size_t)n * 2);
+        return;
+    case OGPU_FMT_ARGB32: case OGPU_FMT_ABGR32:
+        memcpy(b, o, (size_t)n * 4);
+        for (x = 0; x < n; x++) gf_st32(c + 4 * x, gf_swap32(gf_ld32(b + 4 * x)));
+        memcpy(p, c, (size_t)n * 4);
+        return;
+    case OGPU_FMT_XRGB32:               /* X as it was */
+        memcpy(b, o, (size_t)n * 4);
+        memcpy(c, p, (size_t)n * 4);
+        for (x = 0; x < n; x++)
+            gf_st32(c + 4 * x, (gf_swap32(gf_ld32(b + 4 * x)) & 0xFFFFFF00u) | (gf_ld32(c + 4 * x) & 0xFFu));
+        memcpy(p, c, (size_t)n * 4);
+        return;
+    case OGPU_FMT_Z32:
+        memcpy(b, o, (size_t)n * 4);
+        memcpy(c, p, (size_t)n * 4);
+        for (x = 0; x < n; x++) {
+            /* a Z the GPU left alone stays as it was, every bit of it */
+            uint32_t old = gf_swap32(gf_ld32(c + 4 * x)), z;
+            float f, was = (float)((double)old / 4294967296.0);
+            double d;
+            memcpy(&f, b + 4 * x, 4);
+            if (!memcmp(&f, &was, 4)) continue;
+            d = (double)f * 4294967296.0;
+            z = d <= 0 ? 0 : d >= 4294967292.0 ? 0xFFFFFFFCu : (uint32_t)d & ~3u;
+            gf_st32(c + 4 * x, gf_swap32(z));
+        }
+        memcpy(p, c, (size_t)n * 4);
+        return;
+    }
+    memcpy(p, o, (size_t)n * 4);
+}
+
 /* Rows y0..y1 of the target (and its Z buffer) from memory into staging,
  * and copied into the images (outside a render pass). */
 static void gf_rows_in(struct ogpu3d_gfx *g, int y0, int y1, int first) {
     VkBufferImageCopy rg;
-    int bpp = gf_cbpp(g->ci), x, y, w = g->dw;
+    int bpp = gf_cbpp(g->ci), y, w = g->dw;
     ogpu_u8 *o = g->smap + g->sused;
     double t0 = gf_ms();
     memset(&rg, 0, sizeof rg);
-    for (y = y0; y < y1; y++) {
-        const ogpu_u8 *p = g->dst + g->dbpr * y;
-        switch (g->dfmt) {
-        case OGPU_FMT_RGB565:
-            for (x = 0; x < w; x++, p += 2, o += 2) { o[0] = p[1]; o[1] = p[0]; }
-            break;
-        case OGPU_FMT_ARGB32: case OGPU_FMT_ABGR32:
-            for (x = 0; x < w; x++, p += 4, o += 4) { o[0] = p[3]; o[1] = p[2]; o[2] = p[1]; o[3] = p[0]; }
-            break;
-        case OGPU_FMT_XRGB32:   /* its alpha reads as 255, as the core's does */
-            for (x = 0; x < w; x++, p += 4, o += 4) { o[0] = p[3]; o[1] = p[2]; o[2] = p[1]; o[3] = 255; }
-            break;
-        default:                /* BGRA32, RGBA32: as they are */
-            memcpy(o, p, (size_t)w * 4);
-            o += w * 4;
-        }
-    }
+    for (y = y0; y < y1; y++, o += (size_t)w * bpp) gf_row_in(g->bounce, g->dst + g->dbpr * y, o, w, g->dfmt);
     rg.bufferOffset = g->sused;
     rg.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     rg.imageSubresource.layerCount = 1;
@@ -833,16 +907,7 @@ static void gf_rows_in(struct ogpu3d_gfx *g, int y0, int y1, int first) {
                    VK_PIPELINE_STAGE_TRANSFER_BIT);
         if (zy0 < zy1 && zw > 0) {
             o = g->smap + g->sused;
-            for (y = zy0; y < zy1; y++) {
-                const ogpu_u8 *p = g->zmem + g->zbpr * y;
-                if (z32)
-                    for (x = 0; x < zw; x++, p += 4, o += 4) {
-                        float f = (float)((double)gf_rd32(p) / 4294967296.0);
-                        memcpy(o, &f, 4);
-                    }
-                else
-                    for (x = 0; x < zw; x++, p += 2, o += 2) { o[0] = p[1]; o[1] = p[0]; }
-            }
+            for (y = zy0; y < zy1; y++, o += (size_t)zw * (z32 ? 4 : 2)) gf_row_in(g->bounce, g->zmem + g->zbpr * y, o, zw, g->zfmt);
             memset(&rg, 0, sizeof rg);
             rg.bufferOffset = g->sused;
             rg.imageSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
@@ -932,6 +997,7 @@ static int gf_group_open(struct ogpu3d_gfx *g, const struct ogpu_surface *dst, i
         }
         g->ssize = need;
     }
+    if (!gf_bounce(g, (size_t)w * 4)) return 0;
     g->ci = ci; g->di = di;
     g->dst = dst->pixels; g->dbpr = dst->bpr; g->dw = w; g->dh = h; g->dfmt = dst->format;
     if (di) { g->zmem = z->mem; g->zbpr = z->bpr; g->zw = z->w; g->zh = z->h; g->zfmt = z->format; }
@@ -966,7 +1032,7 @@ int ogpu3d_gfx_close(struct ogpu3d_gfx *g) {
     VkBufferImageCopy rg;
     VkMemoryBarrier mb = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER };
     size_t cat, zat = 0;
-    int bpp, x, y, w, zy1 = 0, zw = 0, z32 = 0;
+    int bpp, y, w, zy1 = 0, zw = 0, z32 = 0;
     double t0, t1;
     if (!g || !g->open) return 1;
     g->open = 0;
@@ -1028,43 +1094,11 @@ int ogpu3d_gfx_close(struct ogpu3d_gfx *g) {
     /* the rows back into memory, in the target's byte order */
     {
         const ogpu_u8 *o = g->smap + cat;
-        for (y = g->uy0; y < g->uy1; y++) {
-            ogpu_u8 *p = g->dst + g->dbpr * y;
-            switch (g->dfmt) {
-            case OGPU_FMT_RGB565:
-                for (x = 0; x < w; x++, p += 2, o += 2) { p[0] = o[1]; p[1] = o[0]; }
-                break;
-            case OGPU_FMT_ARGB32: case OGPU_FMT_ABGR32:
-                for (x = 0; x < w; x++, p += 4, o += 4) { p[0] = o[3]; p[1] = o[2]; p[2] = o[1]; p[3] = o[0]; }
-                break;
-            case OGPU_FMT_XRGB32:   /* X as it was */
-                for (x = 0; x < w; x++, p += 4, o += 4) { p[1] = o[2]; p[2] = o[1]; p[3] = o[0]; }
-                break;
-            default:
-                memcpy(p, o, (size_t)w * 4);
-                o += w * 4;
-            }
-        }
+        for (y = g->uy0; y < g->uy1; y++, o += (size_t)w * bpp) gf_row_out(g->bounce, g->dst + g->dbpr * y, o, w, g->dfmt);
     }
     if (g->di && g->uy0 < zy1 && zw > 0) {
         const ogpu_u8 *o = g->smap + zat;
-        for (y = g->uy0; y < zy1; y++) {
-            ogpu_u8 *p = g->zmem + g->zbpr * y;
-            if (z32)
-                for (x = 0; x < zw; x++, p += 4, o += 4) {
-                    /* a Z the GPU left alone stays as it was, every bit of it */
-                    uint32_t old = gf_rd32(p), z;
-                    float f, was = (float)((double)old / 4294967296.0);
-                    double d;
-                    memcpy(&f, o, 4);
-                    if (!memcmp(&f, &was, 4)) continue;
-                    d = (double)f * 4294967296.0;
-                    z = d <= 0 ? 0 : d >= 4294967292.0 ? 0xFFFFFFFCu : (uint32_t)d & ~3u;
-                    p[0] = (ogpu_u8)(z >> 24); p[1] = (ogpu_u8)(z >> 16); p[2] = (ogpu_u8)(z >> 8); p[3] = (ogpu_u8)z;
-                }
-            else
-                for (x = 0; x < zw; x++, p += 2, o += 2) { p[0] = o[1]; p[1] = o[0]; }
-        }
+        for (y = g->uy0; y < zy1; y++, o += (size_t)zw * (z32 ? 4 : 2)) gf_row_out(g->bounce, g->zmem + g->zbpr * y, o, zw, g->zfmt);
     }
     g->st.out_ms += gf_ms() - t1;
     return 1;

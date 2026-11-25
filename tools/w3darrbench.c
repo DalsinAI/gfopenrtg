@@ -7,13 +7,14 @@
  * float positions and texture coordinates, UBYTE ARGB colours, drawn into an
  * ARGB32 W3D_Bitmap in memory (no screen), as indexed triangles (UWORD) and
  * as strips, for SECONDS n (default 10):
- *   W3DArrBench [CPU|GPU] [SECONDS n] [CULL] [SMALL]
+ *   W3DArrBench [CPU|GPU] [SECONDS n] [CULL] [SMALL [NOUPDATE]]
  * CPU asks for W3D_DRIVER_CPU, GPU (the default) for W3D_DRIVER_3DHW, so the
  * drawing itself is the host's and the time is mostly the vertices. CULL
  * turns back-face culling on (half the grid faces away). SMALL is a 68k
  * game's kind of frame instead: textured, 576 draws of one quad each
  * (every fourth quad of the grid), with the 32x32 texture changed and
- * W3D_UpdateTexImage'd every 64 draws (9 a frame). Prints the triangles
+ * W3D_UpdateTexImage'd every 64 draws (9 a frame; NOUPDATE: never, to time
+ * the draws alone). Prints the triangles
  * drawn, the time and triangles a second (and, for SMALL, draws a second). */
 #include <exec/types.h>
 #include <exec/memory.h>
@@ -55,12 +56,13 @@ int main(int argc, char **argv)
     ULONG err = 0, type = W3D_DRIVER_3DHW;
     long secs = 10, t0, t1 = 0, frames = 0, tris = 0;
     long draws = 0;
-    int cull = 0, small = 0, i, x, y, k = 0;
+    int cull = 0, small = 0, noupdate = 0, i, x, y, k = 0;
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "CPU")) type = W3D_DRIVER_CPU;
         else if (!strcmp(argv[i], "GPU")) type = W3D_DRIVER_3DHW;
         else if (!strcmp(argv[i], "CULL")) cull = 1;
         else if (!strcmp(argv[i], "SMALL")) small = 1;
+        else if (!strcmp(argv[i], "NOUPDATE")) noupdate = 1;
         else if (!strcmp(argv[i], "SECONDS") && i + 1 < argc) secs = atol(argv[++i]);
     }
     if (secs < 1) secs = 1;
@@ -97,8 +99,8 @@ int main(int argc, char **argv)
         W3D_SetTexEnv(c, t, W3D_MODULATE, 0);
         W3D_BindTexture(c, 0, t);
         W3D_SetState(c, W3D_TEXMAPPING, W3D_ENABLE);
-        printf("W3DArrBench: %s, SMALL: 576 draws of 2 textured triangles a frame, 9 texture updates, %ld s%s\n",
-               type == W3D_DRIVER_CPU ? "CPU" : "GPU", secs, cull ? ", culling" : "");
+        printf("W3DArrBench: %s, SMALL: 576 draws of 2 textured triangles a frame, %d texture updates, %ld s%s\n",
+               type == W3D_DRIVER_CPU ? "CPU" : "GPU", noupdate ? 0 : 9, secs, cull ? ", culling" : "");
     } else
         printf("W3DArrBench: %s, %d triangles a frame (DrawElements) + %d (strips), %ld s%s\n",
                type == W3D_DRIVER_CPU ? "CPU" : "GPU", NT, NT, secs, cull ? ", culling" : "");
@@ -107,7 +109,7 @@ int main(int argc, char **argv)
         if (W3D_LockHardware(c) != W3D_SUCCESS) { printf("W3D_LockHardware failed\n"); break; }
         if (small) {
             for (i = 0; i < 576; i++) {
-                if (!(i & 63)) {
+                if (!noupdate && !(i & 63)) {
                     tex[(frames * 9 + (i >> 6)) & 1023] ^= 0x00FFFFFFUL;
                     W3D_UpdateTexImage(c, t, tex, 0, 0);
                 }

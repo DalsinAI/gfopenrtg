@@ -44,6 +44,60 @@ channel 9, 0 of 3072 pixels over 8 with a pixel's shift. MGLTest's frame-0
 checksum is 9d42b7e6 on the RX 460, 69ea5427 on llvmpipe, and 124d81ad on the
 stream route and the 68k. GLArrays is 14/14 on both virgl renderers.
 
+## The stream route's two halves (25 November)
+
+The host runs the stream route's triangles either on its C core or with the
+Vulkan 3D shader. A lab start now passes `AC_VK_3D` (gfopenrtg e61a742, amicradle
+PR 130), so each half was timed alone, with `ENV:GFOpenGPU/Driver` set to
+`acrtg`. The runtime is a1200native built in the kitchen from that branch
+(`scripts/deploy/build-native.sh`, the portable x86-64 build, not the deployed
+Zen one), run in the same lab; the runtime's log confirms where the triangles
+went (gpu: 39074 on the GPU; auto: 12500 on the GPU, 49328 on the core).
+Three boots each, daletop's load about 10 on 12 cores.
+
+| Program | `AC_VK_3D=core` | `AC_VK_3D=gpu` | `auto` (by cost) |
+| --- | --- | --- | --- |
+| W3DTest (FRAMES 300) | 333-349 fps | 405-429 fps | 366-429 fps |
+| MGLTest (FRAMES 300) | 192-205 fps | 246-254 fps | 234-263 fps |
+| W3DArrBench (9216 triangles a frame) | 2.50-2.55 M tri/s (one run 1.24) | 1.03-2.00 M tri/s | 1.84-1.90 M tri/s |
+| W3DArrBench SMALL | 633-785 fps (one boot 160-166) | 337-363 fps | 522-548 fps |
+
+In the last `auto` boot, virgl on the RX 460 gave SMALL 505 fps (with the
+texture fix) and W3DArrBench 1.81 M tri/s.
+
+- The Vulkan 3D shader is quicker only for the small scenes, by about 20%
+  (W3DTest, MGLTest). The host core is quicker for big arrays (about 1.25
+  times) and for many small draws (about 2 times): each draw sent to the GPU is
+  a submit and a wait (gpu boot: 35770 submits, 5.3 s waiting).
+- `auto`'s choice by cost is worse than the core alone for both of those.
+- So the Vulkan compute path costs more than it gains on this host for 68k
+  games' kind of frame. Deleting it alone (keeping the host core) loses about
+  20% on the small scenes.
+- **Pi 5 card (amicradle-cm5, V3D 7.1, Mesa 26.2.6):** the Vulkan back end is
+  off there by design (amicradle #949, V3DV's compute shaders don't finish).
+  Forced on with `OGPU_VK_V3D=1`, `tests/gpu/test_opengpu_3d.sh`'s device probe
+  still hadn't come back after 400 s. On the Pi the stream route is the host
+  core only, and has always been.
+- **x86 appliance (Ryzen 5 2400G, RX 580, RADV):** no Amiga there yet, so
+  only the host side: `tests/gpu/test_opengpu_3d.sh` at amicradle e662e82, one
+  frame of each bench scene on the core and on the GPU (ms a frame, the wait
+  included). All 12 checks PASS, every picture byte for byte the core's.
+
+  | Scene | core ms | GPU ms | GPU faster |
+  | --- | --- | --- | --- |
+  | w3dtest (320x240, 14 triangles) | 1.83 | 0.41 | 4.4x |
+  | mgltest (320x240 RGB565, 14 triangles) | 5.34 | 0.37 | 14.5x |
+  | cow3d (2201 triangles) | 1.95 | 1.86 | 1.0x |
+  | tiny (4 triangles, 120 pixels) | 0.05 | 0.15 | 0.4x |
+  | fill640 (640x480) | 11.57 | 1.07 | 10.8x |
+
+  The GPU wins on pixels and loses on small draws (a submit costs about
+  0.15 ms with its wait), the same shape as daletop's lab: a 68k game's many
+  small draws are the "tiny" row, over and over.
+- MGLTest's frame-0 checksum on the stream route was 26ca6bed in most boots
+  and 124d81ad (the 24 November value) in one, under the same driver. To look
+  into: a picture that differs by run.
+
 ## What it says so far
 
 - virgl on the graphics chip is about 2 to 2.5 times the stream route for
@@ -71,9 +125,7 @@ stream route and the 68k. GLArrays is 14/14 on both virgl renderers.
 
 ## Still to measure before a decision
 
-- The host core and the Vulkan compute path timed apart (`AC_VK_3D=core` and
-  `gpu` at lab start), after the Cradle's next gfopenrtg pin.
-- The x86 appliance and a Pi 5 card.
+- The x86 appliance's Amiga programs (only its host-side test is in).
 - BlitzQuake and Quake through MiniGL (neither is in the lab or the Media
   Library), and `scenes3d`.
 - W3DArrBench SMALL on llvmpipe after the texture fix.

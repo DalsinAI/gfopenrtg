@@ -23,6 +23,12 @@ done
 rm -f "$OUT/libogpupipe.a"
 "$AR" rcs "$OUT/libogpupipe.a" "$OBJ/pipe_screen.o" "$OBJ/pipe_block.o" "$OBJ/pipe_res.o" "$OBJ/pipe_arena.o" "$OBJ/pipe_state.o" "$OBJ/pipe_frame.o" "$OBJ/pipe_ff.o" "$OBJ/pipe_emit_s3d.o" "$OBJ/pipe_xport_os3.o"
 echo "$OUT/libogpupipe.a"
+# M10: what one linked copy of the pipe costs (text, data and bss of its objects), the RAM a
+# shared Pipe.module would save for each library past the first that links it.
+SIZE=${SIZE:-$(dirname "$CC")/m68k-amigaos-size}
+if [ -x "$SIZE" ]; then
+    "$SIZE" -t "$OBJ"/pipe_*.o | tee "$OUT/pipe-size.txt"
+fi
 OUT="$OUT/tests" sh "$ROOT/tests/pipe/test_screen.sh"
 OUT="$OUT/tests" sh "$ROOT/tests/pipe/test_res.sh"
 OUT="$OUT/tests" sh "$ROOT/tests/pipe/test_draw.sh"

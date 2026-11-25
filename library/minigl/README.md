@@ -14,10 +14,14 @@ for changing it.
   `libminigl.a`, and calls `MiniGLOpen()` and `MiniGLClose()`.
 - **Through functions.** A program includes `<mgl/gl.h>`, links `libmgl.a`,
   and calls `MGLInit()` and `MGLTerm()`.
-- **Routes.** `ENV:MiniGL/Driver`: `CPU` (the 3D core on the 68k), `GFOpenGPU`
-  (gfopengpu.library's 3D ops), `Virgl` (the host's GPU through GFOpenGPU's
-  virgl path: `mgl_vg*.c`, docs/design/MiniGL-Compatible-Plan.md), or `Auto`
-  (virgl where gfopengpu.library carries it, else as GFOpenGPU or CPU).
+- **Routes.** From gfopengpu.library 0.32 the route is the shared choice,
+  `OGPU_Driver("MiniGL")`: `ENV:MiniGL/Driver`, then `ENV:GFOpenGPU/Driver`,
+  else auto (sdk/AutoDocs-GFOpenGPU.md, section 8). `virgl` and `llvmpipe` give
+  the host's virgl (`mgl_vg*.c`), `acrtg` gfopengpu.library's 3D ops (the stream
+  route), and `cpu` the 3D core on the 68k. Auto is virgl where the host draws
+  it on a graphics chip, else the stream route, else the 68k. With an older
+  gfopengpu.library, `ENV:MiniGL/Driver` alone: `CPU`, `GFOpenGPU`, `Virgl` or
+  `Auto` (virgl where gfopengpu.library carries it, else as GFOpenGPU or CPU).
 - **Over GL.module (opt-in).** `ENV:MiniGL/Wrap` set to 1 before the library is
   first opened: MiniGL's calls go to GL.module (`wrap/`), which draws them. It
   needs an FPU and `LIBS:GFOpenGPU/GL.module`. When the module can't be opened

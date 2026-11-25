@@ -119,6 +119,36 @@ void ogpu_caps_discover(struct ogpu_caps *c, int have_virgl, ogpu_caps_run_fn ru
     n = (ULONG)blk_result(b, 0) / 4;
     c->words = n > OGPU_CAPS_WORDS ? OGPU_CAPS_WORDS : n;
     c->set = (UBYTE)set;
+
+    /* 4. A host that draws on a graphics chip but doesn't say so in HELLO (every acvirgl.c before
+     * 25 November 2026 left ACV_HOST_GPU out): the renderer string in caps set 2 says it instead. */
+    if (!(c->host_flags & ACV_HOST_GPU) && set == 2 && ogpu_caps_renderer_on_chip(c) > 0)
+        c->host_flags |= ACV_HOST_GPU;
+}
+
+/* Caps set 2's renderer string (virgl_caps_v2.renderer, bytes 696 to 759): 1 a graphics chip's,
+ * 0 a software renderer's (llvmpipe, softpipe, lavapipe, SwiftShader, in any case), -1 none given. The host
+ * puts each of its words in the Amiga's order, so each word's bytes are the string's in reverse. */
+#define CAPS_RENDERER_WORD 174
+static ULONG strlen_soft(const char *s) { ULONG n = 0; while (s[n]) n++; return n; }
+static ULONG cw(const struct ogpu_caps *c, ULONG at);
+int ogpu_caps_renderer_on_chip(const struct ogpu_caps *c)
+{
+    static const char soft[] = "llvmpipe\0softpipe\0lavapipe\0SwiftShader\0";   /* one string: no pointers to relocate */
+    char r[65];
+    const char *w0;
+    ULONG k;
+    if (c->set != 2 || c->words < CAPS_RENDERER_WORD + 16) return -1;
+    for (k = 0; k < 64; k++) r[k] = (char)((cw(c, CAPS_RENDERER_WORD + k / 4) >> (8 * (k % 4))) & 0xff);
+    r[64] = 0;
+    if (!r[0]) return -1;
+    for (w0 = soft; *w0; w0 += strlen_soft(w0) + 1)
+        for (k = 0; r[k]; k++) {
+            const char *a = r + k, *w = w0;
+            while (*w && (*a | 0x20) == (*w | 0x20)) { a++; w++; }   /* any case: virgl's string says LLVMPIPE */
+            if (!*w) return 0;
+        }
+    return 1;
 }
 
 /* ---- answers -------------------------------------------------------------------------------------------------- */

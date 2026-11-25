@@ -2106,7 +2106,8 @@ static int setup_3d_parts(struct ogpu_vk *vk) {
     struct ogpu3d_rec_cfg rc;
     char err[160];
     unsigned long stage = OGPU_VK_STAGE, tex = OGPU_VK_TEX, data = OGPU_VK_DATA;
-    const char *m = getenv("OGPU_VK_3D");
+    /* OGPU_VK_3D, else AC_VK_3D: the name a Cradle lab start can pass */
+    const char *m = getenv("OGPU_VK_3D") ? getenv("OGPU_VK_3D") : getenv("AC_VK_3D");
     uint32_t q;
     int i;
     if (m && !strcmp(m, "core")) return 0;

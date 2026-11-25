@@ -98,10 +98,10 @@ static void emu_flush(void *user) {
 }
 static int emu_pending(void *user) { (void)user; return recorded > 0; }
 
-static void make_rec(const char *mode, unsigned long stage, unsigned long tex, unsigned long data) {
+static void make_rec_mode(const char *mode, unsigned long stage, unsigned long tex, unsigned long data) {
     struct ogpu3d_rec_cfg cfg;
     if (rec) ogpu3d_rec_destroy(rec);
-    setenv("OGPU_VK_3D", mode, 1);
+    if (mode) setenv("OGPU_VK_3D", mode, 1);
     memset(&cfg, 0, sizeof cfg);
     cfg.vram = vram_gpu; cfg.vram_size = REG;
     cfg.stage = stage_buf; cfg.stage_size = stage;
@@ -112,6 +112,12 @@ static void make_rec(const char *mode, unsigned long stage, unsigned long tex, u
     rec = ogpu3d_rec_create(&cfg);
     g_vram = (uint *)vram_gpu; g_stage = (uint *)stage_buf; g_tex = (uint *)tex_buf; g_data = (uint *)data_buf;
 }
+
+static void make_rec(const char *mode, unsigned long stage, unsigned long tex, unsigned long data) {
+    make_rec_mode(mode, stage, tex, data);
+}
+/* OGPU_VK_3D left as it is (unset): the recorder reads AC_VK_3D */
+static void make_rec_env(void) { make_rec_mode(0, 8 << 20, 8 << 20, 8 << 20); }
 
 /* ---- the two paths --------------------------------------------------------------------------- */
 
@@ -315,6 +321,20 @@ int main(int argc, char **argv) {
            n, st.gpu, st.declined, st.tex_uploads, st.tex_hits);
     make_rec("auto", 8 << 20, 8 << 20, 8 << 20);
     for (n = 0; n < rounds / 4; n++) if (!random_scene(200000UL + (unsigned long)n, "auto") && ++bad > 15) break;
+
+    /* AC_VK_3D, the name a Cradle lab start can pass, when OGPU_VK_3D is not set */
+    unsetenv("OGPU_VK_3D");
+    setenv("AC_VK_3D", "core", 1);
+    make_rec_env();
+    for (n = 0; n < 20; n++) if (!random_scene(300000UL + (unsigned long)n, "AC_VK_3D=core") && ++bad > 20) break;
+    ogpu3d_rec_stats(rec, &st);
+    CHECK(st.gpu == 0, "AC_VK_3D=core: %lu commands on the GPU (want none)", st.gpu);
+    setenv("AC_VK_3D", "gpu", 1);
+    make_rec_env();
+    for (n = 0; n < 20; n++) if (!random_scene(300100UL + (unsigned long)n, "AC_VK_3D=gpu") && ++bad > 20) break;
+    ogpu3d_rec_stats(rec, &st);
+    CHECK(st.gpu > 0 && st.cpu == 0, "AC_VK_3D=gpu: %lu commands on the GPU, %lu on the core as quicker", st.gpu, st.cpu);
+    unsetenv("AC_VK_3D");
 
     /* the bench scenes, twice (the second time the texture cache is checked and used), then with the texture changed */
     for (k = 0; k < 2; k++) {

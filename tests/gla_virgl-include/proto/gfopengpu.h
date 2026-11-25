@@ -7,3 +7,4 @@
 LONG OGPU_Submit(APTR stream, ULONG words, ULONG *fence);
 LONG OGPU_Wait(ULONG fence);
 ULONG OGPU_Query(ULONG op, ULONG format);
+ULONG OGPU_Driver(CONST_STRPTR api);

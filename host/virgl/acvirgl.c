@@ -538,6 +538,14 @@ static void av_renderer(struct acvirgl *v)
     memcpy(v->renderer, v->tmp + AV_CAPS_RENDERER, sizeof v->renderer - 1);
 }
 
+/* HELLO's ACV_HOST_GPU: the renderer is a graphics chip's, not a software one (llvmpipe, softpipe,
+ * zink on lavapipe, SwiftShader). Without a renderer string, no. */
+static int av_on_chip(const struct acvirgl *v)
+{
+    return v->renderer[0] && !strcasestr(v->renderer, "llvmpipe") && !strcasestr(v->renderer, "softpipe")
+        && !strcasestr(v->renderer, "lavapipe") && !strcasestr(v->renderer, "SwiftShader");
+}
+
 static int av_bind(struct acvirgl *v, const char *path, char *err, int errlen)
 {
     if (v->dl) { dlclose(v->dl); v->dl = NULL; }
@@ -2301,7 +2309,8 @@ int acvirgl_run(struct acvirgl *v, uint8_t *(*map)(void *, uint32_t, uint32_t), 
         }
         switch (cmd) {
         case ACV_HELLO:
-            av_put_be32(a, ACV_HOST_PRESENT | (v->no_batch ? ACV_HOST_NO_BATCH : 0) | (v->no_pipeline ? ACV_HOST_NO_PIPELINE : 0));
+            av_put_be32(a, ACV_HOST_PRESENT | (av_on_chip(v) ? ACV_HOST_GPU : 0)
+                           | (v->no_batch ? ACV_HOST_NO_BATCH : 0) | (v->no_pipeline ? ACV_HOST_NO_PIPELINE : 0));
             r = ACV_PROTOCOL;
             break;
         case ACV_CAPSET_INFO: {

@@ -66,9 +66,11 @@ LIBCALL W3D_Context *LIB_W3D_CreateContext(REG(a0, ULONG *error), REG(a1, struct
     else if (OpenGPUBase && (OpenGPUBase->lib_Version > 0 || OpenGPUBase->lib_Revision >= 32)) {
         /* gfopengpu.library 0.32: OGPU_Driver chooses (the shared pipe's M9; the same table
          * for every front end, ENV:GFOpenGPU/Driver and ENV:Warp3D/Driver). Virgl that won't
-         * start falls to the stream route when that is there, else the CPU. */
+         * start falls to the stream route when that is there, else the CPU. OGPU_Driver has
+         * looked at the chip already (with the renderer string where HELLO leaves it out), so
+         * w3d_vg_start isn't asked to look again. */
         ULONG d = OGPU_Driver((CONST_STRPTR)"Warp3D");
-        if ((d == OGPU_DRV_VIRGL || d == OGPU_DRV_LLVMPIPE) && libbase->gpu_virgl && w3d_vg_start(x, d == OGPU_DRV_VIRGL))
+        if ((d == OGPU_DRV_VIRGL || d == OGPU_DRV_LLVMPIPE) && libbase->gpu_virgl && w3d_vg_start(x, 0))
             x->route = ROUTE_VIRGL;
         else if (type & W3D_DRIVER_3DHW) {
             if (!libbase->gpu_3d) { e = W3D_NODRIVER; goto fail; }

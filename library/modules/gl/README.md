@@ -36,7 +36,8 @@ GL: on softpipe, not virgl: the runtime has no virglrenderer (the ACRTG board do
 |---|---|
 | `gpu` (or `virgl`) | virgl or nothing: softpipe is refused (one line says so and why), and the program fails to start GL where it would have run on the 68k |
 | `cpu` (or `softpipe`) | softpipe, without trying virgl |
-| anything else, or unset | virgl when it's there, else softpipe |
+| anything else | virgl when it's there, else softpipe |
+| unset | gfopengpu.library 0.32 and later choose, as for Warp3D, MiniGL and TinyGL (`OGPU_Driver("GL")`): `ENV:GFOpenGPU/Driver` `cpu` is softpipe, anything else virgl when it's there, else softpipe. GL has no `ENV:GL/Driver`. An older library: as "anything else" |
 
 `ENV:OGLES3/Driver` `CPU` still makes ogles3.library take softpipe, unless
 `GLDriver` says `gpu`. GLQuery and OGLES3Check print the driver they got

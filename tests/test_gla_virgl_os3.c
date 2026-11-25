@@ -24,6 +24,7 @@
 #include <devices/timer.h>
 #include <gfopengpu/gfopengpu.h>
 #include <gfopengpu/stream.h>
+#include <gfopengpu/caps.h>
 #include "gla/gla_core.h"
 #include "gla/os3/gla_virgl_os3.h"
 #include "gla/os3/gla_notice_os3.h"
@@ -71,6 +72,16 @@ void FreeVec(APTR p) { free(p); }
 LONG OpenDevice(CONST_STRPTR name, ULONG unit, struct IORequest *io, ULONG flags) { (void)name; (void)unit; (void)io; (void)flags; return 1; }
 void CloseDevice(struct IORequest *io) { (void)io; }
 ULONG ReadEClock(struct EClockVal *e) { e->ev_hi = e->ev_lo = 0; return 709379; }
+/* gfopengpu.library 0.32's driver choice: what it answers, and what it was asked for */
+static ULONG driver_answer = OGPU_DRV_BEST;
+static int driver_asked;
+static char driver_api[16];
+ULONG OGPU_Driver(CONST_STRPTR api)
+{
+    driver_asked++;
+    snprintf(driver_api, sizeof driver_api, "%s", (const char *)api);
+    return driver_answer;
+}
 ULONG OGPU_Query(ULONG op, ULONG format) { (void)format; return op == OGPU_OP_VIRGL && virgl_full ? (ULONG)OGPU_FULL | (1UL << 8) : 0; }
 LONG OGPU_Submit(APTR stream, ULONG words, ULONG *fence)
 {
@@ -179,6 +190,26 @@ int main(void)
         CHECK(t.run(NULL, blk, sizeof blk) == 0 && last_waited == next_fence && nwaits == 1,
               "run: the submit's fence (%lu) waited for, once (%d)", (unsigned long)last_waited, nwaits);
     }
+    /* ---- gfopengpu.library 0.32: OGPU_Driver("GL") chooses when GLDriver is unset (M9) ---- */
+    CHECK(gla_os3_driver_from_ogpu(OGPU_DRV_CPU) == GLA_OS3_DRIVER_CPU && gla_os3_driver_from_ogpu(OGPU_DRV_VIRGL) == GLA_OS3_DRIVER_AUTO &&
+          gla_os3_driver_from_ogpu(OGPU_DRV_LLVMPIPE) == GLA_OS3_DRIVER_AUTO && gla_os3_driver_from_ogpu(OGPU_DRV_ACRTG) == GLA_OS3_DRIVER_AUTO &&
+          gla_os3_driver_from_ogpu(OGPU_DRV_BEST) == GLA_OS3_DRIVER_AUTO,
+          "OGPU_Driver for GL: cpu is softpipe, the rest virgl when it's there");
+    env_gldriver = NULL; driver_asked = 0;
+    CHECK(gla_os3_virgl_transport(&t) && driver_asked == 0, "a 0.27 library: not asked, virgl as before (%d)", driver_asked);
+    ogpu_lib.lib_Revision = 32;
+    driver_answer = OGPU_DRV_CPU; noted = NULL;
+    CHECK(!gla_os3_virgl_transport(&t) && driver_asked > 0 && !strcmp(driver_api, "GL"),
+          "0.32 answering cpu: no transport, asked for \"GL\" (%s)", driver_api);
+    CHECK(noted && strstr(noted, "gfopengpu.library chose cpu for GL"), "... its reason noted, not GLDriver's (%s)", noted ? noted : "none");
+    CHECK(hook(noted) == 0, "... softpipe allowed");
+    driver_answer = OGPU_DRV_VIRGL;
+    CHECK(gla_os3_virgl_transport(&t), "0.32 answering virgl: the transport");
+    driver_answer = OGPU_DRV_ACRTG;
+    CHECK(gla_os3_virgl_transport(&t), "0.32 answering acrtg: virgl still, GL has no stream route");
+    driver_answer = OGPU_DRV_CPU; env_gldriver = "gpu"; driver_asked = 0;
+    CHECK(gla_os3_gl_driver() == GLA_OS3_DRIVER_GPU && driver_asked == 0, "GLDriver set: it wins, the library isn't asked");
+    env_gldriver = NULL; ogpu_lib.lib_Revision = 27; driver_answer = OGPU_DRV_BEST;
     printf("test_gla_virgl_os3: %d of %d checks passed\n", checks - fails, checks);
     return fails != 0;
 }

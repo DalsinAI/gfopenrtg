@@ -28,6 +28,7 @@
 #define OPENGPU_BASE_NAME OpenGPUBase
 #define GFOPENGPU_BASE_NAME OpenGPUBase
 #include <inline/gfopengpu.h>
+#include "../../../include/gfopengpu/caps.h"   /* OGPU_DRV_CPU */
 
 #include "mglw_session.h"
 
@@ -105,9 +106,14 @@ static ULONG close_module(struct session *ss)
     return 0;
 }
 
+/* softpipe asked for: from gfopengpu.library 0.32 the shared choice (OGPU_Driver("MiniGL"):
+ * ENV:MiniGL/Driver, then ENV:GFOpenGPU/Driver; the plan's M9). The wrapper draws on GL.module,
+ * which has no stream route, so only cpu means softpipe. Before 0.32, ENV:MiniGL/Driver CPU. */
 static int want_cpu(void)
 {
     char v[8];
+    if (OpenGPUBase && (OpenGPUBase->lib_Version > 0 || OpenGPUBase->lib_Revision >= 32))
+        return OGPU_Driver((CONST_STRPTR)"MiniGL") == OGPU_DRV_CPU;
     return GetVar((STRPTR)"MiniGL/Driver", (STRPTR)v, sizeof v, 0) > 0 && (v[0] == 'C' || v[0] == 'c');
 }
 

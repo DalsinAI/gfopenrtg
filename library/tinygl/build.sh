@@ -44,3 +44,13 @@ if "${CC%gcc}objdump" -d "$OBJ/tinygl.o" | grep -Eq '\sf(sin|cos|tan|atan|etox|l
 fi
 "$AR" rcs "$OUT/libtinygl.a" "$OBJ/tinygl.o"
 echo "$OUT/libtinygl.a"
+# TGLSpin (sdk/examples/tinygl), the lab's TinyGL program, where GL's libGL.a is built
+# (library/modules/gl/build-amiga.sh puts it in OUT_DIR/lib) and Mesa's headers are found.
+if [ -f "$OUT/lib/libGL.a" ] && [ -n "$MI" ]; then
+    "$CC" -m68040 -m68881 -mnobitfield -O2 -fno-delete-null-pointer-checks -noixemul \
+        -I"$ROOT/include" $MI -o "$OUT/TGLSpin" "$ROOT/sdk/examples/tinygl/tglspin.c" \
+        -L"$OUT" -L"$OUT/lib" -ltinygl -lGL -lm
+    echo "$OUT/TGLSpin ($(wc -c < "$OUT/TGLSpin") bytes)"
+else
+    echo "TGLSpin: not built (no $OUT/lib/libGL.a or Mesa's headers: build library/modules/gl first)"
+fi

@@ -18,10 +18,12 @@ the program's fixed frame count, at 320x240 in 16 bits.
 - **llvmpipe** is the same lab started with `AC_VIRGL_DRIVER=llvmpipe`, so the
   host's virgl draws on the CPU (GLArrays: "LLVMPIPE (LLVM 21.1.8, 256 bits)").
   virgl gives that name in capitals, which the chip check first missed, so
-  `auto` took virgl there as if on a chip. The check now ignores case.
+  `auto` took virgl there as if on a chip. The check now ignores case, and on
+  llvmpipe `auto` takes the stream route for Warp3D and MiniGL, as the table says.
 - **The stream route** is ACRTG.gpu's host 3D, in its own choice between the
   host core and the Vulkan compute path (`OGPU_VK_3D` unset, so `auto`). A lab
-  can't set `OGPU_VK_3D`, so the two are not yet timed apart.
+  start can't pass `OGPU_VK_3D`; the host also reads `AC_VK_3D`, which it can,
+  once the Cradle carries that host build.
 
 | Program | virgl on the RX 460 | virgl on llvmpipe | `acrtg` (stream route) | `cpu` (68k core) |
 | --- | --- | --- | --- | --- |
@@ -52,8 +54,8 @@ stream route and the 68k. GLArrays is 14/14 on both virgl renderers.
 
 ## Still to measure before a decision
 
-- The host core and the Vulkan compute path timed apart (`OGPU_VK_3D=core` and
-  `gpu`). That needs a lab start that can pass that variable.
+- The host core and the Vulkan compute path timed apart (`AC_VK_3D=core` and
+  `gpu` at lab start), after the Cradle's next gfopenrtg pin.
 - The x86 appliance and a Pi 5 card.
 - BlitzQuake, Quake through MiniGL, `scenes3d`, and a 68k-style
   workload of many small draws and texture updates a frame.

@@ -546,6 +546,25 @@ static int av_on_chip(const struct acvirgl *v)
         && !strcasestr(v->renderer, "lavapipe") && !strcasestr(v->renderer, "SwiftShader");
 }
 
+/* Mesa can hand a context to llvmpipe with no error of its own: a user
+ * outside the render group gets surfaceless EGL on llvmpipe and only a
+ * MESA-EGL warning, so virgl_renderer_init succeeds and av_software's line
+ * never prints. Say so once a process, from the renderer the context got,
+ * unless software was asked for (AC_VIRGL_DRIVER, LIBGL_ALWAYS_SOFTWARE,
+ * GALLIUM_DRIVER) or av_software already said it. 1 when it said so. */
+static int av_said_quiet;
+static int av_say_quiet_software(const struct acvirgl *v, int said)
+{
+    const char *drv = getenv("AC_VIRGL_DRIVER"), *ls = getenv("LIBGL_ALWAYS_SOFTWARE");
+    const char *gd = getenv("GALLIUM_DRIVER");
+    if (said || av_said_quiet || !v->renderer[0] || av_on_chip(v)) return 0;
+    if ((drv && *drv) || (ls && *ls && strcmp(ls, "0")) || (gd && *gd)) return 0;
+    av_said_quiet = 1;
+    fprintf(stderr, "ACVIRGL: Mesa gave %s, not the GPU; drawing in software%s\n", v->renderer,
+            access("/dev/dri/renderD128", R_OK | W_OK) ? " (no access to /dev/dri/renderD128: is this user in the render group?)" : "");
+    return 1;
+}
+
 static int av_bind(struct acvirgl *v, const char *path, char *err, int errlen)
 {
     if (v->dl) { dlclose(v->dl); v->dl = NULL; }
@@ -597,6 +616,7 @@ struct acvirgl *acvirgl_create(const char *lib, char *err, int errlen)
 {
     struct acvirgl *v = calloc(1, sizeof *v);
     const char *path = lib ? lib : getenv("ACVIRGL_LIB"), *drv, *gles, *soft;
+    int said_soft = 0;
     if (!v) { snprintf(err, (size_t)errlen, "no memory"); return NULL; }
     if (!path) { snprintf(err, (size_t)errlen, "no virglrenderer (ACVIRGL_LIB not set)"); free(v); return NULL; }
     if (!av_bind(v, path, err, errlen)) { free(v); return NULL; }
@@ -613,8 +633,10 @@ struct acvirgl *acvirgl_create(const char *lib, char *err, int errlen)
     if (!av_start(v, gles, err, errlen)) {
         if ((drv && *drv) || (soft && !strcmp(soft, "0")) || !av_software(v, path, gles, err, errlen))
             goto fail;
+        said_soft = 1;
     }
     av_renderer(v);
+    av_say_quiet_software(v, said_soft);
     {
         const char *st = getenv("AC_VIRGL_STAGE"), *zd = getenv("AC_VIRGL_ZDISCARD");
         int i;

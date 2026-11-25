@@ -14,39 +14,50 @@ the program's fixed frame count, at 320x240 in 16 bits.
 - **Host:** daletop (Ryzen), labs muted.
 - **The host draws virgl on a graphics chip**, an AMD Radeon RX 460 (radeonsi), as
   GLArrays reports. Until 25 November the host's HELLO never set `ACV_HOST_GPU`,
-  so `OGPU_Driver` wrongly said "virgl has no graphics chip". The `llvmpipe` value
-  below therefore measured virgl on the RX 460, not llvmpipe.
+  so `OGPU_Driver` wrongly said "virgl has no graphics chip".
+- **llvmpipe** is the same lab started with `AC_VIRGL_DRIVER=llvmpipe`, so the
+  host's virgl draws on the CPU (GLArrays: "LLVMPIPE (LLVM 21.1.8, 256 bits)").
+  virgl gives that name in capitals, which the chip check first missed, so
+  `auto` took virgl there as if on a chip. The check now ignores case.
 - **The stream route** is ACRTG.gpu's host 3D, in its own choice between the
   host core and the Vulkan compute path (`OGPU_VK_3D` unset, so `auto`). A lab
   can't set `OGPU_VK_3D`, so the two are not yet timed apart.
 
-| Program | virgl on the RX 460 | `acrtg` (stream route) | `cpu` (68k core) |
-| --- | --- | --- | --- |
-| W3DTest (Warp3D, FRAMES 300; cpu 100) | 1071 fps | 429 fps | 54 fps |
-| MGLTest (MiniGL, FRAMES 300; cpu 100) | 577 fps | 234 fps | 67 fps |
+| Program | virgl on the RX 460 | virgl on llvmpipe | `acrtg` (stream route) | `cpu` (68k core) |
+| --- | --- | --- | --- | --- |
+| W3DTest (Warp3D, FRAMES 300; cpu 100) | 882-1071 fps | 441-750 fps | 429 fps | 54 fps |
+| MGLTest (MiniGL, FRAMES 300; cpu 100) | 577-600 fps | 455-484 fps | 234 fps | 67 fps |
+| W3DArrBench (9216 triangles a frame, 10 s) | 2.87 M tri/s | 1.65 M tri/s | 1.92-1.98 M tri/s | 0.53 M tri/s |
 
-Pictures: W3DCheck is 183/0 under every value. Under `llvmpipe` the virgl scene
-is within the route's tolerance (worst channel 9, 0 of 3072 pixels over 8 with a
-pixel's shift). MGLTest's frame-0 checksum is 9d42b7e6 on virgl and 124d81ad on
-the stream route and the 68k.
+Ranges are runs on 24 and 25 November; bigguy and daletop were busy with other
+work, so take the spread as noise. W3DArrBench's `cpu` column is its own `CPU`
+switch (it asks for `W3D_DRIVER_CPU` itself).
+
+Pictures: W3DCheck is 183/0 under every value. The virgl scene is within the
+route's tolerance on both the RX 460 (7416b6cd) and llvmpipe (72a9f3b1): worst
+channel 9, 0 of 3072 pixels over 8 with a pixel's shift. MGLTest's frame-0
+checksum is 9d42b7e6 on the RX 460, 69ea5427 on llvmpipe, and 124d81ad on the
+stream route and the 68k. GLArrays is 14/14 on both virgl renderers.
 
 ## What it says so far
 
-On this host, virgl on the graphics chip is about 2.5 times the stream route for
-both Warp3D and MiniGL. llvmpipe itself is not measured yet: it needs a lab
-started with `AC_VIRGL_DRIVER=llvmpipe`. The plan's rule ("if llvmpipe is within
-the stated margin, delete the host core's 3D path and the Vulkan compute path")
-waits for that number.
+- virgl on the graphics chip is about 2 to 2.5 times the stream route for
+  Warp3D and MiniGL, and 1.5 times for big arrays.
+- llvmpipe beats the stream route for Warp3D's small scene (1 to 1.7 times) and
+  MiniGL (about 2 times), and is about 85% of it for big arrays (W3DArrBench).
+- So the plan's rule ("if llvmpipe is within the stated margin, delete the host
+  core's 3D path and the Vulkan compute path") looks met on this host for these
+  programs. The stream route's `auto` timing still mixes the host core and
+  Vulkan, and only one host is measured, so there is no decision yet.
 
 ## Still to measure before a decision
 
 - The host core and the Vulkan compute path timed apart (`OGPU_VK_3D=core` and
   `gpu`). That needs a lab start that can pass that variable.
-- llvmpipe on the same host (`AC_VIRGL_DRIVER=llvmpipe` at lab start).
 - The x86 appliance and a Pi 5 card.
-- BlitzQuake, Quake through MiniGL, `scenes3d`, `w3darrbench`, and a 68k-style
+- BlitzQuake, Quake through MiniGL, `scenes3d`, and a 68k-style
   workload of many small draws and texture updates a frame.
-- GL.module's programs (GLArrays) under each value.
+- GLArrays timed (it only checks pictures today).
 
 ## The question for Dale, once those are in
 

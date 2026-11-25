@@ -298,6 +298,11 @@ int main(void)
     CHECK(ogpu_caps_renderer_on_chip(&c) == 0 && c.host_flags == ACV_HOST_PRESENT, "llvmpipe: no chip");
     CHECK(ANS(ogpu_caps_answer(&c, OGPU_DRV_BEST, OGPU_OP_LLVM_PIPE, 0)) == OGPU_FULL, "... and LLVM_PIPE answers FULL");
     host(ACV_HOST_PRESENT);
+    renderer("LLVMPIPE (LLVM 21.1.8, 256 bits)");
+    ogpu_caps_init(&c, 1);
+    ogpu_caps_discover(&c, 1, run, 0, ROOM_AT);
+    CHECK(ogpu_caps_renderer_on_chip(&c) == 0 && c.host_flags == ACV_HOST_PRESENT, "LLVMPIPE in capitals (as virgl gives it): no chip");
+    host(ACV_HOST_PRESENT);
     renderer("zink Vulkan 1.3(llvmpipe (LLVM 19.1.7, 256 bits) (MESA_LLVMPIPE))");
     ogpu_caps_init(&c, 1);
     ogpu_caps_discover(&c, 1, run, 0, ROOM_AT);

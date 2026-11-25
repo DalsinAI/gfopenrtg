@@ -127,7 +127,7 @@ void ogpu_caps_discover(struct ogpu_caps *c, int have_virgl, ogpu_caps_run_fn ru
 }
 
 /* Caps set 2's renderer string (virgl_caps_v2.renderer, bytes 696 to 759): 1 a graphics chip's,
- * 0 a software renderer's (llvmpipe, softpipe, lavapipe, SwiftShader), -1 none given. The host
+ * 0 a software renderer's (llvmpipe, softpipe, lavapipe, SwiftShader, in any case), -1 none given. The host
  * puts each of its words in the Amiga's order, so each word's bytes are the string's in reverse. */
 #define CAPS_RENDERER_WORD 174
 static ULONG strlen_soft(const char *s) { ULONG n = 0; while (s[n]) n++; return n; }
@@ -145,7 +145,7 @@ int ogpu_caps_renderer_on_chip(const struct ogpu_caps *c)
     for (w0 = soft; *w0; w0 += strlen_soft(w0) + 1)
         for (k = 0; r[k]; k++) {
             const char *a = r + k, *w = w0;
-            while (*w && *a == *w) { a++; w++; }
+            while (*w && (*a | 0x20) == (*w | 0x20)) { a++; w++; }   /* any case: virgl's string says LLVMPIPE */
             if (!*w) return 0;
         }
     return 1;

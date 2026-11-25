@@ -542,8 +542,8 @@ static void av_renderer(struct acvirgl *v)
  * zink on lavapipe, SwiftShader). Without a renderer string, no. */
 static int av_on_chip(const struct acvirgl *v)
 {
-    return v->renderer[0] && !strstr(v->renderer, "llvmpipe") && !strstr(v->renderer, "softpipe")
-        && !strstr(v->renderer, "lavapipe") && !strstr(v->renderer, "SwiftShader");
+    return v->renderer[0] && !strcasestr(v->renderer, "llvmpipe") && !strcasestr(v->renderer, "softpipe")
+        && !strcasestr(v->renderer, "lavapipe") && !strcasestr(v->renderer, "SwiftShader");
 }
 
 static int av_bind(struct acvirgl *v, const char *path, char *err, int errlen)
